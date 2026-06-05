@@ -1,0 +1,49 @@
+version: "3"
+
+tasks:
+  default:
+    desc: List available Pinax development tasks.
+    cmds:
+      - task --list
+
+  test:
+    desc: Run Go tests.
+    cmds:
+      - go test ./...
+
+  build:
+    desc: Build the Pinax CLI.
+    deps: [fmt-check]
+    cmds:
+      - mkdir -p dist
+      - go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
+
+  fmt:
+    desc: Format Go files.
+    cmds:
+      - gofmt -w cmd internal
+
+  fmt-check:
+    desc: Verify Go files are formatted.
+    cmds:
+      - test -z "$(gofmt -l cmd internal)"
+
+  tidy:
+    desc: Tidy Go module files.
+    cmds:
+      - go mod tidy
+
+  openspec:
+    desc: Validate Pinax OpenSpec items.
+    cmds:
+      - openspec validate --all
+
+  check:
+    desc: Run the local Pinax quality gate.
+    deps: [fmt-check, test, build, openspec]
+
+  clean:
+    desc: Remove local build artifacts.
+    cmds:
+      - rm -rf dist coverage.out
+

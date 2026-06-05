@@ -3,6 +3,14 @@
 常用命令：
 
 ```bash
+task build
+task test
+task check
+```
+
+没有安装 `task` 时，使用 Go 和 OpenSpec 直接命令：
+
+```bash
 go test ./...
 go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 openspec validate --all
@@ -20,4 +28,3 @@ rm -rf dist
 openspec new change pinax-<slug>
 openspec validate pinax-<slug>
 ```
-

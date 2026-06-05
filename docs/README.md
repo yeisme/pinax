@@ -15,6 +15,7 @@ Pinax 是本地优先统一笔记 Agent CLI：Markdown vault 是用户真源，S
 - [产品定位](./overview/product-positioning.md)
 - [MVP 范围](./product/mvp-scope.md)
 - [架构边界](./architecture/architecture-boundaries.md)
+- [Go 开发生态设计](./architecture/go-development-ecosystem.md)
 - [CLI 输出合同](./interfaces/cli-output-contract.md)
 - [运行手册](./operations/local-development.md)
 
@@ -27,3 +28,8 @@ go test ./...
 go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 ```
 
+如果已安装 Taskfile，也可以运行：
+
+```bash
+task check
+```
