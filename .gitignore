@@ -1,0 +1,9 @@
+dist/
+coverage.out
+*.test
+.pinax/
+.env
+.env.*
+tmp/
+*.log
+

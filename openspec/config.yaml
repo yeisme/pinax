@@ -1,0 +1,24 @@
+schema: spec-driven
+context: |
+  语言：中文（简体）
+  所有 OpenSpec 产物必须用简体中文撰写。
+  本目录是 Pinax CLI 子项目，负责本地优先 Markdown 笔记 vault、索引投影、Git 版本建议、CLI-backed Provider adapter、agent 输出合同、MCP stdio 和 briefing workflow 的实现设计与任务管理。
+  新的计划、任务清单、执行证据和归档必须使用 OpenSpec：
+  - 当前进行中的变更放在 openspec/changes/<change-id>/
+  - 已完成变更归档到 openspec/changes/archive/YYYY-MM-DD-<change-id>/
+  - 当前系统行为基准放在 openspec/specs/
+  - tasks.md 是任务状态的唯一清单；不要再新增根仓库 docs/** 或本子项目 docs/** 的 checklist 作为执行状态
+rules:
+  proposal:
+    - 说明为什么做、做什么、不做什么，以及相关项目范围。
+    - 对根级 handoff 落地的变更，必须引用根级来源路径。
+  specs:
+    - 使用 Requirement 和 Scenario 表达可验证行为。
+    - Delta 规范只描述本次变化，不重写整个项目。
+  design:
+    - 记录技术方案、范围决策、验证策略和延期项。
+    - 复杂逻辑、状态机、并发、错误处理、边界判断、协议转换和非显然测试夹具必须要求中文注释。
+  tasks:
+    - 使用复选框记录可执行任务和验证结果。
+    - 每个完成项必须能追溯到命令、检查、代码差异或手动 smoke。
+
