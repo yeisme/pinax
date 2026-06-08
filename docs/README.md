@@ -6,8 +6,8 @@ Pinax 是本地优先统一笔记 Agent CLI：Markdown vault 是用户真源，S
 
 ## 当前状态
 
-- 当前阶段：子项目开发底座已建立。
-- 当前实现边界：只保留最小 CLI 骨架和 OpenSpec 工作流；业务能力必须先进入子项目 OpenSpec change。
+- 当前阶段：本地 notebook core 自用闭环已落地。
+- 当前实现边界：支持本地 init、validate、daily/inbox、note create/list/read/edit/rename/move/archive/delete/tag、组织维度浏览、saved views、SQLite/GORM index、search、links/backlinks/orphans、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize suggest/list/apply、Git snapshot、只读 dashboard repair view 和只读 MCP；provider、briefing 和 cloud 仍需独立 OpenSpec change。
 - 根级设计来源：`openspec/specs/pinax-project-routing/spec.md`、`openspec/changes/pinax-daily-hot-notes-briefing/`。
 
 ## 文档分区
