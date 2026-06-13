@@ -26,7 +26,41 @@ const (
 	ModeExplain Mode = "explain"
 )
 
+type RenderOptions struct {
+	ColorMode  string
+	ThemeName  string
+	ThemeRoles map[string]string
+	Width      int
+	Markdown   MarkdownOptions
+	IsTerminal bool
+}
+
+type MarkdownOptions struct {
+	Enabled bool
+	Style   string
+	Pager   string
+}
+
+type ThemeRoles struct {
+	Accent  string
+	Muted   string
+	Rule    string
+	Success string
+	Warning string
+	Danger  string
+	Key     string
+	Value   string
+	Path    string
+	Link    string
+	Code    string
+	Heading string
+}
+
 func Render(w io.Writer, mode Mode, projection domain.Projection) error {
+	return RenderWithOptions(w, mode, projection, RenderOptions{})
+}
+
+func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opts RenderOptions) error {
 	projection.SpecVersion = defaultString(projection.SpecVersion, "1.0")
 	projection.Mode = string(mode)
 	if projection.Status == "" {
@@ -45,27 +79,31 @@ func Render(w io.Writer, mode Mode, projection domain.Projection) error {
 	case ModeExplain:
 		return renderExplain(w, projection)
 	default:
-		return renderSummary(w, projection)
+		return renderSummaryWithOptions(w, projection, opts)
 	}
 }
 
-func renderSummary(w io.Writer, p domain.Projection) error {
-	theme := newSummaryTheme(w)
-	if err := renderSummaryTable(w, theme, []string{"状态", "重点"}, [][]string{{summaryStatusCell(theme, p.Status), defaultString(p.Summary, "-")}}); err != nil {
+func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
+	theme := newSummaryThemeWithOptions(w, opts)
+	if p.Status == "success" && p.Error == nil {
+		if err := renderSummaryTable(w, theme, []string{"Highlights"}, [][]string{{defaultString(p.Summary, "-")}}); err != nil {
+			return err
+		}
+	} else if err := renderSummaryTable(w, theme, []string{"Status", "Highlights"}, [][]string{{summaryStatusCell(theme, p.Status), defaultString(p.Summary, "-")}}); err != nil {
 		return err
 	}
 	if p.Error != nil {
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
-		if err := renderSummaryTable(w, theme, []string{"错误", "说明"}, [][]string{{theme.failed.Render(p.Error.Code), defaultString(p.Error.Message, "-")}}); err != nil {
+		if err := renderSummaryTable(w, theme, []string{"Error", "Details"}, [][]string{{theme.failed.Render(p.Error.Code), defaultString(p.Error.Message, "-")}}); err != nil {
 			return err
 		}
 		if p.Error.Hint != "" {
 			if _, err := fmt.Fprintln(w); err != nil {
 				return err
 			}
-			return renderSummaryTable(w, theme, []string{"下一步"}, [][]string{{p.Error.Hint}})
+			return renderSummaryTable(w, theme, []string{"Next step"}, [][]string{{p.Error.Hint}})
 		}
 		return nil
 	}
@@ -77,7 +115,7 @@ func renderSummary(w io.Writer, p domain.Projection) error {
 			return err
 		}
 	}
-	if err := renderSummaryData(w, theme, p); err != nil {
+	if err := renderSummaryDataWithOptions(w, theme, p, opts); err != nil {
 		return err
 	}
 	if len(p.Evidence) > 0 {
@@ -88,7 +126,7 @@ func renderSummary(w io.Writer, p domain.Projection) error {
 		for _, item := range p.Evidence {
 			rows = append(rows, []string{item})
 		}
-		if err := renderSummaryTable(w, theme, []string{"证据"}, rows); err != nil {
+		if err := renderSummaryTable(w, theme, []string{"Evidence"}, rows); err != nil {
 			return err
 		}
 	}
@@ -96,7 +134,7 @@ func renderSummary(w io.Writer, p domain.Projection) error {
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
-		return renderSummaryTable(w, theme, []string{"下一步"}, [][]string{{p.Actions[0].Command}})
+		return renderSummaryTable(w, theme, []string{"Next step"}, [][]string{{p.Actions[0].Command}})
 	}
 	return nil
 }
@@ -111,52 +149,137 @@ type summaryTheme struct {
 	action   lipgloss.Style
 }
 
-func newSummaryTheme(w io.Writer) summaryTheme {
+func newSummaryThemeWithOptions(w io.Writer, opts RenderOptions) summaryTheme {
 	renderer := lipgloss.NewRenderer(w)
-	if summaryColorEnabled(w) {
+	if summaryColorEnabledWithOptions(w, opts) {
 		renderer.SetColorProfile(termenv.TrueColor)
 	} else {
 		renderer.SetColorProfile(termenv.Ascii)
 	}
-	style := func() lipgloss.Style { return renderer.NewStyle() }
+	roles := themeRolesForOptions(opts)
+	style := func(color string) lipgloss.Style { return renderer.NewStyle().Foreground(lipgloss.Color(color)) }
 	return summaryTheme{
 		renderer: renderer,
-		header:   style().Bold(true).Foreground(lipgloss.Color("250")),
-		rule:     style().Foreground(lipgloss.Color("240")),
-		success:  style().Bold(true).Foreground(lipgloss.Color("34")),
-		failed:   style().Bold(true).Foreground(lipgloss.Color("160")),
-		numeric:  style().Foreground(lipgloss.Color("250")),
-		action:   style().Foreground(lipgloss.Color("38")),
+		header:   style(roles.Heading).Bold(true),
+		rule:     style(roles.Rule),
+		success:  style(roles.Success).Bold(true),
+		failed:   style(roles.Danger).Bold(true),
+		numeric:  style(roles.Value),
+		action:   style(roles.Link),
 	}
 }
 
-func summaryColorEnabled(w io.Writer) bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
+func themeRolesForOptions(opts RenderOptions) ThemeRoles {
+	name := strings.ToLower(strings.TrimSpace(defaultString(opts.ThemeName, "pinax")))
+	if name != "custom" {
+		return builtInTheme(name)
 	}
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("PINAX_COLOR"))) {
+	roles := builtInTheme("pinax")
+	for role, color := range opts.ThemeRoles {
+		applyThemeRole(&roles, role, color)
+	}
+	return roles
+}
+
+func builtInTheme(name string) ThemeRoles {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "mono":
+		return ThemeRoles{Accent: "250", Muted: "244", Rule: "244", Success: "250", Warning: "250", Danger: "250", Key: "250", Value: "250", Path: "250", Link: "250", Code: "250", Heading: "250"}
+	case "high-contrast":
+		return ThemeRoles{Accent: "51", Muted: "255", Rule: "255", Success: "46", Warning: "226", Danger: "196", Key: "255", Value: "255", Path: "51", Link: "51", Code: "255", Heading: "255"}
+	default:
+		return ThemeRoles{Accent: "38", Muted: "250", Rule: "240", Success: "34", Warning: "178", Danger: "160", Key: "250", Value: "250", Path: "38", Link: "38", Code: "250", Heading: "250"}
+	}
+}
+
+func applyThemeRole(roles *ThemeRoles, role, color string) {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "accent":
+		roles.Accent = color
+	case "muted":
+		roles.Muted = color
+	case "rule":
+		roles.Rule = color
+	case "success":
+		roles.Success = color
+	case "warning":
+		roles.Warning = color
+	case "danger":
+		roles.Danger = color
+	case "key":
+		roles.Key = color
+	case "value":
+		roles.Value = color
+	case "path":
+		roles.Path = color
+	case "link":
+		roles.Link = color
+	case "code":
+		roles.Code = color
+	case "heading":
+		roles.Heading = color
+	}
+}
+
+func summaryColorEnabledWithOptions(w io.Writer, opts RenderOptions) bool {
+	mode := strings.ToLower(strings.TrimSpace(opts.ColorMode))
+	if mode == "" {
+		mode = colorModeFromEnv()
+	}
+	switch mode {
 	case "always", "1", "true", "yes", "on":
 		return true
 	case "never", "0", "false", "no", "off":
 		return false
 	}
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
 	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
 		return false
+	}
+	if opts.ColorMode != "" {
+		return opts.IsTerminal
 	}
 	file, ok := w.(*os.File)
 	return ok && term.IsTerminal(int(file.Fd()))
 }
 
+func colorModeFromEnv() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PINAX_COLOR"))) {
+	case "always", "1", "true", "yes", "on":
+		return "always"
+	case "never", "0", "false", "no", "off":
+		return "never"
+	default:
+		return "auto"
+	}
+}
+
 func summaryStatusCell(theme summaryTheme, status string) string {
+	label := summaryStatusLabel(status)
 	switch status {
 	case "success":
-		return theme.success.Render(status)
+		return theme.success.Render(label)
 	case "failed":
-		return theme.failed.Render(status)
+		return theme.failed.Render(label)
 	case "partial":
-		return theme.action.Render(status)
+		return theme.action.Render(label)
 	default:
-		return status
+		return label
+	}
+}
+
+func summaryStatusLabel(status string) string {
+	switch status {
+	case "success":
+		return "Success"
+	case "failed":
+		return "Failed"
+	case "partial":
+		return "Partial"
+	default:
+		return summaryHumanValue("status", status)
 	}
 }
 
@@ -188,9 +311,9 @@ func summaryTableStyle(theme summaryTheme, header []string) charmtable.StyleFunc
 		}
 		if col < len(header) {
 			switch header[col] {
-			case "错误":
+			case "Error":
 				style = style.Inherit(theme.failed)
-			case "下一步":
+			case "Next step":
 				style = style.Inherit(theme.action)
 			}
 		}
@@ -203,7 +326,7 @@ func summaryTableStyle(theme summaryTheme, header []string) charmtable.StyleFunc
 
 func isNumericSummaryColumn(header string) bool {
 	switch header {
-	case "数量", "行数", "代码", "注释", "空行":
+	case "Count", "Share", "Lines", "Code", "Comments", "Blank":
 		return true
 	default:
 		return false
@@ -250,13 +373,334 @@ func renderSummaryFacts(w io.Writer, theme summaryTheme, facts map[string]string
 	sort.Strings(keys)
 	rows := make([][]string, 0, len(keys))
 	for _, key := range keys {
-		rows = append(rows, []string{key, facts[key]})
+		rows = append(rows, []string{summaryFactLabel(key), summaryFactValue(key, facts[key])})
 	}
-	return renderSummaryTable(w, theme, []string{"指标", "值"}, rows)
+	return renderSummaryTable(w, theme, []string{"Metric", "Value"}, rows)
 }
 
-func renderSummaryData(w io.Writer, theme summaryTheme, p domain.Projection) error {
+func summaryFactLabel(key string) string {
+	labels := map[string]string{
+		"action_id":                "Action ID",
+		"adopted":                  "Adopted",
+		"ambiguous":                "Ambiguous links",
+		"applied":                  "Applied",
+		"applied_metadata":         "Applied metadata",
+		"applied_moves":            "Applied moves",
+		"applied_updates":          "Applied updates",
+		"attachment_path":          "Attachment path",
+		"attachments":              "Attachments",
+		"automatic":                "Automatic items",
+		"backend":                  "Backend",
+		"backend_required":         "Backend required",
+		"backends":                 "Backends",
+		"backlinks":                "Backlinks",
+		"base_revision":            "Base revision",
+		"broken":                   "Broken links",
+		"bucket":                   "Bucket",
+		"bytes":                    "Bytes",
+		"candidates":               "Candidates",
+		"capabilities":             "Capabilities",
+		"changed":                  "Changed",
+		"changed_blocks":           "Changed blocks",
+		"columns":                  "Columns",
+		"configured":               "Configured",
+		"conflicts":                "Conflicts",
+		"conflict_file":            "Conflict file",
+		"count":                    "Count",
+		"created":                  "Created",
+		"credential_source":        "Credential source",
+		"current_project":          "Current project",
+		"daily_index":              "Daily index",
+		"date":                     "Date",
+		"decision_id":              "Decision ID",
+		"default_backend":          "Default backend",
+		"delete_candidates":        "Delete candidates",
+		"deleted":                  "Deleted",
+		"device_id":                "Device ID",
+		"dimension":                "Dimension",
+		"dimensions":               "Dimensions",
+		"direction":                "Direction",
+		"dry_run":                  "Dry run",
+		"editor":                   "Editor",
+		"editor_args":              "Editor arguments",
+		"editor_executable":        "Editor executable",
+		"endpoint":                 "Endpoint",
+		"engine":                   "Engine",
+		"failed":                   "Failed",
+		"filter.created_after":     "Filter: created after",
+		"filter.folder":            "Filter: folder",
+		"filter.group":             "Filter: group",
+		"filter.kind":              "Filter: kind",
+		"filter.path_prefix":       "Filter: path prefix",
+		"filter.project":           "Filter: project",
+		"filter.status":            "Filter: status",
+		"filter.tag":               "Filter: tag",
+		"filter.updated_before":    "Filter: updated before",
+		"filters":                  "Filters",
+		"folder":                   "Folder",
+		"frontmatter_coverage":     "Frontmatter coverage",
+		"group":                    "Group",
+		"groups":                   "Groups",
+		"hard":                     "Hard delete",
+		"has_more":                 "Has more",
+		"index_loaded":             "Index load",
+		"index_status":             "Index status",
+		"index_updated":            "Index updated",
+		"issues":                   "Issues",
+		"issues.total":             "Total issues",
+		"items":                    "Items",
+		"keep":                     "Keep",
+		"key":                      "Key",
+		"kind":                     "Kind",
+		"ledger_seq":               "Ledger sequence",
+		"ledger_status":            "Ledger status",
+		"lifecycle":                "Lifecycle",
+		"limit":                    "Limit",
+		"link_target.candidates":   "Link target candidates",
+		"link_target.matches":      "Link target matches",
+		"link_target.status":       "Link target status",
+		"links":                    "Outbound links",
+		"manual_review":            "Manual review",
+		"matches":                  "Matches",
+		"max_commitments":          "Max commitments",
+		"media_type":               "Media type",
+		"main_path":                "Main path",
+		"message":                  "Message",
+		"missing":                  "Missing",
+		"mode":                     "Mode",
+		"moved":                    "Moved",
+		"name":                     "Name",
+		"network_checked":          "Network checked",
+		"next_cursor":              "Next cursor",
+		"note_id":                  "Note ID",
+		"notes":                    "Notes",
+		"notes_prefix":             "Notes path prefix",
+		"opened":                   "Opened",
+		"operation":                "Operation",
+		"operations":               "Operations",
+		"operations.automatic":     "Automatic operations",
+		"operations.manual_review": "Manual review operations",
+		"operations.total":         "Total operations",
+		"orphans":                  "Orphan notes",
+		"output.color":             "Output color",
+		"output.theme":             "Output theme",
+		"output.width":             "Output width",
+		"output_dir":               "Output directory",
+		"output_format":            "Output format",
+		"overwritten":              "Overwritten",
+		"path":                     "Path",
+		"period":                   "Period",
+		"plan_id":                  "Plan ID",
+		"planned":                  "Planned",
+		"planned_moves":            "Planned moves",
+		"planned_path":             "Planned path",
+		"planned_updates":          "Planned updates",
+		"plans":                    "Plans",
+		"prefix":                   "Prefix",
+		"project":                  "Project",
+		"project_config":           "Project config",
+		"projects":                 "Projects",
+		"properties":               "Properties",
+		"property":                 "Property",
+		"provider":                 "Provider",
+		"queries":                  "Queries",
+		"query_count":              "Queries",
+		"receipt_path":             "Receipt path",
+		"recent":                   "Recent only",
+		"recent_updates":           "Recent updates",
+		"record_event":             "Record event",
+		"record_event_id":          "Record event ID",
+		"record_events":            "Record events",
+		"record_version":           "Record version",
+		"records":                  "Records",
+		"records_path":             "Records path",
+		"region":                   "Region",
+		"remote_revision":          "Remote revision",
+		"remote_write":             "Remote write",
+		"removed":                  "Removed",
+		"renamed":                  "Renamed",
+		"resolved":                 "Resolved",
+		"restored":                 "Restored",
+		"returned":                 "Returned",
+		"risk.low":                 "Low risks",
+		"risk.medium":              "Medium risks",
+		"risk.review":              "Review risks",
+		"risks":                    "Risks",
+		"root":                     "Root",
+		"rows":                     "Rows",
+		"run":                      "Run",
+		"run_id":                   "Run ID",
+		"run_name":                 "Run name",
+		"run_saved":                "Run saved",
+		"runs":                     "Runs",
+		"saved_path":               "Saved path",
+		"scan_duration_ms":         "Scan duration ms",
+		"schema_version":           "Schema version",
+		"scope":                    "Scope",
+		"scopes":                   "Scopes",
+		"secret_ref_configured":    "Secret ref configured",
+		"session_status":           "Session status",
+		"skipped":                  "Skipped",
+		"skipped_issues":           "Skipped issues",
+		"snapshot":                 "Snapshot",
+		"snapshot_id":              "Snapshot ID",
+		"sort":                     "Sort",
+		"sorts":                    "Sorts",
+		"source":                   "Source",
+		"source_decision":          "Source decision",
+		"source_path":              "Source path",
+		"sources":                  "Sources",
+		"status":                   "Status",
+		"tags":                     "Tags",
+		"old_tag":                  "Old tag",
+		"new_tag":                  "New tag",
+		"old_folder":               "Old folder",
+		"new_folder":               "New folder",
+		"target":                   "Target",
+		"tasks":                    "Tasks",
+		"template":                 "Template",
+		"templates":                "Templates",
+		"title":                    "Title",
+		"tokens":                   "Tokens",
+		"tombstones":               "Tombstones",
+		"topic":                    "Topic",
+		"total":                    "Total",
+		"trash_path":               "Trash path",
+		"type":                     "Type",
+		"unresolved":               "Unresolved",
+		"user_config":              "User config",
+		"value":                    "Value",
+		"variables":                "Variables",
+		"vault":                    "Vault",
+		"version":                  "Version",
+		"version_backend":          "Version backend",
+		"view":                     "View",
+		"views":                    "Views",
+		"workspace_id":             "Workspace ID",
+		"worktree_state":           "Worktree state",
+		"writes":                   "Writes",
+		"written":                  "Written",
+	}
+	if label, ok := labels[key]; ok {
+		return label
+	}
+	return strings.ReplaceAll(key, "_", " ")
+}
+
+func summaryFactValue(key, value string) string {
+	switch key {
+	case "schema_version", "version", "path", "saved_path", "planned_path", "source_path", "output_dir", "trash_path", "records_path", "receipt_path", "endpoint", "bucket", "region", "prefix", "root", "vault", "command", "query":
+		return value
+	default:
+		return summaryHumanValue(key, value)
+	}
+}
+
+func summaryHumanValue(_ string, value string) string {
+	switch strings.TrimSpace(value) {
+	case "true":
+		return "Yes"
+	case "false":
+		return "No"
+	case "success":
+		return "Success"
+	case "failed":
+		return "Failed"
+	case "partial":
+		return "Partial"
+	case "fresh":
+		return "Fresh"
+	case "stale":
+		return "Stale"
+	case "missing":
+		return "Missing"
+	case "unreadable":
+		return "Unreadable"
+	case "configured":
+		return "Configured"
+	case "active":
+		return "Active"
+	case "archived":
+		return "Archived"
+	case "deleted":
+		return "Deleted"
+	case "trashed":
+		return "Trashed"
+	case "planned":
+		return "Planned"
+	case "pending":
+		return "Pending"
+	case "applied":
+		return "Applied"
+	case "skipped":
+		return "Skipped"
+	case "updated":
+		return "Updated"
+	case "created":
+		return "Created"
+	case "resolved":
+		return "Resolved"
+	case "broken":
+		return "Broken"
+	case "ambiguous":
+		return "Ambiguous"
+	case "automatic":
+		return "Automatic"
+	case "manual_review":
+		return "Manual review"
+	case "low":
+		return "Low"
+	case "medium":
+		return "Medium"
+	case "review":
+		return "Review"
+	case "scan":
+		return "Scan"
+	case "index":
+		return "Index"
+	case "lazy_rebuild":
+		return "Lazy rebuild"
+	case "dry_run":
+		return "Dry run"
+	case "push":
+		return "Push"
+	case "pull":
+		return "Pull"
+	case "daily":
+		return "Daily"
+	case "weekly":
+		return "Weekly"
+	case "monthly":
+		return "Monthly"
+	case "group":
+		return "Group"
+	case "tag":
+		return "Tag"
+	case "folder":
+		return "Folder"
+	case "kind":
+		return "Kind"
+	case "status":
+		return "Status"
+	case "reference":
+		return "Reference"
+	case "inbox":
+		return "Inbox"
+	case "project":
+		return "Project"
+	case "meeting":
+		return "Meeting"
+	case "note":
+		return "Note"
+	default:
+		return value
+	}
+}
+
+func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Projection, opts RenderOptions) error {
 	switch p.Command {
+	case "note.search":
+		return renderSummarySearchResults(w, theme, p.Data)
 	case "note.list":
 		return renderSummaryNoteList(w, theme, p.Data, "notes")
 	case "note.orphans":
@@ -273,9 +717,90 @@ func renderSummaryData(w io.Writer, theme summaryTheme, p domain.Projection) err
 		return renderSummaryOrganizePlanList(w, theme, p.Data)
 	case "organize.plan":
 		return renderSummaryLegacyOrganizePlan(w, theme, p.Data)
+	case "note.show", "note.read", "note.preview", "daily.show", "weekly.show", "monthly.show", "template.show", "template.render", "template.preview":
+		return renderSummaryMarkdownDocument(w, p.Data, opts)
+	case "sync.conflicts.list":
+		return renderSummarySyncConflictList(w, theme, p.Data)
+	case "sync.conflicts.show":
+		return renderSummarySyncConflictShow(w, theme, p.Data)
+	case "sync.conflicts.diff":
+		return renderSummarySyncConflictDiff(w, p.Data)
 	default:
 		return nil
 	}
+}
+
+type summarySearchData struct {
+	Results []summarySearchResult `json:"results"`
+	Notes   []domain.Note         `json:"notes"`
+}
+
+type summarySearchResult struct {
+	Note    domain.Note `json:"note"`
+	Snippet string      `json:"snippet"`
+}
+
+func renderSummarySearchResults(w io.Writer, theme summaryTheme, data any) error {
+	results := summarySearchResultsFromData(data)
+	if len(results) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(results))
+	for _, result := range results {
+		rows = append(rows, []string{
+			summaryCell(result.Note.Path, 56),
+			summaryCell(result.Note.Title, 32),
+			summaryCell(result.Snippet, 80),
+		})
+	}
+	return renderSummaryTable(w, theme, []string{"Path", "Title", "Preview"}, rows)
+}
+
+func summarySearchResultsFromData(data any) []summarySearchResult {
+	var searchData summarySearchData
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	if err := json.Unmarshal(b, &searchData); err != nil {
+		return nil
+	}
+	if len(searchData.Results) > 0 {
+		return searchData.Results
+	}
+	results := make([]summarySearchResult, 0, len(searchData.Notes))
+	for _, note := range searchData.Notes {
+		results = append(results, summarySearchResult{Note: note})
+	}
+	return results
+}
+
+func renderSummaryMarkdownDocument(w io.Writer, data any, opts RenderOptions) error {
+	body := summaryBodyFromData(data)
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	return renderMarkdownBody(w, body, opts)
+}
+
+func summaryBodyFromData(data any) string {
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if body, ok := dataMap["body"].(string); ok {
+		return body
+	}
+	if note, ok := dataMap["note"].(domain.Note); ok {
+		return note.Body
+	}
+	return ""
 }
 
 func renderSummaryNoteList(w io.Writer, theme summaryTheme, data any, key string) error {
@@ -300,13 +825,13 @@ func renderSummaryNoteList(w io.Writer, theme summaryTheme, data any, key string
 		rows = append(rows, []string{
 			summaryCell(note.Path, 56),
 			summaryCell(note.Title, 32),
-			summaryCell(note.Kind, 10),
+			summaryCell(summaryHumanValue("note.kind", note.Kind), 10),
 			summaryCell(tags, 22),
-			summaryCell(note.Status, 10),
+			summaryCell(summaryHumanValue("note.status", note.Status), 10),
 			summaryCell(note.UpdatedAt, 20),
 		})
 	}
-	return renderSummaryTable(w, theme, []string{"路径", "标题", "分类", "标签", "状态", "更新时间"}, rows)
+	return renderSummaryTable(w, theme, []string{"Path", "Title", "Kind", "Tags", "Status", "Updated"}, rows)
 }
 
 func renderSummaryLinkList(w io.Writer, theme summaryTheme, data any, key string) error {
@@ -331,10 +856,10 @@ func renderSummaryLinkList(w io.Writer, theme summaryTheme, data any, key string
 			summaryCell(link.SourcePath, 48),
 			summaryCell(link.Target, 32),
 			summaryCell(link.TargetPath, 48),
-			status,
+			summaryHumanValue("link.status", status),
 		})
 	}
-	return renderSummaryTable(w, theme, []string{"来源", "目标", "路径", "状态"}, rows)
+	return renderSummaryTable(w, theme, []string{"Source", "Target", "Path", "Status"}, rows)
 }
 
 func renderSummaryDimensionList(w io.Writer, theme summaryTheme, data any) error {
@@ -348,32 +873,59 @@ func renderSummaryDimensionList(w io.Writer, theme summaryTheme, data any) error
 	}
 	dimension, _ := dataMap["dimension"].(string)
 	labels := make([]string, 0, len(items))
+	total := 0
+	maxCount := 0
 	for _, item := range items {
 		label := summaryDimensionLabel(dimension, item.Value)
 		labels = append(labels, label)
+		total += item.Count
+		if item.Count > maxCount {
+			maxCount = item.Count
+		}
 	}
 	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}
 	rows := make([][]string, 0, len(items))
 	for i, item := range items {
-		rows = append(rows, []string{labels[i], fmt.Sprint(item.Count)})
+		rows = append(rows, []string{labels[i], fmt.Sprint(item.Count), summaryPercent(item.Count, total), summaryBar(item.Count, maxCount, 10)})
 	}
-	return renderSummaryTable(w, theme, []string{summaryDimensionHeader(dimension), "数量"}, rows)
+	return renderSummaryTable(w, theme, []string{summaryDimensionHeader(dimension), "Count", "Share", "Heat"}, rows)
+}
+
+func summaryPercent(count, total int) string {
+	if total <= 0 || count <= 0 {
+		return "0%"
+	}
+	return fmt.Sprintf("%d%%", (count*100+total/2)/total)
+}
+
+func summaryBar(count, maxCount, width int) string {
+	if count <= 0 || maxCount <= 0 || width <= 0 {
+		return "-"
+	}
+	filled := (count*width + maxCount/2) / maxCount
+	if filled < 1 {
+		filled = 1
+	}
+	if filled > width {
+		filled = width
+	}
+	return strings.Repeat("#", filled)
 }
 
 func summaryDimensionHeader(dimension string) string {
 	switch dimension {
 	case "group":
-		return "分组"
+		return "Group"
 	case "tag":
-		return "标签"
+		return "Tags"
 	case "folder":
-		return "文件夹"
+		return "Folder"
 	case "kind":
-		return "分类"
+		return "Kind"
 	default:
-		return "值"
+		return "Value"
 	}
 }
 
@@ -384,15 +936,15 @@ func summaryDimensionLabel(dimension, value string) string {
 	}
 	switch dimension {
 	case "group":
-		return "(未分组)"
+		return "(ungrouped)"
 	case "tag":
-		return "(无标签)"
+		return "(untagged)"
 	case "folder":
-		return "(无文件夹)"
+		return "(no folder)"
 	case "kind":
-		return "(未分类)"
+		return "(uncategorized)"
 	default:
-		return "(空)"
+		return "(empty)"
 	}
 }
 
@@ -405,7 +957,7 @@ func renderSummaryOrganizePlan(w io.Writer, theme summaryTheme, data any) error 
 		return err
 	}
 	rows := organizeOperationRows(plan.Operations, 18)
-	return renderSummaryTable(w, theme, []string{"操作预览", "模式", "风险", "动作", "来源", "目标", "原因"}, rows)
+	return renderSummaryTable(w, theme, []string{"Operation preview", "Mode", "Risk", "Action", "Source", "Target", "Reason"}, rows)
 }
 
 func renderSummaryLegacyOrganizePlan(w io.Writer, theme summaryTheme, data any) error {
@@ -426,17 +978,17 @@ func renderSummaryLegacyOrganizePlan(w io.Writer, theme summaryTheme, data any) 
 		op := ops[i]
 		rows = append(rows, []string{
 			fmt.Sprint(i + 1),
-			summaryCell(op.Kind, 16),
+			summaryCell(summaryHumanValue("operation.kind", op.Kind), 16),
 			summaryCell(op.Path, 48),
 			summaryCell(op.Target, 48),
 			summaryCell(op.Reason, 40),
-			summaryCell(op.Status, 12),
+			summaryCell(summaryHumanValue("operation.status", op.Status), 12),
 		})
 	}
 	if len(ops) > limit {
-		rows = append(rows, []string{"更多", "-", "-", "-", fmt.Sprintf("还有 %d 条，使用 --json 查看完整计划", len(ops)-limit), "-"})
+		rows = append(rows, []string{"More", "-", "-", "-", fmt.Sprintf("%d more entries; use --json to view the full plan", len(ops)-limit), "-"})
 	}
-	return renderSummaryTable(w, theme, []string{"操作预览", "动作", "来源", "目标", "原因", "状态"}, rows)
+	return renderSummaryTable(w, theme, []string{"Operation preview", "Action", "Source", "Target", "Reason", "Status"}, rows)
 }
 
 func renderSummaryOrganizePlanList(w io.Writer, theme summaryTheme, data any) error {
@@ -455,14 +1007,14 @@ func renderSummaryOrganizePlanList(w io.Writer, theme summaryTheme, data any) er
 	for _, plan := range plans {
 		rows = append(rows, []string{
 			summaryCell(plan.PlanID, 28),
-			summaryCell(plan.Status, 12),
+			summaryCell(summaryHumanValue("plan.status", plan.Status), 12),
 			fmt.Sprint(plan.Operations),
 			summaryTimeCell(plan.CreatedAt),
 			summaryTimeCell(plan.ExpiresAt),
 			summaryCell(plan.SavedPath, 48),
 		})
 	}
-	return renderSummaryTable(w, theme, []string{"已保存计划", "状态", "操作", "创建", "过期", "路径"}, rows)
+	return renderSummaryTable(w, theme, []string{"Saved plans", "Status", "Operation", "Created", "Expires", "Path"}, rows)
 }
 
 func organizeOperationRows(ops []domain.OrganizeOperation, limit int) [][]string {
@@ -476,14 +1028,14 @@ func organizeOperationRows(ops []domain.OrganizeOperation, limit int) [][]string
 			fmt.Sprint(i + 1),
 			summaryCell(organizeModeLabel(op.Mode), 12),
 			summaryCell(organizeRiskLabel(op.Risk), 12),
-			summaryCell(op.Kind, 18),
+			summaryCell(summaryHumanValue("operation.kind", op.Kind), 18),
 			summaryCell(op.Path, 44),
 			summaryCell(op.Target, 44),
 			summaryCell(op.Reason, 36),
 		})
 	}
 	if len(ops) > limit {
-		rows = append(rows, []string{"更多", "-", "-", "-", "-", "-", fmt.Sprintf("还有 %d 条，使用 --json 查看完整计划", len(ops)-limit)})
+		rows = append(rows, []string{"More", "-", "-", "-", "-", "-", fmt.Sprintf("%d more entries; use --json to view the full plan", len(ops)-limit)})
 	}
 	return rows
 }
@@ -491,9 +1043,9 @@ func organizeOperationRows(ops []domain.OrganizeOperation, limit int) [][]string
 func organizeModeLabel(mode string) string {
 	switch mode {
 	case "automatic":
-		return "自动"
+		return "Automatic"
 	case "manual_review":
-		return "需复核"
+		return "Manual review"
 	default:
 		return mode
 	}
@@ -502,11 +1054,11 @@ func organizeModeLabel(mode string) string {
 func organizeRiskLabel(risk string) string {
 	switch risk {
 	case "low":
-		return "低"
+		return "Low"
 	case "medium":
-		return "中"
+		return "Medium"
 	case "review":
-		return "复核"
+		return "Review"
 	default:
 		return risk
 	}
@@ -527,6 +1079,53 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func renderSummarySyncConflictList(w io.Writer, theme summaryTheme, data any) error {
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	conflicts, ok := dataMap["conflicts"].([]domain.SyncConflictEntry)
+	if !ok || len(conflicts) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(conflicts))
+	for _, conflict := range conflicts {
+		rows = append(rows, []string{summaryCell(conflict.File, 64), summaryCell(conflict.MainPath, 64), summaryTimeCell(conflict.Modified)})
+	}
+	return renderSummaryTable(w, theme, []string{"Conflict file", "Main path", "Updated"}, rows)
+}
+
+func renderSummarySyncConflictShow(w io.Writer, theme summaryTheme, data any) error {
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	conflict, _ := dataMap["conflict"].(domain.SyncConflictEntry)
+	mainBody, _ := dataMap["main_body"].(string)
+	body, _ := dataMap["body"].(string)
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := [][]string{{"Main", summaryCell(conflict.MainPath, 56), summaryCell(mainBody, 80)}, {"Conflict", summaryCell(conflict.File, 56), summaryCell(body, 80)}}
+	return renderSummaryTable(w, theme, []string{"Side", "Path", "Preview"}, rows)
+}
+
+func renderSummarySyncConflictDiff(w io.Writer, data any) error {
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	diff, _ := dataMap["diff"].(string)
+	if strings.TrimSpace(diff) == "" {
+		return nil
+	}
+	_, err := fmt.Fprintln(w, "\n"+strings.TrimRight(diff, "\n"))
+	return err
 }
 
 func renderAgent(w io.Writer, p domain.Projection) error {
@@ -560,6 +1159,22 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 				lines = append(lines, prefix+"path="+quoteAgentValue(note.Path))
 				lines = append(lines, prefix+"note_id="+quoteAgentValue(note.ID))
 				lines = append(lines, prefix+"title="+quoteAgentValue(note.Title))
+			}
+		}
+		if candidates, ok := data["candidates"].([]domain.VaultObjectCandidate); ok {
+			for i, candidate := range candidates {
+				prefix := fmt.Sprintf("candidate.%d.", i+1)
+				lines = append(lines, prefix+"object_kind="+quoteAgentValue(string(candidate.ObjectKind)))
+				lines = append(lines, prefix+"path="+quoteAgentValue(candidate.Path))
+				if candidate.NoteID != "" {
+					lines = append(lines, prefix+"note_id="+quoteAgentValue(candidate.NoteID))
+				}
+				if candidate.Title != "" {
+					lines = append(lines, prefix+"title="+quoteAgentValue(candidate.Title))
+				}
+				if candidate.ManagedStatus != "" {
+					lines = append(lines, prefix+"managed_status="+quoteAgentValue(candidate.ManagedStatus))
+				}
 			}
 		}
 	}
@@ -622,7 +1237,7 @@ func renderEvents(w io.Writer, p domain.Projection) error {
 }
 
 func renderExplain(w io.Writer, p domain.Projection) error {
-	if _, err := fmt.Fprintf(w, "结论: %s\n", defaultString(p.Summary, p.Status)); err != nil {
+	if _, err := fmt.Fprintf(w, "Conclusion: %s\n", defaultString(p.Summary, p.Status)); err != nil {
 		return err
 	}
 	evidence := p.Evidence
@@ -637,29 +1252,32 @@ func renderExplain(w io.Writer, p domain.Projection) error {
 		}
 	}
 	if len(evidence) == 0 {
-		evidence = []string{"命令 projection 已生成"}
+		evidence = []string{"Command projection generated"}
 	}
-	if _, err := fmt.Fprintf(w, "证据: %s\n", strings.Join(evidence, "; ")); err != nil {
+	if _, err := fmt.Fprintf(w, "Evidence: %s\n", strings.Join(evidence, "; ")); err != nil {
 		return err
 	}
 	if p.Error != nil {
-		if _, err := fmt.Fprintf(w, "风险: %s\n", p.Error.Message); err != nil {
+		if _, err := fmt.Fprintf(w, "Risk: %s\n", p.Error.Message); err != nil {
 			return err
 		}
 	}
 	if len(p.Actions) > 0 {
-		if _, err := fmt.Fprintf(w, "推荐下一步: %s\n", p.Actions[0].Command); err != nil {
+		if _, err := fmt.Fprintf(w, "Recommended next step: %s\n", p.Actions[0].Command); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintln(w, "置信度: 0.8")
+	_, err := fmt.Fprintln(w, "Confidence: 0.8")
 	return err
 }
 
 func quoteAgentValue(value string) string {
 	if strings.ContainsAny(value, " \t\n\"") {
 		b, _ := json.Marshal(value)
-		return string(b)
+		quoted := strings.ReplaceAll(string(b), "\\u003c", "<")
+		quoted = strings.ReplaceAll(quoted, "\\u003e", ">")
+		quoted = strings.ReplaceAll(quoted, "\\u0026", "&")
+		return quoted
 	}
 	return value
 }

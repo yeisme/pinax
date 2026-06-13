@@ -1,0 +1,45 @@
+# Test link projection update and queries
+exec sh -c 'pinax init vault --title Vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+
+# Run index sync to populate index
+exec sh -c 'pinax index sync --vault vault --json > sync.json'
+validate-json-envelope sync.json
+validate-clean-stdout sync.json
+
+# Query backlinks to page-b using pinax note backlinks
+exec sh -c 'pinax note backlinks page-b --vault vault --json > backlinks.json'
+validate-json-envelope backlinks.json
+validate-clean-stdout backlinks.json
+grep 'notes/page-a.md' backlinks.json
+
+# Query using pinax search with link-target
+exec sh -c 'pinax search "Page A" --link-target notes/page-b.md --vault vault --json > search.json'
+validate-json-envelope search.json
+validate-clean-stdout search.json
+grep 'notes/page-a.md' search.json
+
+-- vault/notes/page-a.md --
+---
+schema_version: pinax.note.v1
+note_id: note_page_a
+title: Page A
+kind: reference
+---
+
+# Page A
+
+Here is a link to [[page-b]].
+
+-- vault/notes/page-b.md --
+---
+schema_version: pinax.note.v1
+note_id: note_page_b
+title: Page B
+kind: reference
+---
+
+# Page B
+
+This is Page B.

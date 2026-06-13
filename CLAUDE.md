@@ -8,3 +8,12 @@ Use repository-root `.skills/profiles/targets/cli/pinax.txt` as the skill assign
 
 Implementation plans, validation evidence, and closeout belong under `openspec/changes/pinax-*`.
 
+## Health Stack
+
+- typecheck: go vet ./...
+- lint: golangci-lint run
+- test: go test ./...
+- deadcode: golangci-lint run --enable-only unused
+- openspec: openspec validate --all
+
+

@@ -49,6 +49,66 @@ func TestReadonlyDashboardServesStatsDoctorAndRedacts(t *testing.T) {
 	}
 }
 
+func TestReadonlyDashboardServesLinkGraphSummary(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeDashboardFixture(t, filepath.Join(root, "Source.md"), "# Source\n\n[[Missing Target]]\n\n[[Shared]]\n")
+	writeDashboardFixture(t, filepath.Join(root, "First.md"), "# Shared\n\nfirst\n")
+	writeDashboardFixture(t, filepath.Join(root, "Second.md"), "# Shared\n\nsecond\n")
+	writeDashboardFixture(t, filepath.Join(root, "Orphan.md"), "# Orphan\n\nsolo\n")
+
+	server := NewServer(svc, root)
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/graph-summary", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("graph summary status = %d body=%s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("graph summary json invalid: %v\n%s", err, res.Body.String())
+	}
+	if payload["command"] != "dashboard.graph_summary" || payload["status"] != "partial" {
+		t.Fatalf("graph summary payload = %#v", payload)
+	}
+	facts := payload["facts"].(map[string]any)
+	for _, key := range []string{"broken", "ambiguous", "orphans", "engine"} {
+		if facts[key] == nil || facts[key] == "0" {
+			t.Fatalf("graph summary fact %s missing: %#v", key, facts)
+		}
+	}
+	data := payload["data"].(map[string]any)
+	if data["broken"].(float64) < 1 || data["ambiguous"].(float64) < 1 || data["orphans"].(float64) < 1 {
+		t.Fatalf("graph summary counts invalid: %#v", data)
+	}
+	if len(payload["actions"].([]any)) == 0 || !strings.Contains(res.Body.String(), "pinax ") {
+		t.Fatalf("graph summary next action missing: %#v", payload)
+	}
+
+	overview := httptest.NewRecorder()
+	server.Handler().ServeHTTP(overview, httptest.NewRequest(http.MethodGet, "/api/overview", nil))
+	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), "link_graph") || !strings.Contains(overview.Body.String(), "dashboard.graph_summary") {
+		t.Fatalf("overview missing link graph summary: status=%d body=%s", overview.Code, overview.Body.String())
+	}
+
+	index := httptest.NewRecorder()
+	server.Handler().ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/", nil))
+	for _, want := range []string{"关系", "断链", "歧义", "孤立", "pinax "} {
+		if !strings.Contains(index.Body.String(), want) {
+			t.Fatalf("dashboard index missing %q:\n%s", want, index.Body.String())
+		}
+	}
+
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/graph-summary", nil))
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("graph summary write-like method status = %d", res.Code)
+	}
+}
+
 func TestReadonlyDashboardServesRepairPlans(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -95,12 +155,84 @@ func TestReadonlyDashboardServesRepairPlans(t *testing.T) {
 	}
 }
 
+func TestReadonlyDashboardServesProjectBoard(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "研究", NotesPrefix: "research"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	writeDashboardFixture(t, filepath.Join(root, "research", "task.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_task\ntitle: Board Task\nproject: research\nkind: task\nstatus: active\n---\n\nsecret body should not leak as body field\n")
+
+	server := NewServer(svc, root)
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/project-board/research", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("board status = %d body=%s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("board json invalid: %v\n%s", err, res.Body.String())
+	}
+	if payload["command"] != "dashboard.project_board" || !strings.Contains(res.Body.String(), `"project":"research"`) || strings.Contains(res.Body.String(), `"body"`) {
+		t.Fatalf("board payload = %s", res.Body.String())
+	}
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/project-board/research", nil))
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("board write-like method status = %d", res.Code)
+	}
+}
+
+func TestReadonlyDashboardServesBoundedNoteDisplay(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeDashboardFixture(t, filepath.Join(root, "notes", "secret.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_secret\ntitle: Secret\nkind: task\nstatus: active\n---\n\nsecret body should stay out of dashboard card\n")
+	server := NewServer(svc, root)
+
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/note-display/note_secret?display=detail", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("note display status = %d body=%s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"command":"dashboard.note_display"`) || !strings.Contains(res.Body.String(), `"display":"detail"`) || strings.Contains(res.Body.String(), `"body"`) {
+		t.Fatalf("note display leaked body or missed fields: %s", res.Body.String())
+	}
+
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/note-display/note_secret", nil))
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("write-like note display status = %d", res.Code)
+	}
+}
+
 func writeDashboardFixture(t *testing.T, path, content string) {
 	t.Helper()
+	if strings.EqualFold(filepath.Ext(path), ".md") && !strings.HasPrefix(content, "---\n") {
+		title := dashboardFixtureTitle(path, content)
+		id := "note_" + strings.NewReplacer("/", "_", "\\", "_", ".", "_", " ", "_").Replace(strings.ToLower(filepath.Base(path)))
+		content = "---\nschema_version: pinax.note.v1\nnote_id: " + id + "\ntitle: " + title + "\ntags: []\n---\n\n" + content
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir fixture: %v", err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
+}
+
+func dashboardFixtureTitle(path, content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "# ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
+		}
+	}
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 }

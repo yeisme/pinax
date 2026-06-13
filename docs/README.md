@@ -1,34 +1,69 @@
-# Pinax 文档地图
+# Pinax Documentation Map
 
-本目录是 Pinax 子项目的产品、设计、运行、协议、实现、QA 和 release 文档真源。根仓库只保留跨项目 handoff 和治理索引，不维护 Pinax 文档镜像。
+This directory is the source of truth for the Pinax subproject's product, design, operations, protocol, implementation, QA, and release documentation. The root repository only keeps cross-project handoff and governance indexes, and does not maintain a mirror of Pinax documentation.
 
-Pinax 是本地优先统一笔记 Agent CLI：Markdown vault 是用户真源，SQLite/GORM 是可重建索引投影，Git 是版本与回滚层，外部平台通过 CLI-backed Provider adapter 接入。
+Pinax is a local-first unified notes Agent CLI: the Markdown vault is the user's source of truth, SQLite/GORM is a rebuildable index projection, the version backend only provides version evidence and the snapshot basis for protected workflows, and external platforms are integrated through CLI-backed Provider adapters.
 
-## 当前状态
+## Current Status
 
-- 当前阶段：本地 notebook core 自用闭环已落地。
-- 当前实现边界：支持本地 init、validate、daily/inbox、note create/list/read/edit/rename/move/archive/delete/tag、组织维度浏览、saved views、SQLite/GORM index、search、links/backlinks/orphans、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize suggest/list/apply、Git snapshot、只读 dashboard repair view 和只读 MCP；provider、briefing 和 cloud 仍需独立 OpenSpec change。
-- 根级设计来源：`openspec/specs/pinax-project-routing/spec.md`、`openspec/changes/pinax-daily-hot-notes-briefing/`。
+- Current phase: local-first notebook workflows are usable from the CLI and ready for external developer evaluation.
+- Current implementation boundary: supports local init, vault validate, daily/inbox/draft, note add/create/list/read/edit/rename/move/archive/delete/tag, shared `NoteDisplay`, project board workspace, organization-dimension browsing, saved views, SQLite/GORM index, search, `pinax note links`/`pinax note backlinks`/`pinax note orphans`, `search --link-target`, attachments, Markdown import/export, template create/render/validate/delete, metadata plan/apply, repair plan/apply, agent organize plan/list/apply, version snapshot, asset manifest registration/validation/planning, read-only dashboard repair view, read-only MCP, localhost REST/RPC projection adapter, and Cloud Sync over server/file/S3/rclone transports. Provider automation and briefing delivery remain experimental.
+- User-visible note paths use vault-relative canonical paths. The default regular note is root-level `foo.md`, and a subdirectory note is `work/foo.md`; the historical `notes/foo.md` is only resolver-compatible input and is not the primary output for CLI, JSON, agent, records, search, or MCP.
+- Planning and implementation tracking lives under `openspec/`; external contributors should start with [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-## 文档分区
+## Bidirectional Relationship Entry Points
 
-- [产品定位](./overview/product-positioning.md)
-- [MVP 范围](./product/mvp-scope.md)
-- [架构边界](./architecture/architecture-boundaries.md)
-- [Go 开发生态设计](./architecture/go-development-ecosystem.md)
-- [CLI 输出合同](./interfaces/cli-output-contract.md)
-- [运行手册](./operations/local-development.md)
+- `pinax note links <ref>` shows outgoing links, supporting `--broken-only`, `--kind`, `--include-ignored`, and `--limit`.
+- `pinax note backlinks <ref>` shows backlinks, supporting `--include-broken` and `--limit`.
+- `pinax note orphans --mode full|no-incoming|no-outgoing` shows fully orphaned notes, notes with no incoming links, or notes with no outgoing links.
+- `pinax search <query> --link-target <note-id|path|title|raw-target>` filters search results by relationship target; when the target is ambiguous, it returns `link_target_ambiguous` and does not automatically select a candidate.
+- The SQLite/GORM index is only a rebuildable projection; first use `pinax index --vault <vault>` to view the summary. When `index_status=missing|stale`, prioritize running `pinax index refresh --vault <vault>`. For structural anomalies, use `pinax index doctor --vault <vault>` to view issues, and, if necessary, then execute `pinax index rebuild --vault <vault>` as prompted. Do not manually write `.pinax/*.json` or index metadata.
+- `repair plan`, `organize plan --save`, and the dashboard only generate manual review recommendations for broken/ambiguous/orphan items; MCP relationship tools are read-only and do not write to the vault, `.pinax/`, Git, providers, or remote state.
 
-## 验证入口
+## Version and Asset Boundaries
 
-只改文档时不默认跑 Go 测试。修改 Go 代码后执行：
+- The version backend is the source of version evidence, not the source of truth for user content. The current main path is `pinax version status/snapshot/history/diff/show/changed/restore/backends`; Git is only an optional backend type and hidden compatibility alias, not the user-visible command terminology.
+- The asset manifest is CLI-authored metadata used to register vault-relative paths, media types, hashes, linked notes, and validation status; asset files themselves are still ordinary migratable files inside the vault. Both the manifest and the SQLite index can be repaired or rebuilt by the CLI and should not be manually written.
+- Sensitive content such as asset payloads, raw diffs, provider payloads, webhook tokens, secret refs, and Authorization/Cookie must not enter stdout, stderr, events, record logs, or fixtures.
+
+## Project Board and Remote Adapter
+
+- `pinax project board show|plan|configure|export` provides a local project workspace. The board is generated from Markdown notes, project metadata, index projections, and saved planning snapshots; the vault remains the source of truth, while TaskBridge and providers are not sources of truth.
+- `pinax project item add|move|archive` writes controlled Markdown through the application service. archive must first have `--yes` and a version snapshot; when missing, it returns a stable `approval_required` or `snapshot_required` projection.
+- `pinax note read/show --display card|detail|context|body`, project board, dashboard, MCP, REST, and RPC reuse the same `NoteDisplay` projection; the default bounded display does not output the full body.
+- `pinax api routes`, `pinax api schema export`, and `pinax api serve --readonly --port 0` are local REST/RPC projection adapters. The server binds to `127.0.0.1` by default and does not provide a public hosted API, CORS, TLS, multi-user permissions, or token auth.
+- Cloud Sync is a separate distributed sync design: every device keeps a local vault, while the Cloud backend coordinates encrypted revisions, blobs, and conflicts. See [Cloud Sync Architecture](./architecture/cloud-sync-design.md).
+
+## Documentation Sections
+
+- [Product Positioning](./overview/product-positioning.md)
+- [MVP Scope](./product/mvp-scope.md)
+- [Architecture Boundaries](./architecture/architecture-boundaries.md)
+- [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
+- [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
+- [CLI Output Contract](./interfaces/cli-output-contract.md)
+- [Local REST/RPC Contract](./interfaces/remote-api-contract.md)
+- [Command Manual](./commands/README.md)
+- [Operations Manual](./operations/local-development.md)
+- [Contributing](../CONTRIBUTING.md)
+- [Security Policy](../SECURITY.md)
+
+## Command Manual
+
+- [Command Map](./commands/README.md): explains what each root command manages by workflow.
+- [organize](./commands/organize.md): describes the organization flow, write boundaries, and snapshot protection for `pinax organize plan/list/apply`.
+- [version](./commands/version.md), [asset](./commands/asset.md), [index](./commands/index.md), and other root commands each maintain independent dedicated pages in the [Command Manual](./commands/README.md).
+
+## Validation Entry Points
+
+When only documentation is changed, Go tests are not run by default. After modifying Go code, run:
 
 ```bash
 go test ./...
 go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 ```
 
-如果已安装 Taskfile，也可以运行：
+If Taskfile is installed, you can also run:
 
 ```bash
 task check

@@ -1,0 +1,42 @@
+# Direct local object-store Cloud Sync e2e: two independent vaults converge and preserve conflicts.
+exec pinax init device-a --title 'Device A' --json
+stdout '"command":"vault.init"'
+exec pinax init device-b --title 'Device B' --json
+stdout '"command":"vault.init"'
+
+exec sh -c 'mkdir -p device-a/notes && printf "# Alpha\n\nfrom device A\n" > device-a/notes/alpha.md'
+
+exec pinax cloud login --endpoint file://$WORK/object-store --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault device-a --json
+stdout '"command":"cloud.login"'
+! stdout 'PINAX_SYNC_SECRET'
+exec pinax cloud login --endpoint file://$WORK/object-store --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault device-b --json
+stdout '"command":"cloud.login"'
+! stdout 'PINAX_SYNC_SECRET'
+
+exec pinax sync push --target cloud --vault device-a --yes --json
+stdout '"command":"sync.push"'
+stdout '"status":"success"'
+stdout '"remote_write":true'
+! stdout 'from device A'
+
+exec pinax sync pull --target cloud --vault device-b --yes --json
+stdout '"command":"sync.pull"'
+stdout '"status":"success"'
+stdout '"remote_write":false'
+stdout '"files_applied":1'
+grep 'from device A' device-b/notes/alpha.md
+
+exec sh -c 'printf "# Alpha\n\nlocal desktop edit\n" > device-b/notes/alpha.md'
+exec sh -c 'printf "# Alpha\n\nupdated from device A\n" > device-a/notes/alpha.md'
+
+exec pinax sync push --target cloud --vault device-a --yes --json
+stdout '"command":"sync.push"'
+stdout '"status":"success"'
+stdout '"remote_write":true'
+! stdout 'updated from device A'
+
+exec pinax sync pull --target cloud --vault device-b --yes --json
+stdout '"command":"sync.pull"'
+stdout '"status":"success"'
+grep 'updated from device A' device-b/notes/alpha.md
+exec sh -c 'grep "local desktop edit" device-b/notes/*.conflict.md'

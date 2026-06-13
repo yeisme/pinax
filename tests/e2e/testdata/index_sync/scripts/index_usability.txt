@@ -1,0 +1,60 @@
+# Index usability commands keep machine output clean in a real process.
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+exec pinax note new Alpha --body 'alpha body' --slug alpha --vault vault --json
+stdout '"command":"note.new"'
+-- vault/notes/raw.md --
+# Raw Markdown
+
+raw-only marker
+
+rm vault/.pinax/index.sqlite
+
+exec pinax index --vault vault --agent
+! stderr .
+stdout 'command=index.summary'
+stdout 'fact.index_status=missing'
+stdout 'action.refresh='
+! stdout '状态'
+! stdout '本地索引'
+
+exec pinax index doctor --vault vault --json
+! stderr .
+stdout '"command":"index.doctor"'
+stdout '"issue_codes":"index_missing"'
+stdout 'pinax index refresh --vault'
+! stdout 'SLOW SQL'
+! stdout 'delete .pinax/index.sqlite'
+
+exec pinax index refresh --vault vault --json
+! stderr .
+stdout '"command":"index.refresh"'
+stdout '"index_status":"fresh"'
+stdout '"failed":"0"'
+
+exec pinax search raw-only --vault vault --json
+! stderr .
+stdout '"returned":"0"'
+
+-- corrupt-index --
+not sqlite
+cp corrupt-index vault/.pinax/index.sqlite
+
+exec pinax index repair --vault vault --kind recreate --dry-run --events
+! stderr .
+stdout '"type":"start"'
+stdout '"type":"end"'
+stdout '"command":"index.repair"'
+! stdout '状态'
+
+exec pinax index repair --vault vault --kind recreate --yes --json
+! stderr .
+stdout '"command":"index.repair"'
+stdout '"index_status":"fresh"'
+stdout '.pinax/index-backups/'
+
+exec pinax index doctor --vault vault --json
+! stderr .
+stdout '"command":"index.doctor"'
+stdout '"status":"success"'
+stdout '"index_status":"fresh"'

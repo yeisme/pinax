@@ -1,111 +1,199 @@
 # Pinax
 
-Pinax 是本地优先的 Markdown 笔记 CLI。Markdown vault 是用户知识资产真源，`.pinax/` 保存由 CLI 或 application service 创建的配置、索引、映射、事件和审计投影。
+Pinax is a local-first Markdown notes CLI for people and agents who want a portable knowledge base instead of another hosted note silo. Your Markdown vault stays the source of truth; `.pinax/` stores CLI-authored config, indexes, receipts, events, and audit projections that can be rebuilt or reviewed.
 
-当前仓库状态是本地 notebook core 闭环：已支持初始化、校验、daily/inbox、note 创建/列表/读取/编辑/单笔维护、组织维度浏览、saved views、SQLite/GORM 索引、搜索、链接/反链/孤儿笔记、附件、Markdown 导入导出、统计、健康检查、本地 dashboard、模板、metadata 补齐、repair 维护计划、agent organize 计划、受 Git snapshot 保护的整理和 repair 应用，以及只读 MCP surface。后续 provider、sync、briefing 和 cloud 能力仍必须先进入 `openspec/changes/<change-id>/`，再按任务验收落地。
+Pinax focuses on safe local workflows: capture notes, index and search them, inspect links and backlinks, plan repairs and organization, snapshot before risky writes, expose bounded JSON/agent output, and sync encrypted revisions through explicit Cloud Sync transports.
 
-## 本地 vault 工作流
+## Status
 
-初始化一个 Markdown vault：
+| Area | Status |
+| --- | --- |
+| Local Markdown vault, notes, journals, inbox/drafts, templates, search, links/backlinks, assets, project boards, repair/organize plans | Supported |
+| CLI output modes: default summary, `--agent`, `--json`, `--events`, `--explain` | Supported |
+| Local dashboard, read-only MCP, localhost REST/RPC adapter | Supported |
+| Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
+| Provider automation and briefing delivery | Experimental |
+
+## Installation
+
+Prerequisites:
+
+- Go 1.26.1 or newer.
+- Optional: [Task](https://taskfile.dev/) for `task check` and local development shortcuts.
+
+Install from source:
+
+```bash
+go install github.com/yeisme/pinax/cmd/pinax@latest
+```
+
+For local development from a checkout:
+
+```bash
+go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
+./dist/pinax version
+```
+
+## Quick start
+
+```bash
+pinax init ./my-notes --title "My Knowledge Base"
+pinax vault validate --vault ./my-notes --json
+pinax note add "Research Log" --body "First note" --tags research --vault ./my-notes
+pinax index refresh --vault ./my-notes --json
+pinax search "First note" --vault ./my-notes --json
+```
+
+See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
+
+## Local vault workflow
+
+Initialize a Markdown vault:
 
 ```bash
 pinax init
-pinax init ./my-notes --title "我的知识库"
-pinax validate --vault ./my-notes --json
+pinax init ./my-notes --title "My Knowledge Base"
+pinax vault validate --vault ./my-notes --json
 ```
 
-`pinax init` 不带参数时初始化当前目录；也可以用 `--vault <path>` 或位置参数指定 vault 路径。
-常规命令支持默认中文摘要、`--agent`、`--json`、`--events` 和 `--explain` 输出模式；这些模式一次只能选择一个。
+When `pinax init` has no arguments, it initializes the current directory; you can also specify the vault path with `--vault <path>` or a positional argument.
 
-查看 vault 统计、健康问题和只读本地 dashboard：
+Register a vault once to make `--vault <TAB>` and default vault selection useful across note commands:
 
 ```bash
-pinax stats --vault ./my-notes
-pinax stats --vault ./my-notes --json
-pinax doctor --vault ./my-notes --stale-after 90d --agent
-pinax dashboard --vault ./my-notes --port 0
+pinax vault register ./my-notes --name work --default
+pinax vault list --json
+pinax note list
+pinax note list --vault work
+pinax vault remote refresh --profile cloud-work --json
+pinax vault remote list --profile cloud-work --json
 ```
 
-`stats` 和 `doctor` 默认只读，不修改 Markdown、`.pinax/`、Git 或远端服务；`dashboard` 只绑定 localhost，并复用同一组 application service projection。
+Shell completion reads only local registry/cache files: it completes registered local aliases and cached remote selectors without contacting remotes, resolving secrets, or writing state.
+Regular commands support default English summaries, `--agent`, `--json`, `--events`, and `--explain` output modes; only one of these modes can be selected at a time.
 
-把健康问题转换为可审查、可保存、受 snapshot 保护的维护动作：
+The new primary path should prefer `pinax vault stats|validate|doctor|dashboard`, `pinax journal daily|weekly|monthly`, and `pinax storage set local|s3`; old root aliases remain compatible with existing scripts.
+
+View vault statistics, health issues, and the read-only local dashboard:
+
+```bash
+pinax vault stats --vault ./my-notes
+pinax vault stats --vault ./my-notes --json
+pinax vault doctor --vault ./my-notes --stale-after 90d --agent
+pinax vault dashboard --vault ./my-notes --port 0
+```
+
+`stats` and `doctor` are read-only by default and do not modify Markdown, `.pinax/`, Git, or remote services; `dashboard` binds only to localhost and reuses the same set of application service projections.
+
+Convert health issues into reviewable, savable, snapshot-protected maintenance actions:
 
 ```bash
 pinax repair plan --vault ./my-notes --json
 pinax repair plan --vault ./my-notes --save --json
-pinax git snapshot --vault ./my-notes --message "repair 前快照"
+pinax version snapshot --vault ./my-notes --message "snapshot before repair"
 pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
-pinax repair apply --vault ./my-notes --plan repair-abc123 --yes --snapshot-message "repair 前快照"
+pinax repair apply --vault ./my-notes --plan repair-abc123 --yes --snapshot-message "snapshot before repair"
 ```
 
-`repair plan` 默认只读；只有 `--save` 会通过 service 写入 `.pinax/repair-plans/<plan_id>.json`。`repair apply` 只执行低风险 metadata、tags、index rebuild 和 archive status 修复，重复标题、空笔记和孤立笔记只生成 manual review，不自动删除、合并或改写正文。Dashboard 的 `/api/repair-plans` 只读展示 saved plans 和 CLI apply 命令。
+`repair plan` is read-only by default; only `--save` writes `.pinax/repair-plans/<plan_id>.json` through the service. `repair apply` only performs low-risk metadata, tags, index rebuild, and archive status fixes. Duplicate titles, broken links, ambiguous links, empty notes, and orphan notes only generate manual review; it does not automatically delete, merge, or rewrite body text. Dashboard `/api/repair-plans` and `/api/graph-summary` provide read-only display of saved plans, relationship health summaries, and CLI apply/rebuild commands.
 
-补齐 note metadata：
+Complete note metadata:
 
 ```bash
 pinax metadata plan --vault ./my-notes --json
 pinax metadata apply --vault ./my-notes --yes
 ```
 
-管理一个 vault 内的多个项目：
+Manage multiple projects inside one vault:
 
 ```bash
-pinax project create research --name "研究" --notes-prefix notes/research --vault ./my-notes
+pinax project create research --name "Research" --notes-prefix notes/research --vault ./my-notes
 pinax project list --vault ./my-notes --json
 pinax project switch research --vault ./my-notes
 ```
 
-管理日常 Markdown 笔记：
+View and maintain the local project board workspace. The board comes from local Markdown, project metadata, SQLite/GORM projections, and saved planning snapshots; it is not a remote Todo provider, and it does not treat TaskBridge as the source of truth:
 
 ```bash
-pinax note create "研究日志" --body "今天的观察" --tags research --status active --dir work --vault ./my-notes
-pinax note create "会议记录" --stdin --vault ./my-notes
-pinax note list --tag research --status active --recent --limit 20 --vault ./my-notes
-pinax note read "研究日志" --vault ./my-notes --json
-pinax note edit "研究日志" --editor "$EDITOR" --vault ./my-notes
-pinax note rename "研究日志" "Pinax 研究日志" --vault ./my-notes
-pinax note move "Pinax 研究日志" archive --vault ./my-notes
-pinax note archive "Pinax 研究日志" --vault ./my-notes
-pinax note tag add "Pinax 研究日志" important --vault ./my-notes
-pinax note delete "Pinax 研究日志" --yes --vault ./my-notes
+pinax project board show research --vault ./my-notes --json
+pinax project board show research --note-display card --vault ./my-notes
+pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault ./my-notes --json
+pinax project board plan research --save --vault ./my-notes --json
+pinax project board export research --format markdown --vault ./my-notes --json
+pinax project item add research "Implement local board" --column next --body "Controlled work item" --vault ./my-notes --json
+pinax project item move research/Implement local board.md doing --vault ./my-notes --json
+pinax version snapshot --vault ./my-notes --message "snapshot before project item archive"
+pinax project item archive research/Implement local board.md --yes --vault ./my-notes --json
 ```
 
-`note show/read/edit/rename/move/archive/delete/tag` 都支持 note id、vault 内路径或唯一标题；标题有多个候选时返回 `note_ref_ambiguous`，避免误改。`note edit/open/new --open` 支持带参数 editor，例如 `--editor "code --wait"`；`note list --recent` 表示按更新时间排序，不隐式过滤旧笔记；`note delete` 默认移动到 `.pinax/trash/YYYYMMDD/` 并在同名冲突时生成唯一目标，真实删除必须同时传 `--hard --yes`。
+`project board show` and `export` are read-only by default and do not write `.pinax/`, Markdown, Git, TaskBridge, or remote providers. `project board plan --save` only writes `.pinax/planning/project-boards/<snapshot_id>.json` as review evidence; `plan weekly --taskbridge --dry-run` reads the next/doing/blocked counts from the latest board snapshot, but does not automatically write board items into TaskBridge. `project item archive` requires `--yes` and an explicit version snapshot.
 
-使用 notebook core 工作流捕获、索引、浏览和搜索：
+Manage daily Markdown notes:
 
 ```bash
-pinax daily open --vault ./my-notes --editor "$EDITOR"
-pinax daily append --body "今日复盘" --vault ./my-notes
-pinax inbox capture "临时想法" --body "先放 inbox" --tags idea --vault ./my-notes
-pinax inbox triage "临时想法" --group work --folder ideas --kind reference --status active --vault ./my-notes
+pinax note add "Research Log" --body "Today's observations" --tags research --status active --dir work --vault ./my-notes
+pinax note add "Meeting Notes" --stdin --vault ./my-notes
+pinax note list --tag research --status active --recent --limit 20 --vault ./my-notes
+pinax note read "Research Log" --vault ./my-notes --json
+pinax note read "Research Log" --display card --vault ./my-notes --json
+pinax note read "Research Log" --display body --vault ./my-notes --json
+pinax note edit "Research Log" --editor "$EDITOR" --vault ./my-notes
+pinax note rename "Research Log" "Pinax Research Log" --vault ./my-notes
+pinax note move "Pinax Research Log" archive --vault ./my-notes
+pinax note archive "Pinax Research Log" --vault ./my-notes
+pinax note tag add "Pinax Research Log" important --vault ./my-notes
+pinax note delete "Pinax Research Log" --yes --vault ./my-notes
+```
 
-pinax index init --vault ./my-notes --json
+`note add` is the recommended entry point for adding notes, while `note new` and `note create` remain compatible aliases. By default, `note list/search/show`, the relationship graph, and the index only process Pinax notes with `schema_version: pinax.note.v1`; ordinary Markdown files in the vault do not automatically become notes just because their extension is `.md`. Use `pinax import markdown ... --yes` to batch adopt external Markdown.
+
+User-visible note paths use vault-relative canonical paths: by default, ordinary notes are output as root-level `foo.md`; after using `--dir work` or move, they are output as `work/foo.md`. The resolver remains compatible with historical `notes/foo.md`, stems, note IDs, and unique title input, but the primary output of CLI/JSON/agent/search/record/MCP consistently uses canonical paths.
+
+`note show/read/edit/rename/move/archive/delete/tag` all support note IDs, paths inside the vault, or unique titles; when a title has multiple candidates, `note_ref_ambiguous` is returned to avoid accidental edits. `note edit/open/new --open` supports editors with arguments, such as `--editor "code --wait"`; `note list --recent` means sorting by update time, not implicitly filtering old notes; `note delete` moves to `.pinax/trash/YYYYMMDD/` by default and generates a unique target on same-name conflicts. Real deletion requires passing both `--hard --yes`.
+
+`note read/show --display card|detail|context|body` uses the shared `NoteDisplay` projection. `card/detail/context` do not output the full body and are suitable for agents, dashboards, MCP, and project boards; only `--display body` puts the body into the local JSON projection.
+
+Use notebook core workflows to capture, index, browse, and search:
+
+```bash
+pinax journal daily open --vault ./my-notes --editor "$EDITOR"
+pinax journal daily append --body "Today's review" --vault ./my-notes
+pinax inbox capture "Temporary idea" --body "Put it in inbox first" --tags idea --vault ./my-notes
+pinax inbox triage "Temporary idea" --group work --folder ideas --kind reference --status active --vault ./my-notes
+
+pinax index --vault ./my-notes
+pinax index refresh --vault ./my-notes --json
+pinax index doctor --vault ./my-notes --agent
 pinax index rebuild --vault ./my-notes --json
-pinax index status --vault ./my-notes --agent
-pinax search "认证" --tag auth --group work --folder architecture --kind reference --status active --vault ./my-notes --json
+pinax search "authentication" --tag auth --group work --folder architecture --kind reference --status active --vault ./my-notes --json
 
-pinax tag list --vault ./my-notes --json
-pinax folder list --vault ./my-notes --json
-pinax kind list --vault ./my-notes --json
-pinax group list --vault ./my-notes --json
+pinax note tags --vault ./my-notes --json
+pinax note folders --vault ./my-notes --json
+pinax note kinds --vault ./my-notes --json
+pinax note groups --vault ./my-notes --json
 pinax view save active-work --group work --status active --kind reference --sort updated --vault ./my-notes --json
 pinax view show active-work --vault ./my-notes --json
 ```
 
-检查本地 Markdown 关系和附件：
+Check local Markdown relationships and attachments:
 
 ```bash
-pinax note links "认证方案" --vault ./my-notes --json
-pinax note backlinks "认证方案" --vault ./my-notes --json
-pinax note orphans --vault ./my-notes --json
-pinax note attach "认证方案" ./diagram.png --vault ./my-notes --json
-pinax note attachments "认证方案" --vault ./my-notes --json
+pinax note links "Authentication Plan" --vault ./my-notes --json
+pinax note links "Authentication Plan" --broken-only --vault ./my-notes --json
+pinax note backlinks "Authentication Plan" --include-broken --vault ./my-notes --json
+pinax note orphans --mode full --vault ./my-notes --json
+pinax search "authentication" --link-target notes/design/auth.md --vault ./my-notes --json
+pinax note attach "Authentication Plan" ./diagram.png --vault ./my-notes --json
+pinax note attachments "Authentication Plan" --vault ./my-notes --json
 ```
 
-`note attach` 会复制文件到 vault 内 `attachments/` 并追加 Markdown 引用；源文件缺失返回 `attachment_source_missing`，不会修改笔记正文或附件目录。
+`pinax note links` parses `[[Title]]`, `[[Title|Alias]]`, `[[Title#Heading]]`, and Markdown relative links; external URLs, `mailto:`, plain headings, and non-Markdown attachments are not treated as note edges. Relationship statuses include `resolved`, `broken`, `ambiguous`, `external`, and `ignored`: broken links mean the target does not exist, and ambiguous means multiple title or alias candidates; Pinax does not guess for the user. `pinax note orphans` modes `--mode full|no-incoming|no-outgoing` respectively view completely isolated notes, notes with no incoming links, and notes with no outgoing links; `search --link-target` supports filtering by resolved note ID/path/title or unresolved raw target, and returns `link_target_ambiguous` when ambiguous.
 
-导入和导出本地 Markdown bundle：
+The SQLite/GORM index is a rebuildable projection, not the note source of truth; the Markdown vault remains the source of truth. `pinax index --vault ./my-notes` summarizes index state and recommends next steps; when missing/stale, prefer running the low-cost `pinax index refresh --vault ./my-notes`; for structural exceptions or corrupt projections, first use `pinax index doctor --vault ./my-notes` to view issues, then follow prompts to run `repair --dry-run` or an explicit `rebuild`. `pinax note links`, `pinax note backlinks`, `pinax note orphans`, and `search --link-target` prefer a fresh index; when the index is unavailable, they fall back to scanning Markdown and provide executable actions.
+
+`note attach` copies files into `attachments/` inside the vault and appends a Markdown reference; if the source file is missing, it returns `attachment_source_missing` and does not modify the note body or attachment directory.
+
+Import and export local Markdown bundles:
 
 ```bash
 pinax import markdown ./source --group research --tags imported --dry-run --vault ./my-notes --json
@@ -114,63 +202,142 @@ pinax import markdown ./source/beta.md --group research --conflict overwrite --y
 pinax export markdown ./out --tag imported --vault ./my-notes --json
 ```
 
-`import markdown --dry-run` 不写 notes、receipt、Git 或 provider 状态；apply 通过 service 写 `.pinax/receipts/import-*.json`。`export markdown` 按 note filters 导出 Markdown 和引用附件，并写 `.pinax/receipts/export-*.json`。
+`import markdown --dry-run` does not write notes, receipts, Git, or provider state; apply writes `.pinax/receipts/import-*.json` through the service. `export markdown` exports Markdown and referenced attachments according to note filters, and writes `.pinax/receipts/export-*.json`.
 
 
-管理 Markdown 模板并用模板生成笔记：
+Manage Markdown templates and generate notes from templates:
 
 ```bash
 pinax template init --vault ./my-notes
-pinax template create "视频学习" --vault ./my-notes
+pinax template list --pack starter --vault ./my-notes --json
+pinax template recommend --intent "meeting sync" --vault ./my-notes --json
+pinax journal daily show --date 2026-06-08 --template journal.daily --vault ./my-notes --json
+pinax index page create home --template index.home --vault ./my-notes --json
+pinax note add "Client Meeting" --template meeting.notes --tags meeting,client --vault ./my-notes --json
+pinax template create "Video Learning" --vault ./my-notes
 pinax template create meeting --body "# {{title}} - {{client}}" --vault ./my-notes
-pinax template validate meeting --vault ./my-notes --json
-pinax template render meeting --title "客户会议" --var client=Acme --vault ./my-notes --json
-pinax note new "客户会议" --template meeting --var client=Acme --tags meeting,client --vault ./my-notes
-pinax template delete meeting --vault ./my-notes --yes
+pinax template create weekly --engine go-template --body "# {{ .Title }}
+{{ .Vars.client }}" --vault ./my-notes
+pinax template inspect weekly --vault ./my-notes --json
+pinax template preview weekly --title "Client Meeting" --var client=Acme --vault ./my-notes --agent
+pinax template render weekly --title "Client Meeting" --var client=Acme --save-run weekly-demo --vault ./my-notes --json
+pinax template render weekly --run weekly-demo --vault ./my-notes --json
+pinax template inspect weekly --runs --vault ./my-notes --json
+pinax note new "Client Meeting" --template weekly --var client=Acme --tags meeting,client --vault ./my-notes
+pinax template runs prune weekly --keep 20 --dry-run --vault ./my-notes --json
+pinax template runs repair --vault ./my-notes --json
+pinax template delete weekly --vault ./my-notes --yes
 ```
 
-模板保存在 `.pinax/templates/*.md`，是普通 Markdown 文本。`pinax template create <name>` 不带 `--from`、`--body` 或 `--stdin` 时会创建一篇带 `pinax.template_design.v1` YAML frontmatter 的模板设计文档。变量只做 `{{name}}` 安全文本替换，不执行脚本、不读取环境变量、不访问网络。
+Templates are stored in `.pinax/templates/*.md` and are ordinary Markdown text. Legacy templates continue to support simple tokens such as `{{title}}` and `{{client}}`; after declaring `schema_version: pinax.template.v2` and `engine: go-template`, they use Go `text/template` syntax. Use `template inspect` to view variable schemas, query facts, and render runs. Template functions are allowlisted: they do not execute scripts, read environment variables, or access the network.
 
-配置 storage backend。S3 当前是 backend profile 和诊断能力，不会连接公网或保存 secret：
+Built-in templates are divided into journal, index, and note starter packs: `journal.daily|weekly|monthly` create root-level journals, `index.home` and topic index pages only refresh `pinax:managed` managed blocks, and starter templates such as `note.quick`, `inbox.capture`, and `learning.video` are suitable for quick capture. `template list --pack starter` and `template recommend --intent <intent>` are the recommended entry points for choosing templates; JSON/agent output from `template inspect <name>` gives next-step actions, and template names, `--template`, `--var`, and render runs support shell Tab completion.
+
+Query-backed templates use Pinax SQL, not raw SQLite. Templates can declare `language: sql` in `queries` in v2 frontmatter, or use `pinax-sql` fenced blocks in the body; `template inspect` only explains, while `template preview/render` executes bounded queries and puts results into `.Queries`, such as `{{ table .Queries.active }}` or `{{ list .Queries.active "title" }}`.
 
 ```bash
-pinax storage set-local --root ./my-notes --vault ./my-notes
-pinax storage set-s3 --bucket notes --region us-east-1 --prefix pinax/ --profile work --vault ./my-notes --json
+pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 5' --lazy-index --vault ./my-notes --json
+pinax template preview project-dashboard --vault ./my-notes --json
+```
+
+For formal rendering, use `--save-run <name>` to save a redacted receipt, `rendered.md`, and scope `index.json` in `.pinax/renders/templates/<template>/<run-id>/`; `--run <name-or-id>` reuses historical parameters and re-renders against the current vault. `latest` and aliases in the same scope can be used for shell completion.
+
+Notes also support source/rendered views and controlled write-back:
+
+```bash
+pinax note show projects/dashboard.md --view source --vault ./my-notes --json
+pinax note show projects/dashboard.md --view rendered --vault ./my-notes --json
+pinax note refresh projects/dashboard.md --rendered --save-run dashboard-latest --yes --vault ./my-notes --json
+pinax note show projects/dashboard.md --view rendered --snapshot latest --vault ./my-notes --json
+pinax note show projects/dashboard.md --runs --vault ./my-notes --json
+```
+
+`note show --view rendered` read-only executes restricted `pinax-sql` blocks and does not write Markdown, `.pinax/`, Git, or providers. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->`, preserving source `pinax-sql` blocks and user body text; note-scoped render runs are saved in `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
+
+Configure the storage backend for vault artifacts and diagnostics. S3-compatible configuration stores non-secret profile metadata; credentials stay in the provider profile or environment:
+
+```bash
+pinax storage set local --root ./my-notes --vault ./my-notes
+pinax storage set s3 --bucket notes --region us-east-1 --prefix pinax/ --profile work --vault ./my-notes --json
 pinax storage doctor --vault ./my-notes --json
 ```
 
-整理结构前先预览并创建显式 Git snapshot：
+Preview and create an explicit version snapshot before organizing structure:
 
 ```bash
 pinax organize plan --vault ./my-notes --json
-pinax git snapshot --vault ./my-notes --message "整理前快照"
+pinax version snapshot --vault ./my-notes --message "snapshot before organize"
 pinax organize apply --vault ./my-notes --yes
 ```
 
-也可以在 apply 时提供 snapshot message，让 Pinax 先创建保护快照再落地：
+You can also provide a snapshot message during apply, so Pinax creates a protective snapshot before applying changes:
 
 ```bash
-pinax organize apply --vault ./my-notes --yes --snapshot-message "整理前快照"
+pinax organize apply --vault ./my-notes --yes --snapshot-message "snapshot before organize"
 ```
 
-Agent 可生成可审查 organize plan，而不是直接改笔记：
+Agents can generate reviewable organize plans instead of directly modifying notes:
 
 ```bash
-pinax organize suggest --vault ./my-notes --json
-pinax organize suggest --vault ./my-notes --save --agent
+pinax organize plan --vault ./my-notes --json
+pinax organize plan --vault ./my-notes --save --agent
 pinax organize list --vault ./my-notes --json
-pinax organize apply --vault ./my-notes --plan organize-abc123 --yes --snapshot-message "整理前快照" --json
+pinax organize apply --vault ./my-notes --plan organize-abc123 --yes --snapshot-message "snapshot before organize" --json
 ```
 
-`organize suggest` 会生成 move、tag_patch、kind_patch、status_patch、link_resolution、attachment_repair 和 manual_review 操作；`organize apply --plan` 只执行受 snapshot 保护的低风险 move，其它操作保留给人工或后续专门 apply。
+`organize plan --save` generates move, tag_patch, kind_patch, status_patch, link_resolution, link_rewrite, orphan_review, attachment_repair, and manual_review operations; `organize apply --plan` only executes low-risk moves protected by snapshots, leaving other operations for humans or future dedicated apply flows. The old `organize suggest` entry point remains compatible with existing scripts, but is no longer shown as the primary path.
 
-启动只读 MCP surface：
+Start the read-only MCP surface:
 
 ```bash
 pinax mcp serve --vault ./my-notes
 ```
 
-## 本地验证
+The local REST/RPC projection adapter binds only to localhost and only reuses application service projections; it is not a public hosted API. The root path returns a small discovery projection, while `/v1/capabilities` lists callable REST/RPC capabilities:
+
+```bash
+pinax api routes --vault ./my-notes --json
+pinax api schema export --format openapi --vault ./my-notes --json
+pinax api serve --readonly --no-auth --port 8787 --vault ./my-notes
+curl -s http://127.0.0.1:8787/
+curl -s http://127.0.0.1:8787/v1/capabilities
+```
+
+REST `GET /v1/projects/{slug}/board`, RPC `Pinax.ProjectBoard.Show`, and the MCP board tool return the same class of bounded board projection; write-like remote calls only return dry-run/plan, `approval_required`, or `snapshot_required` by default. Real Markdown changes still go through explicit CLI commands.
+
+## Cloud Sync preview
+
+Pinax Cloud Sync is separate from `pinax api serve`. The Local API exposes one centralized vault through REST/RPC; Cloud Sync is a distributed protocol where each device keeps its own local vault and exchanges encrypted revisions, manifests, and blobs through a selected transport.
+
+Configure a direct object-store transport and sync two local devices:
+
+```bash
+pinax init ./device-a --title "Device A"
+pinax init ./device-b --title "Device B"
+mkdir -p ./device-a/notes
+printf '# Alpha\n\nfrom device A\n' > ./device-a/notes/alpha.md
+pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax sync push --target cloud --vault ./device-a --yes --json
+pinax sync pull --target cloud --vault ./device-b --yes --json
+```
+
+S3-compatible storage uses the same Cloud Sync protocol without a Pinax Cloud Server:
+
+```bash
+pinax cloud backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes
+pinax cloud doctor --vault ./my-notes --json
+```
+
+Server and rclone backends are explicit transports, not aliases for Local API. Server transport uses `internal/cloudclient.Transport` so Pinax Cloud can own auth/audit/policy, while rclone direct transport uses the shared object-store sync path for providers such as OneDrive. Native Microsoft Graph is a separate future transport.
+
+`remote_write=true` is valid only after the selected transport durably commits a revision and Pinax writes local sync-state evidence. Dry-runs, plans, blob uploads, failed or unsupported transport operations, and pull operations keep `remote_write=false`.
+
+See [cloud command docs](./docs/commands/cloud.md), [sync command docs](./docs/commands/sync.md), and [Cloud Sync architecture](./docs/architecture/cloud-sync-design.md).
+
+MCP tools and resources are read-only, including `pinax.note.links`, `pinax.note.backlinks`, `pinax.note.context`, and `pinax.vault.graph_summary`. They reuse the CLI relationship projection and return bounded facts, candidate summaries, and next-step commands. They do not return full note bodies and do not write Markdown, `.pinax/`, Git, providers, or remote state.
+
+## Local validation
 
 ```bash
 task build
@@ -178,7 +345,7 @@ task test
 task check
 ```
 
-没有安装 `task` 时，使用等价命令：
+When `task` is not installed, use the equivalent commands:
 
 ```bash
 go test ./...
@@ -186,9 +353,16 @@ go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 openspec validate --all
 ```
 
-## 文档入口
+## Documentation entry points
 
-- [子项目指令](./AGENTS.md)
-- [文档地图](./docs/README.md)
-- [Go 开发生态设计](./docs/architecture/go-development-ecosystem.md)
-- [OpenSpec](./openspec/config.yaml)
+- [Documentation map](./docs/README.md)
+- [Product positioning](./docs/overview/product-positioning.md)
+- [Command manual](./docs/commands/README.md)
+- [Architecture boundaries](./docs/architecture/architecture-boundaries.md)
+- [Local development](./docs/operations/local-development.md)
+- [Contributing](./CONTRIBUTING.md)
+- [Security policy](./SECURITY.md)
+
+## License
+
+No open-source license has been selected yet. Before publishing this repository as open source, add a `LICENSE` file and update this section with the chosen license.

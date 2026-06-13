@@ -1,0 +1,120 @@
+# Project board workspace through the real CLI.
+exec pinax init vault --title Vault --json
+! stderr .
+stdout '"command":"vault.init"'
+
+exec pinax project create research --name 研究 --notes-prefix research --vault vault --json
+! stderr .
+stdout '"command":"project.create"'
+
+exec pinax note add 看板任务 --project research --kind task --status active --body '正文不能进 card' --vault vault --json
+! stderr .
+stdout '"command":"note.new"'
+stdout '"path":"research/看板任务.md"'
+
+exec pinax note add 阻塞任务 --project research --kind task --status blocked --body 等待接口 --vault vault --json
+! stderr .
+stdout '"command":"note.new"'
+
+exec pinax project board show research --note-display card --vault vault --json
+! stderr .
+stdout '"command":"project.board.show"'
+stdout '"project":"research"'
+stdout '"next":"1"'
+stdout '"blocked":"1"'
+stdout '"note_display":"card"'
+! stdout '"body"'
+
+exec pinax note read research/看板任务.md --display card --vault vault --json
+! stderr .
+stdout '"display":"card"'
+stdout '"excerpt"'
+! stdout '"body"'
+
+exec pinax note read research/看板任务.md --display detail --vault vault --json
+! stderr .
+stdout '"display":"detail"'
+stdout '"excerpt"'
+! stdout '"body"'
+
+exec pinax note read research/看板任务.md --display context --vault vault --json
+! stderr .
+stdout '"display":"context"'
+stdout '"excerpt"'
+! stdout '"body"'
+
+exec pinax note read research/看板任务.md --display body --vault vault --json
+! stderr .
+stdout '"display":"body"'
+stdout '正文不能进 card'
+
+exec pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault vault --json
+! stderr .
+stdout '"command":"project.board.configure"'
+stdout '"saved_path":".pinax/project-boards/research.json"'
+exists vault/.pinax/project-boards/research.json
+grep '"schema_version":"pinax.project_board.v1"' vault/.pinax/project-boards/research.json
+
+exec pinax project board plan research --save --vault vault --json
+! stderr .
+stdout '"command":"project.board.plan"'
+stdout '"saved_path":".pinax/planning/project-boards/'
+
+exec pinax plan weekly --taskbridge --dry-run --vault vault --json
+! stderr .
+stdout '"command":"plan.weekly"'
+stdout '"board_snapshot_id":"project-board-'
+stdout '"board_next":"1"'
+stdout '"board_blocked":"1"'
+
+exec pinax project board export research --format markdown --vault vault --json
+! stderr .
+stdout '"command":"project.board.export"'
+stdout '## next'
+stdout '看板任务'
+
+exec pinax project item add research '实现 item flow' --column next --body 受控工作项 --vault vault --json
+! stderr .
+stdout '"command":"project.item.add"'
+stdout '"column":"next"'
+stdout '"item_id":"item_'
+
+exec pinax project item move research/实现-item-flow.md doing --vault vault --json
+! stderr .
+stdout '"command":"project.item.move"'
+stdout '"column":"doing"'
+
+! exec pinax project item move research/实现-item-flow.md done --vault vault --json
+stdout '"code":"approval_required"'
+
+! exec pinax project item move research/实现-item-flow.md done --yes --vault vault --json
+stdout '"code":"snapshot_required"'
+stdout 'pinax version snapshot'
+
+exec pinax version snapshot --vault vault --message checkpoint --json
+! stderr .
+stdout '"command":"version.snapshot"'
+
+exec pinax project item move research/实现-item-flow.md done --yes --vault vault --json
+! stderr .
+stdout '"command":"project.item.move"'
+stdout '"column":"done"'
+
+! exec pinax project item archive research/实现-item-flow.md --vault vault --json
+stdout '"code":"approval_required"'
+
+exec pinax project item archive research/实现-item-flow.md --yes --vault vault --json
+! stderr .
+stdout '"command":"project.item.archive"'
+stdout '"column":"done"'
+
+exec pinax api routes --vault vault --json
+! stderr .
+stdout '"command":"api.routes"'
+stdout '/v1/projects/{slug}/board'
+stdout 'project.board.show'
+
+exec pinax api schema export --format openapi --vault vault --json
+! stderr .
+stdout '"command":"api.schema.export"'
+stdout '"openapi":"3.1.0"'

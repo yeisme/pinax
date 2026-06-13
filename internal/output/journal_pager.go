@@ -72,7 +72,7 @@ func (m JournalPagerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m JournalPagerModel) View() string {
 	header := journalHeaderStyle.Render(fmt.Sprintf("%s  %s", m.projection.Facts["period"], m.projection.Facts["date"]))
 	path := journalMutedStyle.Render(m.projection.Facts["path"])
-	footer := journalMutedStyle.Render("PgUp/← 上一篇  PgDn/→ 下一篇  q 退出")
+	footer := journalMutedStyle.Render("PgUp/← Previous  PgDn/→ Next  q Quit")
 	if m.err != nil {
 		footer = journalErrorStyle.Render(m.err.Error()) + "\n" + footer
 	}

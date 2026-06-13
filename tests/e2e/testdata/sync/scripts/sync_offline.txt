@@ -1,0 +1,21 @@
+# Test sync offline using fake CLIs and verify event stream contracts
+exec pinax init vault --title Vault --json
+
+# Verify fake-lark-cli is injected and in PATH
+exec lark-cli status
+stdout '"status":"ok"'
+stdout '"provider":"feishu"'
+
+# Verify fake-ntn is injected and in PATH
+exec ntn status
+stdout '"status":"ok"'
+stdout '"provider":"notion"'
+
+# Login and verify sync --events outputs start and end contracts
+exec pinax cloud login --endpoint http://localhost --workspace ws_123 --device dev_laptop --secret-ref op://pinax/cloud-token --vault vault --json
+
+exec pinax sync push --target cloud --events --dry-run --vault vault
+stdout '"type":"start"'
+stdout '"type":"end"'
+stdout '"status":"success"'
+stdout '"command":"sync.push"'

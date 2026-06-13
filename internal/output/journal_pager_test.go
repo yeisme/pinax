@@ -35,7 +35,7 @@ func TestJournalPagerNavigation(t *testing.T) {
 		t.Fatalf("pgup did not load previous journal: model=%#v loaded=%#v", model.projection.Facts, loaded)
 	}
 	view := model.View()
-	for _, want := range []string{"daily", "2026-06-05", "PgUp", "PgDn", "q 退出", "正文 2026-06-05"} {
+	for _, want := range []string{"daily", "2026-06-05", "PgUp", "PgDn", "q Quit", "Body 2026-06-05"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("journal pager view missing %q:\n%s", want, view)
 		}
@@ -43,8 +43,8 @@ func TestJournalPagerNavigation(t *testing.T) {
 }
 
 func journalProjection(date string) domain.Projection {
-	note := domain.Note{Title: "Daily " + date, Path: fmt.Sprintf("notes/daily/%s.md", date), Body: "正文 " + date}
-	projection := domain.NewProjection("daily.show", "Daily note 已读取。")
+	note := domain.Note{Title: "Daily " + date, Path: fmt.Sprintf("notes/daily/%s.md", date), Body: "Body " + date}
+	projection := domain.NewProjection("daily.show", "Daily note loaded.")
 	projection.Facts["period"] = "daily"
 	projection.Facts["date"] = date
 	projection.Facts["path"] = note.Path

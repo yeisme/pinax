@@ -1,0 +1,114 @@
+# Version, asset, index lookup, and resolver workflows through the real CLI.
+exec pinax init vault --title Vault --json
+! stderr .
+stdout '"command":"vault.init"'
+
+exec pinax note new Yeisme --body 'registered note body' --slug yeisme --vault vault --json
+! stderr .
+stdout '"command":"note.new"'
+
+exec pinax note show yeisme --vault vault --json
+! stderr .
+stdout '"command":"note.show"'
+stdout 'yeisme.md'
+
+exec pinax metadata plan yeisme --vault vault --json
+! stderr .
+stdout '"command":"metadata.plan"'
+stdout '"writes":"false"'
+stdout 'yeisme.md'
+
+cp yeisme-draft.md vault/notes/yeisme-draft.md
+cp draft.md vault/notes/draft.md
+cp shared-a.md vault/notes/shared-a.md
+cp shared-b.md vault/notes/shared-b.md
+
+exec pinax asset add diagram.png --vault vault --json
+! stderr .
+stdout '"command":"asset.add"'
+stdout '"path":"assets/diagram.png"'
+! stdout 'raw-diff-secret'
+! stdout 'provider-payload'
+
+exec pinax index refresh --vault vault --json
+! stderr .
+stdout '"command":"index.refresh"'
+stdout '"index_status":"fresh"'
+
+exec pinax index lookup yeisme --scope all --vault vault --json
+! stderr .
+stdout '"command":"index.lookup"'
+stdout '"object_kind":"note"'
+stdout '"object_kind":"file"'
+stdout '"managed_status":"registered"'
+stdout '"managed_status":"adoptable"'
+
+exec pinax index lookup diagram --kind asset --scope all --vault vault --agent
+! stderr .
+stdout 'command=index.lookup'
+stdout 'fact.kind=asset'
+stdout 'candidate.1.object_kind=asset'
+stdout 'candidate.1.path=assets/diagram.png'
+
+exec pinax record adopt yeisme --plan --vault vault --json
+! stderr .
+stdout '"command":"record.adopt"'
+stdout '"writes":"false"'
+stdout 'notes/yeisme-draft.md'
+
+! exec pinax record adopt shared --plan --vault vault --json
+! stderr .
+stdout '"command":"record.adopt"'
+stdout '"code":"vault_object_ref_ambiguous"'
+stdout 'notes/shared-a.md'
+stdout 'notes/shared-b.md'
+
+exec pinax version snapshot --vault vault --message checkpoint --json
+! stderr .
+stdout '"command":"version.snapshot"'
+stdout '"version_backend":"local"'
+stdout '"snapshot_id"'
+
+exec pinax version status --vault vault --agent
+! stderr .
+stdout 'command=version.status'
+stdout 'fact.version_backend=local'
+stdout 'fact.last_snapshot_id='
+
+! exec pinax version diff --base raw-diff-secret --target provider-payload --vault vault --json
+! stderr .
+stdout '"command":"version.diff"'
+stdout '"code":"version_read_unavailable"'
+! stdout 'raw-diff-secret'
+! stdout 'provider-payload'
+! stdout '@@'
+! stdout 'Authorization'
+
+! exec pinax index refresh --changed-since fake-revision --vault vault --json
+! stderr .
+stdout '"command":"index.refresh"'
+stdout '"code":"version_changed_paths_unavailable"'
+! stdout 'fake-revision'
+
+exists vault/.pinax/version/snapshots
+exists vault/.pinax/assets/manifest.json
+exists vault/.pinax/index.sqlite
+
+-- diagram.png --
+pinax-binary raw-diff-secret provider-payload
+-- yeisme-draft.md --
+# Yeisme Draft
+
+unmanaged duplicate candidate
+-- draft.md --
+# Draft
+
+draft unmanaged markdown
+-- shared-a.md --
+# Shared A
+
+shared unmanaged markdown
+-- shared-b.md --
+# Shared B
+
+shared unmanaged markdown

@@ -1,0 +1,58 @@
+# Test token and secret redaction during login and sync commands, including error scenarios
+exec pinax init vault --title Vault --json
+
+# 1. Login with a sensitive secret-ref and verify it is redacted from all output modes
+exec pinax cloud login --endpoint http://localhost --workspace ws_123 --device dev_laptop --secret-ref op://pinax/my-secret-token-12345 --vault vault --json
+! stdout 'my-secret-token-12345'
+! stdout 'op://'
+
+exec pinax cloud status --vault vault --agent
+! stdout 'my-secret-token-12345'
+! stdout 'op://'
+
+# 2. Direct sync receipt/log redaction with raw note body, raw path, headers, token, provider payload/stderr
+exec sh -c 'mkdir -p vault/notes && printf "# Secret\n\nPLAINTEXT_NOTE_BODY Authorization: Bearer raw-token-123 Cookie: c provider payload provider stderr\n" > vault/notes/raw-secret-path.md'
+exec pinax cloud login --endpoint file://$WORK/object-store --workspace ws_123 --device dev_laptop --secret-ref op://pinax/my-secret-token-12345 --vault vault --json
+exec sh -c 'pinax sync push --target cloud --yes --path-policy hash --vault vault --json > push.json'
+validate-json-envelope push.json
+grep '"schema_version":"pinax.sync_run.v1"' push.json
+! grep 'PLAINTEXT_NOTE_BODY' push.json
+! grep 'raw-secret-path.md' push.json
+! grep 'raw-token-123' push.json
+! grep 'Authorization' push.json
+! grep 'Cookie' push.json
+! grep 'provider payload' push.json
+! grep 'provider stderr' push.json
+! grep 'op://' push.json
+exec sh -c 'pinax sync logs list --vault vault --json > logs.json'
+validate-json-envelope logs.json
+! grep 'PLAINTEXT_NOTE_BODY' logs.json
+! grep 'raw-secret-path.md' logs.json
+! grep 'raw-token-123' logs.json
+! grep 'Authorization' logs.json
+! grep 'Cookie' logs.json
+! grep 'provider payload' logs.json
+! grep 'provider stderr' logs.json
+! grep 'op://' logs.json
+! grep 'PLAINTEXT_NOTE_BODY' vault/.pinax/events.jsonl
+! grep 'raw-secret-path.md' vault/.pinax/events.jsonl
+! grep 'raw-token-123' vault/.pinax/events.jsonl
+! grep 'Authorization' vault/.pinax/events.jsonl
+! grep 'Cookie' vault/.pinax/events.jsonl
+! grep 'provider payload' vault/.pinax/events.jsonl
+! grep 'provider stderr' vault/.pinax/events.jsonl
+! grep 'op://' vault/.pinax/events.jsonl
+
+# 2. Trigger sync error without --yes/--dry-run and assert no sensitive token leakage in events/error output
+! exec pinax sync push --target cloud --events --vault vault
+! stdout 'my-secret-token-12345'
+! stdout 'op://'
+! stderr 'my-secret-token-12345'
+! stderr 'op://'
+
+# 3. Trigger sync with bad target to cause CLI error and verify no token leakage
+! exec pinax sync push --target invalid-target --vault vault
+! stdout 'my-secret-token-12345'
+! stdout 'op://'
+! stderr 'my-secret-token-12345'
+! stderr 'op://'

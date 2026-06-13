@@ -5,6 +5,17 @@ type Action struct {
 	Command string `json:"command"`
 }
 
+type StableErrorCode = string
+
+const (
+	ErrorCodeVaultObjectRefAmbiguous        StableErrorCode = "vault_object_ref_ambiguous"
+	ErrorCodeVersionReadUnavailable         StableErrorCode = "version_read_unavailable"
+	ErrorCodeVersionChangedPathsUnavailable StableErrorCode = "version_changed_paths_unavailable"
+	ErrorCodeAssetNotFound                  StableErrorCode = "asset_not_found"
+	ErrorCodeAssetRefAmbiguous              StableErrorCode = "asset_ref_ambiguous"
+	ErrorCodeAssetPayloadForbidden          StableErrorCode = "asset_payload_forbidden"
+)
+
 type CommandError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -31,18 +42,214 @@ type Projection struct {
 	Error       *CommandError     `json:"error,omitempty"`
 }
 
+// VaultObjectKind identifies the kind of vault object returned by shared resolver paths.
+type VaultObjectKind = string
+
+const (
+	VaultObjectKindNote  VaultObjectKind = "note"
+	VaultObjectKindAsset VaultObjectKind = "asset"
+	VaultObjectKindFile  VaultObjectKind = "file"
+)
+
+// ManagedStatus describes whether a vault object is already managed by Pinax metadata.
+type ManagedStatus = string
+
+const (
+	ManagedStatusRegistered ManagedStatus = "registered"
+	ManagedStatusAdoptable  ManagedStatus = "adoptable"
+	ManagedStatusManaged    ManagedStatus = "managed"
+	ManagedStatusUnmanaged  ManagedStatus = "unmanaged"
+	ManagedStatusMissing    ManagedStatus = "missing"
+)
+
+// MatchField records which object field matched a user query.
+type MatchField = string
+
+const (
+	MatchFieldNoteID   MatchField = "note_id"
+	MatchFieldAssetID  MatchField = "asset_id"
+	MatchFieldPath     MatchField = "path"
+	MatchFieldFilename MatchField = "filename"
+	MatchFieldStem     MatchField = "stem"
+	MatchFieldTitle    MatchField = "title"
+	MatchFieldAlias    MatchField = "alias"
+	MatchFieldContent  MatchField = "content"
+	MatchFieldSHA256   MatchField = "sha256"
+)
+
+// VaultObjectCandidate is the stable resolver candidate shape shared by lookup, notes, records, assets, and version plans.
+type VaultObjectCandidate struct {
+	ObjectKind    VaultObjectKind `json:"object_kind"`
+	Path          string          `json:"path"`
+	Title         string          `json:"title,omitempty"`
+	NoteID        string          `json:"note_id,omitempty"`
+	AssetID       string          `json:"asset_id,omitempty"`
+	ManagedStatus ManagedStatus   `json:"managed_status"`
+	MatchFields   []MatchField    `json:"match_fields"`
+	Score         int             `json:"score"`
+	MediaType     string          `json:"media_type,omitempty"`
+	IndexStatus   string          `json:"index_status,omitempty"`
+}
+
+// ResolverFacts captures compact resolver evidence for command facts and JSON data.
+type ResolverFacts struct {
+	Query       string     `json:"query,omitempty"`
+	Scope       string     `json:"scope,omitempty"`
+	Kind        string     `json:"kind,omitempty"`
+	Candidates  int        `json:"candidates,omitempty"`
+	MatchField  MatchField `json:"match_field,omitempty"`
+	Ambiguous   bool       `json:"ambiguous,omitempty"`
+	IndexStatus string     `json:"index_status,omitempty"`
+}
+
+// VersionCapabilities declares which version operations a backend can serve.
+type VersionCapabilities struct {
+	SnapshotSupported     bool `json:"snapshot_supported"`
+	ChangedPathsSupported bool `json:"changed_paths_supported"`
+	ReadAtRevision        bool `json:"read_at_revision_supported"`
+	DiffSupported         bool `json:"diff_supported"`
+}
+
+// VersionStatus is the stable status projection for the active vault version backend.
+type VersionStatus struct {
+	Backend         string              `json:"backend"`
+	Capabilities    VersionCapabilities `json:"capabilities"`
+	WorktreeState   string              `json:"worktree_state"`
+	CurrentRevision string              `json:"current_revision,omitempty"`
+	LastSnapshotID  string              `json:"last_snapshot_id,omitempty"`
+	LastSnapshotAt  string              `json:"last_snapshot_at,omitempty"`
+}
+
+// VersionSnapshot records vault content evidence created by a version backend.
+type VersionSnapshot struct {
+	SnapshotID  string        `json:"snapshot_id"`
+	Backend     string        `json:"backend"`
+	Message     string        `json:"message"`
+	CreatedAt   string        `json:"created_at"`
+	Files       int           `json:"files"`
+	Bytes       int64         `json:"bytes"`
+	ContentHash string        `json:"content_hash"`
+	LedgerSeq   uint64        `json:"ledger_seq,omitempty"`
+	IndexEpoch  uint64        `json:"index_epoch,omitempty"`
+	FileFacts   []ChangedPath `json:"file_facts,omitempty"`
+	Evidence    []string      `json:"evidence"`
+}
+
+// ChangedPath describes a backend-reported changed vault path candidate.
+type ChangedPath struct {
+	Path         string          `json:"path"`
+	ChangeKind   string          `json:"change_kind,omitempty"`
+	ModifiedUnix int64           `json:"modified_unix,omitempty"`
+	ObjectKind   VaultObjectKind `json:"object_kind,omitempty"`
+	ContentHash  string          `json:"content_hash,omitempty"`
+	SizeBytes    int64           `json:"size_bytes,omitempty"`
+	Evidence     []string        `json:"evidence,omitempty"`
+}
+
+// DiffSummary is a compact version diff projection for notes, assets, and vault files.
+type DiffSummary struct {
+	BaseRevision   string        `json:"base_revision"`
+	TargetRevision string        `json:"target_revision"`
+	FilesChanged   int           `json:"files_changed"`
+	Additions      int           `json:"additions,omitempty"`
+	Deletions      int           `json:"deletions,omitempty"`
+	ChangedPaths   []ChangedPath `json:"changed_paths,omitempty"`
+}
+
+// VersionedFile is the bounded content view for a file read through a version backend.
+type VersionedFile struct {
+	Path        string   `json:"path"`
+	Revision    string   `json:"revision"`
+	Backend     string   `json:"backend"`
+	ContentHash string   `json:"content_hash,omitempty"`
+	SizeBytes   int64    `json:"size_bytes,omitempty"`
+	Content     string   `json:"content,omitempty"`
+	Evidence    []string `json:"evidence,omitempty"`
+}
+
+// Asset is the stable vault asset metadata shape stored in CLI-authored manifests and projections.
+type Asset struct {
+	ID            string        `json:"id"`
+	Path          string        `json:"path"`
+	Filename      string        `json:"filename"`
+	Stem          string        `json:"stem"`
+	Extension     string        `json:"extension"`
+	MediaType     string        `json:"media_type"`
+	Size          int64         `json:"size"`
+	ModifiedUnix  int64         `json:"modified_unix,omitempty"`
+	Width         int           `json:"width,omitempty"`
+	Height        int           `json:"height,omitempty"`
+	SHA256        string        `json:"sha256"`
+	ManagedStatus ManagedStatus `json:"managed_status"`
+	CreatedAt     string        `json:"created_at"`
+	UpdatedAt     string        `json:"updated_at"`
+	DisplayPath   string        `json:"display_path,omitempty"`
+}
+
+// AssetManifest is the CLI-authored asset registry stored under .pinax/assets/manifest.json.
+type AssetManifest struct {
+	SchemaVersion string  `json:"schema_version"`
+	Assets        []Asset `json:"assets"`
+}
+
+// AssetLink records a Markdown or wiki reference from a note to a vault asset.
+type AssetLink struct {
+	AssetID      string `json:"asset_id,omitempty"`
+	AssetPath    string `json:"asset_path"`
+	SourceNoteID string `json:"source_note_id,omitempty"`
+	SourcePath   string `json:"source_path"`
+	RawReference string `json:"raw_reference"`
+	LinkStyle    string `json:"link_style"`
+	LinkKind     string `json:"link_kind"`
+	Line         int    `json:"line,omitempty"`
+	Status       string `json:"status"`
+}
+
+// AssetVerification records one asset integrity check result.
+type AssetVerification struct {
+	Asset  Asset  `json:"asset"`
+	Status string `json:"status"`
+	SHA256 string `json:"sha256,omitempty"`
+}
+
+// AssetVerifyResult is the aggregate result for asset verify commands.
+type AssetVerifyResult struct {
+	Verified  int                 `json:"verified"`
+	Missing   int                 `json:"missing"`
+	Changed   int                 `json:"changed"`
+	Unmanaged int                 `json:"unmanaged"`
+	Orphan    int                 `json:"orphan"`
+	Failed    int                 `json:"failed"`
+	Results   []AssetVerification `json:"results"`
+}
+
+// AssetOperationPlan is a no-write plan for high-risk asset moves, removes, repairs, or restores.
+type AssetOperationPlan struct {
+	PlanID           string          `json:"plan_id"`
+	AssetID          string          `json:"asset_id,omitempty"`
+	Path             string          `json:"path"`
+	Operation        string          `json:"operation"`
+	Risk             string          `json:"risk"`
+	RequiresSnapshot bool            `json:"requires_snapshot"`
+	Operations       []PlanOperation `json:"operations,omitempty"`
+}
+
 type Note struct {
-	ID        string   `json:"id,omitempty"`
-	Title     string   `json:"title"`
-	Path      string   `json:"path"`
-	Tags      []string `json:"tags,omitempty"`
-	Body      string   `json:"body,omitempty"`
-	Project   string   `json:"project,omitempty"`
-	Folder    string   `json:"folder,omitempty"`
-	Kind      string   `json:"kind,omitempty"`
-	Status    string   `json:"status,omitempty"`
-	CreatedAt string   `json:"created_at,omitempty"`
-	UpdatedAt string   `json:"updated_at,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Title       string            `json:"title"`
+	Path        string            `json:"path"`
+	Tags        []string          `json:"tags,omitempty"`
+	Body        string            `json:"body,omitempty"`
+	Frontmatter map[string]string `json:"-"`
+	Project     string            `json:"project,omitempty"`
+	Folder      string            `json:"folder,omitempty"`
+	Kind        string            `json:"kind,omitempty"`
+	Status      string            `json:"status,omitempty"`
+	BoardColumn string            `json:"board_column,omitempty"`
+	Priority    string            `json:"priority,omitempty"`
+	Due         string            `json:"due,omitempty"`
+	CreatedAt   string            `json:"created_at,omitempty"`
+	UpdatedAt   string            `json:"updated_at,omitempty"`
 }
 
 type Issue struct {
@@ -52,11 +259,12 @@ type Issue struct {
 }
 
 type PlanOperation struct {
-	Kind   string `json:"kind"`
-	Path   string `json:"path"`
-	Target string `json:"target,omitempty"`
-	Reason string `json:"reason"`
-	Status string `json:"status"`
+	Kind     string   `json:"kind"`
+	Path     string   `json:"path"`
+	Target   string   `json:"target,omitempty"`
+	Reason   string   `json:"reason"`
+	Status   string   `json:"status"`
+	Evidence []string `json:"evidence,omitempty"`
 }
 
 type RepairPlan struct {
@@ -81,6 +289,7 @@ type RepairOperation struct {
 	Mode        string   `json:"mode"`
 	Risk        string   `json:"risk"`
 	Path        string   `json:"path,omitempty"`
+	Target      string   `json:"target,omitempty"`
 	NoteID      string   `json:"note_id,omitempty"`
 	IssueCode   string   `json:"issue_code"`
 	Reason      string   `json:"reason"`
@@ -139,22 +348,72 @@ type ProjectRegistry struct {
 }
 
 type SavedView struct {
-	Name          string   `json:"name"`
-	Tags          []string `json:"tags,omitempty"`
-	Group         string   `json:"group,omitempty"`
-	Folder        string   `json:"folder,omitempty"`
-	Kind          string   `json:"kind,omitempty"`
-	Status        string   `json:"status,omitempty"`
-	Sort          string   `json:"sort,omitempty"`
-	Limit         int      `json:"limit,omitempty"`
-	CreatedAfter  string   `json:"created_after,omitempty"`
-	UpdatedBefore string   `json:"updated_before,omitempty"`
-	UpdatedAt     string   `json:"updated_at"`
+	ID            string            `json:"id,omitempty"`
+	Name          string            `json:"name"`
+	Tags          []string          `json:"tags,omitempty"`
+	Group         string            `json:"group,omitempty"`
+	Folder        string            `json:"folder,omitempty"`
+	Kind          string            `json:"kind,omitempty"`
+	Status        string            `json:"status,omitempty"`
+	Sort          string            `json:"sort,omitempty"`
+	Sorts         []string          `json:"sorts,omitempty"`
+	Query         string            `json:"query,omitempty"`
+	Columns       []string          `json:"columns,omitempty"`
+	Filters       map[string]string `json:"filters,omitempty"`
+	Display       map[string]string `json:"display,omitempty"`
+	Limit         int               `json:"limit,omitempty"`
+	CreatedAfter  string            `json:"created_after,omitempty"`
+	UpdatedBefore string            `json:"updated_before,omitempty"`
+	UpdatedAt     string            `json:"updated_at"`
 }
 
 type SavedViewRegistry struct {
 	SchemaVersion string      `json:"schema_version"`
 	Views         []SavedView `json:"views"`
+}
+
+type FolderPurpose string
+
+const (
+	FolderPurposeNotes   FolderPurpose = "notes"
+	FolderPurposeAssets  FolderPurpose = "assets"
+	FolderPurposeGeneric FolderPurpose = "generic"
+)
+
+type FolderRecord struct {
+	Path          string        `json:"path"`
+	Purpose       FolderPurpose `json:"purpose"`
+	ManagedStatus ManagedStatus `json:"managed_status"`
+	CreatedAt     string        `json:"created_at,omitempty"`
+	UpdatedAt     string        `json:"updated_at,omitempty"`
+}
+
+type FolderRegistry struct {
+	SchemaVersion string         `json:"schema_version"`
+	Folders       []FolderRecord `json:"folders"`
+}
+
+type FolderInfo struct {
+	Path          string        `json:"path"`
+	Purpose       FolderPurpose `json:"purpose"`
+	ManagedStatus ManagedStatus `json:"managed_status"`
+	Exists        bool          `json:"exists"`
+	Empty         bool          `json:"empty"`
+	Depth         int           `json:"depth"`
+	NoteCount     int           `json:"note_count"`
+	AssetCount    int           `json:"asset_count"`
+	CreatedAt     string        `json:"created_at,omitempty"`
+	UpdatedAt     string        `json:"updated_at,omitempty"`
+}
+
+type FolderOperationPlan struct {
+	Operation string          `json:"operation"`
+	Path      string          `json:"path"`
+	Target    string          `json:"target,omitempty"`
+	Purpose   FolderPurpose   `json:"purpose,omitempty"`
+	DryRun    bool            `json:"dry_run"`
+	Writes    bool            `json:"writes"`
+	Effects   []PlanOperation `json:"effects,omitempty"`
 }
 
 type StorageProfile struct {
@@ -323,6 +582,8 @@ type NoteAttachment struct {
 	NotePath      string `json:"note_path"`
 	ReferenceText string `json:"reference_text"`
 	TargetPath    string `json:"target_path"`
+	Path          string `json:"path,omitempty"`
+	DisplayPath   string `json:"display_path,omitempty"`
 	MediaType     string `json:"media_type"`
 	Exists        bool   `json:"exists"`
 }
@@ -414,6 +675,35 @@ type BackendDiffItem struct {
 	Kind     string `json:"kind"` // create, update, delete, conflict
 	Size     int64  `json:"size,omitempty"`
 	Modified string `json:"modified,omitempty"`
+}
+
+// SyncConflictEntry describes a local conflict sidecar produced by sync pull.
+type SyncConflictEntry struct {
+	File     string `json:"file"`
+	MainPath string `json:"main_path"`
+	Size     int64  `json:"size,omitempty"`
+	Modified string `json:"modified,omitempty"`
+}
+
+// SyncConflictDetail contains conflict inspection data. Machine/event renderers should
+// prefer paths and diff metadata over raw bodies unless a user explicitly requested show/diff.
+type SyncConflictDetail struct {
+	Conflict SyncConflictEntry `json:"conflict"`
+	Diff     string            `json:"diff,omitempty"`
+	MainBody string            `json:"main_body,omitempty"`
+	Body     string            `json:"body,omitempty"`
+}
+
+// SyncConflictResolutionReceipt is the safe receipt persisted after a conflict resolution.
+type SyncConflictResolutionReceipt struct {
+	SchemaVersion string `json:"schema_version"`
+	Command       string `json:"command"`
+	Status        string `json:"status"`
+	ConflictFile  string `json:"conflict_file"`
+	MainPath      string `json:"main_path"`
+	Resolution    string `json:"resolution"`
+	ReceiptPath   string `json:"receipt_path"`
+	CreatedAt     string `json:"created_at"`
 }
 
 // BackendPlan 描述后端同步计划。

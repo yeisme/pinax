@@ -1,0 +1,54 @@
+# Test note metadata sync, index consistency and self-healing
+
+# 1. Initialize vault and record ledger
+exec sh -c 'pinax init vault --title Vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+
+exec sh -c 'pinax record init --vault vault --json > rec_init.json'
+validate-json-envelope rec_init.json
+validate-clean-stdout rec_init.json
+
+# 2. Create note PageA
+exec sh -c 'pinax note new page-a --body "# Page A" --vault vault --json > note_new.json'
+validate-json-envelope note_new.json
+validate-clean-stdout note_new.json
+
+# 3. Set custom properties and tags via CLI
+exec pinax note property set page-a.md priority high --vault vault --json
+
+exec sh -c 'pinax note tag add page-a.md tag1 tag2 --vault vault --json > tag_add.json'
+validate-json-envelope tag_add.json
+validate-clean-stdout tag_add.json
+
+# 4. Sync index and check properties via query run
+exec sh -c 'pinax index sync --vault vault --json > sync.json'
+validate-json-envelope sync.json
+validate-clean-stdout sync.json
+
+exec sh -c 'pinax query run "SELECT title FROM notes WHERE priority = high" --vault vault --json > query1.json'
+validate-json-envelope query1.json
+validate-clean-stdout query1.json
+grep 'page-a' query1.json
+
+# 5. Overwrite the file directly (simulating external edit) to stale the index
+# Note: we use sed to preserve exact frontmatter and note_id
+exec sh -c 'sed -i "s/priority: high/priority: low/" vault/page-a.md'
+exec sh -c 'sed -i "s/title: page-a/title: Page A Edited/" vault/page-a.md'
+exec sh -c 'sed -i "s/# Page A/# Page A Edited/" vault/page-a.md'
+
+# 6. Verify query run fails without --lazy-index or rebuilding index
+! exec sh -c 'pinax query run "SELECT title FROM notes WHERE priority = low" --vault vault --json > query_fail.json'
+validate-json-envelope query_fail.json
+validate-clean-stdout query_fail.json
+grep 'property_index_stale' query_fail.json
+
+# 7. Self-heal via index sync and verify the new value can be queried
+exec sh -c 'pinax index sync --vault vault --json > sync2.json'
+validate-json-envelope sync2.json
+validate-clean-stdout sync2.json
+
+exec sh -c 'pinax query run "SELECT title FROM notes WHERE priority = low" --vault vault --json > query2.json'
+validate-json-envelope query2.json
+validate-clean-stdout query2.json
+grep 'Page A Edited' query2.json

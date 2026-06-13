@@ -1,0 +1,27 @@
+# Local briefing dry-run does not write vault review assets.
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+
+exec pinax briefing recipe init --topic 'AI tooling' --vault vault --json
+stdout '"command":"briefing.recipe.init"'
+
+exec pinax briefing run --dry-run --vault vault --json
+stdout '"command":"briefing.run"'
+stdout '"status":"success"'
+stdout '"dry_run":"true"'
+stdout '"candidates":"'
+stdout 'AI tooling'
+! exists vault/.pinax/briefing/review-queue.json
+! exists vault/notes/briefing
+
+-- vault/notes/context.md --
+---
+schema_version: pinax.note.v1
+note_id: note_context
+title: Agent workflow
+kind: reference
+---
+
+# Agent workflow
+
+Markdown notes and local tooling.

@@ -1,0 +1,38 @@
+# Incremental index sync classifies external file changes.
+exec pinax init vault --title Vault --json
+exec pinax note new Alpha --body '# Alpha' --vault vault --json
+exec pinax note new Beta --body '# Beta' --vault vault --json
+exec pinax index rebuild --vault vault --json
+stdout '"command":"index.rebuild"'
+
+rm vault/notes/beta.md
+-- vault/notes/alpha.md --
+---
+schema_version: pinax.note.v1
+note_id: note_alpha
+title: Alpha
+tags: []
+---
+
+# Alpha
+changed body
+-- vault/notes/gamma.md --
+---
+schema_version: pinax.note.v1
+note_id: note_gamma
+title: Gamma
+tags: []
+---
+
+# Gamma
+
+exec pinax index sync --vault vault --agent
+stdout 'command=index.sync'
+stdout 'fact.created=1'
+stdout 'fact.changed=1'
+stdout 'fact.deleted=1'
+stdout 'fact.failed=0'
+
+exec pinax search changed --vault vault --json
+stdout '"returned":"1"'
+stdout 'notes/alpha.md'

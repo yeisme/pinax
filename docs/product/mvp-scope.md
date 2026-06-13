@@ -1,14 +1,14 @@
-# MVP 范围
+# MVP Scope
 
-MVP 分四个阶段推进：
+MVP advances in four phases:
 
-| Phase | 目标 | 验证 |
+| Phase | Goal | Validation |
 | --- | --- | --- |
-| Local Vault Workbench | `init`、`validate`、daily/inbox、`note list/show`、links/backlinks/orphans、attachments、saved views、index/search、Markdown import/export、`metadata plan/apply`、`repair plan/apply`、`organize suggest/list/apply`、`git snapshot` | `go test ./...` 与命令级测试 |
-| CLI-backed Provider Pull | `ntn` / `lark-cli` capability probe、fake executable、`sync diff`、`sync pull --dry-run` | provider 和 sync fixture 测试 |
-| Agent/MCP Read and Plan | `pinax mcp serve` 的只读 resources/tools、handoff、triage dry-run | MCP frame 和 output contract 测试 |
-| Controlled Apply | action file apply、本地写入 approval、event evidence、Gateway handoff | dry-run/yes gate 和 redaction 测试 |
+| Local Vault Workbench | `init`, `vault validate`, daily/inbox, `note list/show`, `pinax note links`/`pinax note backlinks`/`pinax note orphans`, `search --link-target`, attachments, saved views, index/search, Markdown import/export, `metadata plan/apply`, `repair plan/apply`, `organize plan/list/apply`, `version snapshot` | `go test ./...` and command-level tests |
+| CLI-backed Provider Pull | External CLI capability probes, fake executable fixtures, `sync diff`, `sync pull --dry-run` | provider and sync fixture tests |
+| Agent/MCP Read and Plan | project board workspace, shared `NoteDisplay`, read-only resources/tools for `pinax mcp serve`, localhost REST/RPC projection adapter, handoff, triage dry-run | MCP frame, REST/RPC component, and output contract tests |
+| Controlled Apply | action file apply, local write approval, event evidence, handoff | dry-run/yes gate and redaction tests |
 
-每日热点笔记 briefing 是后续 agent workflow 切片，必须基于本地 vault、research evidence ledger、review queue 和 delivery receipt，不应变成独立新闻 bot。
+The daily briefing workflow is a later agent workflow slice. It must be based on the local vault, research evidence ledger, review queue, and delivery receipt, and should not become an independent news bot.
 
-当前 MVP 的第一条自用闭环优先服务真实 Markdown vault：先让用户能安全接入、捕获 daily/inbox、建立 SQLite/GORM 本地索引、按 tags/group/folder/kind/status 检索和浏览、保存常用视图、检查链接/附件、导入导出 Markdown bundle、补 metadata、生成 repair/organize 计划，再在显式 Git snapshot 保护后执行本地改动。MCP 在 MVP 中只读，负责让 agent 查询 vault、读取笔记和查看整理计划，不直接写文件或远端 provider。
+The first external evaluation loop of the current MVP prioritizes serving a real Markdown vault: first let users safely connect, capture daily/inbox, build a SQLite/GORM local index, search and browse by tags/group/folder/kind/status, save common views, check resolved/broken/ambiguous links, orphan notes and attachments, search by `--link-target`, import and export Markdown bundles, supplement metadata, generate repair/organize plans and project board plans, and then execute local changes after protection by an explicit version snapshot. The project board is a local project workbench, not a remote Todo provider; `project board plan --save` writes a review snapshot, and weekly planning can read board counts, but it does not automatically write all items into an external task system.

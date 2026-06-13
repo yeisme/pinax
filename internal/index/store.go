@@ -3,6 +3,7 @@ package index
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,12 +14,15 @@ import (
 	"time"
 	"unicode"
 
+	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/domain"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 const SchemaVersion = "pinax.index.v2"
+const PropertySchemaVersion = "pinax.properties.v1"
 
 type IndexMetaRecord struct {
 	Key       string `gorm:"primaryKey"`
@@ -27,20 +31,25 @@ type IndexMetaRecord struct {
 }
 
 type NoteRecord struct {
-	Path         string `gorm:"primaryKey"`
-	NoteID       string `gorm:"index"`
-	Title        string
-	Project      string
-	Group        string `gorm:"index"`
-	Folder       string `gorm:"index"`
-	Kind         string `gorm:"index"`
-	Status       string `gorm:"index"`
-	CreatedAt    string
-	UpdatedAt    string
-	SourceHash   string
-	ModifiedUnix int64
-	Size         int64
-	IsSystem     bool `gorm:"index"`
+	Path            string `gorm:"primaryKey"`
+	NoteID          string `gorm:"index"`
+	Title           string
+	Filename        string `gorm:"index"`
+	Stem            string `gorm:"index"`
+	ObjectKind      string `gorm:"index"`
+	ManagedStatus   string `gorm:"index"`
+	Project         string
+	Group           string `gorm:"index"`
+	Folder          string `gorm:"index"`
+	Kind            string `gorm:"index"`
+	Status          string `gorm:"index"`
+	LifecycleStatus string `gorm:"index"`
+	CreatedAt       string
+	UpdatedAt       string
+	SourceHash      string
+	ModifiedUnix    int64
+	Size            int64
+	IsSystem        bool `gorm:"index"`
 }
 
 type NoteTextRecord struct {
@@ -93,11 +102,84 @@ type AttachmentRecord struct {
 	Exists        bool `gorm:"index"`
 }
 
+type AssetRecord struct {
+	Path          string `gorm:"primaryKey"`
+	AssetID       string `gorm:"index"`
+	Filename      string `gorm:"index"`
+	Stem          string `gorm:"index"`
+	Extension     string `gorm:"index"`
+	MediaType     string `gorm:"index"`
+	Size          int64
+	ModifiedUnix  int64
+	Width         int
+	Height        int
+	SHA256        string `gorm:"index"`
+	ManagedStatus string `gorm:"index"`
+	CreatedAt     string
+	UpdatedAt     string
+}
+
+type AssetLinkRecord struct {
+	ID           uint   `gorm:"primaryKey"`
+	AssetPath    string `gorm:"index"`
+	SourceNoteID string `gorm:"index"`
+	SourcePath   string `gorm:"index"`
+	RawReference string
+	LinkStyle    string `gorm:"index"`
+	LinkKind     string `gorm:"index"`
+	Line         int
+	Status       string `gorm:"index"`
+	MediaType    string `gorm:"index"`
+}
+
+type VaultFileRecord struct {
+	Path          string `gorm:"primaryKey"`
+	Filename      string `gorm:"index"`
+	Stem          string `gorm:"index"`
+	Extension     string `gorm:"index"`
+	MediaType     string `gorm:"index"`
+	Size          int64
+	ModifiedUnix  int64
+	ObjectKind    string `gorm:"index"`
+	ManagedStatus string `gorm:"index"`
+}
+
+type FolderRecord struct {
+	Path          string `gorm:"primaryKey"`
+	Purpose       string `gorm:"index"`
+	ManagedStatus string `gorm:"index"`
+	Exists        bool   `gorm:"index"`
+	Empty         bool   `gorm:"index"`
+	Depth         int    `gorm:"index"`
+	NoteCount     int
+	AssetCount    int
+	CreatedAt     string
+	UpdatedAt     string
+}
+
 type DimensionCountRecord struct {
 	ID        uint   `gorm:"primaryKey"`
 	Dimension string `gorm:"index"`
 	Value     string `gorm:"index"`
 	Count     int
+}
+
+type PropertyDefinitionRecord struct {
+	Name    string `gorm:"primaryKey"`
+	Type    string `gorm:"index"`
+	Source  string `gorm:"index"`
+	Count   int
+	Samples string
+}
+
+type PropertyValueRecord struct {
+	ID       uint   `gorm:"primaryKey"`
+	NotePath string `gorm:"index"`
+	Name     string `gorm:"index"`
+	Type     string `gorm:"index"`
+	Raw      string
+	Value    string `gorm:"index"`
+	Source   string `gorm:"index"`
 }
 
 type Counts struct {
@@ -107,6 +189,7 @@ type Counts struct {
 	Tokens      int
 	Attachments int
 	Dimensions  int
+	Folders     int
 }
 
 type NoteUpdate struct {
@@ -125,6 +208,71 @@ type IncrementalResult struct {
 	Skipped  bool
 	Parsed   int
 	Indexed  int
+}
+
+type SyncResult struct {
+	Created int `json:"created"`
+	Changed int `json:"changed"`
+	Moved   int `json:"moved"`
+	Deleted int `json:"deleted"`
+	Skipped int `json:"skipped"`
+	Failed  int `json:"failed"`
+}
+
+type RefreshOptions struct {
+	BatchSize int `json:"batch_size,omitempty"`
+}
+
+type RefreshResult struct {
+	Scanned        int      `json:"scanned"`
+	Changed        int      `json:"changed"`
+	Skipped        int      `json:"skipped"`
+	Indexed        int      `json:"indexed"`
+	Created        int      `json:"created"`
+	Moved          int      `json:"moved"`
+	Deleted        int      `json:"deleted"`
+	Failed         int      `json:"failed"`
+	Batches        int      `json:"batches"`
+	DurationMillis int64    `json:"duration_ms"`
+	IndexStatus    string   `json:"index_status"`
+	FailedPaths    []string `json:"failed_paths,omitempty"`
+}
+
+type Issue struct {
+	Code     string   `json:"issue_code"`
+	Severity string   `json:"severity"`
+	Path     string   `json:"path,omitempty"`
+	NoteID   string   `json:"note_id,omitempty"`
+	Message  string   `json:"message"`
+	Evidence []string `json:"evidence,omitempty"`
+}
+
+type DoctorReport struct {
+	Status Status         `json:"status"`
+	Issues []Issue        `json:"issues"`
+	Counts map[string]int `json:"counts"`
+}
+
+type RepairOperation struct {
+	Kind   string `json:"kind"`
+	Mode   string `json:"mode"`
+	Risk   string `json:"risk"`
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+type RepairPlan struct {
+	Kind       string            `json:"kind"`
+	DryRun     bool              `json:"dry_run"`
+	Writes     bool              `json:"writes"`
+	Operations []RepairOperation `json:"operations"`
+}
+
+type RepairResult struct {
+	Plan        RepairPlan `json:"plan"`
+	IndexStatus string     `json:"index_status"`
+	BackupPath  string     `json:"backup_path,omitempty"`
+	Counts      Counts     `json:"counts,omitempty"`
 }
 
 type Status struct {
@@ -188,48 +336,206 @@ func Init(root string) (Status, error) {
 }
 
 func Inspect(root string, notes []domain.Note) (Status, error) {
-	path := filepath.Join(root, ".pinax", "index.sqlite")
-	if _, err := os.Stat(path); err != nil {
+	report, err := Diagnose(root, notes)
+	if err != nil {
+		return Status{}, err
+	}
+	return report.Status, nil
+}
+
+func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
+	indexPath := filepath.Join(root, ".pinax", "index.sqlite")
+	if _, err := os.Stat(indexPath); err != nil {
 		if os.IsNotExist(err) {
-			return Status{Status: "missing", Path: indexRelPath()}, nil
+			status := Status{Status: "missing", Path: indexRelPath()}
+			return doctorReport(status, []Issue{indexIssue("index_missing", "warning", status.Path, "本地索引缺失", []string{"index_status=missing"})}), nil
 		}
-		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
+		status := Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}
+		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
 	}
 	db, err := open(root)
 	if err != nil {
-		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
+		status := Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}
+		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
+	}
+	if schemaIssues := indexStorageSchemaIssues(db); len(schemaIssues) > 0 {
+		if err := indexSchemaReadError(db); err != nil {
+			status := Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}
+			return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
+		}
+		status := Status{Status: "stale", Path: indexRelPath(), Notes: len(notes), Evidence: issueEvidence(schemaIssues)}
+		if !schemaIssuesContainEvidence(schemaIssues, "missing_table=index_meta_records") {
+			status.SchemaVersion = metaValue(db, "schema_version")
+		}
+		return doctorReport(status, schemaIssues), nil
 	}
 	if err := migrate(db); err != nil {
-		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
+		status := Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}
+		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
 	}
 	schema := metaValue(db, "schema_version")
 	if schema == "" {
-		return Status{Status: "stale", Path: indexRelPath(), Evidence: []string{"schema_version=missing"}}, nil
+		status := Status{Status: "stale", Path: indexRelPath(), Evidence: []string{"schema_version=missing"}}
+		return doctorReport(status, []Issue{indexIssue("index_schema_mismatch", "warning", status.Path, "索引 schema 缺失", status.Evidence)}), nil
 	}
 	if schema != SchemaVersion {
-		return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{"schema_version=" + schema}}, nil
+		status := Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{"schema_version=" + schema}}
+		return doctorReport(status, []Issue{indexIssue("index_schema_mismatch", "warning", status.Path, "索引 schema 版本不匹配", status.Evidence)}), nil
+	}
+	propertySchema := metaValue(db, "property_schema_version")
+	if propertySchema != PropertySchemaVersion {
+		if propertySchema == "" {
+			propertySchema = "missing"
+		}
+		status := Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Notes: len(notes), Evidence: []string{"property_schema_version=" + propertySchema}}
+		return doctorReport(status, []Issue{indexIssue("index_schema_mismatch", "warning", status.Path, "属性索引 schema 版本不匹配", status.Evidence)}), nil
 	}
 	records := []NoteRecord{}
 	if err := db.Find(&records).Error; err != nil {
-		return Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{err.Error()}}, nil
+		status := Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{err.Error()}}
+		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
 	}
 	byPath := map[string]NoteRecord{}
 	for _, record := range records {
 		byPath[record.Path] = record
 	}
+	notePaths := map[string]bool{}
+	issues := []Issue{}
 	for _, note := range notes {
+		if isSystemJournalNotePath(note.Path) || isSystemIndexNotePath(note.Path) {
+			continue
+		}
+		notePaths[note.Path] = true
 		record, ok := byPath[note.Path]
 		if !ok {
-			return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: []string{"missing_note=" + note.Path}}, nil
+			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引缺少 vault note projection", []string{"missing_note=" + note.Path}))
+			continue
 		}
 		if record.SourceHash != noteSourceHash(note) {
-			return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: []string{"changed_note=" + note.Path}}, nil
+			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引 note projection 已过期", []string{"changed_note=" + note.Path}))
 		}
 	}
-	if len(records) != len(notes) {
-		return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: []string{fmt.Sprintf("indexed_notes=%d", len(records)), fmt.Sprintf("vault_notes=%d", len(notes))}}, nil
+	for _, record := range records {
+		if isSystemJournalNotePath(record.Path) || isSystemIndexNotePath(record.Path) {
+			continue
+		}
+		if !notePaths[record.Path] {
+			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引包含 vault 中不存在 of note projection", []string{"extra_note=" + record.Path}))
+		}
+		var textRows int64
+		if err := db.Model(&NoteTextRecord{}).Where("note_path = ?", record.Path).Count(&textRows).Error; err != nil {
+			status := Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{err.Error()}}
+			return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
+		}
+		if textRows == 0 {
+			issues = append(issues, indexIssue("index_row_consistency", "warning", indexRelPath(), "索引 note/text projection 不一致", []string{"missing_note_text=" + record.Path}))
+		}
 	}
-	return Status{Status: "fresh", Path: indexRelPath(), SchemaVersion: schema, Notes: len(records)}, nil
+	statusName := "fresh"
+	if len(issues) > 0 {
+		statusName = "partial"
+
+		for _, issue := range issues {
+			if issue.Code == "index_stale" || issue.Code == "index_schema_mismatch" {
+				statusName = "stale"
+				break
+			}
+		}
+	}
+	status := Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: issueEvidence(issues)}
+	return doctorReport(status, issues), nil
+}
+
+func isSystemJournalNotePath(path string) bool {
+	p := filepath.ToSlash(path)
+	return strings.HasPrefix(p, "daily/") || strings.HasPrefix(p, "notes/daily/") ||
+		strings.HasPrefix(p, "weekly/") || strings.HasPrefix(p, "notes/weekly/") ||
+		strings.HasPrefix(p, "monthly/") || strings.HasPrefix(p, "notes/monthly/")
+}
+
+func isSystemIndexNotePath(path string) bool {
+	p := filepath.ToSlash(path)
+	return strings.HasPrefix(p, "index/") || strings.HasPrefix(p, "notes/index/")
+}
+
+func indexIssue(code, severity, path, message string, evidence []string) Issue {
+	return Issue{Code: code, Severity: severity, Path: path, Message: message, Evidence: evidence}
+}
+
+func doctorReport(status Status, issues []Issue) DoctorReport {
+	return DoctorReport{Status: status, Issues: issues, Counts: issueSeverityCounts(issues)}
+}
+
+func issueSeverityCounts(issues []Issue) map[string]int {
+	counts := map[string]int{"warning": 0, "error": 0}
+	for _, issue := range issues {
+		if issue.Severity == "" {
+			continue
+		}
+		counts[issue.Severity]++
+	}
+	return counts
+}
+
+func issueEvidence(issues []Issue) []string {
+	evidence := []string{}
+	seen := map[string]bool{}
+	for _, issue := range issues {
+		for _, item := range issue.Evidence {
+			if item == "" || seen[item] {
+				continue
+			}
+			seen[item] = true
+			evidence = append(evidence, item)
+		}
+	}
+	return evidence
+}
+
+func indexStorageSchemaIssues(db *gorm.DB) []Issue {
+	requirements := []struct {
+		model   any
+		table   string
+		columns []string
+	}{
+		{model: &IndexMetaRecord{}, table: "index_meta_records", columns: []string{"key", "value", "updated_at"}},
+		{model: &NoteRecord{}, table: "note_records", columns: []string{"path", "note_id", "filename", "stem", "object_kind", "managed_status", "source_hash"}},
+		{model: &AssetRecord{}, table: "asset_records", columns: []string{"path", "asset_id", "filename", "stem", "media_type", "managed_status", "sha256"}},
+		{model: &AssetLinkRecord{}, table: "asset_link_records", columns: []string{"asset_path", "source_path", "raw_reference", "link_style", "link_kind", "status", "media_type"}},
+		{model: &VaultFileRecord{}, table: "vault_file_records", columns: []string{"path", "filename", "stem", "object_kind", "managed_status"}},
+		{model: &FolderRecord{}, table: "folder_records", columns: []string{"path", "purpose", "managed_status", "note_count", "asset_count"}},
+		{model: &PropertyDefinitionRecord{}, table: "property_definition_records", columns: []string{"name", "type", "source"}},
+		{model: &PropertyValueRecord{}, table: "property_value_records", columns: []string{"note_path", "name", "type", "value", "source"}},
+	}
+	issues := []Issue{}
+	for _, requirement := range requirements {
+		if !db.Migrator().HasTable(requirement.model) {
+			issues = append(issues, indexIssue("index_schema_mismatch", "warning", indexRelPath(), "索引 projection 表缺失", []string{"missing_table=" + requirement.table}))
+			continue
+		}
+		for _, column := range requirement.columns {
+			if !db.Migrator().HasColumn(requirement.model, column) {
+				issues = append(issues, indexIssue("index_schema_mismatch", "warning", indexRelPath(), "索引 projection 字段缺失", []string{"missing_column=" + requirement.table + "." + column}))
+			}
+		}
+	}
+	return issues
+}
+
+func indexSchemaReadError(db *gorm.DB) error {
+	var schemaVersion int
+	return db.Raw("PRAGMA schema_version").Scan(&schemaVersion).Error
+}
+
+func schemaIssuesContainEvidence(issues []Issue, evidence string) bool {
+	for _, issue := range issues {
+		for _, item := range issue.Evidence {
+			if item == evidence {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func Rebuild(root string, notes []domain.Note) (Counts, error) {
@@ -242,7 +548,8 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 	}
 	counts := Counts{}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		for _, model := range []any{&NoteRecord{}, &NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}, &DimensionCountRecord{}} {
+
+		for _, model := range []any{&NoteRecord{}, &NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}, &AssetLinkRecord{}, &VaultFileRecord{}, &AssetRecord{}, &FolderRecord{}, &DimensionCountRecord{}, &PropertyDefinitionRecord{}, &PropertyValueRecord{}} {
 			if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(model).Error; err != nil {
 				return err
 			}
@@ -251,12 +558,15 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 		if err := upsertMeta(tx, "schema_version", SchemaVersion, now); err != nil {
 			return err
 		}
+		if err := upsertMeta(tx, "property_schema_version", PropertySchemaVersion, now); err != nil {
+			return err
+		}
 		if err := upsertMeta(tx, "rebuilt_at", now, now); err != nil {
 			return err
 		}
 		pathByTitle := notePathByTitle(notes)
 		for _, note := range notes {
-			record := NoteRecord{Path: note.Path, NoteID: note.ID, Title: note.Title, Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: noteSourceHash(note), IsSystem: isSystemIndexNote(note)}
+			record := noteRecordFromDomain(note, 0, 0)
 			if err := tx.Create(&record).Error; err != nil {
 				return err
 			}
@@ -282,11 +592,16 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 				}
 				counts.Links++
 			}
-			for _, attachment := range noteAttachments(note) {
+			for _, attachment := range noteAttachments(root, note) {
 				if err := tx.Create(&attachment).Error; err != nil {
 					return err
 				}
 				counts.Attachments++
+			}
+			for _, assetLink := range noteAssetLinks(root, note) {
+				if err := tx.Create(&assetLink).Error; err != nil {
+					return err
+				}
 			}
 		}
 		for _, dimension := range noteDimensionCounts(notes) {
@@ -295,12 +610,220 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 			}
 			counts.Dimensions++
 		}
+		if err := rebuildVaultObjectProjection(tx, root, notes); err != nil {
+			return err
+		}
+		folders, err := rebuildFolderProjection(tx, root, notes)
+		if err != nil {
+			return err
+		}
+		counts.Folders = folders
+		if err := rebuildPropertyProjection(tx, notes); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
 		return Counts{}, err
 	}
 	return counts, nil
+}
+
+func Refresh(root string, notes []domain.Note, opts RefreshOptions) (RefreshResult, error) {
+	started := time.Now()
+	syncResult, err := Sync(root, notes)
+	result := RefreshResult{
+		Scanned:        len(notes),
+		Changed:        syncResult.Changed,
+		Skipped:        syncResult.Skipped,
+		Indexed:        syncResult.Created + syncResult.Changed + syncResult.Moved,
+		Created:        syncResult.Created,
+		Moved:          syncResult.Moved,
+		Deleted:        syncResult.Deleted,
+		Failed:         syncResult.Failed,
+		Batches:        refreshBatchCount(len(notes), opts.BatchSize),
+		DurationMillis: time.Since(started).Milliseconds(),
+		IndexStatus:    "fresh",
+	}
+	if result.Failed > 0 {
+		result.IndexStatus = "partial"
+	}
+	if err == nil {
+		if db, openErr := open(root); openErr != nil {
+			return result, openErr
+		} else if migrateErr := migrate(db); migrateErr != nil {
+			return result, migrateErr
+		} else if rebuildErr := db.Transaction(func(tx *gorm.DB) error {
+			now := time.Now().UTC().Format(time.RFC3339)
+			if err := upsertMeta(tx, "schema_version", SchemaVersion, now); err != nil {
+				return err
+			}
+			if err := upsertMeta(tx, "property_schema_version", PropertySchemaVersion, now); err != nil {
+				return err
+			}
+			for _, model := range []any{&PropertyDefinitionRecord{}, &PropertyValueRecord{}, &FolderRecord{}} {
+				if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(model).Error; err != nil {
+					return err
+				}
+			}
+			if err := rebuildVaultObjectProjection(tx, root, notes); err != nil {
+				return err
+			}
+			if _, err := rebuildFolderProjection(tx, root, notes); err != nil {
+				return err
+			}
+			return rebuildPropertyProjection(tx, notes)
+		}); rebuildErr != nil {
+			return result, rebuildErr
+		}
+	}
+	return result, err
+}
+
+func RefreshChanged(root string, notes []domain.Note, changed []domain.ChangedPath, opts RefreshOptions) (RefreshResult, error) {
+	started := time.Now()
+	result := RefreshResult{Scanned: len(changed), Batches: refreshBatchCount(len(changed), opts.BatchSize), IndexStatus: "fresh"}
+	db, err := open(root)
+	if err != nil {
+		return result, err
+	}
+	if err := migrate(db); err != nil {
+		return result, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := upsertMeta(db, "schema_version", SchemaVersion, now); err != nil {
+		return result, err
+	}
+	if err := upsertMeta(db, "property_schema_version", PropertySchemaVersion, now); err != nil {
+		return result, err
+	}
+	notesByPath := map[string]domain.Note{}
+	for _, note := range notes {
+		notesByPath[filepath.ToSlash(filepath.Clean(note.Path))] = note
+	}
+	for _, candidate := range changed {
+		path := filepath.ToSlash(filepath.Clean(candidate.Path))
+		note, ok := notesByPath[path]
+		if !ok {
+			continue
+		}
+		update, err := UpdateNote(root, NoteUpdate{Note: note, ModifiedUnix: candidate.ModifiedUnix, Size: candidate.SizeBytes})
+		if err != nil {
+			result.Failed++
+			result.FailedPaths = append(result.FailedPaths, path)
+			result.IndexStatus = "partial"
+			return result, err
+		}
+		if update.Skipped {
+			result.Skipped++
+			continue
+		}
+		result.Changed++
+		result.Indexed++
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return rebuildVaultObjectProjection(tx, root, notes) }); err != nil {
+		return result, err
+	}
+	result.DurationMillis = time.Since(started).Milliseconds()
+	return result, nil
+}
+
+func refreshBatchCount(total, batchSize int) int {
+	if total == 0 {
+		return 0
+	}
+	if batchSize <= 0 {
+		return 1
+	}
+	return (total + batchSize - 1) / batchSize
+}
+
+func rebuildPropertyProjection(tx *gorm.DB, notes []domain.Note) error {
+
+	rows := ExtractPropertyRows(notes)
+	for _, def := range InferPropertyDefinitions(rows) {
+		record := PropertyDefinitionRecord{Name: def.Name, Type: string(def.Type), Source: def.Source, Count: def.Count, Samples: strings.Join(def.Samples, "\n")}
+		if err := tx.Create(&record).Error; err != nil {
+			return err
+		}
+	}
+	for _, row := range rows {
+		for _, value := range row.Values {
+			record := PropertyValueRecord{NotePath: row.Note.Path, Name: value.Name, Type: string(value.Type), Raw: value.Raw, Value: value.String(), Source: value.Source}
+			if err := tx.Create(&record).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func Sync(root string, notes []domain.Note) (SyncResult, error) {
+	if _, err := Init(root); err != nil {
+		return SyncResult{}, err
+	}
+	db, err := open(root)
+	if err != nil {
+		return SyncResult{}, err
+	}
+	if err := migrate(db); err != nil {
+		return SyncResult{}, err
+	}
+	records := []NoteRecord{}
+	if err := db.Find(&records).Error; err != nil {
+		return SyncResult{}, err
+	}
+	byPath := map[string]NoteRecord{}
+	byID := map[string]NoteRecord{}
+	for _, record := range records {
+		byPath[record.Path] = record
+		if strings.TrimSpace(record.NoteID) != "" {
+			byID[record.NoteID] = record
+		}
+	}
+	seen := map[string]bool{}
+	result := SyncResult{}
+	for _, note := range notes {
+		seen[note.Path] = true
+		hash := noteSourceHash(note)
+		if record, ok := byPath[note.Path]; ok {
+			if record.SourceHash == hash {
+				result.Skipped++
+				continue
+			}
+			if _, err := UpdateNote(root, NoteUpdate{Note: note}); err != nil {
+				result.Failed++
+				return result, err
+			}
+			result.Changed++
+			continue
+		}
+		if record, ok := byID[note.ID]; ok && strings.TrimSpace(note.ID) != "" {
+			if _, err := UpdateNote(root, NoteUpdate{OldPath: record.Path, Note: note}); err != nil {
+				result.Failed++
+				return result, err
+			}
+			seen[record.Path] = true
+			result.Moved++
+			continue
+		}
+		if _, err := UpdateNote(root, NoteUpdate{Note: note}); err != nil {
+			result.Failed++
+			return result, err
+		}
+		result.Created++
+	}
+	for _, record := range records {
+		if seen[record.Path] {
+			continue
+		}
+		if _, err := DeleteNote(root, NoteDelete{Path: record.Path}); err != nil {
+			result.Failed++
+			return result, err
+		}
+		result.Deleted++
+	}
+	return result, nil
 }
 
 func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
@@ -315,30 +838,35 @@ func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
 	hash := noteSourceHash(note)
 	result := IncrementalResult{NotePath: note.Path}
 	var existing NoteRecord
+	existingFound := false
 	lookupPath := note.Path
 	if strings.TrimSpace(update.OldPath) != "" {
 		lookupPath = filepath.ToSlash(filepath.Clean(update.OldPath))
 	}
-	err = db.First(&existing, &NoteRecord{Path: lookupPath}).Error
-	if err == nil && existing.SourceHash == hash && existing.ModifiedUnix == update.ModifiedUnix && existing.Size == update.Size {
+	found := db.Where("path = ?", lookupPath).Find(&existing)
+	if found.Error != nil {
+		return IncrementalResult{}, found.Error
+	}
+	existingFound = found.RowsAffected > 0
+	if existingFound && existing.SourceHash == hash && existing.ModifiedUnix == update.ModifiedUnix && existing.Size == update.Size {
 		result.Skipped = true
 		return result, nil
 	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return IncrementalResult{}, err
-	}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		oldKeys := linkTargetKeysFromRecord(existing)
+		oldKeys := map[string]bool{}
+		if existingFound {
+			oldKeys = linkTargetKeysFromRecord(existing)
+		}
 		if update.OldPath != "" && update.OldPath != note.Path {
 			if err := deleteNoteProjection(tx, update.OldPath, true); err != nil {
 				return err
 			}
 		}
-		record := NoteRecord{Path: note.Path, NoteID: note.ID, Title: note.Title, Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: hash, ModifiedUnix: update.ModifiedUnix, Size: update.Size, IsSystem: isSystemIndexNote(note)}
+		record := noteRecordFromDomain(note, update.ModifiedUnix, update.Size)
 		if err := tx.Save(&record).Error; err != nil {
 			return err
 		}
-		if err := replaceNoteProjection(tx, note); err != nil {
+		if err := replaceNoteProjection(tx, root, note); err != nil {
 			return err
 		}
 		keys := mergeLinkTargetKeys(oldKeys, linkTargetKeysFromRecord(record))
@@ -367,11 +895,12 @@ func DeleteNote(root string, del NoteDelete) (IncrementalResult, error) {
 	result := IncrementalResult{NotePath: path}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var existing NoteRecord
-		if err := tx.First(&existing, &NoteRecord{Path: path}).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			return err
+		found := tx.Where("path = ?", path).Find(&existing)
+		if found.Error != nil {
+			return found.Error
+		}
+		if found.RowsAffected == 0 {
+			return nil
 		}
 		keys := linkTargetKeysFromRecord(existing)
 		if err := deleteNoteProjection(tx, path, true); err != nil {
@@ -387,6 +916,391 @@ func DeleteNote(root string, del NoteDelete) (IncrementalResult, error) {
 	}
 	result.Indexed = 1
 	return result, nil
+}
+
+func ReplaceAssetProjection(root string, assets []domain.Asset) error {
+	db, err := open(root)
+	if err != nil {
+		return err
+	}
+	if err := migrate(db); err != nil {
+		return err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&AssetRecord{}).Error; err != nil {
+			return err
+		}
+		if err := upsertMeta(tx, "schema_version", SchemaVersion, now); err != nil {
+			return err
+		}
+		if err := upsertMeta(tx, "property_schema_version", PropertySchemaVersion, now); err != nil {
+			return err
+		}
+		for _, asset := range assets {
+			if err := tx.Create(assetRecordFromDomain(asset)).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func ListAssets(root string) ([]domain.Asset, Status, error) {
+	status, ok, err := assetProjectionReady(root)
+	if err != nil || !ok {
+		return nil, status, err
+	}
+	db, err := open(root)
+	if err != nil {
+		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
+	}
+	records := []AssetRecord{}
+	if err := db.Order("path asc").Find(&records).Error; err != nil {
+		return nil, status, err
+	}
+	assets := make([]domain.Asset, 0, len(records))
+	for _, record := range records {
+		assets = append(assets, assetRecordToDomain(record))
+	}
+	return assets, status, nil
+}
+
+func FindAsset(root, ref string) (domain.Asset, Status, error) {
+	assets, status, err := ListAssets(root)
+	if err != nil {
+		return domain.Asset{}, status, err
+	}
+	ref = strings.TrimSpace(filepath.ToSlash(ref))
+	for _, asset := range assets {
+		if asset.ID == ref || asset.Path == ref || asset.Filename == ref || asset.Stem == ref {
+			return asset, status, nil
+		}
+	}
+	return domain.Asset{}, status, os.ErrNotExist
+}
+func assetProjectionReady(root string) (Status, bool, error) {
+	if _, err := os.Stat(filepath.Join(root, ".pinax", "index.sqlite")); err != nil {
+		if os.IsNotExist(err) {
+			return Status{Status: "missing", Path: indexRelPath()}, false, nil
+		}
+		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, false, err
+	}
+	db, err := open(root)
+	if err != nil {
+		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, false, err
+	}
+	if err := migrate(db); err != nil {
+		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, false, err
+	}
+	schema := metaValue(db, "schema_version")
+	if schema != SchemaVersion {
+		if schema == "" {
+			schema = "missing"
+		}
+		return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{"schema_version=" + schema}}, false, nil
+	}
+	return Status{Status: "fresh", Path: indexRelPath(), SchemaVersion: schema}, true, nil
+}
+
+func assetRecordFromDomain(asset domain.Asset) *AssetRecord {
+	return &AssetRecord{Path: asset.Path, AssetID: asset.ID, Filename: asset.Filename, Stem: asset.Stem, Extension: asset.Extension, MediaType: asset.MediaType, Size: asset.Size, ModifiedUnix: asset.ModifiedUnix, Width: asset.Width, Height: asset.Height, SHA256: asset.SHA256, ManagedStatus: asset.ManagedStatus, CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt}
+}
+
+func assetRecordToDomain(record AssetRecord) domain.Asset {
+	return domain.Asset{ID: record.AssetID, Path: record.Path, Filename: record.Filename, Stem: record.Stem, Extension: record.Extension, MediaType: record.MediaType, Size: record.Size, ModifiedUnix: record.ModifiedUnix, Width: record.Width, Height: record.Height, SHA256: record.SHA256, ManagedStatus: domain.ManagedStatus(record.ManagedStatus), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+}
+
+func ListAssetLinks(root string) ([]AssetLinkRecord, Status, error) {
+	status, ok, err := assetProjectionReady(root)
+	if err != nil || !ok {
+		return nil, status, err
+	}
+	db, err := open(root)
+	if err != nil {
+		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
+	}
+	records := []AssetLinkRecord{}
+	if err := db.Order("source_path asc, line asc, asset_path asc").Find(&records).Error; err != nil {
+		return nil, status, err
+	}
+	return records, status, nil
+}
+
+func ListVaultFiles(root string) ([]VaultFileRecord, Status, error) {
+	status, ok, err := assetProjectionReady(root)
+	if err != nil || !ok {
+		return nil, status, err
+	}
+	db, err := open(root)
+	if err != nil {
+		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
+	}
+	records := []VaultFileRecord{}
+	if err := db.Order("path asc").Find(&records).Error; err != nil {
+		return nil, status, err
+	}
+	return records, status, nil
+}
+
+func ListFolders(root string) ([]FolderRecord, Status, error) {
+	status, ok, err := assetProjectionReady(root)
+	if err != nil || !ok {
+		return nil, status, err
+	}
+	db, err := open(root)
+	if err != nil {
+		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
+	}
+	records := []FolderRecord{}
+	if err := db.Order("path asc").Find(&records).Error; err != nil {
+		return nil, status, err
+	}
+	return records, status, nil
+}
+
+func rebuildVaultObjectProjection(tx *gorm.DB, root string, notes []domain.Note) error {
+	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&VaultFileRecord{}).Error; err != nil {
+		return err
+	}
+	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&AssetRecord{}).Error; err != nil {
+		return err
+	}
+	registeredPaths := registeredNotePaths(notes)
+	files, err := scanVaultFiles(root, registeredPaths)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err := tx.Create(&file).Error; err != nil {
+			return err
+		}
+		if file.ObjectKind == string(domain.VaultObjectKindAsset) {
+			asset := vaultFileAssetRecord(file)
+			if err := tx.Create(&asset).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func rebuildFolderProjection(tx *gorm.DB, root string, notes []domain.Note) (int, error) {
+	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&FolderRecord{}).Error; err != nil {
+		return 0, err
+	}
+	folders, err := scanFolderRecords(root, notes)
+	if err != nil {
+		return 0, err
+	}
+	for _, folder := range folders {
+		if err := tx.Create(&folder).Error; err != nil {
+			return 0, err
+		}
+	}
+	return len(folders), nil
+}
+
+func scanFolderRecords(root string, notes []domain.Note) ([]FolderRecord, error) {
+	folders, err := loadRegisteredFolderRecords(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if !entry.IsDir() {
+			return nil
+		}
+		if rel == ".pinax" || rel == ".git" {
+			return filepath.SkipDir
+		}
+		record := folders[rel]
+		record.Path = rel
+		record.Exists = true
+		record.Empty = indexDirIsEmpty(path)
+		record.Depth = indexFolderDepth(rel)
+		if record.ManagedStatus == "" {
+			record.ManagedStatus = string(domain.ManagedStatusAdoptable)
+		}
+		folders[rel] = record
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	registeredPaths := registeredNotePaths(notes)
+	files, err := scanVaultFiles(root, registeredPaths)
+	if err != nil {
+		return nil, err
+	}
+	for _, note := range notes {
+		for path, record := range folders {
+			if indexFolderContainsPath(path, note.Path) {
+				record.NoteCount++
+				folders[path] = record
+			}
+		}
+	}
+	for _, file := range files {
+		if file.ObjectKind != string(domain.VaultObjectKindAsset) {
+			continue
+		}
+		for path, record := range folders {
+			if indexFolderContainsPath(path, file.Path) {
+				record.AssetCount++
+				folders[path] = record
+			}
+		}
+	}
+	records := make([]FolderRecord, 0, len(folders))
+	for _, record := range folders {
+		if record.Path == "" {
+			continue
+		}
+		if record.ManagedStatus == "" {
+			record.ManagedStatus = string(domain.ManagedStatusAdoptable)
+		}
+		if record.Purpose == "" {
+			record.Purpose = inferIndexFolderPurpose(record)
+		}
+		record.Depth = indexFolderDepth(record.Path)
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Path < records[j].Path })
+	return records, nil
+}
+
+func loadRegisteredFolderRecords(root string) (map[string]FolderRecord, error) {
+	folders := map[string]FolderRecord{}
+	b, err := os.ReadFile(filepath.Join(root, ".pinax", "folders.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return folders, nil
+	}
+	if err != nil {
+		return folders, err
+	}
+	registry := domain.FolderRegistry{}
+	if err := json.Unmarshal(b, &registry); err != nil {
+		return folders, err
+	}
+	for _, folder := range registry.Folders {
+		path := strings.Trim(filepath.ToSlash(folder.Path), "/")
+		if path == "" || path == "." || strings.HasPrefix(path, "../") || strings.Contains(path, "/../") {
+			continue
+		}
+		status := string(folder.ManagedStatus)
+		if status == "" {
+			status = string(domain.ManagedStatusManaged)
+		}
+		folders[path] = FolderRecord{Path: path, Purpose: string(folder.Purpose), ManagedStatus: status, CreatedAt: folder.CreatedAt, UpdatedAt: folder.UpdatedAt, Depth: indexFolderDepth(path)}
+	}
+	return folders, nil
+}
+
+func inferIndexFolderPurpose(record FolderRecord) string {
+	if record.NoteCount > 0 || record.Path == "notes" || strings.HasPrefix(record.Path, "notes/") {
+		return string(domain.FolderPurposeNotes)
+	}
+	if record.AssetCount > 0 || record.Path == "assets" || strings.HasPrefix(record.Path, "assets/") {
+		return string(domain.FolderPurposeAssets)
+	}
+	return string(domain.FolderPurposeGeneric)
+}
+
+func indexFolderDepth(path string) int {
+	path = strings.Trim(filepath.ToSlash(path), "/")
+	if path == "" {
+		return 0
+	}
+	return strings.Count(path, "/") + 1
+}
+
+func indexFolderContainsPath(folderPath, objectPath string) bool {
+	folderPath = strings.Trim(filepath.ToSlash(folderPath), "/")
+	objectPath = strings.Trim(filepath.ToSlash(objectPath), "/")
+	return objectPath == folderPath || strings.HasPrefix(objectPath, folderPath+"/")
+}
+
+func indexDirIsEmpty(path string) bool {
+	entries, err := os.ReadDir(path)
+	return err == nil && len(entries) == 0
+}
+
+func registeredNotePaths(notes []domain.Note) map[string]bool {
+	paths := map[string]bool{}
+	for _, note := range notes {
+		path := strings.TrimSpace(filepath.ToSlash(note.Path))
+		if path != "" {
+			paths[path] = true
+		}
+	}
+	return paths
+}
+
+func scanVaultFiles(root string, registeredPaths map[string]bool) ([]VaultFileRecord, error) {
+	records := []VaultFileRecord{}
+	if _, err := os.Stat(root); err != nil {
+		return records, err
+	}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if entry.IsDir() {
+			if rel == ".pinax" || rel == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		records = append(records, vaultFileRecord(rel, info, registeredPaths))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(records, func(i, j int) bool { return records[i].Path < records[j].Path })
+	return records, nil
+}
+
+func vaultFileRecord(rel string, info os.FileInfo, registeredPaths map[string]bool) VaultFileRecord {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(rel)), ".")
+	kind := string(domain.VaultObjectKindFile)
+	if ext == "md" {
+		kind = string(domain.VaultObjectKindNote)
+	} else if ext != "" {
+		kind = string(domain.VaultObjectKindAsset)
+	}
+	filename := filepath.Base(rel)
+	managedStatus := string(domain.ManagedStatusUnmanaged)
+	if registeredPaths[rel] {
+		managedStatus = string(domain.ManagedStatusRegistered)
+	}
+	return VaultFileRecord{Path: rel, Filename: filename, Stem: strings.TrimSuffix(filename, filepath.Ext(filename)), Extension: ext, MediaType: mediaType(rel), Size: info.Size(), ModifiedUnix: info.ModTime().Unix(), ObjectKind: kind, ManagedStatus: managedStatus}
+}
+
+func vaultFileAssetRecord(file VaultFileRecord) AssetRecord {
+	return AssetRecord{Path: file.Path, Filename: file.Filename, Stem: file.Stem, Extension: file.Extension, MediaType: file.MediaType, Size: file.Size, ModifiedUnix: file.ModifiedUnix, ManagedStatus: file.ManagedStatus}
 }
 
 func Search(root string, req SearchRequest) (SearchResult, error) {
@@ -504,11 +1418,13 @@ func open(root string) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Join(root, ".pinax"), 0o755); err != nil {
 		return nil, err
 	}
-	return gorm.Open(sqlite.Open(filepath.Join(root, ".pinax", "index.sqlite")), &gorm.Config{})
+	return gorm.Open(sqlite.Open(filepath.Join(root, ".pinax", "index.sqlite")), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 }
 
 func migrate(db *gorm.DB) error {
-	return db.AutoMigrate(&IndexMetaRecord{}, &NoteRecord{}, &NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}, &DimensionCountRecord{})
+	return db.AutoMigrate(&IndexMetaRecord{}, &NoteRecord{}, &NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}, &AssetRecord{}, &AssetLinkRecord{}, &VaultFileRecord{}, &FolderRecord{}, &DimensionCountRecord{}, &PropertyDefinitionRecord{}, &PropertyValueRecord{})
 }
 
 func upsertMeta(db *gorm.DB, key, value, now string) error {
@@ -523,11 +1439,14 @@ func metaValue(db *gorm.DB, key string) string {
 	return record.Value
 }
 
-func replaceNoteProjection(tx *gorm.DB, note domain.Note) error {
+func replaceNoteProjection(tx *gorm.DB, root string, note domain.Note) error {
 	for _, target := range []any{&NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}} {
 		if err := tx.Where("note_path = ?", note.Path).Delete(target).Error; err != nil {
 			return err
 		}
+	}
+	if err := tx.Where("source_path = ?", note.Path).Delete(&AssetLinkRecord{}).Error; err != nil {
+		return err
 	}
 	if err := tx.Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}).Error; err != nil {
 		return err
@@ -551,8 +1470,13 @@ func replaceNoteProjection(tx *gorm.DB, note domain.Note) error {
 			return err
 		}
 	}
-	for _, attachment := range noteAttachments(note) {
+	for _, attachment := range noteAttachments(root, note) {
 		if err := tx.Create(&attachment).Error; err != nil {
+			return err
+		}
+	}
+	for _, assetLink := range noteAssetLinks(root, note) {
+		if err := tx.Create(&assetLink).Error; err != nil {
 			return err
 		}
 	}
@@ -571,9 +1495,11 @@ func deleteNoteProjection(tx *gorm.DB, path string, includeRecord bool) error {
 			return err
 		}
 	}
+	if err := tx.Where("source_path = ?", path).Delete(&AssetLinkRecord{}).Error; err != nil {
+		return err
+	}
 	return nil
 }
-
 func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, changedPath string) error {
 	if len(targetKeys) == 0 {
 		return nil
@@ -774,17 +1700,7 @@ func noteLinks(note domain.Note, pathByTitle map[string]string) []LinkRecord {
 			status = "resolved"
 			evidence = "resolved by title"
 		}
-		links = append(links, LinkRecord{
-			NotePath:     note.Path,
-			SourceNoteID: note.ID,
-			Target:       target,
-			TargetRaw:    target,
-			TargetPath:   resolved,
-			Kind:         "wiki",
-			Broken:       resolved == "",
-			Status:       status,
-			Evidence:     evidence,
-		})
+		links = append(links, LinkRecord{NotePath: note.Path, SourceNoteID: note.ID, Target: target, TargetRaw: target, TargetPath: resolved, Kind: "wiki", Broken: resolved == "", Status: status, Evidence: evidence})
 	}
 	for _, match := range markdownLinkPattern.FindAllStringSubmatch(note.Body, -1) {
 		if len(match) < 2 {
@@ -795,34 +1711,32 @@ func noteLinks(note domain.Note, pathByTitle map[string]string) []LinkRecord {
 			continue
 		}
 		cleanPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(note.Path), target)))
-		links = append(links, LinkRecord{
-			NotePath:     note.Path,
-			SourceNoteID: note.ID,
-			Target:       target,
-			TargetRaw:    target,
-			TargetPath:   cleanPath,
-			Kind:         "markdown",
-			Broken:       false,
-			Status:       "resolved",
-			Evidence:     "resolved by relative path",
-		})
+		links = append(links, LinkRecord{NotePath: note.Path, SourceNoteID: note.ID, Target: target, TargetRaw: target, TargetPath: cleanPath, Kind: "markdown", Broken: false, Status: "resolved", Evidence: "resolved by relative path"})
 	}
 	return links
 }
 
-func noteAttachments(note domain.Note) []AttachmentRecord {
-	attachments := make([]AttachmentRecord, 0)
-	for _, match := range markdownLinkPattern.FindAllStringSubmatch(note.Body, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		target := strings.TrimSpace(match[1])
-		if target == "" || strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasSuffix(strings.ToLower(target), ".md") {
-			continue
-		}
-		attachments = append(attachments, AttachmentRecord{NotePath: note.Path, ReferenceText: target, TargetPath: filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(note.Path), target))), MediaType: mediaType(target), Exists: true})
+func noteAttachments(root string, note domain.Note) []AttachmentRecord {
+	links := pinaxassets.ExtractLinks(pinaxassets.LinkExtractionRequest{SourceNoteID: note.ID, SourcePath: note.Path, Body: note.Body})
+	attachments := make([]AttachmentRecord, 0, len(links))
+	for _, link := range links {
+		_, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(link.AssetPath)))
+		attachments = append(attachments, AttachmentRecord{NotePath: note.Path, ReferenceText: link.RawReference, TargetPath: link.AssetPath, MediaType: mediaType(link.AssetPath), Exists: statErr == nil})
 	}
 	return attachments
+}
+
+func noteAssetLinks(root string, note domain.Note) []AssetLinkRecord {
+	links := pinaxassets.ExtractLinks(pinaxassets.LinkExtractionRequest{SourceNoteID: note.ID, SourcePath: note.Path, Body: note.Body})
+	records := make([]AssetLinkRecord, 0, len(links))
+	for _, link := range links {
+		status := "resolved"
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(link.AssetPath))); err != nil {
+			status = "missing"
+		}
+		records = append(records, AssetLinkRecord{AssetPath: link.AssetPath, SourceNoteID: link.SourceNoteID, SourcePath: link.SourcePath, RawReference: link.RawReference, LinkStyle: link.LinkStyle, LinkKind: link.LinkKind, Line: link.Line, Status: status, MediaType: mediaType(link.AssetPath)})
+	}
+	return records
 }
 
 func noteDimensionCounts(notes []domain.Note) []DimensionCountRecord {
@@ -897,7 +1811,35 @@ func noteProject(note domain.Note) string {
 }
 
 func isSystemIndexNote(note domain.Note) bool {
-	return note.Kind == "index" && strings.HasPrefix(filepath.ToSlash(note.Path), "notes/daily/")
+	path := filepath.ToSlash(note.Path)
+	if note.Kind == "index" {
+		return strings.HasPrefix(path, "index/") || strings.HasPrefix(path, "notes/index/") || strings.HasPrefix(path, "notes/daily/")
+	}
+	if note.Kind == "daily" || note.Kind == "weekly" || note.Kind == "monthly" {
+		return strings.HasPrefix(path, note.Kind+"/") || strings.HasPrefix(path, "notes/"+note.Kind+"/")
+	}
+	return false
+}
+
+func inferLifecycleStatus(status, kind string) string {
+	s := strings.ToLower(strings.TrimSpace(status))
+	switch s {
+	case "inbox", "draft", "active", "archived", "discarded":
+		return s
+	case "system":
+		if kind == "index" {
+			return "system"
+		}
+		return "active"
+	default:
+		return "active"
+	}
+}
+
+func noteRecordFromDomain(note domain.Note, modifiedUnix, size int64) NoteRecord {
+	filename := filepath.Base(note.Path)
+	ext := filepath.Ext(filename)
+	return NoteRecord{Path: note.Path, NoteID: note.ID, Title: note.Title, Filename: filename, Stem: strings.TrimSuffix(filename, ext), Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, LifecycleStatus: inferLifecycleStatus(note.Status, note.Kind), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: noteSourceHash(note), ModifiedUnix: modifiedUnix, Size: size, IsSystem: isSystemIndexNote(note), ObjectKind: string(domain.VaultObjectKindNote), ManagedStatus: string(domain.ManagedStatusRegistered)}
 }
 
 func noteSourceHash(note domain.Note) string {

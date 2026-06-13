@@ -1,0 +1,136 @@
+package cli
+
+import (
+	"github.com/yeisme/pinax/internal/app"
+	pinaxconfig "github.com/yeisme/pinax/internal/config"
+	"github.com/yeisme/pinax/internal/output"
+)
+
+type commandBuildContext struct {
+	svc     *app.Service
+	version string
+
+	jsonMode              *bool
+	agentMode             *bool
+	eventsMode            *bool
+	explainMode           *bool
+	vaultPath             *string
+	apiURL                *string
+	apiToken              *string
+	apiTokenFile          *string
+	colorMode             *string
+	themeName             *string
+	renderWidth           *int
+	markdownStyle         *string
+	configResult          *pinaxconfig.LoadResult
+	renderOptions         *output.RenderOptions
+	yes                   *bool
+	snapshotMessage       *string
+	title                 *string
+	projectName           *string
+	projectDescription    *string
+	projectNotesPrefix    *string
+	storageRoot           *string
+	s3Bucket              *string
+	s3Region              *string
+	s3Prefix              *string
+	s3Endpoint            *string
+	s3Profile             *string
+	noteProject           *string
+	noteGroup             *string
+	noteFolder            *string
+	noteKind              *string
+	noteTags              *string
+	noteTemplate          *string
+	noteBody              *string
+	noteFrom              *string
+	noteDir               *string
+	noteSlug              *string
+	noteStatus            *string
+	noteUseStdin          *bool
+	noteDryRun            *bool
+	noteOpen              *bool
+	noteView              *string
+	noteDisplay           *string
+	noteRefreshRendered   *bool
+	noteSnapshot          *string
+	noteRuns              *bool
+	noteListTag           *string
+	noteListProject       *string
+	noteListStatus        *string
+	noteListSort          *string
+	noteListPathPrefix    *string
+	noteListProperties    *[]string
+	noteStrictProperties  *bool
+	noteListCreatedAfter  *string
+	noteListUpdatedBefore *string
+	noteRecent            *bool
+	noteLimit             *int
+	noteEditor            *string
+	noteHard              *bool
+	journalDate           *string
+	journalPrev           *bool
+	journalNext           *bool
+	templateSourcePath    *string
+	templateBody          *string
+	templateUseStdin      *bool
+	templateOverwrite     *bool
+	templateEngine        *string
+	templateSaveRun       *string
+	templateRun           *string
+	templateRuns          *bool
+	renderKeep            *int
+	renderDryRun          *bool
+	templateVars          *[]string
+	queryLazyIndex        *bool
+	queryCursor           *string
+	databaseViewQuery     *string
+	databaseViewColumns   *[]string
+	databaseSchemaType    *string
+	databaseSchemaValues  *string
+	syncTarget            *string
+	syncDryRun            *bool
+	syncBaseRevision      *string
+	syncRemoteRevision    *string
+	cloudEndpoint         *string
+	cloudWorkspace        *string
+	cloudDevice           *string
+	cloudSecretRef        *string
+	staleAfter            *string
+	repairSave            *bool
+	repairPlanID          *string
+	organizeSave          *bool
+	searchLinkTarget      *string
+	searchHasAttachment   *bool
+	searchCreatedAfter    *string
+	searchUpdatedAfter    *string
+	searchAllowStale      *bool
+	searchAt              *string
+	searchChangedSince    *string
+	searchRevision        *string
+	searchIncludeDirty    *bool
+	importConflict        *string
+	importDryRun          *bool
+	dashboardPort         *int
+	backendName           *string
+	backendRoot           *string
+	backendRemote         *string
+	backendDryRun         *bool
+	planFromPeriod        *string
+	planWithTaskBridge    *bool
+	planDryRun            *bool
+	planSave              *bool
+	briefingTopic         *string
+	briefingSource        *string
+	briefingLimit         *int
+	briefingDryRun        *bool
+	feishuWebhook         *string
+	feishuSecretRef       *string
+	feishuTitle           *string
+	feishuText            *string
+	deliveryDryRun        *bool
+}
+
+func (ctx commandBuildContext) outputMode() output.Mode {
+	return selectedMode(*ctx.jsonMode, *ctx.agentMode, *ctx.eventsMode, *ctx.explainMode)
+}

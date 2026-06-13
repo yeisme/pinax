@@ -1,0 +1,109 @@
+# Journal, starter note, index page, template recommend, completion, next action, and managed-block safety through the real CLI.
+exec pinax init vault --title Vault --json
+! stderr .
+stdout '"command":"vault.init"'
+env PINAX_TEST_NOW=2026-06-08
+
+exec pinax journal daily show --date 2026-06-08 --template journal.daily --vault vault --json
+! stderr .
+stdout '"command":"daily.show"'
+stdout '"template":"journal.daily"'
+stdout '"path":"daily/2026-06-08.md"'
+exists vault/daily/2026-06-08.md
+grep 'pinax:managed name=daily-captures' vault/daily/2026-06-08.md
+
+exec pinax note add '客户同步' --template meeting.notes --vault vault --json
+! stderr .
+stdout '"command":"note.new"'
+stdout '"path":"meetings/客户同步.md"'
+stdout '"daily_index_status":"updated"'
+exists vault/meetings/客户同步.md
+grep '## 议题' vault/meetings/客户同步.md
+grep 'meetings/客户同步.md' vault/daily/2026-06-08.md
+
+exec pinax index page preview home --template index.home --vault vault --json
+! stderr .
+stdout '"command":"index.page.preview"'
+stdout '"writes":"false"'
+stdout '"path":"index/home.md"'
+! exists vault/index/home.md
+
+exec pinax index page create home --template index.home --vault vault --json
+! stderr .
+stdout '"command":"index.page.create"'
+stdout '"managed_blocks":"1"'
+exists vault/index/home.md
+grep 'pinax:managed name=recent' vault/index/home.md
+
+cp user-home.md vault/index/home.md
+exec pinax index page refresh home --template index.home --vault vault --json
+! stderr .
+stdout '"command":"index.page.refresh"'
+stdout '"path":"index/home.md"'
+grep '用户保留内容' vault/index/home.md
+grep 'pinax:managed name=recent' vault/index/home.md
+
+exec pinax template list --pack starter --vault vault --json
+! stderr .
+stdout '"command":"template.list"'
+stdout '"filter.pack":"starter"'
+stdout 'note.quick'
+stdout 'learning.video'
+
+exec pinax template recommend --intent meeting --vault vault --json
+! stderr .
+stdout '"command":"template.recommend"'
+stdout '"primary":"meeting.notes"'
+stdout 'pinax note add'
+
+exec pinax __complete template inspect --vault vault ''
+stdout 'journal.daily	builtin journal_template'
+stdout 'index.home	builtin index_template'
+stderr 'ShellCompDirectiveNoFileComp'
+
+exec pinax template inspect journal.daily --vault vault --json
+! stderr .
+stdout '"command":"template.inspect"'
+stdout '"after_create_action_count":"1"'
+stdout 'pinax journal daily show --template journal.daily'
+
+exec pinax init broken --title Broken --json
+! stderr .
+stdout '"command":"vault.init"'
+mkdir broken/daily
+cp legacy-daily.md broken/daily/2026-06-08.md
+exec pinax note add Capture --vault broken --json
+! stderr .
+stdout '"command":"note.new"'
+stdout '"status":"partial"'
+stdout '"daily_index_status":"managed_block_missing"'
+stdout 'upgrade_daily_template'
+grep '旧正文' broken/daily/2026-06-08.md
+! grep 'capture.md' broken/daily/2026-06-08.md
+
+-- user-home.md --
+---
+schema_version: pinax.note.v1
+note_id: index_home
+title: Home
+kind: index
+---
+
+# Home
+
+<!-- pinax:managed name=recent -->
+旧内容
+<!-- /pinax:managed -->
+
+用户保留内容
+-- legacy-daily.md --
+---
+schema_version: pinax.note.v1
+note_id: note_daily
+title: Daily
+kind: daily
+---
+
+# Daily
+
+旧正文

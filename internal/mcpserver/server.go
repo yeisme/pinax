@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/domain"
 )
 
 type Request struct {
@@ -64,16 +66,20 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			{URI: "pinax://search/{query}", Name: "search notes"},
 			{URI: "pinax://organize/plan", Name: "organize plan"},
 			{URI: "pinax://vault/graph", Name: "vault link graph"},
+			{URI: "pinax://project/{slug}/board", Name: "project board", Description: "bounded readonly project board"},
 		}
 		return resp, nil
 	case "tools/list":
 		resp.Tools = []Tool{
 			{Name: "pinax.search", Description: "Search local notes"},
+			{Name: "pinax.query.run", Description: "Run bounded readonly Pinax SQL query"},
+			{Name: "pinax.database.view.show", Description: "Show saved readonly database view"},
 			{Name: "pinax.note.read", Description: "Read one local note"},
 			{Name: "pinax.note.links", Description: "Read outgoing links for a note"},
 			{Name: "pinax.note.backlinks", Description: "Read backlinks for a note"},
 			{Name: "pinax.note.context", Description: "Read bounded graph context around a note"},
 			{Name: "pinax.vault.graph_summary", Description: "Read vault link graph health summary"},
+			{Name: "pinax.project.board", Description: "Read bounded project board facts"},
 			{Name: "pinax.organize.plan", Description: "Preview organize operations"},
 			{Name: "pinax.git.snapshot_plan", Description: "Show snapshot command"},
 		}
@@ -90,6 +96,24 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 	name, _ := req.Params["name"].(string)
 	args, _ := req.Params["arguments"].(map[string]any)
 	switch name {
+	case "pinax.query.run":
+		sql, _ := args["sql"].(string)
+		projection, err := s.service.QueryRun(ctx, app.QueryRequest{VaultPath: s.vault, SQL: sql})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		return resp, nil
+	case "pinax.database.view.show":
+		name, _ := args["name"].(string)
+		projection, err := s.service.ShowView(ctx, app.ViewRequest{VaultPath: s.vault, Name: name})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		return resp, nil
 	case "pinax.search":
 		query, _ := args["query"].(string)
 		projection, err := s.service.SearchProjection(ctx, app.SearchRequest{VaultPath: s.vault, Query: query})
@@ -100,7 +124,11 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		return resp, nil
 	case "pinax.note.read":
 		noteRef := mcpNoteRef(args)
-		projection, err := s.service.ShowNoteProjection(ctx, app.ShowNoteRequest{VaultPath: s.vault, NoteRef: noteRef})
+		display, _ := args["display"].(string)
+		if display == "" || display == string(domain.NoteDisplayBody) {
+			display = string(domain.NoteDisplayCard)
+		}
+		projection, err := s.service.ShowNoteProjection(ctx, app.ShowNoteRequest{VaultPath: s.vault, NoteRef: noteRef, Display: display})
 		if err != nil {
 			return resp, err
 		}
@@ -133,12 +161,20 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		if backErr != nil {
 			return resp, backErr
 		}
+		facts := map[string]any{"truncated": "false"}
+		linksData := boundedGraphProjectionData(linksProj.Data, "links", facts)
+		backData := boundedGraphProjectionData(backProj.Data, "backlinks", facts)
+		status := "success"
+		if facts["truncated"] == "true" {
+			status = "partial"
+		}
 		resp.Result = map[string]any{
-			"status":      "success",
+			"status":      status,
 			"summary":     "笔记图谱上下文已读取。",
-			"links":       linksProj.Data,
-			"backlinks":   backProj.Data,
-			"next_action": fmt.Sprintf("pinax note show %s --vault %s", noteRef, s.vault),
+			"facts":       facts,
+			"links":       linksData,
+			"backlinks":   backData,
+			"next_action": fmt.Sprintf("pinax note links %s --vault %s --json", noteRef, s.vault),
 		}
 		return resp, nil
 	case "pinax.vault.graph_summary":
@@ -152,6 +188,18 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 			"data":    summary,
 		}
 		return resp, nil
+	case "pinax.project.board":
+		project, _ := args["project"].(string)
+		if project == "" {
+			project, _ = args["slug"].(string)
+		}
+		projection, err := s.service.ProjectBoardShow(ctx, app.ProjectBoardRequest{VaultPath: s.vault, Project: project, NoteDisplay: "card"})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		return resp, nil
 	case "pinax.organize.plan":
 		projection, err := s.service.PlanOrganize(ctx, app.VaultRequest{VaultPath: s.vault})
 		if err != nil {
@@ -160,7 +208,7 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
 		return resp, nil
 	case "pinax.git.snapshot_plan":
-		resp.Result = map[string]any{"status": "success", "command": fmt.Sprintf("pinax git snapshot --vault %s --message '整理前快照'", s.vault)}
+		resp.Result = map[string]any{"status": "success", "command": fmt.Sprintf("pinax version snapshot --vault %s --message '整理前快照'", s.vault)}
 		return resp, nil
 	default:
 		return resp, &MCPError{Code: "approval_required", Message: "MVP MCP surface 只允许只读工具"}
@@ -204,6 +252,71 @@ func Serve(ctx context.Context, service *app.Service, vault string, in io.Reader
 		}
 	}
 	return scanner.Err()
+}
+
+const (
+	mcpGraphContextMaxEdges      = 20
+	mcpGraphContextMaxCandidates = 3
+	mcpGraphContextMaxEvidence   = 120
+)
+
+func boundedGraphProjectionData(data any, edgeKey string, facts map[string]any) map[string]any {
+	payload, _ := data.(map[string]any)
+	bounded := make(map[string]any, len(payload))
+	for key, value := range payload {
+		bounded[key] = value
+	}
+	links, _ := payload[edgeKey].([]domain.NoteLink)
+	boundedLinks, truncationFacts := boundMCPNoteLinks(links)
+	truncated := truncationFacts.truncated
+	if len(links) > mcpGraphContextMaxEdges {
+		truncated = true
+	}
+	if len(boundedLinks) > mcpGraphContextMaxEdges {
+		boundedLinks = boundedLinks[:mcpGraphContextMaxEdges]
+	}
+	bounded[edgeKey] = boundedLinks
+	facts[edgeKey+".total"] = fmt.Sprint(len(links))
+	facts[edgeKey+".returned"] = fmt.Sprint(len(boundedLinks))
+	if truncationFacts.candidates {
+		facts["candidates.truncated"] = "true"
+	}
+	if truncationFacts.evidence {
+		facts["evidence.truncated"] = "true"
+	}
+	if truncated {
+		facts["truncated"] = "true"
+	}
+	return bounded
+}
+
+type graphContextTruncationFacts struct {
+	truncated  bool
+	candidates bool
+	evidence   bool
+}
+
+func boundMCPNoteLinks(links []domain.NoteLink) ([]domain.NoteLink, graphContextTruncationFacts) {
+	limit := len(links)
+	if limit > mcpGraphContextMaxEdges {
+		limit = mcpGraphContextMaxEdges
+	}
+	bounded := make([]domain.NoteLink, 0, limit)
+	facts := graphContextTruncationFacts{truncated: len(links) > limit}
+	for _, link := range links[:limit] {
+		if link.Evidence != "" && len(link.Evidence) > mcpGraphContextMaxEvidence {
+			link.Evidence = strings.TrimSpace(link.Evidence[:mcpGraphContextMaxEvidence]) + "..."
+			facts.truncated = true
+			facts.evidence = true
+		}
+		if len(link.Candidates) > mcpGraphContextMaxCandidates {
+			link.Candidates = link.Candidates[:mcpGraphContextMaxCandidates]
+			facts.truncated = true
+			facts.candidates = true
+		}
+		bounded = append(bounded, link)
+	}
+	return bounded, facts
 }
 
 func projectionMap(status, summary string, data any) map[string]any {

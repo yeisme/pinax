@@ -1,0 +1,106 @@
+{
+  "schema_version": "pinax.cloud.contract.v1",
+  "operations": [
+    {
+      "name": "health",
+      "method": "GET",
+      "path": "/v1/health",
+      "success_status": 200,
+      "success_body": {
+        "status": "ok",
+        "contract_version": "pinax.cloud.contract.v1"
+      }
+    },
+    {
+      "name": "current_revision",
+      "method": "GET",
+      "path": "/v1/workspaces/{workspace_id}/revision",
+      "success_status": 200,
+      "success_body": {
+        "revision_id": "rev_a",
+        "manifest_blob_id": "blob_manifest"
+      }
+    },
+    {
+      "name": "blob_batch_check",
+      "method": "POST",
+      "path": "/v1/workspaces/{workspace_id}/blobs:batchCheck",
+      "request_body": {
+        "blob_ids": ["blob_a", "blob_b"]
+      },
+      "success_status": 200,
+      "success_body": {
+        "missing_blob_ids": ["blob_b"]
+      }
+    },
+    {
+      "name": "blob_upload",
+      "method": "PUT",
+      "path": "/v1/workspaces/{workspace_id}/blobs/{blob_id}",
+      "request_body": {
+        "schema_version": "pinax.cloud.envelope.v1",
+        "alg": "AES-256-GCM",
+        "key_id": "key_1",
+        "nonce": "base64-nonce",
+        "ciphertext": "base64-ciphertext",
+        "plain_sha256": "sha256-of-plaintext"
+      },
+      "success_status": 201,
+      "success_body": {
+        "blob_id": "blob_b"
+      }
+    },
+    {
+      "name": "blob_download",
+      "method": "GET",
+      "path": "/v1/workspaces/{workspace_id}/blobs/{blob_id}",
+      "success_status": 200,
+      "success_body": {
+        "schema_version": "pinax.cloud.envelope.v1",
+        "alg": "AES-256-GCM",
+        "key_id": "key_1",
+        "nonce": "base64-nonce",
+        "ciphertext": "base64-ciphertext",
+        "plain_sha256": "sha256-of-plaintext"
+      }
+    },
+    {
+      "name": "revision_commit",
+      "method": "POST",
+      "path": "/v1/workspaces/{workspace_id}/revisions:commit",
+      "headers": {
+        "Authorization": "Bearer <redacted>",
+        "X-Pinax-Device-ID": "dev_laptop",
+        "Idempotency-Key": "req_123"
+      },
+      "request_body": {
+        "base_revision": "rev_a",
+        "revision_id": "rev_b",
+        "manifest_blob_id": "blob_manifest",
+        "blob_ids": ["blob_a", "blob_b"],
+        "device_id": "dev_laptop"
+      },
+      "success_status": 200,
+      "success_body": {
+        "revision_id": "rev_b",
+        "manifest_blob_id": "blob_manifest"
+      }
+    }
+  ],
+  "error_codes": [
+    "revision_conflict",
+    "unauthorized",
+    "backend_unavailable"
+  ],
+  "error_shape": {
+    "error": {
+      "code": "revision_conflict",
+      "message": "base revision is stale",
+      "retryable": true
+    }
+  },
+  "redaction_rules": [
+    "Do not include plaintext note body in backend logs, events, fixtures, or errors.",
+    "Do not include raw token, Authorization header value, Cookie, or provider payload in backend logs, events, fixtures, or errors."
+  ]
+}

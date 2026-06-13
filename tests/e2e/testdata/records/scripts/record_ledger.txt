@@ -1,0 +1,38 @@
+# Record ledger is authored by Pinax CLI commands.
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+
+exec pinax record init --vault vault --agent
+stdout 'command=record.init'
+stdout 'fact.records_path=.pinax/records'
+
+exec pinax note new Alpha --body '# Alpha' --vault vault --json
+stdout '"note_id"'
+stdout '"ledger_status":"updated"'
+
+exec pinax record adopt --vault vault --agent
+stdout 'command=record.adopt'
+stdout 'fact.adopted=0'
+stdout 'fact.records=1'
+
+exec pinax record status --vault vault --json
+stdout '"command":"record.status"'
+stdout '"records":"1"'
+stdout '"ledger_seq":"1"'
+
+exec pinax record history alpha.md --vault vault --agent
+stdout 'command=record.history'
+stdout 'fact.lifecycle=active'
+
+exists vault/.pinax/records/events.jsonl
+exists vault/.pinax/records/notes.json
+exists vault/.pinax/records/tombstones.json
+exists vault/.pinax/records/version.json
+
+
+exec pinax search Alpha --at HEAD --include-dirty --vault vault --agent
+stdout 'command=note.search'
+stdout 'status=success'
+
+! exec pinax search Alpha --revision abc123 --vault vault --agent
+stdout 'error.code=version_read_unavailable'

@@ -335,7 +335,7 @@ func BuildEnhancedLinkGraph(notes []domain.Note) (
 // --- Service methods for NoteLinkGraphService ---
 
 // QueryOutgoingLinks 查询指定 note 的出链。
-func (s *Service) QueryOutgoingLinks(_ context.Context, req NoteLinkGraphRequest) (domain.Projection, error) {
+func (s *Service) QueryOutgoingLinks(ctx context.Context, req NoteLinkGraphRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("note.links", err), err
@@ -344,7 +344,7 @@ func (s *Service) QueryOutgoingLinks(_ context.Context, req NoteLinkGraphRequest
 	if err != nil {
 		return errorProjection("note.links", err), err
 	}
-	note, err := resolveNoteRef(notes, req.NoteRef)
+	note, err := s.ResolveNote(ctx, ShowNoteRequest{VaultPath: root, NoteRef: req.NoteRef})
 	if err != nil {
 		return errorProjection("note.links", err), err
 	}
@@ -354,7 +354,7 @@ func (s *Service) QueryOutgoingLinks(_ context.Context, req NoteLinkGraphRequest
 		links = links[:req.Limit]
 	}
 	engine, indexStatus := linkGraphEngineStatus(root)
-	projection := domain.NewProjection("note.links", "笔记链接已列出。")
+	projection := domain.NewProjection("note.links", "Note links listed.")
 	projection.Facts["path"] = note.Path
 	projection.Facts["note_id"] = note.ID
 	projection.Facts["links"] = fmt.Sprint(len(links))
@@ -365,12 +365,16 @@ func (s *Service) QueryOutgoingLinks(_ context.Context, req NoteLinkGraphRequest
 	if indexStatus != "" {
 		projection.Facts["index_status"] = indexStatus
 	}
-	projection.Data = map[string]any{"note": note, "links": links}
+	if countLinksWithStatus(links, "broken") > 0 || countLinksWithStatus(links, "ambiguous") > 0 {
+		projection.Status = "partial"
+		projection.Actions = []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}
+	}
+	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "links": links}
 	return projection, nil
 }
 
 // QueryBacklinks 查询指定 note 的反链。
-func (s *Service) QueryBacklinks(_ context.Context, req NoteBacklinkGraphRequest) (domain.Projection, error) {
+func (s *Service) QueryBacklinks(ctx context.Context, req NoteBacklinkGraphRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("note.backlinks", err), err
@@ -379,7 +383,7 @@ func (s *Service) QueryBacklinks(_ context.Context, req NoteBacklinkGraphRequest
 	if err != nil {
 		return errorProjection("note.backlinks", err), err
 	}
-	note, err := resolveNoteRef(notes, req.NoteRef)
+	note, err := s.ResolveNote(ctx, ShowNoteRequest{VaultPath: root, NoteRef: req.NoteRef})
 	if err != nil {
 		return errorProjection("note.backlinks", err), err
 	}
@@ -393,7 +397,7 @@ func (s *Service) QueryBacklinks(_ context.Context, req NoteBacklinkGraphRequest
 		backlinks = backlinks[:req.Limit]
 	}
 	engine, indexStatus := linkGraphEngineStatus(root)
-	projection := domain.NewProjection("note.backlinks", "笔记反链已列出。")
+	projection := domain.NewProjection("note.backlinks", "Note backlinks listed.")
 	projection.Facts["path"] = note.Path
 	projection.Facts["note_id"] = note.ID
 	projection.Facts["backlinks"] = fmt.Sprint(len(backlinks))
@@ -402,7 +406,7 @@ func (s *Service) QueryBacklinks(_ context.Context, req NoteBacklinkGraphRequest
 	if indexStatus != "" {
 		projection.Facts["index_status"] = indexStatus
 	}
-	projection.Data = map[string]any{"note": note, "backlinks": backlinks}
+	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "backlinks": backlinks}
 	return projection, nil
 }
 
@@ -444,7 +448,7 @@ func (s *Service) QueryOrphans(_ context.Context, req NoteOrphansRequest) (domai
 		}
 	}
 	engine, indexStatus := linkGraphEngineStatus(root)
-	projection := domain.NewProjection("note.orphans", "孤立笔记已列出。")
+	projection := domain.NewProjection("note.orphans", "Orphan notes listed.")
 	projection.Facts["notes"] = fmt.Sprint(len(notes))
 	projection.Facts["orphans"] = fmt.Sprint(len(orphans))
 	projection.Facts["mode"] = mode
@@ -535,6 +539,10 @@ func linkGraphEngineStatus(root string) (engine, indexStatus string) {
 		return "index", "fresh"
 	}
 	return "scan", "stale"
+}
+
+func noteGraphNoteSummary(note domain.Note) domain.Note {
+	return domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Tags: note.Tags, Project: note.Project, Folder: note.Folder, Kind: note.Kind, Status: note.Status, CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt}
 }
 
 // filterLinks 按条件过滤链接列表。

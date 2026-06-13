@@ -1,22 +1,46 @@
-# CLI 输出合同
+# CLI Output Contract
 
-Pinax 命令必须从同一个 command projection 渲染所有输出模式：
+Pinax commands must render all output modes from the same command projection:
 
-- 默认输出：简洁中文摘要，包含事实、风险和下一步。
-- `--agent`：低 token `key=value`，稳定字段名，适合 agent 消费。
-- `--json`：单一 JSON envelope，stdout 只包含 JSON。
-- `--events`：NDJSON 事件流。
-- `--explain`：说明输入、决策、风险和可复验命令。
-- 输出模式互斥：一次只能选择默认模式、`--agent`、`--json`、`--events` 或 `--explain` 中的一个；冲突时返回 `cli.output_mode` / `output_mode_conflict`。
+- Default output: concise English summary; on success, show only result facts, risks, and next steps, and do not show command execution status.
+- `--agent`: low-token `key=value`, stable field names, suitable for agent consumption.
+- `--json`: a single JSON envelope; stdout contains only JSON.
+- `--events`: NDJSON event stream.
+- `--explain`: explain inputs, decisions, risks, and reproducible commands.
+- Output modes are mutually exclusive: only one of default mode, `--agent`, `--json`, `--events`, or `--explain` can be selected at a time; on conflict, return `cli.output_mode` / `output_mode_conflict`.
 
-stdout/stderr 规则：
+stdout/stderr rules:
 
-- 机器输出模式下 stdout 只包含所选机器格式。
-- `--events` 必须至少输出 `start` 和 `end` / `error` 事件；没有值的 `facts`、`actions`、`evidence` 和 `error` 字段不输出，避免 `null` 语义歧义。
-- progress、diagnostics、provider stderr、日志和非结构化错误写 stderr。
-- 所有错误必须有稳定 status 和 error code。
-- notebook core 新增命令必须复用同一 projection：`daily`、`inbox`、`view`、`index`、`search`、`note links/backlinks/orphans/attach/attachments`、`import markdown`、`export markdown`、`organize suggest/list/apply` 的默认输出为中文摘要，`--json` 为单一 envelope，`--agent` 为低 token facts。
-- 常用稳定 facts 包括但不限于：`path`、`note_id`、`group`、`folder`、`kind`、`status`、`index_status`、`engine`、`returned`、`links`、`backlinks`、`unresolved`、`attachments`、`missing`、`view`、`plan_id`、`operations`、`receipt_path`。
-- 参数、flag 和用法错误也必须可操作：默认输出说明缺少或多出的参数、给出真实可运行示例、提供 `--help` 或下一条命令；不得只暴露 `accepts N arg(s)` 这类框架错误。
-- `--json`、`--agent`、`--events` 和 `--explain` 下的参数错误必须从同一个 failed projection 渲染，包含稳定 `error.code`、中文 `error.message` 和可执行 `error.hint` / `actions`。
-- token、webhook URL、cookies、Authorization header、外部 CLI 配置内容和 raw payload 必须脱敏。
+- In machine output modes, stdout contains only the selected machine format.
+- `--events` must output at least `start` and `end` / `error` events; omit `facts`, `actions`, `evidence`, and `error` fields that have no value to avoid ambiguity around `null` semantics.
+- progress, diagnostics, provider stderr, logs, and unstructured errors go to stderr.
+- All errors must have stable status and error code.
+- Default human output does not show `status=success` or a “success” status bar; success itself is expressed by the command exit code and result summary. Show command execution status only for `partial`, `failed`, dry-run, approval required, when a warning/risk exists, or when the user explicitly requests a machine mode. Status fields in business facts may still be shown, such as note frontmatter `status`, `index_status`, `ledger_status`, or provider health status.
+- New notebook core commands must reuse the same projection: default output for `daily`, `inbox`, `view`, `index`, `search`, `note links/backlinks/orphans/attach/attachments`, `import markdown`, `export markdown`, `organize plan/list/apply`, `project board show/plan/configure/export`, `project item add/move/archive`, and `api routes/schema/serve` is an English summary, `--json` is a single envelope, and `--agent` is low-token facts.
+- Common stable facts include but are not limited to: `path`, `note_id`, `group`, `folder`, `kind`, `status`, `index_status`, `engine`, `returned`, `links`, `backlinks`, `broken`, `ambiguous`, `orphans`, `link_target`, `unresolved`, `attachments`, `missing`, `view`, `display`, `note_display`, `project`, `columns`, `items`, `next`, `doing`, `blocked`, `review`, `done`, `snapshot_id`, `board_snapshot_id`, `plan_id`, `operations`, `receipt_path`, `writes`.
+- Argument, flag, and usage errors must also be actionable: default output explains missing or extra arguments, provides real runnable examples, and offers `--help` or the next command; it must not expose only framework errors such as `accepts N arg(s)`.
+- Argument errors under `--json`, `--agent`, `--events`, and `--explain` must be rendered from the same failed projection, containing stable `error.code`, English `error.message`, and executable `error.hint` / `actions`.
+- Tokens, webhook URLs, cookies, Authorization headers, external CLI configuration contents, and raw payloads must be redacted.
+
+Project board and NoteDisplay output contract:
+
+- `pinax project board show <project> --note-display card|detail|context --json` must output a bounded board projection and must not output the full note body; use `pinax note read/show <ref> --display body --json` when the body is needed.
+- `pinax note read/show --display card|detail|context|body` must reuse the `NoteDisplay` structure in `data.note`; `card/detail/context` return only title, path, project, status, column, tags, excerpt, and redaction warnings; only `body` may include `data.note.body`.
+- If `project item archive` is missing `--yes`, return `approval_required`; if it is missing a version snapshot, return `snapshot_required`; both must provide an executable action or hint and must not rewrite Markdown.
+- `pinax api routes --json` and `pinax api schema export --format openapi --json` must be rendered from the remote capability registry; handlers, documentation, and tests are not allowed to maintain different fields independently.
+
+Output contract for relationship commands:
+
+- `pinax note links`, `pinax note backlinks`, `pinax note orphans`, and `pinax search --link-target` must render the default English summary, `--agent`, `--json`, `--events`, and `--explain` from the same relationship projection.
+- `--json`/`--agent`/`--events` do not output the full note body and do not leak secrets, raw prompts, provider payloads, or hidden system prompts; ambiguous candidates return only bounded summaries.
+- When the index is missing/stale, output `engine=scan`, `index_status`, and a runnable action; for low-cost maintenance, prefer recommending `pinax index refresh --vault <vault>`; handle structural abnormalities with `pinax index doctor --vault <vault>` or explicit `rebuild`; do not describe the SQLite index as the source of truth.
+- Output related to broken, ambiguous, orphan, and link rewrite cases may only guide users to manual review via `repair plan` or `organize plan --save`; it must not imply automatic body rewrites.
+
+
+## Human Rendering Configuration
+
+`--color`, `--theme`, `--width`, `--markdown-style`, and `output.*` configuration affect only the default human summary output. `--json`, `--agent`, `--events`, and `--explain` must continue to render the machine contract from the same projection and must not include ANSI, Glamour decorations, table colors, or pager control sequences.
+
+Themes take effect through semantic roles: `accent`, `muted`, `rule`, `success`, `warning`, `danger`, `key`, `value`, `path`, `link`, `code`, `heading`. Built-in themes are `pinax`, `mono`, and `high-contrast`; the `custom` theme only overrides roles declared by the user, and missing roles fall back to `pinax`.
+
+Markdown/Glamour is used only for body-reading scenarios in default human mode, such as `note show/read`, `daily/weekly/monthly show`, and `template show/render`. Machine modes preserve the original `data.body` or `data.note.body` and must not write rendered ANSI text.

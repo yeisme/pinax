@@ -1,0 +1,62 @@
+# Test configuration commands output contract across different modes
+exec sh -c 'pinax init vault --title Vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+
+# Test config set project scope
+exec sh -c 'pinax config set output.theme pinax --scope project --vault vault --json > set_project.json'
+validate-json-envelope set_project.json
+validate-clean-stdout set_project.json
+exec grep -q '"command":"config.set"' set_project.json
+exec grep -q '"status":"success"' set_project.json
+
+# Test config set agent mode
+exec sh -c 'pinax config set output.theme mono --scope user --vault vault --agent > set_agent.txt'
+validate-agent-format set_agent.txt
+validate-clean-stdout set_agent.txt
+exec grep -q 'command=config.set' set_agent.txt
+exec grep -q 'status=success' set_agent.txt
+
+# Test config get json mode
+exec sh -c 'pinax config get output.theme --vault vault --json > get_json.json'
+validate-json-envelope get_json.json
+validate-clean-stdout get_json.json
+exec grep -q '"command":"config.get"' get_json.json
+exec grep -q '"status":"success"' get_json.json
+exec grep -q '"value":"pinax"' get_json.json
+
+# Test config get agent mode
+exec sh -c 'pinax config get output.theme --vault vault --agent > get_agent.txt'
+validate-agent-format get_agent.txt
+validate-clean-stdout get_agent.txt
+exec grep -q 'command=config.get' get_agent.txt
+exec grep -q 'status=success' get_agent.txt
+exec grep -q 'fact.value=pinax' get_agent.txt
+
+# Test config doctor json mode
+exec sh -c 'pinax config doctor --vault vault --json > doctor_json.json'
+validate-json-envelope doctor_json.json
+validate-clean-stdout doctor_json.json
+exec grep -q '"command":"config.doctor"' doctor_json.json
+exec grep -q '"status":"success"' doctor_json.json
+
+# Test config doctor agent mode
+exec sh -c 'pinax config doctor --vault vault --agent > doctor_agent.txt'
+validate-agent-format doctor_agent.txt
+validate-clean-stdout doctor_agent.txt
+exec grep -q 'command=config.doctor' doctor_agent.txt
+exec grep -q 'status=success' doctor_agent.txt
+
+# Test config error handling json mode
+! exec sh -c 'pinax config set output.theme mono --vault vault --json > err_json.json'
+validate-json-envelope err_json.json
+validate-clean-stdout err_json.json
+exec grep -q '"status":"failed"' err_json.json
+exec grep -q '"code":"config_scope_required"' err_json.json
+
+# Test config error handling agent mode
+! exec sh -c 'pinax config set output.theme mono --vault vault --agent > err_agent.txt'
+validate-agent-format err_agent.txt
+validate-clean-stdout err_agent.txt
+exec grep -q 'status=failed' err_agent.txt
+exec grep -q 'error.code=config_scope_required' err_agent.txt

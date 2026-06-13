@@ -1,6 +1,7 @@
 package index
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
@@ -162,4 +163,95 @@ func linksForNote(t *testing.T, root, path string) []LinkRecord {
 		t.Fatalf("query links: %v", err)
 	}
 	return links
+}
+
+func TestIndexSyncClassifiesCreatedChangedMovedDeletedAndSkipped(t *testing.T) {
+	root := t.TempDir()
+	initial := []domain.Note{
+		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"},
+		{ID: "note_b", Title: "B", Path: "notes/b.md", Body: "# B\n"},
+		{ID: "note_c", Title: "C", Path: "notes/c.md", Body: "# C\n"},
+	}
+	if _, err := Rebuild(root, initial); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	final := []domain.Note{
+		initial[0],
+		{ID: "note_b", Title: "B", Path: "notes/b.md", Body: "# B\nchanged\n"},
+		{ID: "note_c", Title: "C", Path: "notes/archive/c.md", Body: "# C\n"},
+		{ID: "note_d", Title: "D", Path: "notes/d.md", Body: "# D\n"},
+	}
+
+	result, err := Sync(root, final)
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if result.Created != 1 || result.Changed != 1 || result.Moved != 1 || result.Deleted != 0 || result.Skipped != 1 {
+		t.Fatalf("sync result = %#v", result)
+	}
+	if records := noteRecords(t, root, "notes/c.md"); len(records) != 0 {
+		t.Fatalf("old moved record remained: %#v", records)
+	}
+	if records := noteRecords(t, root, "notes/archive/c.md"); len(records) != 1 {
+		t.Fatalf("moved record missing: %#v", records)
+	}
+}
+
+func TestIndexSyncDeletesMissingRows(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Rebuild(root, []domain.Note{{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"}}); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	result, err := Sync(root, nil)
+	if err != nil {
+		t.Fatalf("sync delete: %v", err)
+	}
+	if result.Deleted != 1 {
+		t.Fatalf("sync delete result = %#v", result)
+	}
+	if records := noteRecords(t, root, "notes/a.md"); len(records) != 0 {
+		t.Fatalf("deleted record remained: %#v", records)
+	}
+}
+
+func TestIndexRefreshCreatesMissingAndSkipsUnchanged(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"}}
+
+	created, err := Refresh(root, notes, RefreshOptions{})
+	if err != nil {
+		t.Fatalf("refresh missing: %v", err)
+	}
+	if created.Scanned != 1 || created.Indexed != 1 || created.Created != 1 || created.Skipped != 0 || created.Failed != 0 || created.IndexStatus != "fresh" || created.Batches != 1 {
+		t.Fatalf("refresh missing result = %#v", created)
+	}
+
+	fresh, err := Refresh(root, notes, RefreshOptions{})
+	if err != nil {
+		t.Fatalf("refresh fresh: %v", err)
+	}
+	if fresh.Scanned != 1 || fresh.Indexed != 0 || fresh.Created != 0 || fresh.Skipped != 1 || fresh.Failed != 0 || fresh.IndexStatus != "fresh" {
+		t.Fatalf("refresh fresh result = %#v", fresh)
+	}
+}
+
+func BenchmarkIndexRefreshSkipsUnchanged(b *testing.B) {
+	root := b.TempDir()
+	notes := make([]domain.Note, 0, 200)
+	for i := 0; i < 200; i++ {
+		notes = append(notes, domain.Note{ID: fmt.Sprintf("note_%03d", i), Title: fmt.Sprintf("Note %03d", i), Path: fmt.Sprintf("notes/%03d.md", i), Body: "# Body\n"})
+	}
+	if _, err := Refresh(root, notes, RefreshOptions{}); err != nil {
+		b.Fatalf("initial refresh: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		result, err := Refresh(root, notes, RefreshOptions{BatchSize: 50})
+		if err != nil {
+			b.Fatalf("refresh: %v", err)
+		}
+		if result.Skipped != len(notes) || result.Indexed != 0 || result.Batches != 4 {
+			b.Fatalf("refresh result = %#v", result)
+		}
+	}
 }

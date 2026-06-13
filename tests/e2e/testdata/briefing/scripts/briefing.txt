@@ -1,0 +1,39 @@
+# End-to-end briefing workflow with fake research evidence and fake Feishu.
+exec pinax init vault --title Vault --json
+exec pinax briefing recipe init --topic 'AI tooling' --vault vault --json
+exec pinax briefing recipe set --source fake:hermes --vault vault --json
+
+exec pinax briefing run --dry-run --vault vault --json
+stdout '"command":"briefing.run"'
+stdout '"dry_run":"true"'
+stdout 'AI tooling'
+
+exec pinax briefing run --dry-run --vault vault --agent
+stdout 'command=briefing.run'
+stdout 'fact.dry_run=true'
+stdout 'fact.candidates='
+
+exec pinax briefing run --yes --vault vault --events
+stdout '"type":"start"'
+stdout '"type":"end"'
+stdout '"command":"briefing.run"'
+exists vault/.pinax/briefing/review-queue.json
+exists vault/notes/briefing
+
+exec pinax briefing deliver feishu --webhook $PINAX_FAKE_FEISHU_URL/hook/raw-token --secret-ref env://FEISHU_WEBHOOK --title 'Daily briefing' --text 'AI tooling update' --yes --vault vault --json
+stdout '"command":"briefing.deliver.feishu"'
+stdout '"remote_write":"true"'
+! stdout 'raw-token'
+! stdout 'FEISHU_WEBHOOK'
+
+-- vault/notes/context.md --
+---
+schema_version: pinax.note.v1
+note_id: note_context
+title: Agent workflow
+kind: reference
+---
+
+# Agent workflow
+
+Markdown notes and local tooling.

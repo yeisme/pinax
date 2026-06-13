@@ -6,10 +6,31 @@ tasks:
     cmds:
       - task --list
 
+  deps:
+    desc: Download Go module dependencies.
+    cmds:
+      - go mod download
+
+  mod-check:
+    desc: Verify go.mod and go.sum are tidy relative to the current worktree.
+    cmds:
+      - |
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        cp go.mod go.sum "$tmp"/
+        go mod tidy
+        diff -u "$tmp/go.mod" go.mod
+        diff -u "$tmp/go.sum" go.sum
+
   test:
     desc: Run Go tests.
     cmds:
       - go test ./...
+
+  test:integration:
+    desc: Run integration/e2e tests and write local evidence.
+    cmds:
+      - go run ./internal/testkit/integrationevidence
 
   build:
     desc: Build the Pinax CLI.
@@ -19,14 +40,24 @@ tasks:
       - go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 
   fmt:
-    desc: Format Go files.
+    desc: Format Go files with golangci-lint formatters.
     cmds:
-      - gofmt -w cmd internal
+      - golangci-lint fmt
 
   fmt-check:
-    desc: Verify Go files are formatted.
+    desc: Verify Go files are formatted with golangci-lint formatters.
     cmds:
-      - test -z "$(gofmt -l cmd internal)"
+      - golangci-lint fmt --diff
+
+  lint:
+    desc: Run golangci-lint.
+    cmds:
+      - golangci-lint run
+
+  run:
+    desc: Run the Pinax CLI from source. Use ARGS="..." to pass command arguments.
+    cmds:
+      - go run ./cmd/pinax {{.ARGS}}
 
   tidy:
     desc: Tidy Go module files.
@@ -40,7 +71,11 @@ tasks:
 
   check:
     desc: Run the local Pinax quality gate.
-    deps: [fmt-check, test, build, openspec]
+    deps: [fmt-check, lint, test, build, openspec]
+
+  ci:
+    desc: Run the CI-equivalent Pinax quality gate.
+    deps: [check]
 
   clean:
     desc: Remove local build artifacts.

@@ -7,3 +7,16 @@ coverage.out
 tmp/
 *.log
 
+temp/integration-test-runs/
+temp/
+
+# IDEs and editors
+.idea/
+.vscode/
+
+# Code intelligence
+.codegraph/
+docs/superpowers/
+
+# Notes directory for testing
+notes/

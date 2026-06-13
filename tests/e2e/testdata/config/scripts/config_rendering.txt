@@ -1,0 +1,24 @@
+# Config commands author structured config and respect layering.
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+
+exec pinax config set output.theme mono --scope user --vault vault --agent
+stdout 'command=config.set'
+stdout 'fact.scope=user'
+
+exec pinax config set output.theme pinax --scope project --vault vault --agent
+stdout 'command=config.set'
+stdout 'fact.scope=project'
+
+exec pinax --theme high-contrast config get output.theme --vault vault --agent
+stdout 'command=config.get'
+stdout 'fact.key=output.theme'
+stdout 'fact.value=high-contrast'
+
+exec pinax config doctor --vault vault --json
+stdout '"command":"config.doctor"'
+stdout '"output.theme":"pinax"'
+stdout '"project_config"'
+
+! exec pinax config set output.theme mono --vault vault --agent
+stdout 'error.code=config_scope_required'

@@ -1,0 +1,22 @@
+# Briefing --yes writes review candidates through the CLI service.
+exec pinax init vault --title Vault --json
+exec pinax briefing recipe init --topic 'AI tooling' --vault vault --json
+exec pinax briefing run --yes --vault vault --json
+stdout '"command":"briefing.run"'
+stdout '"writes":"true"'
+stdout 'pending_review'
+exists vault/.pinax/briefing/review-queue.json
+exists vault/.pinax/events.jsonl
+exists vault/notes/briefing
+
+-- vault/notes/context.md --
+---
+schema_version: pinax.note.v1
+note_id: note_context
+title: Agent workflow
+kind: reference
+---
+
+# Agent workflow
+
+Markdown notes and local tooling.

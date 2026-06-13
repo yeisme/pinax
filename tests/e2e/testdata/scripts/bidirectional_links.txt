@@ -1,0 +1,142 @@
+# Full bidirectional link workflow through the real CLI.
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+
+# Scan fallback covers wiki title, alias, heading, markdown relative path,
+# ignored external links, ambiguous targets, broken links, and orphan listing.
+exec pinax note links Alpha --vault vault --json
+stdout '"command":"note.links"'
+stdout '"engine":"scan"'
+stdout '"links":"6"'
+stdout '"resolved":"4"'
+stdout '"broken":"1"'
+stdout '"ambiguous":"1"'
+stdout '"target_alias":"Alias Gamma"'
+stdout '"target_heading":"Deep"'
+stdout '"kind":"markdown"'
+stdout '"target_path":"notes/delta.md"'
+stdout '"target":"Missing Target"'
+stdout '"status":"ambiguous"'
+! stdout 'example.com'
+
+exec pinax note backlinks Beta --vault vault --json
+stdout '"command":"note.backlinks"'
+stdout '"backlinks":"1"'
+stdout 'notes/alpha.md'
+
+exec pinax note orphans --vault vault --json
+stdout '"command":"note.orphans"'
+stdout '"mode":"full"'
+stdout 'notes/lone.md'
+
+# Fresh index path still returns equivalent graph facts and supports link-target search.
+exec pinax index rebuild --vault vault --json
+stdout '"command":"index.rebuild"'
+stdout '"status":"success"'
+
+exec pinax note links Alpha --vault vault --json
+stdout '"links":"6"'
+stdout '"resolved":"4"'
+stdout '"broken":"1"'
+
+exec pinax search Alpha --link-target notes/delta.md --vault vault --json
+stdout '"command":"note.search"'
+stdout '"filter.link_target":"notes/delta.md"'
+stdout '"returned":"1"'
+stdout 'notes/alpha.md'
+
+! exec pinax search Alpha --link-target Shared --vault vault --json
+stdout '"code":"link_target_ambiguous"'
+stdout 'notes/shared-a.md'
+stdout 'notes/shared-b.md'
+
+-- vault/notes/alpha.md --
+---
+schema_version: pinax.note.v1
+note_id: note_alpha
+title: Alpha
+kind: reference
+---
+
+# Alpha
+
+See [[Beta]], [[Gamma|Alias Gamma]], [[Epsilon#Deep]], [Delta](delta.md), [Web](https://example.com), [[Shared]], and [[Missing Target]].
+-- vault/notes/beta.md --
+---
+schema_version: pinax.note.v1
+note_id: note_beta
+title: Beta
+kind: reference
+---
+
+# Beta
+
+Linked by Alpha.
+-- vault/notes/gamma.md --
+---
+schema_version: pinax.note.v1
+note_id: note_gamma
+title: Gamma
+kind: reference
+---
+
+# Gamma
+
+Alias target.
+-- vault/notes/epsilon.md --
+---
+schema_version: pinax.note.v1
+note_id: note_epsilon
+title: Epsilon
+kind: reference
+---
+
+# Epsilon
+
+## Deep
+
+Heading target.
+-- vault/notes/delta.md --
+---
+schema_version: pinax.note.v1
+note_id: note_delta
+title: Delta
+kind: reference
+---
+
+# Delta
+
+Markdown relative target.
+-- vault/notes/shared-a.md --
+---
+schema_version: pinax.note.v1
+note_id: note_shared_a
+title: Shared
+kind: reference
+---
+
+# Shared
+
+First duplicate.
+-- vault/notes/shared-b.md --
+---
+schema_version: pinax.note.v1
+note_id: note_shared_b
+title: Shared
+kind: reference
+---
+
+# Shared
+
+Second duplicate.
+-- vault/notes/lone.md --
+---
+schema_version: pinax.note.v1
+note_id: note_lone
+title: Lone
+kind: reference
+---
+
+# Lone
+
+No graph edges.
