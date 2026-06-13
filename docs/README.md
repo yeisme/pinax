@@ -1,5 +1,7 @@
 # Pinax Documentation Map
 
+[中文文档地图](./README.zh-CN.md)
+
 This directory is the source of truth for the Pinax subproject's product, design, operations, protocol, implementation, QA, and release documentation. The root repository only keeps cross-project handoff and governance indexes, and does not maintain a mirror of Pinax documentation.
 
 Pinax is a local-first unified notes Agent CLI: the Markdown vault is the user's source of truth, SQLite/GORM is a rebuildable index projection, the version backend only provides version evidence and the snapshot basis for protected workflows, and external platforms are integrated through CLI-backed Provider adapters.
@@ -45,8 +47,9 @@ Pinax is a local-first unified notes Agent CLI: the Markdown vault is the user's
 - [Local REST/RPC Contract](./interfaces/remote-api-contract.md)
 - [Command Manual](./commands/README.md)
 - [Operations Manual](./operations/local-development.md)
-- [Contributing](../CONTRIBUTING.md)
-- [Security Policy](../SECURITY.md)
+- [Chinese Documentation Map](./README.zh-CN.md)
+- [Contributing](../CONTRIBUTING.md) / [贡献指南](../CONTRIBUTING.zh-CN.md)
+- [Security Policy](../SECURITY.md) / [安全策略](../SECURITY.zh-CN.md)
 
 ## Command Manual
 

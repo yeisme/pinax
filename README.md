@@ -1,5 +1,7 @@
 # Pinax
 
+[中文说明](./README.zh-CN.md)
+
 Pinax is a local-first Markdown notes CLI for people and agents who want a portable knowledge base instead of another hosted note silo. Your Markdown vault stays the source of truth; `.pinax/` stores CLI-authored config, indexes, receipts, events, and audit projections that can be rebuilt or reviewed.
 
 Pinax focuses on safe local workflows: capture notes, index and search them, inspect links and backlinks, plan repairs and organization, snapshot before risky writes, expose bounded JSON/agent output, and sync encrypted revisions through explicit Cloud Sync transports.
@@ -360,8 +362,10 @@ openspec validate --all
 - [Command manual](./docs/commands/README.md)
 - [Architecture boundaries](./docs/architecture/architecture-boundaries.md)
 - [Local development](./docs/operations/local-development.md)
-- [Contributing](./CONTRIBUTING.md)
-- [Security policy](./SECURITY.md)
+- [中文 README](./README.zh-CN.md)
+- [中文文档地图](./docs/README.zh-CN.md)
+- [Contributing](./CONTRIBUTING.md) / [贡献指南](./CONTRIBUTING.zh-CN.md)
+- [Security policy](./SECURITY.md) / [安全策略](./SECURITY.zh-CN.md)
 
 ## License
 

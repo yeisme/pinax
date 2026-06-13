@@ -1,5 +1,7 @@
 # Security Policy
 
+[中文](./SECURITY.zh-CN.md)
+
 Pinax is local-first software. It stores user notes in a local Markdown vault and keeps machine-authored projections under `.pinax/`. Security reports should focus on vulnerabilities that can expose note content, credentials, provider payloads, local files, sync metadata, or command output contracts.
 
 ## Reporting a Vulnerability

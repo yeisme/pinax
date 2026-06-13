@@ -1,5 +1,7 @@
 # Contributing to Pinax
 
+[中文](./CONTRIBUTING.zh-CN.md)
+
 Pinax is a local-first Go CLI. The Markdown vault is the source of truth; `.pinax/` contains CLI-authored projections, receipts, indexes, and configuration. Contributions should preserve that boundary.
 
 ## Before You Start
