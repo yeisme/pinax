@@ -51,7 +51,7 @@ func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 	}
 	commit, err := transportA.CommitRevision(ctx, cloudsync.CommitRequest{
 		BaseRevision: "", RevisionID: "rev_conv_1", ManifestBlobID: "manifest_conv",
-		BlobIDs: []string{"blob_notes_a", "blob_notes_b"}, DeviceID: "dev_laptop", RequestID: "req_conv_1",
+		BlobIDs: []string{"blob_notes_a", "blob_notes_b"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_notes_a", BlobHash: "sha256:blob-a", Size: 10}, {PathHash: "sha256:path-b", BlobID: "blob_notes_b", BlobHash: "sha256:blob-b", Size: 20}}, DeviceID: "dev_laptop", RequestID: "req_conv_1",
 	})
 	if err != nil {
 		t.Fatalf("device A commit: %v", err)
@@ -127,7 +127,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 	seed(transportA, "blob_a", "manifest_a")
 	seed(transportB, "blob_b", "manifest_b")
 
-	commitA, err := transportA.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_a", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, DeviceID: "dev_laptop", RequestID: "req_a"})
+	commitA, err := transportA.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_a", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10}}, DeviceID: "dev_laptop", RequestID: "req_a"})
 	if err != nil {
 		t.Fatalf("device A first commit should succeed: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 		t.Fatalf("device A commit should report remote_write=true")
 	}
 	// 设备 B 用相同 base 提交，必须拿到 REVISION_CONFLICT，且不能覆盖设备 A 的 head。
-	_, err = transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "manifest_b", BlobIDs: []string{"blob_b"}, DeviceID: "dev_phone", RequestID: "req_b"})
+	_, err = transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "manifest_b", BlobIDs: []string{"blob_b"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b", BlobID: "blob_b", BlobHash: "sha256:blob-b", Size: 10}}, DeviceID: "dev_phone", RequestID: "req_b"})
 	if err == nil {
 		t.Fatalf("device B stale commit must be rejected")
 	}
@@ -167,7 +167,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 	if err := transportB.PutBlob(ctx, "blob_b2", base); err != nil {
 		t.Fatalf("device B put blob b2: %v", err)
 	}
-	commitB2, err := transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: head.CurrentRevision, RevisionID: "rev_b2", ManifestBlobID: "manifest_b2", BlobIDs: []string{"blob_b2"}, DeviceID: "dev_phone", RequestID: "req_b2"})
+	commitB2, err := transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: head.CurrentRevision, RevisionID: "rev_b2", ManifestBlobID: "manifest_b2", BlobIDs: []string{"blob_b2"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b2", BlobID: "blob_b2", BlobHash: "sha256:blob-b2", Size: 10}}, DeviceID: "dev_phone", RequestID: "req_b2"})
 	if err != nil {
 		t.Fatalf("device B rebase commit should succeed: %v", err)
 	}

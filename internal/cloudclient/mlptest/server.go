@@ -303,7 +303,13 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		BaseRevision   string   `json:"base_revision"`
 		RevisionID     string   `json:"revision_id"`
 		ManifestBlobID string   `json:"manifest_blob_id"`
-		BlobIDs        []string `json:"blob_ids"`
+		ObjectRefs     []struct {
+			PathHash  string `json:"path_hash"`
+			BlobID    string `json:"blob_id"`
+			BlobHash  string `json:"blob_hash"`
+			SizeBytes int64  `json:"size_bytes"`
+			Deleted   bool   `json:"deleted"`
+		} `json:"object_refs"`
 		DeviceID       string   `json:"device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -320,10 +326,21 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		writeError(w, http.StatusBadRequest, "BLOB_MISSING", "manifest blob missing")
 		return
 	}
-	for _, id := range req.BlobIDs {
-		if _, ok := vault.blobs[id]; !ok {
-			if _, ok := vault.manifestBlobs[id]; !ok {
-				writeError(w, http.StatusBadRequest, "BLOB_MISSING", "referenced blob missing: "+id)
+	if len(req.ObjectRefs) == 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_refs are required")
+		return
+	}
+	for _, ref := range req.ObjectRefs {
+		if ref.Deleted {
+			continue
+		}
+		if ref.PathHash == "" || ref.BlobID == "" || ref.BlobHash == "" || ref.SizeBytes <= 0 {
+			writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_refs are required")
+			return
+		}
+		if _, ok := vault.blobs[ref.BlobID]; !ok {
+			if _, ok := vault.manifestBlobs[ref.BlobID]; !ok {
+				writeError(w, http.StatusBadRequest, "BLOB_MISSING", "referenced blob missing: "+ref.BlobID)
 				return
 			}
 		}
@@ -336,7 +353,7 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		RevisionID:     revisionID,
 		ParentRevision: req.BaseRevision,
 		ManifestBlobID: req.ManifestBlobID,
-		BlobIDs:        append([]string(nil), req.BlobIDs...),
+		BlobIDs:        objectRefBlobIDs(req.ObjectRefs),
 		DeviceID:       req.DeviceID,
 		CreatedAt:      time.Now().UTC().Format(time.RFC3339),
 	})
@@ -348,6 +365,23 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 func (s *Server) authorized(r *http.Request) bool {
 	auth := r.Header.Get("Authorization")
 	return auth == "Bearer "+s.token
+}
+
+
+func objectRefBlobIDs(refs []struct {
+	PathHash  string `json:"path_hash"`
+	BlobID    string `json:"blob_id"`
+	BlobHash  string `json:"blob_hash"`
+	SizeBytes int64  `json:"size_bytes"`
+	Deleted   bool   `json:"deleted"`
+}) []string {
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if !ref.Deleted {
+			ids = append(ids, ref.BlobID)
+		}
+	}
+	return ids
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

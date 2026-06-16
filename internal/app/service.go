@@ -7880,8 +7880,10 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 		return cloudsync.CommitResult{}, err
 	}
 	blobIDs := make([]string, 0, len(manifest.Entries))
+	objectRefs := make([]cloudsync.ObjectRef, 0, len(manifest.Entries))
 	for _, entry := range manifest.Entries {
 		blobIDs = append(blobIDs, entry.BlobID)
+		objectRefs = append(objectRefs, cloudsync.ObjectRef{PathHash: entry.PathHash, BlobID: entry.BlobID, BlobHash: entry.SHA256, Size: entry.Size})
 	}
 	missing, err := transport.BatchCheck(context.Background(), blobIDs)
 	if err != nil {
@@ -7919,7 +7921,7 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 	if err := transport.PutManifest(context.Background(), manifestBlobID, cloudEnvelope(manifestEnvelope)); err != nil {
 		return cloudsync.CommitResult{}, err
 	}
-	return transport.CommitRevision(context.Background(), cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
+	return transport.CommitRevision(context.Background(), cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, ObjectRefs: objectRefs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
 }
 
 func remoteEnvelope(envelope cloudsync.Envelope) pinaxcloud.EncryptedEnvelope {

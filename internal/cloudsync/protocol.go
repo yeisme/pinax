@@ -115,11 +115,20 @@ func (c Conflict) Validate() error {
 	return nil
 }
 
+type ObjectRef struct {
+	PathHash string
+	BlobID   string
+	BlobHash string
+	Size     int64
+	Deleted  bool
+}
+
 type CommitRequest struct {
 	BaseRevision   string
 	RevisionID     string
 	ManifestBlobID string
 	BlobIDs        []string
+	ObjectRefs     []ObjectRef
 	DeviceID       string
 	RequestID      string
 }
@@ -302,7 +311,16 @@ func (m *MemoryTransport) CommitRevision(_ context.Context, req CommitRequest) (
 	if _, ok := m.manifests[req.ManifestBlobID]; !ok {
 		return CommitResult{}, fmt.Errorf("%w: manifest", ErrObjectNotFound)
 	}
-	for _, blobID := range req.BlobIDs {
+	blobIDs := req.BlobIDs
+	if len(req.ObjectRefs) > 0 {
+		blobIDs = make([]string, 0, len(req.ObjectRefs))
+		for _, ref := range req.ObjectRefs {
+			if !ref.Deleted {
+				blobIDs = append(blobIDs, ref.BlobID)
+			}
+		}
+	}
+	for _, blobID := range blobIDs {
 		if _, ok := m.blobs[blobID]; !ok {
 			return CommitResult{}, fmt.Errorf("%w: %s", ErrObjectNotFound, blobID)
 		}
@@ -311,7 +329,7 @@ func (m *MemoryTransport) CommitRevision(_ context.Context, req CommitRequest) (
 	if revisionID == "" {
 		revisionID = "rev_" + time.Now().UTC().Format("20060102150405")
 	}
-	m.revisions[revisionID] = Revision{SchemaVersion: RevisionSchemaVersion, RevisionID: revisionID, ParentRevisionID: req.BaseRevision, ManifestBlobID: req.ManifestBlobID, BlobIDs: append([]string(nil), req.BlobIDs...), CreatedAt: time.Now().UTC().Format(time.RFC3339), CreatedByDevice: req.DeviceID}
+	m.revisions[revisionID] = Revision{SchemaVersion: RevisionSchemaVersion, RevisionID: revisionID, ParentRevisionID: req.BaseRevision, ManifestBlobID: req.ManifestBlobID, BlobIDs: append([]string(nil), blobIDs...), CreatedAt: time.Now().UTC().Format(time.RFC3339), CreatedByDevice: req.DeviceID}
 	m.head = Head{SchemaVersion: HeadSchemaVersion, VaultID: m.layout.VaultID, CurrentRevision: revisionID, ManifestBlobID: req.ManifestBlobID, UpdatedAt: time.Now().UTC().Format(time.RFC3339), UpdatedByDevice: req.DeviceID}
 	return CommitResult{RevisionID: revisionID, ManifestBlobID: req.ManifestBlobID, RemoteWrite: true}, nil
 }

@@ -169,7 +169,10 @@
         "base_revision": "rev_a",
         "revision_id": "rev_b",
         "manifest_blob_id": "blob_manifest",
-        "blob_ids": ["blob_a", "blob_b"],
+        "object_refs": [
+          {"path_hash": "sha256:path", "blob_id": "blob_a", "blob_hash": "sha256:blob_a", "size_bytes": 42, "deleted": false},
+          {"path_hash": "sha256:path_2", "blob_id": "blob_b", "blob_hash": "sha256:blob_b", "size_bytes": 128, "deleted": false}
+        ],
         "device_id": "dev_laptop"
       },
       "success_status": 200,
@@ -184,6 +187,7 @@
     "DEVICE_REVOKED",
     "FORBIDDEN_SCOPE",
     "REVISION_CONFLICT",
+    "REVISION_NOT_FOUND",
     "VALIDATION_FAILED",
     "BLOB_MISSING",
     "BACKEND_UNAVAILABLE"

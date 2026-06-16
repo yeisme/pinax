@@ -60,7 +60,11 @@ func (t *Transport) GetManifest(ctx context.Context, blobID string) (cloudsync.E
 // CommitRevision 只在服务端 CAS commit 成功后返回 RemoteWrite=true。
 // 服务端返回 REVISION_CONFLICT 时透传错误，RemoteWrite 保持 false。
 func (t *Transport) CommitRevision(ctx context.Context, req cloudsync.CommitRequest) (cloudsync.CommitResult, error) {
-	result, err := t.client.CommitRevision(ctx, CommitRequest{BaseRevision: req.BaseRevision, RevisionID: req.RevisionID, ManifestBlobID: req.ManifestBlobID, BlobIDs: req.BlobIDs, DeviceID: req.DeviceID, IdempotencyKey: req.RequestID})
+	objectRefs := make([]ObjectRef, 0, len(req.ObjectRefs))
+	for _, ref := range req.ObjectRefs {
+		objectRefs = append(objectRefs, ObjectRef{PathHash: ref.PathHash, BlobID: ref.BlobID, BlobHash: ref.BlobHash, Size: ref.Size, SizeBytes: ref.Size, Deleted: ref.Deleted})
+	}
+	result, err := t.client.CommitRevision(ctx, CommitRequest{BaseRevision: req.BaseRevision, RevisionID: req.RevisionID, ManifestBlobID: req.ManifestBlobID, ObjectRefs: objectRefs, DeviceID: req.DeviceID, IdempotencyKey: req.RequestID})
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}

@@ -33,7 +33,7 @@ func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	res, err := client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "blob_manifest", BlobIDs: []string{"blob_a", "blob_b"}, DeviceID: "dev_laptop", IdempotencyKey: "req_123"})
+	res, err := client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "blob_manifest", ObjectRefs: []ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10, SizeBytes: 10}, {PathHash: "sha256:path-b", BlobID: "blob_b", BlobHash: "sha256:blob-b", Size: 20, SizeBytes: 20}}, DeviceID: "dev_laptop", IdempotencyKey: "req_123"})
 	if err != nil {
 		t.Fatalf("commit revision: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
 	if gotAuth != "Bearer secret-token" || gotDevice != "dev_laptop" || gotRequestID != "req_123" {
 		t.Fatalf("headers auth=%q device=%q request=%q", gotAuth, gotDevice, gotRequestID)
 	}
-	if gotCommit.RevisionID != "rev_b" || gotCommit.DeviceID != "dev_laptop" || len(gotCommit.BlobIDs) != 2 || gotCommit.BlobIDs[1] != "blob_b" {
+	if gotCommit.RevisionID != "rev_b" || gotCommit.DeviceID != "dev_laptop" || len(gotCommit.ObjectRefs) != 2 || gotCommit.ObjectRefs[1].BlobID != "blob_b" {
 		t.Fatalf("commit body = %#v", gotCommit)
 	}
 }

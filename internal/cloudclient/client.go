@@ -97,10 +97,12 @@ type Revision struct {
 
 // ObjectRef 是 changes cursor 返回的对象引用；使用 path_hash/blob_hash 而非明文路径。
 type ObjectRef struct {
-	PathHash string `json:"path_hash"`
-	BlobHash string `json:"blob_hash"`
-	Size     int64  `json:"size"`
-	Deleted  bool   `json:"deleted"`
+	PathHash  string `json:"path_hash"`
+	BlobID    string `json:"blob_id,omitempty"`
+	BlobHash  string `json:"blob_hash"`
+	Size      int64  `json:"size"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
+	Deleted   bool   `json:"deleted"`
 }
 
 // ChangesResult 是 GET /changes?since=<revision_id> 的返回。
@@ -134,12 +136,12 @@ type UploadPlan struct {
 }
 
 type CommitRequest struct {
-	BaseRevision   string   `json:"base_revision"`
-	RevisionID     string   `json:"revision_id,omitempty"`
-	ManifestBlobID string   `json:"manifest_blob_id"`
-	BlobIDs        []string `json:"blob_ids,omitempty"`
-	DeviceID       string   `json:"device_id,omitempty"`
-	IdempotencyKey string   `json:"-"`
+	BaseRevision   string      `json:"base_revision"`
+	RevisionID     string      `json:"revision_id,omitempty"`
+	ManifestBlobID string      `json:"manifest_blob_id"`
+	ObjectRefs     []ObjectRef `json:"object_refs,omitempty"`
+	DeviceID       string      `json:"device_id,omitempty"`
+	IdempotencyKey string      `json:"-"`
 }
 
 type CommitResponse struct {
