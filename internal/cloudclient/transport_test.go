@@ -32,7 +32,7 @@ func TestServerTransportMapsCloudsyncOperations(t *testing.T) {
 	}
 
 	envelope := cloudsync.Envelope{SchemaVersion: cloudsync.EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", Ciphertext: "cipher", PlainSHA256: "sha"}
-	if err := transport.PutBlob(ctx, "blob_a", envelope); err != nil {
+	if err := transport.PutBlobWithMetadata(ctx, "blob_a", "sha256:blob-a", 10, envelope); err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
 	gotEnvelope, err := transport.GetBlob(ctx, "blob_a")
@@ -88,7 +88,7 @@ func TestServerTransportNeverRemoteWriteBeforeCommit(t *testing.T) {
 		t.Fatalf("current head: %v", err)
 	}
 	envelope := cloudsync.Envelope{SchemaVersion: cloudsync.EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "n", Ciphertext: "c", PlainSHA256: "s"}
-	if err := transport.PutBlob(ctx, "blob_a", envelope); err != nil {
+	if err := transport.PutBlobWithMetadata(ctx, "blob_a", "sha256:blob-a", 10, envelope); err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
 	if _, err := transport.BatchCheck(ctx, []string{"blob_a"}); err != nil {

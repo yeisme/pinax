@@ -12,6 +12,7 @@ import (
 	"time"
 
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
+	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
 	"github.com/yeisme/pinax/internal/domain"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	pinaxversion "github.com/yeisme/pinax/internal/version"
@@ -392,6 +393,29 @@ func TestCoreNoteTemplateIndexAndSyncMVP(t *testing.T) {
 	}
 	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud"}); err == nil {
 		t.Fatalf("sync push without approval succeeded")
+	}
+}
+
+
+func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\n\nserver backed push metadata\n")
+	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
+	defer server.Close()
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
+		t.Fatalf("cloud login: %v", err)
+	}
+	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("server sync push: %v", err)
+	}
+	if push.Facts["remote_write"] != "true" {
+		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
 	}
 }
 

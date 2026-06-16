@@ -3,6 +3,7 @@ package cloudclient
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
@@ -40,10 +41,10 @@ func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 	if len(batchCheck.MissingBlobIDs) != 2 {
 		t.Fatalf("both blobs should be missing initially, got %#v", batchCheck)
 	}
-	if err := transportA.PutBlob(ctx, "blob_notes_a", noteBlobA); err != nil {
+	if err := transportA.PutBlobWithMetadata(ctx, "blob_notes_a", "sha256:blob-a", 10, noteBlobA); err != nil {
 		t.Fatalf("device A put blob a: %v", err)
 	}
-	if err := transportA.PutBlob(ctx, "blob_notes_b", noteBlobB); err != nil {
+	if err := transportA.PutBlobWithMetadata(ctx, "blob_notes_b", "sha256:blob-b", 20, noteBlobB); err != nil {
 		t.Fatalf("device A put blob b: %v", err)
 	}
 	if err := transportA.PutManifest(ctx, "manifest_conv", manifestEnvelope); err != nil {
@@ -117,7 +118,8 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 
 	// 两个设备都上传各自的 manifest + blob，从空 base 提交。
 	seed := func(tr *Transport, blobID, manifestID string) {
-		if err := tr.PutBlob(ctx, blobID, base); err != nil {
+		blobHash := "sha256:" + strings.ReplaceAll(blobID, "_", "-")
+		if err := tr.PutBlobWithMetadata(ctx, blobID, blobHash, 10, base); err != nil {
 			t.Fatalf("put blob %s: %v", blobID, err)
 		}
 		if err := tr.PutManifest(ctx, manifestID, base); err != nil {
@@ -164,7 +166,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 	if err := transportB.PutManifest(ctx, "manifest_b2", base); err != nil {
 		t.Fatalf("device B put manifest b2: %v", err)
 	}
-	if err := transportB.PutBlob(ctx, "blob_b2", base); err != nil {
+	if err := transportB.PutBlobWithMetadata(ctx, "blob_b2", "sha256:blob-b2", 10, base); err != nil {
 		t.Fatalf("device B put blob b2: %v", err)
 	}
 	commitB2, err := transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: head.CurrentRevision, RevisionID: "rev_b2", ManifestBlobID: "manifest_b2", BlobIDs: []string{"blob_b2"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b2", BlobID: "blob_b2", BlobHash: "sha256:blob-b2", Size: 10}}, DeviceID: "dev_phone", RequestID: "req_b2"})

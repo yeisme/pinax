@@ -7867,6 +7867,11 @@ func localCloudBaseRevision(root string, cloudState pinaxcloud.State) string {
 	return strings.TrimSpace(state.LastSyncedRevision)
 }
 
+
+type cloudBlobMetadataWriter interface {
+	PutBlobWithMetadata(ctx context.Context, blobID, blobHash string, sizeBytes int64, envelope cloudsync.Envelope) error
+}
+
 func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string) (cloudsync.CommitResult, error) {
 	transport, err := cloudTransportForState(context.Background(), state)
 	if err != nil {
@@ -7905,7 +7910,14 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 		if err != nil {
 			return cloudsync.CommitResult{}, err
 		}
-		if err := transport.PutBlob(context.Background(), entry.BlobID, cloudEnvelope(envelope)); err != nil {
+		cloudBlob := cloudEnvelope(envelope)
+		if metadataWriter, ok := transport.(cloudBlobMetadataWriter); ok {
+			if err := metadataWriter.PutBlobWithMetadata(context.Background(), entry.BlobID, entry.SHA256, entry.Size, cloudBlob); err != nil {
+				return cloudsync.CommitResult{}, err
+			}
+			continue
+		}
+		if err := transport.PutBlob(context.Background(), entry.BlobID, cloudBlob); err != nil {
 			return cloudsync.CommitResult{}, err
 		}
 	}

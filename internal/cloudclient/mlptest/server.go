@@ -32,11 +32,17 @@ type Server struct {
 type vaultState struct {
 	cryptoMode     string
 	blobs          map[string]map[string]any // blobID -> envelope
+	blobMetadata   map[string]blobMetadata
 	manifestBlobs  map[string]map[string]any
 	revisions      []revisionRecord
 	headRevision   string
 	manifestBlobID string
 	linked         bool
+}
+
+type blobMetadata struct {
+	BlobHash string
+	Size     int64
 }
 
 type revisionRecord struct {
@@ -92,6 +98,7 @@ func newVaultState(cryptoMode string) *vaultState {
 	return &vaultState{
 		cryptoMode:    cryptoMode,
 		blobs:         map[string]map[string]any{},
+		blobMetadata:  map[string]blobMetadata{},
 		manifestBlobs: map[string]map[string]any{},
 	}
 }
@@ -210,7 +217,7 @@ func (s *Server) handleVault(w http.ResponseWriter, r *http.Request, vaultID, re
 	case rest == "blobs:batch-check" && r.Method == http.MethodPost:
 		s.handleBatchCheck(w, r, vault)
 	case rest == "blobs:sign-upload" && r.Method == http.MethodPost:
-		s.handleSignUpload(w, r, vaultID)
+		s.handleSignUpload(w, r, vaultID, vault)
 	case strings.HasPrefix(rest, "blobs/") && r.Method == http.MethodPut:
 		s.handlePutBlob(w, r, vault, strings.TrimPrefix(rest, "blobs/"))
 	case strings.HasPrefix(rest, "blobs/") && r.Method == http.MethodGet:
@@ -255,13 +262,14 @@ func (s *Server) handleBatchCheck(w http.ResponseWriter, r *http.Request, vault 
 	writeJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": missing})
 }
 
-func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultID string) {
+func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultID string, vault *vaultState) {
 	var req struct {
 		BlobID   string `json:"blob_id"`
 		BlobHash string `json:"blob_hash"`
 		Size     int64  `json:"size"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
+	vault.blobMetadata[req.BlobID] = blobMetadata{BlobHash: req.BlobHash, Size: req.Size}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"blob_id":    req.BlobID,
 		"object_key": "vaults/" + vaultID + "/sha256/00/00/" + req.BlobID,
@@ -343,6 +351,11 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 				writeError(w, http.StatusBadRequest, "BLOB_MISSING", "referenced blob missing: "+ref.BlobID)
 				return
 			}
+		}
+		metadata, ok := vault.blobMetadata[ref.BlobID]
+		if !ok || metadata.BlobHash != ref.BlobHash || metadata.Size != ref.SizeBytes {
+			writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_ref metadata does not match blob metadata")
+			return
 		}
 	}
 	revisionID := strings.TrimSpace(req.RevisionID)
