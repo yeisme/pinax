@@ -164,6 +164,41 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 	}
 }
 
+func TestClientSignUploadRejectsReplanMismatchAndPreservesOriginalUpload(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_replan", SessionToken: "secret-token"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_replan", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce-original", Ciphertext: "cipher-original", PlainSHA256: "plain-sha"}
+	originalHash := compactBlobEnvelopeHash(t, envelope)
+	originalSize := int64(compactBlobEnvelopeSize(t, envelope))
+	if _, err := client.SignUpload(context.Background(), "blob_replan", originalHash, originalSize, "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign original: %v", err)
+	}
+	if err := client.UploadBlob(context.Background(), "blob_replan", envelope); err != nil {
+		t.Fatalf("upload original: %v", err)
+	}
+	if _, err := client.SignUpload(context.Background(), "blob_replan", "sha256:different", originalSize, "application/vnd.pinax.encrypted-envelope+json"); err == nil || !IsCode(err, CodeBlobHashMismatch) {
+		t.Fatalf("hash replan err = %#v", err)
+	}
+	if _, err := client.SignUpload(context.Background(), "blob_replan", originalHash, originalSize+1, "application/vnd.pinax.encrypted-envelope+json"); err == nil || !IsCode(err, CodeBlobSizeMismatch) {
+		t.Fatalf("size replan err = %#v", err)
+	}
+	missing, err := client.BatchCheckBlobs(context.Background(), []string{"blob_replan"})
+	if err != nil {
+		t.Fatalf("batch check: %v", err)
+	}
+	if len(missing.MissingBlobIDs) != 0 || len(missing.Present) != 1 || missing.Present[0].BlobHash != originalHash || missing.Present[0].Size != originalSize {
+		t.Fatalf("original upload metadata was not preserved: %#v", missing)
+	}
+	down, err := client.DownloadBlob(context.Background(), "blob_replan")
+	if err != nil || down.Ciphertext != envelope.Ciphertext {
+		t.Fatalf("download after rejected replan envelope=%#v err=%v", down, err)
+	}
+}
+
 func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
 	server := mlptest.New(mlptest.Config{VaultID: "vault_plan", SessionToken: "secret-token"})
 	defer server.Close()

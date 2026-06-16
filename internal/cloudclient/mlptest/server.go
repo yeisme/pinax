@@ -289,7 +289,15 @@ func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultI
 	}
 	expiresAt := time.Now().Add(15 * time.Minute).UTC()
 	metadata := vault.blobMetadata[req.BlobID]
-	if metadata.Uploaded && metadata.BlobHash == req.BlobHash && metadata.Size == req.Size {
+	if metadata.Uploaded {
+		if metadata.BlobHash != req.BlobHash {
+			writeError(w, http.StatusBadRequest, "BLOB_HASH_MISMATCH", "planned blob hash does not match uploaded blob")
+			return
+		}
+		if metadata.Size != req.Size {
+			writeError(w, http.StatusBadRequest, "BLOB_SIZE_MISMATCH", "planned blob size does not match uploaded blob")
+			return
+		}
 		expiresAt = metadata.ExpiresAt
 	} else {
 		metadata = blobMetadata{BlobHash: req.BlobHash, Size: req.Size, ExpiresAt: expiresAt}
@@ -480,11 +488,25 @@ func nonEmptyString(value any) bool {
 }
 
 func validPathHash(value string) bool {
-	if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value {
+	if value == "" || strings.ContainsAny(value, "/\\") {
 		return false
 	}
-	lower := strings.ToLower(value)
-	return !strings.ContainsAny(value, "/\\") && !strings.Contains(lower, ".md") && !strings.Contains(lower, "notes")
+	if strings.HasPrefix(value, "sha256:") && len(value) > len("sha256:") {
+		return true
+	}
+	if strings.HasPrefix(value, "path_") && len(value) > len("path_") {
+		return true
+	}
+	if len(value) == 64 {
+		for _, r := range value {
+			if r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F' {
+				continue
+			}
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 func validMLPID(value string) bool {
