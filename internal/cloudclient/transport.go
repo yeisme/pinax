@@ -1,7 +1,11 @@
 package cloudclient
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 
 	"github.com/yeisme/pinax/internal/cloudsync"
@@ -34,7 +38,11 @@ func (t *Transport) BatchCheck(ctx context.Context, blobIDs []string) (cloudsync
 	if err != nil {
 		return cloudsync.BatchCheckResult{}, err
 	}
-	return cloudsync.BatchCheckResult{MissingBlobIDs: result.MissingBlobIDs}, nil
+	present := make([]cloudsync.BlobFact, 0, len(result.Present))
+	for _, fact := range result.Present {
+		present = append(present, cloudsync.BlobFact{BlobID: fact.BlobID, BlobHash: fact.BlobHash, Size: fact.Size})
+	}
+	return cloudsync.BatchCheckResult{MissingBlobIDs: result.MissingBlobIDs, Present: present}, nil
 }
 
 func (t *Transport) PutBlob(ctx context.Context, blobID string, envelope cloudsync.Envelope) error {
@@ -53,6 +61,20 @@ func (t *Transport) PutBlobWithMetadata(ctx context.Context, blobID, blobHash st
 	return t.client.UploadBlob(ctx, blobID, toBlobEnvelope(envelope))
 }
 
+func (t *Transport) PutBlobWithEnvelopeMetadata(ctx context.Context, blobID string, envelope cloudsync.Envelope) (string, int64, error) {
+	blobHash, sizeBytes, err := envelopeHashAndSize(envelope)
+	if err != nil {
+		return "", 0, err
+	}
+	if err := t.RegisterBlobMetadata(ctx, blobID, blobHash, sizeBytes); err != nil {
+		return "", 0, err
+	}
+	if err := t.client.UploadBlob(ctx, blobID, toBlobEnvelope(envelope)); err != nil {
+		return "", 0, err
+	}
+	return blobHash, sizeBytes, nil
+}
+
 func (t *Transport) GetBlob(ctx context.Context, blobID string) (cloudsync.Envelope, error) {
 	envelope, err := t.client.DownloadBlob(ctx, blobID)
 	if err != nil {
@@ -62,7 +84,8 @@ func (t *Transport) GetBlob(ctx context.Context, blobID string) (cloudsync.Envel
 }
 
 func (t *Transport) PutManifest(ctx context.Context, blobID string, envelope cloudsync.Envelope) error {
-	return t.PutBlob(ctx, blobID, envelope)
+	_, _, err := t.PutBlobWithEnvelopeMetadata(ctx, blobID, envelope)
+	return err
 }
 
 func (t *Transport) GetManifest(ctx context.Context, blobID string) (cloudsync.Envelope, error) {
@@ -98,4 +121,38 @@ func toBlobEnvelope(envelope cloudsync.Envelope) BlobEnvelope {
 
 func fromBlobEnvelope(envelope BlobEnvelope) cloudsync.Envelope {
 	return cloudsync.Envelope{SchemaVersion: envelope.SchemaVersion, Alg: envelope.Alg, KeyID: envelope.KeyID, Nonce: envelope.Nonce, Ciphertext: envelope.Ciphertext, PlainSHA256: envelope.PlainSHA256}
+}
+
+func envelopeHashAndSize(envelope cloudsync.Envelope) (string, int64, error) {
+	raw, err := json.Marshal(toBlobEnvelope(envelope))
+	if err != nil {
+		return "", 0, err
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return "", 0, err
+	}
+	sum := sha256.Sum256(compact.Bytes())
+	return "sha256:" + hex.EncodeToString(sum[:]), int64(compact.Len()), nil
+}
+
+func compactBlobEnvelopeHashAndSize(envelope BlobEnvelope) (string, int64, error) {
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		return "", 0, err
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return "", 0, err
+	}
+	sum := sha256.Sum256(compact.Bytes())
+	return "sha256:" + hex.EncodeToString(sum[:]), int64(compact.Len()), nil
+}
+
+func IsCode(err error, code string) bool {
+	var cloudErr *Error
+	if errors.As(err, &cloudErr) {
+		return cloudErr.Code == code
+	}
+	return false
 }

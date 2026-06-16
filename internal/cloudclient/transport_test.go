@@ -32,7 +32,8 @@ func TestServerTransportMapsCloudsyncOperations(t *testing.T) {
 	}
 
 	envelope := cloudsync.Envelope{SchemaVersion: cloudsync.EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", Ciphertext: "cipher", PlainSHA256: "sha"}
-	if err := transport.PutBlobWithMetadata(ctx, "blob_a", "sha256:blob-a", 10, envelope); err != nil {
+	blobHash, sizeBytes := cloudEnvelopeMetadata(t, envelope)
+	if err := transport.PutBlobWithMetadata(ctx, "blob_a", blobHash, sizeBytes, envelope); err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
 	gotEnvelope, err := transport.GetBlob(ctx, "blob_a")
@@ -53,7 +54,7 @@ func TestServerTransportMapsCloudsyncOperations(t *testing.T) {
 	if err := transport.PutManifest(ctx, "manifest_a", envelope); err != nil {
 		t.Fatalf("put manifest: %v", err)
 	}
-	commit, err := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10}}, DeviceID: "laptop", RequestID: "req_1"})
+	commit, err := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: blobHash, Size: sizeBytes}}, DeviceID: "laptop", RequestID: "req_1"})
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestServerTransportMapsCloudsyncOperations(t *testing.T) {
 		t.Fatalf("commit = %#v", commit)
 	}
 	// CAS 冲突：用旧 base revision 再提交一次必须失败且 RemoteWrite 不为 true。
-	_, err = transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_c", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10}}, DeviceID: "laptop", RequestID: "req_2"})
+	_, err = transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_c", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: blobHash, Size: sizeBytes}}, DeviceID: "laptop", RequestID: "req_2"})
 	if err == nil {
 		t.Fatalf("expected REVISION_CONFLICT on stale base")
 	}
@@ -88,7 +89,8 @@ func TestServerTransportNeverRemoteWriteBeforeCommit(t *testing.T) {
 		t.Fatalf("current head: %v", err)
 	}
 	envelope := cloudsync.Envelope{SchemaVersion: cloudsync.EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "n", Ciphertext: "c", PlainSHA256: "s"}
-	if err := transport.PutBlobWithMetadata(ctx, "blob_a", "sha256:blob-a", 10, envelope); err != nil {
+	blobHash, sizeBytes := cloudEnvelopeMetadata(t, envelope)
+	if err := transport.PutBlobWithMetadata(ctx, "blob_a", blobHash, sizeBytes, envelope); err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
 	if _, err := transport.BatchCheck(ctx, []string{"blob_a"}); err != nil {
@@ -96,7 +98,7 @@ func TestServerTransportNeverRemoteWriteBeforeCommit(t *testing.T) {
 	}
 
 	// CAS commit 失败（manifest 缺失）时 RemoteWrite 必须保持 false。
-	_, commitErr := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", ManifestBlobID: "manifest_missing", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10}}, DeviceID: "laptop", RequestID: "req_gate"})
+	_, commitErr := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", ManifestBlobID: "manifest_missing", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: blobHash, Size: sizeBytes}}, DeviceID: "laptop", RequestID: "req_gate"})
 	if commitErr == nil {
 		t.Fatalf("expected commit to fail when manifest blob is missing")
 	}
@@ -104,7 +106,7 @@ func TestServerTransportNeverRemoteWriteBeforeCommit(t *testing.T) {
 	if err := transport.PutManifest(ctx, "manifest_ok", envelope); err != nil {
 		t.Fatalf("put manifest: %v", err)
 	}
-	commit, err := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", ManifestBlobID: "manifest_ok", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10}}, DeviceID: "laptop", RequestID: "req_gate_ok"})
+	commit, err := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", ManifestBlobID: "manifest_ok", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: blobHash, Size: sizeBytes}}, DeviceID: "laptop", RequestID: "req_gate_ok"})
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}

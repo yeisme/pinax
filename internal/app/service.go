@@ -7867,7 +7867,6 @@ func localCloudBaseRevision(root string, cloudState pinaxcloud.State) string {
 	return strings.TrimSpace(state.LastSyncedRevision)
 }
 
-
 type cloudBlobMetadataWriter interface {
 	RegisterBlobMetadata(ctx context.Context, blobID, blobHash string, sizeBytes int64) error
 }
@@ -7890,16 +7889,6 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 		blobIDs = append(blobIDs, entry.BlobID)
 		objectRefs = append(objectRefs, cloudsync.ObjectRef{PathHash: entry.PathHash, BlobID: entry.BlobID, BlobHash: entry.SHA256, Size: entry.Size})
 	}
-	if metadataWriter, ok := transport.(cloudBlobMetadataWriter); ok {
-		for _, ref := range objectRefs {
-			if ref.Deleted {
-				continue
-			}
-			if err := metadataWriter.RegisterBlobMetadata(context.Background(), ref.BlobID, ref.BlobHash, ref.Size); err != nil {
-				return cloudsync.CommitResult{}, err
-			}
-		}
-	}
 	missing, err := transport.BatchCheck(context.Background(), blobIDs)
 	if err != nil {
 		return cloudsync.CommitResult{}, err
@@ -7908,8 +7897,16 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 	for _, blobID := range missing.MissingBlobIDs {
 		missingSet[blobID] = struct{}{}
 	}
-	for _, entry := range manifest.Entries {
+	presentFacts := make(map[string]cloudsync.BlobFact, len(missing.Present))
+	for _, fact := range missing.Present {
+		presentFacts[fact.BlobID] = fact
+	}
+	for i, entry := range manifest.Entries {
 		if _, ok := missingSet[entry.BlobID]; !ok {
+			if fact, ok := presentFacts[entry.BlobID]; ok {
+				objectRefs[i].BlobHash = fact.BlobHash
+				objectRefs[i].Size = fact.Size
+			}
 			continue
 		}
 		content, err := os.ReadFile(filepath.Join(root, ".pinax", "cloud", "blob-cache", entry.BlobID))
@@ -7921,6 +7918,17 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 			return cloudsync.CommitResult{}, err
 		}
 		cloudBlob := cloudEnvelope(envelope)
+		if metadataWriter, ok := transport.(interface {
+			PutBlobWithEnvelopeMetadata(context.Context, string, cloudsync.Envelope) (string, int64, error)
+		}); ok {
+			blobHash, sizeBytes, err := metadataWriter.PutBlobWithEnvelopeMetadata(context.Background(), entry.BlobID, cloudBlob)
+			if err != nil {
+				return cloudsync.CommitResult{}, err
+			}
+			objectRefs[i].BlobHash = blobHash
+			objectRefs[i].Size = sizeBytes
+			continue
+		}
 		if err := transport.PutBlob(context.Background(), entry.BlobID, cloudBlob); err != nil {
 			return cloudsync.CommitResult{}, err
 		}

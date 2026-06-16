@@ -14,9 +14,9 @@ import (
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/cloudclient"
 	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
-	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 	"github.com/yeisme/pinax/internal/domain"
 	noteindex "github.com/yeisme/pinax/internal/index"
+	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 	pinaxversion "github.com/yeisme/pinax/internal/version"
 	"github.com/yeisme/pinax/internal/version/versiontest"
 )
@@ -398,7 +398,6 @@ func TestCoreNoteTemplateIndexAndSyncMVP(t *testing.T) {
 	}
 }
 
-
 func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -420,7 +419,6 @@ func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T
 		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
 	}
 }
-
 
 func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 	ctx := context.Background()
@@ -449,8 +447,8 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt blob: %v", err)
 	}
-	if err := transport.PutBlobWithMetadata(ctx, manifest.Entries[0].BlobID, "sha256:stale", 999, cloudEnvelope(envelope)); err != nil {
-		t.Fatalf("seed stale metadata: %v", err)
+	if _, _, err := transport.PutBlobWithEnvelopeMetadata(ctx, manifest.Entries[0].BlobID, cloudEnvelope(envelope)); err != nil {
+		t.Fatalf("seed existing blob metadata: %v", err)
 	}
 	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
 	if err != nil {

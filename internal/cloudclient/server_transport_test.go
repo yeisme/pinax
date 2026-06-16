@@ -3,7 +3,6 @@ package cloudclient
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
@@ -36,6 +35,20 @@ func TestServerTransportAllowsManifestOnlyCommitAfterManifestUpload(t *testing.T
 	}
 }
 
+func TestServerTransportPutManifestSignsUploadPlan(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_manifest_plan", SessionToken: "secret"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_manifest_plan", DeviceID: "laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	transport := NewTransport(client)
+	envelope := cloudsync.Envelope{SchemaVersion: cloudsync.EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "manifest-nonce", Ciphertext: "manifest-cipher", PlainSHA256: "manifest-plain"}
+	if err := transport.PutManifest(context.Background(), "manifest_requires_plan", envelope); err != nil {
+		t.Fatalf("put manifest should sign metadata before upload: %v", err)
+	}
+}
+
 func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 	server := mlptest.New(mlptest.Config{VaultID: "vault_conv", SessionToken: "conv-token"})
 	defer server.Close()
@@ -64,10 +77,12 @@ func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 	if len(batchCheck.MissingBlobIDs) != 2 {
 		t.Fatalf("both blobs should be missing initially, got %#v", batchCheck)
 	}
-	if err := transportA.PutBlobWithMetadata(ctx, "blob_notes_a", "sha256:blob-a", 10, noteBlobA); err != nil {
+	noteHashA, noteSizeA := cloudEnvelopeMetadata(t, noteBlobA)
+	noteHashB, noteSizeB := cloudEnvelopeMetadata(t, noteBlobB)
+	if err := transportA.PutBlobWithMetadata(ctx, "blob_notes_a", noteHashA, noteSizeA, noteBlobA); err != nil {
 		t.Fatalf("device A put blob a: %v", err)
 	}
-	if err := transportA.PutBlobWithMetadata(ctx, "blob_notes_b", "sha256:blob-b", 20, noteBlobB); err != nil {
+	if err := transportA.PutBlobWithMetadata(ctx, "blob_notes_b", noteHashB, noteSizeB, noteBlobB); err != nil {
 		t.Fatalf("device A put blob b: %v", err)
 	}
 	if err := transportA.PutManifest(ctx, "manifest_conv", manifestEnvelope); err != nil {
@@ -75,7 +90,7 @@ func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 	}
 	commit, err := transportA.CommitRevision(ctx, cloudsync.CommitRequest{
 		BaseRevision: "", RevisionID: "rev_conv_1", ManifestBlobID: "manifest_conv",
-		BlobIDs: []string{"blob_notes_a", "blob_notes_b"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_notes_a", BlobHash: "sha256:blob-a", Size: 10}, {PathHash: "sha256:path-b", BlobID: "blob_notes_b", BlobHash: "sha256:blob-b", Size: 20}}, DeviceID: "dev_laptop", RequestID: "req_conv_1",
+		BlobIDs: []string{"blob_notes_a", "blob_notes_b"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_notes_a", BlobHash: noteHashA, Size: noteSizeA}, {PathHash: "sha256:path-b", BlobID: "blob_notes_b", BlobHash: noteHashB, Size: noteSizeB}}, DeviceID: "dev_laptop", RequestID: "req_conv_1",
 	})
 	if err != nil {
 		t.Fatalf("device A commit: %v", err)
@@ -141,8 +156,8 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 
 	// 两个设备都上传各自的 manifest + blob，从空 base 提交。
 	seed := func(tr *Transport, blobID, manifestID string) {
-		blobHash := "sha256:" + strings.ReplaceAll(blobID, "_", "-")
-		if err := tr.PutBlobWithMetadata(ctx, blobID, blobHash, 10, base); err != nil {
+		blobHash, sizeBytes := cloudEnvelopeMetadata(t, base)
+		if err := tr.PutBlobWithMetadata(ctx, blobID, blobHash, sizeBytes, base); err != nil {
 			t.Fatalf("put blob %s: %v", blobID, err)
 		}
 		if err := tr.PutManifest(ctx, manifestID, base); err != nil {
@@ -152,7 +167,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 	seed(transportA, "blob_a", "manifest_a")
 	seed(transportB, "blob_b", "manifest_b")
 
-	commitA, err := transportA.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_a", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: "sha256:blob-a", Size: 10}}, DeviceID: "dev_laptop", RequestID: "req_a"})
+	commitA, err := transportA.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_a", ManifestBlobID: "manifest_a", BlobIDs: []string{"blob_a"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-a", BlobID: "blob_a", BlobHash: mustCloudEnvelopeHash(t, base), Size: mustCloudEnvelopeSize(t, base)}}, DeviceID: "dev_laptop", RequestID: "req_a"})
 	if err != nil {
 		t.Fatalf("device A first commit should succeed: %v", err)
 	}
@@ -160,7 +175,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 		t.Fatalf("device A commit should report remote_write=true")
 	}
 	// 设备 B 用相同 base 提交，必须拿到 REVISION_CONFLICT，且不能覆盖设备 A 的 head。
-	_, err = transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "manifest_b", BlobIDs: []string{"blob_b"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b", BlobID: "blob_b", BlobHash: "sha256:blob-b", Size: 10}}, DeviceID: "dev_phone", RequestID: "req_b"})
+	_, err = transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "manifest_b", BlobIDs: []string{"blob_b"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b", BlobID: "blob_b", BlobHash: mustCloudEnvelopeHash(t, base), Size: mustCloudEnvelopeSize(t, base)}}, DeviceID: "dev_phone", RequestID: "req_b"})
 	if err == nil {
 		t.Fatalf("device B stale commit must be rejected")
 	}
@@ -189,10 +204,11 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 	if err := transportB.PutManifest(ctx, "manifest_b2", base); err != nil {
 		t.Fatalf("device B put manifest b2: %v", err)
 	}
-	if err := transportB.PutBlobWithMetadata(ctx, "blob_b2", "sha256:blob-b2", 10, base); err != nil {
+	baseHash, baseSize := cloudEnvelopeMetadata(t, base)
+	if err := transportB.PutBlobWithMetadata(ctx, "blob_b2", baseHash, baseSize, base); err != nil {
 		t.Fatalf("device B put blob b2: %v", err)
 	}
-	commitB2, err := transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: head.CurrentRevision, RevisionID: "rev_b2", ManifestBlobID: "manifest_b2", BlobIDs: []string{"blob_b2"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b2", BlobID: "blob_b2", BlobHash: "sha256:blob-b2", Size: 10}}, DeviceID: "dev_phone", RequestID: "req_b2"})
+	commitB2, err := transportB.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: head.CurrentRevision, RevisionID: "rev_b2", ManifestBlobID: "manifest_b2", BlobIDs: []string{"blob_b2"}, ObjectRefs: []cloudsync.ObjectRef{{PathHash: "sha256:path-b2", BlobID: "blob_b2", BlobHash: baseHash, Size: baseSize}}, DeviceID: "dev_phone", RequestID: "req_b2"})
 	if err != nil {
 		t.Fatalf("device B rebase commit should succeed: %v", err)
 	}
@@ -223,4 +239,25 @@ func TestServerTransportUnavailablePreservesLocalState(t *testing.T) {
 	if cloudErr.Code != CodeTransportError || !cloudErr.Retryable {
 		t.Fatalf("expected retryable TRANSPORT_ERROR, got %#v", cloudErr)
 	}
+}
+
+func cloudEnvelopeMetadata(t *testing.T, envelope cloudsync.Envelope) (string, int64) {
+	t.Helper()
+	blobHash, sizeBytes, err := envelopeHashAndSize(envelope)
+	if err != nil {
+		t.Fatalf("hash envelope: %v", err)
+	}
+	return blobHash, sizeBytes
+}
+
+func mustCloudEnvelopeHash(t *testing.T, envelope cloudsync.Envelope) string {
+	t.Helper()
+	blobHash, _ := cloudEnvelopeMetadata(t, envelope)
+	return blobHash
+}
+
+func mustCloudEnvelopeSize(t *testing.T, envelope cloudsync.Envelope) int64 {
+	t.Helper()
+	_, sizeBytes := cloudEnvelopeMetadata(t, envelope)
+	return sizeBytes
 }

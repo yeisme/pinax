@@ -9,9 +9,11 @@
 package mlptest
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,8 +45,10 @@ type vaultState struct {
 }
 
 type blobMetadata struct {
-	BlobHash string
-	Size     int64
+	BlobHash  string
+	Size      int64
+	ExpiresAt time.Time
+	Uploaded  bool
 }
 
 type revisionRecord struct {
@@ -256,12 +260,16 @@ func (s *Server) handleBatchCheck(w http.ResponseWriter, r *http.Request, vault 
 		return
 	}
 	missing := []string{}
+	present := []map[string]any{}
 	for _, id := range req.BlobIDs {
-		if _, ok := vault.blobs[id]; !ok {
+		metadata, ok := vault.blobMetadata[id]
+		if !ok || !metadata.Uploaded {
 			missing = append(missing, id)
+			continue
 		}
+		present = append(present, map[string]any{"blob_id": id, "blob_hash": metadata.BlobHash, "size": metadata.Size, "retention_eligible": true})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": missing})
+	writeJSON(w, http.StatusOK, map[string]any{"present": present, "missing_blob_ids": missing})
 }
 
 func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultID string, vault *vaultState) {
@@ -279,23 +287,54 @@ func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultI
 		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "blob_id, blob_hash, and size are required")
 		return
 	}
-	vault.blobMetadata[req.BlobID] = blobMetadata{BlobHash: req.BlobHash, Size: req.Size}
+	expiresAt := time.Now().Add(15 * time.Minute).UTC()
+	vault.blobMetadata[req.BlobID] = blobMetadata{BlobHash: req.BlobHash, Size: req.Size, ExpiresAt: expiresAt}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"blob_id":    req.BlobID,
 		"object_key": serverOwnedObjectKey(vaultID, req.BlobID, req.BlobHash),
 		"method":     "PUT",
 		"mode":       "local-proxy",
 		"url":        "/v1/vaults/" + vaultID + "/blobs/" + req.BlobID,
-		"expires_at": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339),
+		"expires_at": expiresAt.Format(time.RFC3339),
 	})
 }
 
 func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, vault *vaultState, blobID string) {
-	var envelope map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&envelope); err != nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid envelope")
 		return
 	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, body); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid envelope")
+		return
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(compact.Bytes(), &envelope); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid envelope")
+		return
+	}
+	metadata, ok := vault.blobMetadata[blobID]
+	if !ok {
+		writeError(w, http.StatusNotFound, "BLOB_MISSING", "upload plan required")
+		return
+	}
+	if time.Now().After(metadata.ExpiresAt) {
+		writeError(w, http.StatusGone, "UPLOAD_PLAN_EXPIRED", "blob upload plan has expired")
+		return
+	}
+	blobHash := compactHash(compact.Bytes())
+	if metadata.BlobHash != blobHash {
+		writeError(w, http.StatusBadRequest, "BLOB_HASH_MISMATCH", "uploaded blob hash does not match planned hash")
+		return
+	}
+	if metadata.Size != int64(compact.Len()) {
+		writeError(w, http.StatusBadRequest, "BLOB_SIZE_MISMATCH", "uploaded blob size does not match planned size")
+		return
+	}
+	metadata.Uploaded = true
+	vault.blobMetadata[blobID] = metadata
 	// manifest blobs 用 manifest_ 前缀约定与 object-store transport 保持一致。
 	if strings.HasPrefix(blobID, "manifest_") {
 		vault.manifestBlobs[blobID] = envelope
@@ -340,7 +379,12 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		writeError(w, http.StatusConflict, "REVISION_CONFLICT", "base revision is stale")
 		return
 	}
-	// 引用的 manifest 和 blob 必须存在。
+	// 引用的 manifest 和 blob 必须已有 sign-upload 计划且完成上传。
+	manifestMetadata, ok := vault.blobMetadata[req.ManifestBlobID]
+	if !ok || !manifestMetadata.Uploaded {
+		writeError(w, http.StatusBadRequest, "BLOB_MISSING", "manifest blob missing")
+		return
+	}
 	if _, ok := vault.manifestBlobs[req.ManifestBlobID]; !ok {
 		writeError(w, http.StatusBadRequest, "BLOB_MISSING", "manifest blob missing")
 		return
@@ -360,7 +404,7 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 			}
 		}
 		metadata, ok := vault.blobMetadata[ref.BlobID]
-		if !ok || metadata.BlobHash != ref.BlobHash || metadata.Size != ref.SizeBytes {
+		if !ok || !metadata.Uploaded || metadata.BlobHash != ref.BlobHash || metadata.Size != ref.SizeBytes {
 			writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_ref metadata does not match blob metadata")
 			return
 		}
@@ -385,6 +429,23 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 func (s *Server) authorized(r *http.Request) bool {
 	auth := r.Header.Get("Authorization")
 	return auth == "Bearer "+s.token
+}
+
+func compactHash(body []byte) string {
+	sum := sha256.Sum256(body)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func (s *Server) ExpireBlobPlanForTest(vaultID, blobID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vault := s.vaults[vaultID]
+	if vault == nil {
+		return
+	}
+	metadata := vault.blobMetadata[blobID]
+	metadata.ExpiresAt = time.Now().Add(-time.Minute)
+	vault.blobMetadata[blobID] = metadata
 }
 
 func serverOwnedObjectKey(vaultID, blobID, blobHash string) string {

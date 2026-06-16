@@ -121,8 +121,15 @@ type BlobEnvelope struct {
 	PlainSHA256   string `json:"plain_sha256"`
 }
 
+type BlobFact struct {
+	BlobID   string `json:"blob_id"`
+	BlobHash string `json:"blob_hash"`
+	Size     int64  `json:"size"`
+}
+
 type BlobCheckResult struct {
-	MissingBlobIDs []string `json:"missing_blob_ids"`
+	MissingBlobIDs []string   `json:"missing_blob_ids"`
+	Present        []BlobFact `json:"present"`
 }
 
 // UploadPlan 是 sign-upload 返回的服务端拥有对象上传计划。

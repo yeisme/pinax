@@ -113,7 +113,10 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 		t.Fatalf("missing = %#v", missing)
 	}
 
-	plan, err := client.SignUpload(context.Background(), "blob_b", "sha256:blob_b", 128, "application/vnd.pinax.encrypted-envelope+json")
+	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce-b", Ciphertext: "encrypted-note", PlainSHA256: "plain-sha"}
+	blobHash := compactBlobEnvelopeHash(t, envelope)
+	blobSize := int64(compactBlobEnvelopeSize(t, envelope))
+	plan, err := client.SignUpload(context.Background(), "blob_b", blobHash, blobSize, "application/vnd.pinax.encrypted-envelope+json")
 	if err != nil {
 		t.Fatalf("sign upload: %v", err)
 	}
@@ -124,7 +127,6 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 		t.Fatalf("upload plan object key leaked plaintext path: %s", plan.ObjectKey)
 	}
 
-	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce-b", Ciphertext: "encrypted-note", PlainSHA256: "plain-sha"}
 	if err := client.UploadBlob(context.Background(), "blob_b", envelope); err != nil {
 		t.Fatalf("upload blob: %v", err)
 	}
@@ -143,6 +145,50 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 	if down.Ciphertext != "encrypted-note" || down.PlainSHA256 != "plain-sha" {
 		t.Fatalf("downloaded envelope = %#v", down)
 	}
+}
+
+func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_plan", SessionToken: "secret-token"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_plan", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", Ciphertext: "encrypted-note", PlainSHA256: "plain-sha"}
+	if err := client.UploadBlob(context.Background(), "blob_unplanned", envelope); err == nil || !IsCode(err, "BLOB_MISSING") {
+		t.Fatalf("unplanned upload err = %#v", err)
+	}
+	if _, err := client.SignUpload(context.Background(), "blob_hash_mismatch", "sha256:not-the-envelope", int64(compactBlobEnvelopeSize(t, envelope)), "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign mismatched blob: %v", err)
+	}
+	if err := client.UploadBlob(context.Background(), "blob_hash_mismatch", envelope); err == nil || !IsCode(err, "BLOB_HASH_MISMATCH") {
+		t.Fatalf("hash mismatch err = %#v", err)
+	}
+	if _, err := client.SignUpload(context.Background(), "blob_expired", compactBlobEnvelopeHash(t, envelope), int64(compactBlobEnvelopeSize(t, envelope)), "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign expired blob: %v", err)
+	}
+	server.ExpireBlobPlanForTest("vault_plan", "blob_expired")
+	if err := client.UploadBlob(context.Background(), "blob_expired", envelope); err == nil || !IsCode(err, "UPLOAD_PLAN_EXPIRED") {
+		t.Fatalf("expired upload err = %#v", err)
+	}
+}
+
+func compactBlobEnvelopeHash(t *testing.T, envelope BlobEnvelope) string {
+	t.Helper()
+	blobHash, _, err := compactBlobEnvelopeHashAndSize(envelope)
+	if err != nil {
+		t.Fatalf("hash envelope: %v", err)
+	}
+	return blobHash
+}
+
+func compactBlobEnvelopeSize(t *testing.T, envelope BlobEnvelope) int {
+	t.Helper()
+	_, sizeBytes, err := compactBlobEnvelopeHashAndSize(envelope)
+	if err != nil {
+		t.Fatalf("size envelope: %v", err)
+	}
+	return int(sizeBytes)
 }
 
 func TestClientSignUploadRejectsNegativeSize(t *testing.T) {

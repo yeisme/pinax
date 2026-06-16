@@ -139,8 +139,15 @@ type CommitResult struct {
 	ManifestBlobID string
 }
 
+type BlobFact struct {
+	BlobID   string
+	BlobHash string
+	Size     int64
+}
+
 type BatchCheckResult struct {
 	MissingBlobIDs []string
+	Present        []BlobFact
 }
 
 type Lock struct {
