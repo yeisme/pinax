@@ -42,7 +42,7 @@ func (t *Transport) PutBlob(ctx context.Context, blobID string, envelope cloudsy
 }
 
 func (t *Transport) RegisterBlobMetadata(ctx context.Context, blobID, blobHash string, sizeBytes int64) error {
-	_, err := t.client.SignUpload(ctx, blobID, blobHash, sizeBytes, "application/octet-stream")
+	_, err := t.client.SignUpload(ctx, blobID, blobHash, sizeBytes, "application/vnd.pinax.encrypted-envelope+json")
 	return err
 }
 

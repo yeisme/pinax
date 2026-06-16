@@ -113,7 +113,7 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 		t.Fatalf("missing = %#v", missing)
 	}
 
-	plan, err := client.SignUpload(context.Background(), "blob_b", "sha256:blob_b", 128, "application/octet-stream")
+	plan, err := client.SignUpload(context.Background(), "blob_b", "sha256:blob_b", 128, "application/vnd.pinax.encrypted-envelope+json")
 	if err != nil {
 		t.Fatalf("sign upload: %v", err)
 	}
@@ -145,7 +145,6 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 	}
 }
 
-
 func TestClientSignUploadRejectsNegativeSize(t *testing.T) {
 	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
 	defer server.Close()
@@ -153,7 +152,7 @@ func TestClientSignUploadRejectsNegativeSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	_, err = client.SignUpload(context.Background(), "blob_bad", "sha256:blob-bad", -1, "application/octet-stream")
+	_, err = client.SignUpload(context.Background(), "blob_bad", "sha256:blob-bad", -1, "application/vnd.pinax.encrypted-envelope+json")
 	if err == nil {
 		t.Fatalf("negative size sign-upload succeeded")
 	}

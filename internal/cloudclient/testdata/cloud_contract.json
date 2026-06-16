@@ -114,14 +114,15 @@
         "blob_id": "blob_b",
         "blob_hash": "sha256:blob_b",
         "size": 128,
-        "content_type": "application/octet-stream"
+        "content_type": "application/vnd.pinax.encrypted-envelope+json"
       },
       "success_status": 200,
       "success_body": {
         "blob_id": "blob_b",
-        "object_key": "vaults/vault_1/sha256/00/00/blob_b",
+        "object_key": "objects/00/00/example-server-owned.blob",
         "method": "PUT",
-        "url": "https://objects.example.local/vaults/vault_1/blob_b",
+        "mode": "local-proxy",
+        "url": "/v1/vaults/vault_1/blobs/blob_b",
         "expires_at": "2026-06-15T12:00:00Z"
       }
     },

@@ -9,6 +9,8 @@
 package mlptest
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -264,24 +266,26 @@ func (s *Server) handleBatchCheck(w http.ResponseWriter, r *http.Request, vault 
 
 func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultID string, vault *vaultState) {
 	var req struct {
-		BlobID   string `json:"blob_id"`
-		BlobHash string `json:"blob_hash"`
-		Size     int64  `json:"size"`
+		BlobID      string `json:"blob_id"`
+		BlobHash    string `json:"blob_hash"`
+		Size        int64  `json:"size"`
+		ContentType string `json:"content_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid body")
 		return
 	}
-	if !validMLPID(req.BlobID) || strings.TrimSpace(req.BlobHash) == "" || req.Size < 0 {
+	if !validMLPID(req.BlobID) || strings.TrimSpace(req.BlobHash) == "" || req.Size < 0 || req.ContentType != "application/vnd.pinax.encrypted-envelope+json" {
 		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "blob_id, blob_hash, and size are required")
 		return
 	}
 	vault.blobMetadata[req.BlobID] = blobMetadata{BlobHash: req.BlobHash, Size: req.Size}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"blob_id":    req.BlobID,
-		"object_key": "vaults/" + vaultID + "/sha256/00/00/" + req.BlobID,
+		"object_key": serverOwnedObjectKey(vaultID, req.BlobID, req.BlobHash),
 		"method":     "PUT",
-		"url":        "http://objects.example.local/" + vaultID + "/" + req.BlobID,
+		"mode":       "local-proxy",
+		"url":        "/v1/vaults/" + vaultID + "/blobs/" + req.BlobID,
 		"expires_at": time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339),
 	})
 }
@@ -315,9 +319,9 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, vault *vaultState, blobID 
 
 func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vaultState, idempotencyKey string) {
 	var req struct {
-		BaseRevision   string   `json:"base_revision"`
-		RevisionID     string   `json:"revision_id"`
-		ManifestBlobID string   `json:"manifest_blob_id"`
+		BaseRevision   string `json:"base_revision"`
+		RevisionID     string `json:"revision_id"`
+		ManifestBlobID string `json:"manifest_blob_id"`
 		ObjectRefs     []struct {
 			PathHash  string `json:"path_hash"`
 			BlobID    string `json:"blob_id"`
@@ -325,7 +329,7 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 			SizeBytes int64  `json:"size_bytes"`
 			Deleted   bool   `json:"deleted"`
 		} `json:"object_refs"`
-		DeviceID       string   `json:"device_id"`
+		DeviceID string `json:"device_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid body")
@@ -383,7 +387,11 @@ func (s *Server) authorized(r *http.Request) bool {
 	return auth == "Bearer "+s.token
 }
 
-
+func serverOwnedObjectKey(vaultID, blobID, blobHash string) string {
+	sum := sha256.Sum256([]byte(vaultID + "\x00" + blobID + "\x00" + blobHash))
+	digest := hex.EncodeToString(sum[:])
+	return "objects/" + digest[:2] + "/" + digest[2:4] + "/" + digest + ".blob"
+}
 
 func validMLPID(value string) bool {
 	if value == "" || len(value) > 256 {
