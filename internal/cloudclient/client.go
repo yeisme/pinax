@@ -70,6 +70,7 @@ type Principal struct {
 	AccountID string `json:"account_id"`
 	DeviceID  string `json:"device_id"`
 	VaultID   string `json:"vault_id,omitempty"`
+	TokenRef  string `json:"token_ref,omitempty"`
 	Scope     string `json:"scope,omitempty"`
 }
 
@@ -79,6 +80,7 @@ type BootstrapResult struct {
 	DeviceID  string `json:"device_id"`
 	VaultID   string `json:"vault_id,omitempty"`
 	TokenRef  string `json:"token_ref,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 }
 
 // VaultLinkFacts 是 vault create/link 返回的有界事实。

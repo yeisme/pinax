@@ -61,7 +61,7 @@ func TestClientBootstrapPrincipalAndVaultLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if boot.AccountID == "" || boot.DeviceID != "dev_laptop" || boot.VaultID == "" {
+	if boot.AccountID == "" || boot.DeviceID != "dev_laptop" || boot.VaultID == "" || boot.TokenRef != "profile://cloud" || boot.Scope != "sync" {
 		t.Fatalf("bootstrap result = %#v", boot)
 	}
 	// bootstrap token mismatch 返回 UNAUTHENTICATED。
@@ -75,7 +75,7 @@ func TestClientBootstrapPrincipalAndVaultLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("principal: %v", err)
 	}
-	if principal.AccountID == "" || principal.DeviceID != "dev_laptop" {
+	if principal.AccountID == "" || principal.DeviceID != "dev_laptop" || principal.VaultID != boot.VaultID || principal.TokenRef != "profile://cloud" || principal.Scope != "sync" {
 		t.Fatalf("principal = %#v", principal)
 	}
 }
@@ -200,9 +200,10 @@ func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
 	}
 	var fixture struct {
 		Operations []struct {
-			Name   string `json:"name"`
-			Method string `json:"method"`
-			Path   string `json:"path"`
+			Name        string         `json:"name"`
+			Method      string         `json:"method"`
+			Path        string         `json:"path"`
+			SuccessBody map[string]any `json:"success_body"`
 		} `json:"operations"`
 		ErrorCodes  []string `json:"error_codes"`
 		Terminology string   `json:"terminology"`
@@ -226,6 +227,9 @@ func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
 		if strings.Contains(op.Path, "{workspace_id}") || strings.Contains(op.Path, "/workspaces/") {
 			t.Fatalf("MLP contract must use vault_id terminology, got path %q", op.Path)
 		}
+		if op.Name == "bootstrap" || op.Name == "current_principal" {
+			assertAuthFixtureFields(t, op.Name, op.SuccessBody)
+		}
 		if _, ok := wantOps[op.Name]; ok {
 			wantOps[op.Name] = true
 		}
@@ -248,6 +252,15 @@ func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
 	for code, seen := range wantErrors {
 		if !seen {
 			t.Fatalf("contract fixture missing error code %s", code)
+		}
+	}
+}
+
+func assertAuthFixtureFields(t *testing.T, operation string, body map[string]any) {
+	t.Helper()
+	for _, key := range []string{"account_id", "device_id", "vault_id", "token_ref", "scope"} {
+		if _, ok := body[key]; !ok {
+			t.Fatalf("%s success_body missing %s: %#v", operation, key, body)
 		}
 	}
 }

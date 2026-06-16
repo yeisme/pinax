@@ -149,6 +149,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		"device_id":  dev,
 		"vault_id":   vaultID,
 		"token_ref":  "profile://cloud",
+		"scope":      "sync",
 	})
 }
 
@@ -157,9 +158,12 @@ func (s *Server) handlePrincipal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "missing or invalid token")
 		return
 	}
+	deviceID := r.Header.Get("X-Pinax-Device-ID")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"account_id": s.accountID,
-		"device_id":  r.Header.Get("X-Pinax-Device-ID"),
+		"device_id":  deviceID,
+		"vault_id":   "vault_" + deviceID,
+		"token_ref":  "profile://cloud",
 		"scope":      "sync",
 	})
 }
