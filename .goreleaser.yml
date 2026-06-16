@@ -1,5 +1,7 @@
 version: 2
 
+project_name: pinax
+
 before:
   hooks:
     - go mod tidy
@@ -7,10 +9,12 @@ before:
 builds:
   - main: ./cmd/pinax
     binary: pinax
+    flags:
+      - -trimpath
     ldflags:
-      - -s -w
+      - -s -w -X main.version={{ .Version }}
     env:
-      - CGO_ENABLED=1
+      - CGO_ENABLED=0
     goos:
       - linux
       - darwin
@@ -20,7 +24,8 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -31,7 +36,14 @@ archives:
       {{- end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc

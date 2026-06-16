@@ -456,7 +456,14 @@ func (s *Service) QueryOrphans(_ context.Context, req NoteOrphansRequest) (domai
 	if indexStatus != "" {
 		projection.Facts["index_status"] = indexStatus
 	}
-	projection.Data = map[string]any{"orphans": orphans}
+	// 投影必须保持 agent-safe 边界：orphans 列表只输出 bounded 摘要，不能
+	// 把完整 note body 序列化到 JSON/events/agent 输出中。与 links/backlinks
+	// 保持一致，统一通过 noteGraphNoteSummary 剥离 Body 字段。
+	summaries := make([]domain.Note, 0, len(orphans))
+	for _, note := range orphans {
+		summaries = append(summaries, noteGraphNoteSummary(note))
+	}
+	projection.Data = map[string]any{"orphans": summaries}
 	return projection, nil
 }
 

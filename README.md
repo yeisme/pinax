@@ -6,6 +6,46 @@ Pinax is a local-first Markdown notes CLI for people and agents who want a porta
 
 Pinax focuses on safe local workflows: capture notes, index and search them, inspect links and backlinks, plan repairs and organization, snapshot before risky writes, expose bounded JSON/agent output, and sync encrypted revisions through explicit Cloud Sync transports.
 
+## Five core workflows
+
+Pinax is built around one agent-safe proof loop. A user or agent drives a real Markdown vault through five stages, and every stage stays bounded — projections never dump full note bodies, and writes only happen through plan, snapshot, receipt and explicit apply.
+
+| Path | What it does | Entry commands |
+| --- | --- | --- |
+| **Capture** | Add notes, inbox items and journal entries to the vault. | `pinax init`, `pinax note add`, `pinax inbox capture`, `pinax journal daily append` |
+| **Retrieve** | Build the index projection and read bounded context. | `pinax index sync`, `pinax search`, `pinax note links`, `pinax note backlinks`, `pinax note orphans` |
+| **Diagnose** | Check vault health and surface low-risk and review items. | `pinax vault doctor`, `pinax vault stats` |
+| **Plan** | Turn issues into reviewable, savable repair and organize plans. | `pinax repair plan --save`, `pinax organize plan --save` |
+| **Apply safely** | Snapshot first, then apply low-risk changes with explicit confirmation. | `pinax version snapshot`, `pinax repair apply --yes`, `pinax organize apply --yes` |
+
+Agents can run the whole loop in one command. Preview is read-only; add `--apply --yes` to take a fresh snapshot and apply approved operations:
+
+```bash
+pinax proof loop run --vault ./my-notes --json            # preview: one projection with proof_loop_run_id
+pinax proof loop run --vault ./my-notes --apply --yes     # fresh snapshot + approved repair/organize apply
+```
+
+If an apply goes wrong, revert a file from the last snapshot through a CLI-authored restore path (never direct file surgery):
+
+```bash
+pinax version restore notes/example.md --revision HEAD --plan --vault ./my-notes
+pinax version restore apply --vault ./my-notes --plan restore-<id> --yes   # local_write=true, remote_write=false
+```
+
+```bash
+pinax init ./my-notes --title "My Knowledge Base"
+pinax inbox capture "an idea" --vault ./my-notes
+pinax note add "Research Log" --body "First note" --vault ./my-notes
+pinax index sync --vault ./my-notes --json
+pinax search "First note" --vault ./my-notes --json
+pinax vault doctor --vault ./my-notes --json
+pinax repair plan --vault ./my-notes --save --json
+pinax version snapshot --vault ./my-notes --message "checkpoint"
+pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
+```
+
+Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync, daily briefing, provider expansion and hosted platform capabilities are separate advanced workflows, not part of this local proof loop.
+
 ## Status
 
 | Area | Status |
@@ -35,6 +75,15 @@ For local development from a checkout:
 go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 ./dist/pinax version
 ```
+
+For release rehearsal from a checkout:
+
+```bash
+task release:check
+task release:local
+```
+
+`task release:local` builds linux, macOS and Windows archives for amd64 and arm64, plus `dist/checksums.txt`, without publishing.
 
 ## Quick start
 

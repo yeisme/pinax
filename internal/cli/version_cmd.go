@@ -16,6 +16,8 @@ func addVersionCommands(root *cobra.Command, ctx commandBuildContext) {
 	var showRevision string
 	var restoreRevision string
 	var restorePlan bool
+	var restoreApplyPlan string
+	var restoreApplyYes bool
 
 	versionCmd := &cobra.Command{
 		Use:   "version",
@@ -101,6 +103,19 @@ func addVersionCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	restoreCmd.Flags().StringVar(&restoreRevision, "revision", "", "Revision to restore")
 	restoreCmd.Flags().BoolVar(&restorePlan, "plan", false, "Only generate the restore plan; do not write the vault")
+
+	// restore apply 把已生成的 restore plan 安全写回本地 Markdown，是 proof loop 可逆 apply 的恢复路径。
+	restoreApplyCmd := &cobra.Command{
+		Use:   "apply",
+		Short: "Apply a saved version restore plan to local Markdown",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			projection, err := ctx.svc.VersionRestoreApply(cmd.Context(), app.VersionRestoreApplyRequest{VaultPath: *ctx.vaultPath, PlanID: restoreApplyPlan, Yes: restoreApplyYes})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	restoreApplyCmd.Flags().StringVar(&restoreApplyPlan, "plan", "", "Saved restore plan id or path")
+	restoreApplyCmd.Flags().BoolVar(&restoreApplyYes, "yes", false, "Approve writing the restored content to local Markdown")
+	restoreCmd.AddCommand(restoreApplyCmd)
 	versionCmd.AddCommand(restoreCmd)
 
 	changedCmd := &cobra.Command{

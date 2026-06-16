@@ -1,6 +1,7 @@
 package index
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -14,9 +15,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/glebarez/sqlite"
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/domain"
-	"gorm.io/driver/sqlite"
+	"github.com/yeisme/pinax/internal/index/model"
+	"github.com/yeisme/pinax/internal/index/query"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -24,162 +27,75 @@ import (
 const SchemaVersion = "pinax.index.v2"
 const PropertySchemaVersion = "pinax.properties.v1"
 
-type IndexMetaRecord struct {
-	Key       string `gorm:"primaryKey"`
-	Value     string
-	UpdatedAt string
+// 以下类型别名指向 internal/index/model 中的 GORM 模型，保持本包公开 API 稳定。
+// 普通业务读写必须通过 internal/index/query 生成的类型化 DAO，模型定义集中在 model 包。
+type (
+	IndexMetaRecord          = model.IndexMetaRecord
+	NoteRecord               = model.NoteRecord
+	NoteTextRecord           = model.NoteTextRecord
+	TagRecord                = model.TagRecord
+	LinkRecord               = model.LinkRecord
+	SearchTokenRecord        = model.SearchTokenRecord
+	AttachmentRecord         = model.AttachmentRecord
+	AssetRecord              = model.AssetRecord
+	AssetLinkRecord          = model.AssetLinkRecord
+	VaultFileRecord          = model.VaultFileRecord
+	FolderRecord             = model.FolderRecord
+	DimensionCountRecord     = model.DimensionCountRecord
+	PropertyDefinitionRecord = model.PropertyDefinitionRecord
+	PropertyValueRecord      = model.PropertyValueRecord
+)
+
+// globalUpdate 开启 GORM 全局更新/删除会话，仅用于重建/增量投影清空整表等受控场景。
+func globalUpdate() *gorm.Session {
+	return &gorm.Session{AllowGlobalUpdate: true}
 }
 
-type NoteRecord struct {
-	Path            string `gorm:"primaryKey"`
-	NoteID          string `gorm:"index"`
-	Title           string
-	Filename        string `gorm:"index"`
-	Stem            string `gorm:"index"`
-	ObjectKind      string `gorm:"index"`
-	ManagedStatus   string `gorm:"index"`
-	Project         string
-	Group           string `gorm:"index"`
-	Folder          string `gorm:"index"`
-	Kind            string `gorm:"index"`
-	Status          string `gorm:"index"`
-	LifecycleStatus string `gorm:"index"`
-	CreatedAt       string
-	UpdatedAt       string
-	SourceHash      string
-	ModifiedUnix    int64
-	Size            int64
-	IsSystem        bool `gorm:"index"`
-}
-
-type NoteTextRecord struct {
-	NotePath  string `gorm:"primaryKey"`
-	TitleText string
-	BodyText  string
-	Excerpt   string
-	WordCount int
-}
-
-type TagRecord struct {
-	ID       uint `gorm:"primaryKey"`
-	NotePath string
-	Tag      string `gorm:"index"`
-}
-
-type LinkRecord struct {
-	ID            uint `gorm:"primaryKey"`
-	NotePath      string
-	Target        string `gorm:"index"`
-	TargetPath    string `gorm:"index"`
-	Kind          string
-	Broken        bool `gorm:"index"`
-	SourceNoteID  string
-	TargetNoteID  string
-	TargetTitle   string
-	TargetRaw     string
-	TargetAlias   string
-	TargetHeading string
-	Status        string `gorm:"index"` // resolved|broken|ambiguous|external|ignored
-	Line          int
-	Evidence      string
-}
-
-type SearchTokenRecord struct {
-	ID       uint   `gorm:"primaryKey"`
-	Token    string `gorm:"index"`
-	NotePath string `gorm:"index"`
-	Field    string
-	Count    int
-	Weight   int
-}
-
-type AttachmentRecord struct {
-	ID            uint `gorm:"primaryKey"`
-	NotePath      string
-	ReferenceText string
-	TargetPath    string `gorm:"index"`
-	MediaType     string
-	Exists        bool `gorm:"index"`
-}
-
-type AssetRecord struct {
-	Path          string `gorm:"primaryKey"`
-	AssetID       string `gorm:"index"`
-	Filename      string `gorm:"index"`
-	Stem          string `gorm:"index"`
-	Extension     string `gorm:"index"`
-	MediaType     string `gorm:"index"`
-	Size          int64
-	ModifiedUnix  int64
-	Width         int
-	Height        int
-	SHA256        string `gorm:"index"`
-	ManagedStatus string `gorm:"index"`
-	CreatedAt     string
-	UpdatedAt     string
-}
-
-type AssetLinkRecord struct {
-	ID           uint   `gorm:"primaryKey"`
-	AssetPath    string `gorm:"index"`
-	SourceNoteID string `gorm:"index"`
-	SourcePath   string `gorm:"index"`
-	RawReference string
-	LinkStyle    string `gorm:"index"`
-	LinkKind     string `gorm:"index"`
-	Line         int
-	Status       string `gorm:"index"`
-	MediaType    string `gorm:"index"`
-}
-
-type VaultFileRecord struct {
-	Path          string `gorm:"primaryKey"`
-	Filename      string `gorm:"index"`
-	Stem          string `gorm:"index"`
-	Extension     string `gorm:"index"`
-	MediaType     string `gorm:"index"`
-	Size          int64
-	ModifiedUnix  int64
-	ObjectKind    string `gorm:"index"`
-	ManagedStatus string `gorm:"index"`
-}
-
-type FolderRecord struct {
-	Path          string `gorm:"primaryKey"`
-	Purpose       string `gorm:"index"`
-	ManagedStatus string `gorm:"index"`
-	Exists        bool   `gorm:"index"`
-	Empty         bool   `gorm:"index"`
-	Depth         int    `gorm:"index"`
-	NoteCount     int
-	AssetCount    int
-	CreatedAt     string
-	UpdatedAt     string
-}
-
-type DimensionCountRecord struct {
-	ID        uint   `gorm:"primaryKey"`
-	Dimension string `gorm:"index"`
-	Value     string `gorm:"index"`
-	Count     int
-}
-
-type PropertyDefinitionRecord struct {
-	Name    string `gorm:"primaryKey"`
-	Type    string `gorm:"index"`
-	Source  string `gorm:"index"`
-	Count   int
-	Samples string
-}
-
-type PropertyValueRecord struct {
-	ID       uint   `gorm:"primaryKey"`
-	NotePath string `gorm:"index"`
-	Name     string `gorm:"index"`
-	Type     string `gorm:"index"`
-	Raw      string
-	Value    string `gorm:"index"`
-	Source   string `gorm:"index"`
+// clearAllProjections 清空索引除 index_meta 之外的全部 projection 表。
+// 重建路径在事务内先清空再重写，保证 Markdown 真源与投影一致。
+func clearAllProjections(q *query.Query, ctx context.Context) error {
+	clearers := []func() error{
+		func() error { _, err := q.NoteRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+		func() error { _, err := q.NoteTextRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+		func() error { _, err := q.TagRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+		func() error { _, err := q.LinkRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+		func() error {
+			_, err := q.SearchTokenRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.AttachmentRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.AssetLinkRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.VaultFileRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+		func() error { _, err := q.AssetRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+		func() error { _, err := q.FolderRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+		func() error {
+			_, err := q.DimensionCountRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.PropertyDefinitionRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.PropertyValueRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+			return err
+		},
+	}
+	for _, clear := range clearers {
+		if err := clear(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type Counts struct {
@@ -390,12 +306,13 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 		status := Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Notes: len(notes), Evidence: []string{"property_schema_version=" + propertySchema}}
 		return doctorReport(status, []Issue{indexIssue("index_schema_mismatch", "warning", status.Path, "属性索引 schema 版本不匹配", status.Evidence)}), nil
 	}
-	records := []NoteRecord{}
-	if err := db.Find(&records).Error; err != nil {
+	q := query.Use(db)
+	records, err := q.NoteRecord.WithContext(context.Background()).Find()
+	if err != nil {
 		status := Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{err.Error()}}
 		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
 	}
-	byPath := map[string]NoteRecord{}
+	byPath := map[string]*model.NoteRecord{}
 	for _, record := range records {
 		byPath[record.Path] = record
 	}
@@ -422,9 +339,9 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 		if !notePaths[record.Path] {
 			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引包含 vault 中不存在 of note projection", []string{"extra_note=" + record.Path}))
 		}
-		var textRows int64
-		if err := db.Model(&NoteTextRecord{}).Where("note_path = ?", record.Path).Count(&textRows).Error; err != nil {
-			status := Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{err.Error()}}
+		textRows, countErr := q.NoteTextRecord.WithContext(context.Background()).Where(q.NoteTextRecord.NotePath.Eq(record.Path)).Count()
+		if countErr != nil {
+			status := Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{countErr.Error()}}
 			return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
 		}
 		if textRows == 0 {
@@ -522,11 +439,6 @@ func indexStorageSchemaIssues(db *gorm.DB) []Issue {
 	return issues
 }
 
-func indexSchemaReadError(db *gorm.DB) error {
-	var schemaVersion int
-	return db.Raw("PRAGMA schema_version").Scan(&schemaVersion).Error
-}
-
 func schemaIssuesContainEvidence(issues []Issue, evidence string) bool {
 	for _, issue := range issues {
 		for _, item := range issue.Evidence {
@@ -548,11 +460,10 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 	}
 	counts := Counts{}
 	err = db.Transaction(func(tx *gorm.DB) error {
-
-		for _, model := range []any{&NoteRecord{}, &NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}, &AssetLinkRecord{}, &VaultFileRecord{}, &AssetRecord{}, &FolderRecord{}, &DimensionCountRecord{}, &PropertyDefinitionRecord{}, &PropertyValueRecord{}} {
-			if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(model).Error; err != nil {
-				return err
-			}
+		ctx := context.Background()
+		q := query.Use(tx)
+		if err := clearAllProjections(q, ctx); err != nil {
+			return err
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
 		if err := upsertMeta(tx, "schema_version", SchemaVersion, now); err != nil {
@@ -567,45 +478,45 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 		pathByTitle := notePathByTitle(notes)
 		for _, note := range notes {
 			record := noteRecordFromDomain(note, 0, 0)
-			if err := tx.Create(&record).Error; err != nil {
+			if err := q.NoteRecord.WithContext(ctx).Create(&record); err != nil {
 				return err
 			}
 			counts.Notes++
-			if err := tx.Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}).Error; err != nil {
+			if err := q.NoteTextRecord.WithContext(ctx).Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}); err != nil {
 				return err
 			}
 			for _, tag := range uniqueTags(note) {
-				if err := tx.Create(&TagRecord{NotePath: note.Path, Tag: tag}).Error; err != nil {
+				if err := q.TagRecord.WithContext(ctx).Create(&TagRecord{NotePath: note.Path, Tag: tag}); err != nil {
 					return err
 				}
 				counts.Tags++
 			}
 			for _, token := range noteTokens(note) {
-				if err := tx.Create(&SearchTokenRecord{NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}).Error; err != nil {
+				if err := q.SearchTokenRecord.WithContext(ctx).Create(&SearchTokenRecord{NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}); err != nil {
 					return err
 				}
 				counts.Tokens++
 			}
 			for _, link := range noteLinks(note, pathByTitle) {
-				if err := tx.Create(&link).Error; err != nil {
+				if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
 					return err
 				}
 				counts.Links++
 			}
 			for _, attachment := range noteAttachments(root, note) {
-				if err := tx.Create(&attachment).Error; err != nil {
+				if err := q.AttachmentRecord.WithContext(ctx).Create(&attachment); err != nil {
 					return err
 				}
 				counts.Attachments++
 			}
 			for _, assetLink := range noteAssetLinks(root, note) {
-				if err := tx.Create(&assetLink).Error; err != nil {
+				if err := q.AssetLinkRecord.WithContext(ctx).Create(&assetLink); err != nil {
 					return err
 				}
 			}
 		}
 		for _, dimension := range noteDimensionCounts(notes) {
-			if err := tx.Create(&dimension).Error; err != nil {
+			if err := q.DimensionCountRecord.WithContext(ctx).Create(&dimension); err != nil {
 				return err
 			}
 			counts.Dimensions++
@@ -654,6 +565,8 @@ func Refresh(root string, notes []domain.Note, opts RefreshOptions) (RefreshResu
 		} else if migrateErr := migrate(db); migrateErr != nil {
 			return result, migrateErr
 		} else if rebuildErr := db.Transaction(func(tx *gorm.DB) error {
+			ctx := context.Background()
+			q := query.Use(tx)
 			now := time.Now().UTC().Format(time.RFC3339)
 			if err := upsertMeta(tx, "schema_version", SchemaVersion, now); err != nil {
 				return err
@@ -661,8 +574,18 @@ func Refresh(root string, notes []domain.Note, opts RefreshOptions) (RefreshResu
 			if err := upsertMeta(tx, "property_schema_version", PropertySchemaVersion, now); err != nil {
 				return err
 			}
-			for _, model := range []any{&PropertyDefinitionRecord{}, &PropertyValueRecord{}, &FolderRecord{}} {
-				if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(model).Error; err != nil {
+			for _, clear := range []func() error{
+				func() error {
+					_, err := q.PropertyDefinitionRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+					return err
+				},
+				func() error {
+					_, err := q.PropertyValueRecord.WithContext(ctx).Session(globalUpdate()).Delete()
+					return err
+				},
+				func() error { _, err := q.FolderRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
+			} {
+				if err := clear(); err != nil {
 					return err
 				}
 			}
@@ -739,18 +662,19 @@ func refreshBatchCount(total, batchSize int) int {
 }
 
 func rebuildPropertyProjection(tx *gorm.DB, notes []domain.Note) error {
-
+	ctx := context.Background()
+	q := query.Use(tx)
 	rows := ExtractPropertyRows(notes)
 	for _, def := range InferPropertyDefinitions(rows) {
 		record := PropertyDefinitionRecord{Name: def.Name, Type: string(def.Type), Source: def.Source, Count: def.Count, Samples: strings.Join(def.Samples, "\n")}
-		if err := tx.Create(&record).Error; err != nil {
+		if err := q.PropertyDefinitionRecord.WithContext(ctx).Create(&record); err != nil {
 			return err
 		}
 	}
 	for _, row := range rows {
 		for _, value := range row.Values {
 			record := PropertyValueRecord{NotePath: row.Note.Path, Name: value.Name, Type: string(value.Type), Raw: value.Raw, Value: value.String(), Source: value.Source}
-			if err := tx.Create(&record).Error; err != nil {
+			if err := q.PropertyValueRecord.WithContext(ctx).Create(&record); err != nil {
 				return err
 			}
 		}
@@ -769,12 +693,13 @@ func Sync(root string, notes []domain.Note) (SyncResult, error) {
 	if err := migrate(db); err != nil {
 		return SyncResult{}, err
 	}
-	records := []NoteRecord{}
-	if err := db.Find(&records).Error; err != nil {
+	q := query.Use(db)
+	records, err := q.NoteRecord.WithContext(context.Background()).Find()
+	if err != nil {
 		return SyncResult{}, err
 	}
-	byPath := map[string]NoteRecord{}
-	byID := map[string]NoteRecord{}
+	byPath := map[string]*model.NoteRecord{}
+	byID := map[string]*model.NoteRecord{}
 	for _, record := range records {
 		byPath[record.Path] = record
 		if strings.TrimSpace(record.NoteID) != "" {
@@ -837,17 +762,15 @@ func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
 	note := update.Note
 	hash := noteSourceHash(note)
 	result := IncrementalResult{NotePath: note.Path}
-	var existing NoteRecord
-	existingFound := false
 	lookupPath := note.Path
 	if strings.TrimSpace(update.OldPath) != "" {
 		lookupPath = filepath.ToSlash(filepath.Clean(update.OldPath))
 	}
-	found := db.Where("path = ?", lookupPath).Find(&existing)
-	if found.Error != nil {
-		return IncrementalResult{}, found.Error
+	readQ := query.Use(db)
+	existing, existingFound, lookupErr := firstNoteByPath(readQ, lookupPath)
+	if lookupErr != nil {
+		return IncrementalResult{}, lookupErr
 	}
-	existingFound = found.RowsAffected > 0
 	if existingFound && existing.SourceHash == hash && existing.ModifiedUnix == update.ModifiedUnix && existing.Size == update.Size {
 		result.Skipped = true
 		return result, nil
@@ -855,7 +778,7 @@ func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
 	err = db.Transaction(func(tx *gorm.DB) error {
 		oldKeys := map[string]bool{}
 		if existingFound {
-			oldKeys = linkTargetKeysFromRecord(existing)
+			oldKeys = linkTargetKeysFromRecord(*existing)
 		}
 		if update.OldPath != "" && update.OldPath != note.Path {
 			if err := deleteNoteProjection(tx, update.OldPath, true); err != nil {
@@ -863,7 +786,7 @@ func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
 			}
 		}
 		record := noteRecordFromDomain(note, update.ModifiedUnix, update.Size)
-		if err := tx.Save(&record).Error; err != nil {
+		if err := query.Use(tx).NoteRecord.WithContext(context.Background()).Save(&record); err != nil {
 			return err
 		}
 		if err := replaceNoteProjection(tx, root, note); err != nil {
@@ -894,15 +817,15 @@ func DeleteNote(root string, del NoteDelete) (IncrementalResult, error) {
 	path := filepath.ToSlash(filepath.Clean(del.Path))
 	result := IncrementalResult{NotePath: path}
 	err = db.Transaction(func(tx *gorm.DB) error {
-		var existing NoteRecord
-		found := tx.Where("path = ?", path).Find(&existing)
-		if found.Error != nil {
-			return found.Error
+		q := query.Use(tx)
+		existing, found, lookupErr := firstNoteByPath(q, path)
+		if lookupErr != nil {
+			return lookupErr
 		}
-		if found.RowsAffected == 0 {
+		if !found {
 			return nil
 		}
-		keys := linkTargetKeysFromRecord(existing)
+		keys := linkTargetKeysFromRecord(*existing)
 		if err := deleteNoteProjection(tx, path, true); err != nil {
 			return err
 		}
@@ -918,6 +841,18 @@ func DeleteNote(root string, del NoteDelete) (IncrementalResult, error) {
 	return result, nil
 }
 
+// firstNoteByPath 通过主键路径查找 note 投影。未找到时返回 (nil, false, nil)。
+func firstNoteByPath(q *query.Query, path string) (*model.NoteRecord, bool, error) {
+	record, err := q.NoteRecord.WithContext(context.Background()).Where(q.NoteRecord.Path.Eq(path)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return record, true, nil
+}
+
 func ReplaceAssetProjection(root string, assets []domain.Asset) error {
 	db, err := open(root)
 	if err != nil {
@@ -928,7 +863,9 @@ func ReplaceAssetProjection(root string, assets []domain.Asset) error {
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&AssetRecord{}).Error; err != nil {
+		ctx := context.Background()
+		q := query.Use(tx)
+		if _, err := q.AssetRecord.WithContext(ctx).Session(globalUpdate()).Delete(); err != nil {
 			return err
 		}
 		if err := upsertMeta(tx, "schema_version", SchemaVersion, now); err != nil {
@@ -938,7 +875,7 @@ func ReplaceAssetProjection(root string, assets []domain.Asset) error {
 			return err
 		}
 		for _, asset := range assets {
-			if err := tx.Create(assetRecordFromDomain(asset)).Error; err != nil {
+			if err := q.AssetRecord.WithContext(ctx).Create(assetRecordFromDomain(asset)); err != nil {
 				return err
 			}
 		}
@@ -955,13 +892,14 @@ func ListAssets(root string) ([]domain.Asset, Status, error) {
 	if err != nil {
 		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
 	}
-	records := []AssetRecord{}
-	if err := db.Order("path asc").Find(&records).Error; err != nil {
+	q := query.Use(db)
+	records, err := q.AssetRecord.WithContext(context.Background()).Order(q.AssetRecord.Path).Find()
+	if err != nil {
 		return nil, status, err
 	}
 	assets := make([]domain.Asset, 0, len(records))
 	for _, record := range records {
-		assets = append(assets, assetRecordToDomain(record))
+		assets = append(assets, assetRecordToDomain(*record))
 	}
 	return assets, status, nil
 }
@@ -1020,11 +958,16 @@ func ListAssetLinks(root string) ([]AssetLinkRecord, Status, error) {
 	if err != nil {
 		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
 	}
-	records := []AssetLinkRecord{}
-	if err := db.Order("source_path asc, line asc, asset_path asc").Find(&records).Error; err != nil {
+	q := query.Use(db)
+	records, err := q.AssetLinkRecord.WithContext(context.Background()).Order(q.AssetLinkRecord.SourcePath, q.AssetLinkRecord.Line, q.AssetLinkRecord.AssetPath).Find()
+	if err != nil {
 		return nil, status, err
 	}
-	return records, status, nil
+	out := make([]AssetLinkRecord, 0, len(records))
+	for _, record := range records {
+		out = append(out, *record)
+	}
+	return out, status, nil
 }
 
 func ListVaultFiles(root string) ([]VaultFileRecord, Status, error) {
@@ -1036,11 +979,16 @@ func ListVaultFiles(root string) ([]VaultFileRecord, Status, error) {
 	if err != nil {
 		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
 	}
-	records := []VaultFileRecord{}
-	if err := db.Order("path asc").Find(&records).Error; err != nil {
+	q := query.Use(db)
+	records, err := q.VaultFileRecord.WithContext(context.Background()).Order(q.VaultFileRecord.Path).Find()
+	if err != nil {
 		return nil, status, err
 	}
-	return records, status, nil
+	out := make([]VaultFileRecord, 0, len(records))
+	for _, record := range records {
+		out = append(out, *record)
+	}
+	return out, status, nil
 }
 
 func ListFolders(root string) ([]FolderRecord, Status, error) {
@@ -1052,18 +1000,25 @@ func ListFolders(root string) ([]FolderRecord, Status, error) {
 	if err != nil {
 		return nil, Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, err
 	}
-	records := []FolderRecord{}
-	if err := db.Order("path asc").Find(&records).Error; err != nil {
+	q := query.Use(db)
+	records, err := q.FolderRecord.WithContext(context.Background()).Order(q.FolderRecord.Path).Find()
+	if err != nil {
 		return nil, status, err
 	}
-	return records, status, nil
+	out := make([]FolderRecord, 0, len(records))
+	for _, record := range records {
+		out = append(out, *record)
+	}
+	return out, status, nil
 }
 
 func rebuildVaultObjectProjection(tx *gorm.DB, root string, notes []domain.Note) error {
-	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&VaultFileRecord{}).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(tx)
+	if _, err := q.VaultFileRecord.WithContext(ctx).Session(globalUpdate()).Delete(); err != nil {
 		return err
 	}
-	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&AssetRecord{}).Error; err != nil {
+	if _, err := q.AssetRecord.WithContext(ctx).Session(globalUpdate()).Delete(); err != nil {
 		return err
 	}
 	registeredPaths := registeredNotePaths(notes)
@@ -1072,12 +1027,12 @@ func rebuildVaultObjectProjection(tx *gorm.DB, root string, notes []domain.Note)
 		return err
 	}
 	for _, file := range files {
-		if err := tx.Create(&file).Error; err != nil {
+		if err := q.VaultFileRecord.WithContext(ctx).Create(&file); err != nil {
 			return err
 		}
 		if file.ObjectKind == string(domain.VaultObjectKindAsset) {
 			asset := vaultFileAssetRecord(file)
-			if err := tx.Create(&asset).Error; err != nil {
+			if err := q.AssetRecord.WithContext(ctx).Create(&asset); err != nil {
 				return err
 			}
 		}
@@ -1086,7 +1041,9 @@ func rebuildVaultObjectProjection(tx *gorm.DB, root string, notes []domain.Note)
 }
 
 func rebuildFolderProjection(tx *gorm.DB, root string, notes []domain.Note) (int, error) {
-	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&FolderRecord{}).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(tx)
+	if _, err := q.FolderRecord.WithContext(ctx).Session(globalUpdate()).Delete(); err != nil {
 		return 0, err
 	}
 	folders, err := scanFolderRecords(root, notes)
@@ -1094,7 +1051,7 @@ func rebuildFolderProjection(tx *gorm.DB, root string, notes []domain.Note) (int
 		return 0, err
 	}
 	for _, folder := range folders {
-		if err := tx.Create(&folder).Error; err != nil {
+		if err := q.FolderRecord.WithContext(ctx).Create(&folder); err != nil {
 			return 0, err
 		}
 	}
@@ -1311,60 +1268,62 @@ func Search(root string, req SearchRequest) (SearchResult, error) {
 	if err := migrate(db); err != nil {
 		return SearchResult{}, err
 	}
-	allRecords := []NoteRecord{}
-	if err := db.Find(&allRecords).Error; err != nil {
+	q := query.Use(db)
+	ctx := context.Background()
+	allRecords, err := q.NoteRecord.WithContext(ctx).Find()
+	if err != nil {
 		return SearchResult{}, err
 	}
 	records := make([]NoteRecord, 0, len(allRecords))
 	for _, record := range allRecords {
 		if !record.IsSystem {
-			records = append(records, record)
+			records = append(records, *record)
 		}
 	}
-	tags := []TagRecord{}
-	if err := db.Find(&tags).Error; err != nil {
+	tagRows, err := q.TagRecord.WithContext(ctx).Find()
+	if err != nil {
 		return SearchResult{}, err
 	}
-	texts := []NoteTextRecord{}
-	if err := db.Find(&texts).Error; err != nil {
+	textRows, err := q.NoteTextRecord.WithContext(ctx).Find()
+	if err != nil {
 		return SearchResult{}, err
 	}
-	links := []LinkRecord{}
-	if err := db.Find(&links).Error; err != nil {
+	linkRows, err := q.LinkRecord.WithContext(ctx).Find()
+	if err != nil {
 		return SearchResult{}, err
 	}
-	attachments := []AttachmentRecord{}
-	if err := db.Find(&attachments).Error; err != nil {
+	attachmentRows, err := q.AttachmentRecord.WithContext(ctx).Find()
+	if err != nil {
 		return SearchResult{}, err
 	}
 	tagsByPath := map[string][]string{}
-	for _, tag := range tags {
+	for _, tag := range tagRows {
 		tagsByPath[tag.NotePath] = append(tagsByPath[tag.NotePath], tag.Tag)
 	}
 	textByPath := map[string]NoteTextRecord{}
-	for _, text := range texts {
-		textByPath[text.NotePath] = text
+	for _, text := range textRows {
+		textByPath[text.NotePath] = *text
 	}
 	linksByPath := map[string][]LinkRecord{}
-	for _, link := range links {
-		linksByPath[link.NotePath] = append(linksByPath[link.NotePath], link)
+	for _, link := range linkRows {
+		linksByPath[link.NotePath] = append(linksByPath[link.NotePath], *link)
 	}
 	attachmentsByPath := map[string][]AttachmentRecord{}
-	for _, attachment := range attachments {
-		attachmentsByPath[attachment.NotePath] = append(attachmentsByPath[attachment.NotePath], attachment)
+	for _, attachment := range attachmentRows {
+		attachmentsByPath[attachment.NotePath] = append(attachmentsByPath[attachment.NotePath], *attachment)
 	}
 	items := make([]ResultItem, 0)
-	query := strings.ToLower(strings.TrimSpace(req.Query))
+	queryText := strings.ToLower(strings.TrimSpace(req.Query))
 	for _, record := range records {
 		if !recordMatchesFilters(record, tagsByPath[record.Path], linksByPath[record.Path], attachmentsByPath[record.Path], req) {
 			continue
 		}
 		text := textByPath[record.Path]
-		score, fields := scoreRecord(record, text, tagsByPath[record.Path], query)
-		if query != "" && score == 0 {
+		score, fields := scoreRecord(record, text, tagsByPath[record.Path], queryText)
+		if queryText != "" && score == 0 {
 			continue
 		}
-		items = append(items, ResultItem{Note: domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Tags: tagsByPath[record.Path], Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, Score: score, MatchedFields: fields, Snippet: snippet(text, query), LinkCount: len(linksByPath[record.Path]), AttachmentCount: len(attachmentsByPath[record.Path])})
+		items = append(items, ResultItem{Note: domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Tags: tagsByPath[record.Path], Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, Score: score, MatchedFields: fields, Snippet: snippet(text, queryText), LinkCount: len(linksByPath[record.Path]), AttachmentCount: len(attachmentsByPath[record.Path])})
 	}
 	sortResults(items, req.Sort)
 	total := len(items)
@@ -1424,59 +1383,97 @@ func open(root string) (*gorm.DB, error) {
 }
 
 func migrate(db *gorm.DB) error {
-	return db.AutoMigrate(&IndexMetaRecord{}, &NoteRecord{}, &NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}, &AssetRecord{}, &AssetLinkRecord{}, &VaultFileRecord{}, &FolderRecord{}, &DimensionCountRecord{}, &PropertyDefinitionRecord{}, &PropertyValueRecord{})
+	return db.AutoMigrate(model.AllModels()...)
 }
 
 func upsertMeta(db *gorm.DB, key, value, now string) error {
-	return db.Save(&IndexMetaRecord{Key: key, Value: value, UpdatedAt: now}).Error
+	q := query.Use(db)
+	return q.IndexMetaRecord.WithContext(context.Background()).Save(&model.IndexMetaRecord{Key: key, Value: value, UpdatedAt: now})
 }
 
 func metaValue(db *gorm.DB, key string) string {
-	var record IndexMetaRecord
-	if err := db.First(&record, &IndexMetaRecord{Key: key}).Error; err != nil {
+	q := query.Use(db)
+	record, err := q.IndexMetaRecord.WithContext(context.Background()).Where(q.IndexMetaRecord.Key.Eq(key)).First()
+	if err != nil {
 		return ""
 	}
 	return record.Value
 }
 
 func replaceNoteProjection(tx *gorm.DB, root string, note domain.Note) error {
-	for _, target := range []any{&NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}} {
-		if err := tx.Where("note_path = ?", note.Path).Delete(target).Error; err != nil {
-			return err
-		}
-	}
-	if err := tx.Where("source_path = ?", note.Path).Delete(&AssetLinkRecord{}).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(tx)
+	if err := deleteNotePathProjection(q, ctx, note.Path); err != nil {
 		return err
 	}
-	if err := tx.Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}).Error; err != nil {
+	if _, err := q.AssetLinkRecord.WithContext(ctx).Where(q.AssetLinkRecord.SourcePath.Eq(note.Path)).Delete(); err != nil {
+		return err
+	}
+	if err := q.NoteTextRecord.WithContext(ctx).Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}); err != nil {
 		return err
 	}
 	for _, tag := range uniqueTags(note) {
-		if err := tx.Create(&TagRecord{NotePath: note.Path, Tag: tag}).Error; err != nil {
+		if err := q.TagRecord.WithContext(ctx).Create(&TagRecord{NotePath: note.Path, Tag: tag}); err != nil {
 			return err
 		}
 	}
 	for _, token := range noteTokens(note) {
-		if err := tx.Create(&SearchTokenRecord{NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}).Error; err != nil {
+		if err := q.SearchTokenRecord.WithContext(ctx).Create(&SearchTokenRecord{NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}); err != nil {
 			return err
 		}
 	}
-	records := []NoteRecord{}
-	if err := tx.Find(&records).Error; err != nil {
+	linkRecords, err := q.NoteRecord.WithContext(ctx).Find()
+	if err != nil {
 		return err
 	}
+	records := make([]NoteRecord, 0, len(linkRecords))
+	for _, record := range linkRecords {
+		records = append(records, *record)
+	}
 	for _, link := range noteLinks(note, notePathByTitleRecords(records)) {
-		if err := tx.Create(&link).Error; err != nil {
+		if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
 			return err
 		}
 	}
 	for _, attachment := range noteAttachments(root, note) {
-		if err := tx.Create(&attachment).Error; err != nil {
+		if err := q.AttachmentRecord.WithContext(ctx).Create(&attachment); err != nil {
 			return err
 		}
 	}
 	for _, assetLink := range noteAssetLinks(root, note) {
-		if err := tx.Create(&assetLink).Error; err != nil {
+		if err := q.AssetLinkRecord.WithContext(ctx).Create(&assetLink); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteNotePathProjection 删除按 note_path 关联 note 的 projection 行（不含 note 记录本身与 asset link）。
+func deleteNotePathProjection(q *query.Query, ctx context.Context, notePath string) error {
+	clearers := []func() error{
+		func() error {
+			_, err := q.NoteTextRecord.WithContext(ctx).Where(q.NoteTextRecord.NotePath.Eq(notePath)).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.TagRecord.WithContext(ctx).Where(q.TagRecord.NotePath.Eq(notePath)).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.LinkRecord.WithContext(ctx).Where(q.LinkRecord.NotePath.Eq(notePath)).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.SearchTokenRecord.WithContext(ctx).Where(q.SearchTokenRecord.NotePath.Eq(notePath)).Delete()
+			return err
+		},
+		func() error {
+			_, err := q.AttachmentRecord.WithContext(ctx).Where(q.AttachmentRecord.NotePath.Eq(notePath)).Delete()
+			return err
+		},
+	}
+	for _, clear := range clearers {
+		if err := clear(); err != nil {
 			return err
 		}
 	}
@@ -1484,18 +1481,18 @@ func replaceNoteProjection(tx *gorm.DB, root string, note domain.Note) error {
 }
 
 func deleteNoteProjection(tx *gorm.DB, path string, includeRecord bool) error {
+	ctx := context.Background()
+	q := query.Use(tx)
 	path = filepath.ToSlash(filepath.Clean(path))
 	if includeRecord {
-		if err := tx.Where("path = ?", path).Delete(&NoteRecord{}).Error; err != nil {
+		if _, err := q.NoteRecord.WithContext(ctx).Where(q.NoteRecord.Path.Eq(path)).Delete(); err != nil {
 			return err
 		}
 	}
-	for _, target := range []any{&NoteTextRecord{}, &TagRecord{}, &LinkRecord{}, &SearchTokenRecord{}, &AttachmentRecord{}} {
-		if err := tx.Where("note_path = ?", path).Delete(target).Error; err != nil {
-			return err
-		}
+	if err := deleteNotePathProjection(q, ctx, path); err != nil {
+		return err
 	}
-	if err := tx.Where("source_path = ?", path).Delete(&AssetLinkRecord{}).Error; err != nil {
+	if _, err := q.AssetLinkRecord.WithContext(ctx).Where(q.AssetLinkRecord.SourcePath.Eq(path)).Delete(); err != nil {
 		return err
 	}
 	return nil
@@ -1504,22 +1501,28 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 	if len(targetKeys) == 0 {
 		return nil
 	}
-	links := []LinkRecord{}
-	if err := tx.Find(&links).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(tx)
+	linkRows, err := q.LinkRecord.WithContext(ctx).Find()
+	if err != nil {
 		return err
 	}
 	affected := map[string]bool{}
-	for _, link := range links {
-		if linkMatchesTargetKeys(link, targetKeys) {
+	for _, link := range linkRows {
+		if linkMatchesTargetKeys(*link, targetKeys) {
 			affected[link.NotePath] = true
 		}
 	}
 	if len(affected) == 0 {
 		return nil
 	}
-	records := []NoteRecord{}
-	if err := tx.Find(&records).Error; err != nil {
+	noteRows, err := q.NoteRecord.WithContext(ctx).Find()
+	if err != nil {
 		return err
+	}
+	records := make([]NoteRecord, 0, len(noteRows))
+	for _, record := range noteRows {
+		records = append(records, *record)
 	}
 	resolver := notePathByTitleRecords(records)
 	paths := make([]string, 0, len(affected))
@@ -1529,18 +1532,18 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 	sort.Strings(paths)
 	for _, path := range paths {
 		// 增量目标变化只重算受影响 source note 的 link edges，避免重写正文、token 和其它 projection。
-		note, ok, err := indexedNoteForLinkRebuild(tx, path)
-		if err != nil {
-			return err
+		note, ok, lookupErr := indexedNoteForLinkRebuild(tx, path)
+		if lookupErr != nil {
+			return lookupErr
 		}
 		if !ok {
 			continue
 		}
-		if err := tx.Where("note_path = ?", path).Delete(&LinkRecord{}).Error; err != nil {
+		if _, err := q.LinkRecord.WithContext(ctx).Where(q.LinkRecord.NotePath.Eq(path)).Delete(); err != nil {
 			return err
 		}
 		for _, link := range noteLinks(note, resolver) {
-			if err := tx.Create(&link).Error; err != nil {
+			if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
 				return err
 			}
 		}
@@ -1549,18 +1552,24 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 }
 
 func indexedNoteForLinkRebuild(tx *gorm.DB, path string) (domain.Note, bool, error) {
-	var record NoteRecord
-	if err := tx.First(&record, &NoteRecord{Path: path}).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(tx)
+	record, err := q.NoteRecord.WithContext(ctx).Where(q.NoteRecord.Path.Eq(path)).First()
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return domain.Note{}, false, nil
 		}
 		return domain.Note{}, false, err
 	}
-	var text NoteTextRecord
-	if err := tx.First(&text, &NoteTextRecord{NotePath: path}).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	text, err := q.NoteTextRecord.WithContext(ctx).Where(q.NoteTextRecord.NotePath.Eq(path)).First()
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return domain.Note{}, false, err
 	}
-	return domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Body: text.BodyText, Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, true, nil
+	bodyText := ""
+	if text != nil {
+		bodyText = text.BodyText
+	}
+	return domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Body: bodyText, Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, true, nil
 }
 
 func linkMatchesTargetKeys(link LinkRecord, targetKeys map[string]bool) bool {
@@ -1608,19 +1617,21 @@ func normalizeLinkTargetKey(value string) string {
 }
 
 func rebuildDimensionCountsFromIndex(tx *gorm.DB) error {
-	if err := tx.Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&DimensionCountRecord{}).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(tx)
+	if _, err := q.DimensionCountRecord.WithContext(ctx).Session(globalUpdate()).Delete(); err != nil {
 		return err
 	}
-	records := []NoteRecord{}
-	if err := tx.Find(&records).Error; err != nil {
+	records, err := q.NoteRecord.WithContext(ctx).Find()
+	if err != nil {
 		return err
 	}
-	tags := []TagRecord{}
-	if err := tx.Find(&tags).Error; err != nil {
+	tagRows, err := q.TagRecord.WithContext(ctx).Find()
+	if err != nil {
 		return err
 	}
 	counts := map[string]map[string]int{"tag": {}, "group": {}, "folder": {}, "kind": {}, "status": {}}
-	for _, tag := range tags {
+	for _, tag := range tagRows {
 		counts["tag"][tag.Tag]++
 	}
 	for _, record := range records {
@@ -1642,7 +1653,7 @@ func rebuildDimensionCountsFromIndex(tx *gorm.DB) error {
 		return dimensions[i].Dimension < dimensions[j].Dimension
 	})
 	for _, dimension := range dimensions {
-		if err := tx.Create(&dimension).Error; err != nil {
+		if err := q.DimensionCountRecord.WithContext(ctx).Create(&dimension); err != nil {
 			return err
 		}
 	}

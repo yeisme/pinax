@@ -2,7 +2,8 @@
 
 ## Purpose
 
-描述 Pinax 日常 note 命令的人机工效、引用解析、列表过滤、编辑边界和单笔维护行为。
+描述 Pinax 日常 note 命令的人机工效、引用解析、列表过滤、编辑边界和单笔维护行为，确保 note 创建、读取、编辑、移动、归档、删除和标签操作通过共享 projection 输出且不会泄露完整正文。
+
 ## Requirements
 ### Requirement: Note commands support ergonomic creation
 Pinax SHALL let users create notes from multiple safe content sources while preserving Markdown body content as the content source and creating record ledger facts for machine identity and lifecycle.

@@ -1,0 +1,169 @@
+# Pinax agent-safe proof loop: Capture → Retrieve → Diagnose → Plan → Snapshot → Apply.
+# The loop demonstrates that a user or agent can drive a real Markdown vault from
+# empty directory to controlled apply through bounded projections, receipts and
+# redacted evidence, never leaking full note bodies or provider payloads.
+#
+# Every apply is gated by a FRESH version snapshot, produces receipt facts, emits
+# structured events, and leaves durable snapshot evidence files on disk.
+
+# ---------------------------------------------------------------------------
+# Stage 1: Capture — init vault, inbox capture, daily journal, note creation.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax init vault --title Vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+grep '"command":"vault.init"' init.json
+grep '"status":"success"' init.json
+
+exec sh -c 'pinax inbox capture "graph traversal research idea" --vault vault --json > capture.json'
+validate-json-envelope capture.json
+validate-clean-stdout capture.json
+grep '"command":"inbox.capture"' capture.json
+grep '"status":"success"' capture.json
+! grep '"Authorization"' capture.json
+
+exec sh -c 'pinax journal daily append --body "started proof loop validation" --vault vault --json > journal.json'
+validate-json-envelope journal.json
+validate-clean-stdout journal.json
+grep '"command":"daily.append"' journal.json
+
+exec sh -c 'pinax note add "Graph Theory" --body "see [[algorithms]] and [[missing-target]]" --vault vault --json > note_graph.json'
+validate-json-envelope note_graph.json
+grep '"command":"note.new"' note_graph.json
+
+exec sh -c 'pinax note add "Algorithms" --body "referenced by graph theory" --vault vault --json > note_algos.json'
+validate-json-envelope note_algos.json
+
+# ---------------------------------------------------------------------------
+# Stage 2: Retrieve — index sync, search, links, backlinks, orphans.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax index sync --vault vault --json > index.json'
+validate-json-envelope index.json
+validate-clean-stdout index.json
+grep '"command":"index.sync"' index.json
+
+exec sh -c 'pinax search "graph" --vault vault --json > search.json'
+validate-json-envelope search.json
+validate-clean-stdout search.json
+grep '"command":"note.search"' search.json
+# Search returns bounded snippets and matched field names; it must never dump the
+# full note body as a data field. Assert no "body":"..." content field is present.
+! grep '"body":"' search.json
+
+exec sh -c 'pinax note links graph-theory.md --vault vault --json > links.json'
+validate-json-envelope links.json
+validate-clean-stdout links.json
+grep '"command":"note.links"' links.json
+
+exec sh -c 'pinax note backlinks algorithms.md --vault vault --json > backlinks.json'
+validate-json-envelope backlinks.json
+validate-clean-stdout backlinks.json
+grep 'graph-theory.md' backlinks.json
+
+exec sh -c 'pinax note orphans --vault vault --json > orphans.json'
+validate-json-envelope orphans.json
+validate-clean-stdout orphans.json
+grep '"command":"note.orphans"' orphans.json
+# Orphans projection must be bounded: no body field in the orphan summaries.
+! grep '"body":"' orphans.json
+
+# ---------------------------------------------------------------------------
+# Stage 3: Diagnose — vault doctor surfaces low-risk and review items.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax vault doctor --vault vault --json > doctor.json'
+validate-json-envelope doctor.json
+validate-clean-stdout doctor.json
+grep '"command":"vault.doctor"' doctor.json
+grep '"issues.total"' doctor.json
+
+# Agent projection stays bounded: no raw note bodies, no provider payloads.
+exec sh -c 'pinax vault doctor --vault vault --agent > doctor_agent.txt'
+validate-agent-format doctor_agent.txt
+validate-clean-stdout doctor_agent.txt
+grep 'command=vault.doctor' doctor_agent.txt
+grep 'mode=agent' doctor_agent.txt
+
+# ---------------------------------------------------------------------------
+# Stage 4: Plan repair — save a repair plan from doctor issues.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax repair plan --save --vault vault --json > repair_plan.json'
+validate-json-envelope repair_plan.json
+validate-clean-stdout repair_plan.json
+grep '"command":"repair.plan"' repair_plan.json
+grep '"plan_id"' repair_plan.json
+grep '"saved_path"' repair_plan.json
+exists vault/.pinax/repair-plans
+
+# ---------------------------------------------------------------------------
+# Stage 5: Snapshot BEFORE repair apply — fresh durable version evidence.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax version snapshot --vault vault --message "proof loop pre-repair" --json > snapshot_repair.json'
+validate-json-envelope snapshot_repair.json
+validate-clean-stdout snapshot_repair.json
+grep '"command":"version.snapshot"' snapshot_repair.json
+grep '"status":"success"' snapshot_repair.json
+# Durable snapshot evidence files must exist on disk.
+exists vault/.pinax/version/snapshots
+exists vault/.pinax/last_snapshot
+exists vault/.pinax/records/version.json
+
+# Events surface stays bounded and structured.
+exec sh -c 'pinax version snapshot --vault vault --message "events checkpoint" --events > snapshot_events.txt'
+validate-clean-stdout snapshot_events.txt
+grep '"type":"start"' snapshot_events.txt
+grep '"type":"end"' snapshot_events.txt
+
+# ---------------------------------------------------------------------------
+# Stage 6: Apply repair — gated by snapshot and explicit --yes. Assert receipt
+# facts (applied count, plan id).
+# ---------------------------------------------------------------------------
+exec sh -c 'REPAIR_PLAN=$(ls vault/.pinax/repair-plans/*.json | head -1 | sed "s|.*/||; s|\.json$||"); pinax repair apply --plan "$REPAIR_PLAN" --yes --vault vault --json > repair_apply.json'
+validate-json-envelope repair_apply.json
+validate-clean-stdout repair_apply.json
+grep '"command":"repair.apply"' repair_apply.json
+grep '"status":"success"' repair_apply.json
+grep '"plan_id"' repair_apply.json
+grep '"applied"' repair_apply.json
+
+# ---------------------------------------------------------------------------
+# Stage 7: Plan organize — re-plan against the post-repair vault state so the
+# plan facts match. Then take a FRESH snapshot before organize apply. Each
+# plan→apply is a separate cycle with its own snapshot protection.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax organize plan --save --vault vault --json > organize_plan.json'
+validate-json-envelope organize_plan.json
+validate-clean-stdout organize_plan.json
+grep '"plan_id"' organize_plan.json
+grep '"saved_path"' organize_plan.json
+exists vault/.pinax/organize-plans
+
+# Fresh snapshot before organize apply (separate from the pre-repair snapshot).
+exec sh -c 'pinax version snapshot --vault vault --message "proof loop pre-organize" --json > snapshot_organize.json'
+validate-json-envelope snapshot_organize.json
+grep '"status":"success"' snapshot_organize.json
+
+exec sh -c 'ORGANIZE_PLAN=$(ls vault/.pinax/organize-plans/*.json | head -1 | sed "s|.*/||; s|\.json$||"); pinax organize apply --plan "$ORGANIZE_PLAN" --yes --vault vault --json > organize_apply.json'
+validate-json-envelope organize_apply.json
+validate-clean-stdout organize_apply.json
+grep '"command":"organize.apply"' organize_apply.json
+grep '"status":"success"' organize_apply.json
+grep '"plan_id"' organize_apply.json
+grep '"applied"' organize_apply.json
+
+# Apply events must emit bounded start/end markers with receipt facts. Re-plan
+# organize against the post-apply state (the first plan's moves are done) and
+# capture the events surface from a fresh apply.
+exec sh -c 'pinax organize plan --save --vault vault --json > organize_replan.json'
+validate-json-envelope organize_replan.json
+exec sh -c 'FRESH_PLAN=$(ls -t vault/.pinax/organize-plans/*.json | head -1 | sed "s|.*/||; s|\.json$||"); pinax organize apply --plan "$FRESH_PLAN" --yes --vault vault --events > organize_apply_events.txt'
+validate-clean-stdout organize_apply_events.txt
+grep '"type":"start"' organize_apply_events.txt
+grep '"type":"end"' organize_apply_events.txt
+
+# ---------------------------------------------------------------------------
+# Stage 8: Evidence — version history records the controlled apply snapshots.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax version history --vault vault --json > history.json'
+validate-json-envelope history.json
+validate-clean-stdout history.json
+grep '"command":"version.history"' history.json

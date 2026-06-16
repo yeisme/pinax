@@ -1,5 +1,6 @@
 {
-  "schema_version": "pinax.cloud.contract.v1",
+  "schema_version": "pinax.cloud.contract.mlp.v1",
+  "terminology": "vault_id",
   "operations": [
     {
       "name": "health",
@@ -8,13 +9,83 @@
       "success_status": 200,
       "success_body": {
         "status": "ok",
-        "contract_version": "pinax.cloud.contract.v1"
+        "contract_version": "pinax.cloud.contract.mlp.v1"
       }
     },
     {
-      "name": "current_revision",
+      "name": "bootstrap",
+      "method": "POST",
+      "path": "/v1/auth/bootstrap",
+      "request_body": {
+        "bootstrap_token": "<redacted>",
+        "device_label": "dev_laptop"
+      },
+      "success_status": 200,
+      "success_body": {
+        "account_id": "acc_1",
+        "device_id": "dev_laptop",
+        "vault_id": "vault_1",
+        "token_ref": "profile://cloud"
+      }
+    },
+    {
+      "name": "current_principal",
       "method": "GET",
-      "path": "/v1/workspaces/{workspace_id}/revision",
+      "path": "/v1/auth/principal",
+      "headers": {
+        "Authorization": "Bearer <redacted>",
+        "X-Pinax-Device-ID": "dev_laptop"
+      },
+      "success_status": 200,
+      "success_body": {
+        "account_id": "acc_1",
+        "device_id": "dev_laptop",
+        "vault_id": "vault_1",
+        "scope": "sync"
+      }
+    },
+    {
+      "name": "create_vault",
+      "method": "POST",
+      "path": "/v1/vaults",
+      "request_body": {
+        "crypto_mode": "client_encrypted_v1"
+      },
+      "success_status": 200,
+      "success_body": {
+        "vault_id": "vault_1",
+        "crypto_mode": "client_encrypted_v1"
+      }
+    },
+    {
+      "name": "link_vault",
+      "method": "POST",
+      "path": "/v1/vaults/{vault_id}/link",
+      "success_status": 200,
+      "success_body": {
+        "vault_id": "vault_1",
+        "crypto_mode": "client_encrypted_v1"
+      }
+    },
+    {
+      "name": "changes",
+      "method": "GET",
+      "path": "/v1/vaults/{vault_id}/changes?since={revision_id}",
+      "success_status": 200,
+      "success_body": {
+        "revisions": [
+          {"revision_id": "rev_b", "manifest_blob_id": "blob_manifest"}
+        ],
+        "objects": [
+          {"path_hash": "sha256:path", "blob_hash": "sha256:blob", "size": 42, "deleted": false}
+        ],
+        "has_more": false
+      }
+    },
+    {
+      "name": "current_head",
+      "method": "GET",
+      "path": "/v1/vaults/{vault_id}/head",
       "success_status": 200,
       "success_body": {
         "revision_id": "rev_a",
@@ -24,7 +95,7 @@
     {
       "name": "blob_batch_check",
       "method": "POST",
-      "path": "/v1/workspaces/{workspace_id}/blobs:batchCheck",
+      "path": "/v1/vaults/{vault_id}/blobs:batch-check",
       "request_body": {
         "blob_ids": ["blob_a", "blob_b"]
       },
@@ -34,9 +105,28 @@
       }
     },
     {
+      "name": "blob_sign_upload",
+      "method": "POST",
+      "path": "/v1/vaults/{vault_id}/blobs:sign-upload",
+      "request_body": {
+        "blob_id": "blob_b",
+        "blob_hash": "sha256:blob_b",
+        "size": 128,
+        "content_type": "application/octet-stream"
+      },
+      "success_status": 200,
+      "success_body": {
+        "blob_id": "blob_b",
+        "object_key": "vaults/vault_1/sha256/00/00/blob_b",
+        "method": "PUT",
+        "url": "https://objects.example.local/vaults/vault_1/blob_b",
+        "expires_at": "2026-06-15T12:00:00Z"
+      }
+    },
+    {
       "name": "blob_upload",
       "method": "PUT",
-      "path": "/v1/workspaces/{workspace_id}/blobs/{blob_id}",
+      "path": "/v1/vaults/{vault_id}/blobs/{blob_id}",
       "request_body": {
         "schema_version": "pinax.cloud.envelope.v1",
         "alg": "AES-256-GCM",
@@ -53,7 +143,7 @@
     {
       "name": "blob_download",
       "method": "GET",
-      "path": "/v1/workspaces/{workspace_id}/blobs/{blob_id}",
+      "path": "/v1/vaults/{vault_id}/blobs/{blob_id}",
       "success_status": 200,
       "success_body": {
         "schema_version": "pinax.cloud.envelope.v1",
@@ -67,7 +157,7 @@
     {
       "name": "revision_commit",
       "method": "POST",
-      "path": "/v1/workspaces/{workspace_id}/revisions:commit",
+      "path": "/v1/vaults/{vault_id}/revisions",
       "headers": {
         "Authorization": "Bearer <redacted>",
         "X-Pinax-Device-ID": "dev_laptop",
@@ -88,19 +178,24 @@
     }
   ],
   "error_codes": [
-    "revision_conflict",
-    "unauthorized",
-    "backend_unavailable"
+    "UNAUTHENTICATED",
+    "DEVICE_REVOKED",
+    "FORBIDDEN_SCOPE",
+    "REVISION_CONFLICT",
+    "VALIDATION_FAILED",
+    "BLOB_MISSING",
+    "BACKEND_UNAVAILABLE"
   ],
   "error_shape": {
     "error": {
-      "code": "revision_conflict",
+      "code": "REVISION_CONFLICT",
       "message": "base revision is stale",
       "retryable": true
     }
   },
   "redaction_rules": [
     "Do not include plaintext note body in backend logs, events, fixtures, or errors.",
-    "Do not include raw token, Authorization header value, Cookie, or provider payload in backend logs, events, fixtures, or errors."
+    "Do not include raw token, Authorization header value, Cookie, or provider payload in backend logs, events, fixtures, or errors.",
+    "Object keys and metadata SHALL NOT contain plaintext note paths."
   ]
 }

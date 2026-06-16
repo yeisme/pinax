@@ -3143,7 +3143,12 @@ func (s *Service) NoteOrphans(ctx context.Context, req VaultRequest) (domain.Pro
 	projection.Facts["notes"] = fmt.Sprint(len(graph.notes))
 	projection.Facts["orphans"] = fmt.Sprint(len(orphans))
 	projection.Facts["engine"] = "scan"
-	projection.Data = map[string]any{"orphans": orphans}
+	// 与 QueryOrphans 保持同一套 agent-safe 投影：fallback 路径也剥离 Body。
+	summaries := make([]domain.Note, 0, len(orphans))
+	for _, note := range orphans {
+		summaries = append(summaries, noteGraphNoteSummary(note))
+	}
+	projection.Data = map[string]any{"orphans": summaries}
 	return projection, nil
 }
 func (s *Service) AttachNoteFile(ctx context.Context, req NoteAttachRequest) (domain.Projection, error) {
@@ -5501,26 +5506,253 @@ func (s *Service) VersionRestorePlan(ctx context.Context, req VersionRestorePlan
 		err := &domain.CommandError{Code: "revision_required", Message: "version restore requires a revision", Hint: "Provide --revision <revision>"}
 		return domain.NewErrorProjection("version.restore", err), err
 	}
-	file, err := s.versionBackend.ReadFile(ctx, pinaxversion.ReadFileRequest{Root: root, Path: path, Revision: revision})
-	if err != nil {
+	// ReadFile 是 best-effort：local backend 不支持读历史内容，但 git HEAD commit 仍可恢复。
+	// 只要 git 历史存在，restore apply 就能通过 git checkout 回到 plan 生成时的提交。
+	file, fileErr := s.versionBackend.ReadFile(ctx, pinaxversion.ReadFileRequest{Root: root, Path: path, Revision: revision})
+	fileEvidence := []string{}
+	fileBackend := "local"
+	fileContentHash := ""
+	if fileErr == nil {
+		fileEvidence = file.Evidence
+		fileBackend = file.Backend
+		fileContentHash = file.ContentHash
+	}
+	diff, diffErr := s.versionBackend.DiffSummary(ctx, pinaxversion.DiffSummaryRequest{Root: root, BaseRevision: "HEAD", TargetRevision: revision})
+	filesChanged := 0
+	if diffErr == nil {
+		filesChanged = diff.FilesChanged
+	}
+	// 生成并持久化只读 restore plan，restore apply 据此把历史内容安全写回本地。
+	// plan 记录 vault hash、revision 和 git HEAD commit，apply 时校验目标 vault 未漂移并用 git checkout 恢复。
+	now := time.Now().UTC()
+	planID := "restore_" + now.Format("20060102T150405Z")
+	vaultHash, hashErr := versionVaultHash(root)
+	if hashErr != nil {
+		return errorProjection("version.restore", hashErr), hashErr
+	}
+	snapshotID := latestVersionSnapshotID(root)
+	gitCommit, gitErr := gitstore.HeadCommit(ctx, root)
+	if gitErr != nil {
+		return errorProjection("version.restore", gitErr), gitErr
+	}
+	// 既无 git 历史又读不到历史内容时，没有可恢复的真源，按 version_read_unavailable 报错。
+	if gitCommit == "" && fileErr != nil {
+		err := &domain.CommandError{Code: domain.ErrorCodeVersionReadUnavailable, Message: "version backend cannot read historical content for restore", Hint: "Take a git snapshot (pinax version snapshot) before generating a restore plan"}
+		return domain.NewErrorProjection("version.restore", err), err
+	}
+	operation := domain.PlanOperation{Kind: "version_restore", Path: path, Reason: "Restore historical content via the version backend or git checkout", Status: "planned", Evidence: fileEvidence}
+	plan := domain.RestorePlan{
+		SchemaVersion:  "pinax.restore_plan.v1",
+		PlanID:         planID,
+		CreatedAt:      now.Format(time.RFC3339),
+		ExpiresAt:      now.Add(24 * time.Hour).Format(time.RFC3339),
+		VaultRoot:      root,
+		VaultHash:      vaultHash,
+		Path:           path,
+		Revision:       revision,
+		GitCommit:      gitCommit,
+		VersionBackend: fileBackend,
+		SnapshotID:     snapshotID,
+		ContentHash:    fileContentHash,
+		Operation:      operation,
+	}
+	if err := saveRestorePlan(root, &plan); err != nil {
 		return errorProjection("version.restore", err), err
 	}
-	diff, err := s.versionBackend.DiffSummary(ctx, pinaxversion.DiffSummaryRequest{Root: root, BaseRevision: "HEAD", TargetRevision: revision})
-	if err != nil {
-		return errorProjection("version.restore", err), err
-	}
-	operation := domain.PlanOperation{Kind: "version_restore", Path: path, Reason: "Restore historical content from the version backend", Status: "planned", Evidence: file.Evidence}
 	projection := domain.NewProjection("version.restore", "Version restore plan generated.")
 	projection.Facts["writes"] = "false"
 	projection.Facts["operations"] = "1"
 	projection.Facts["requires_snapshot"] = "true"
 	projection.Facts["path"] = path
 	projection.Facts["revision"] = revision
-	projection.Facts["version_backend"] = file.Backend
-	projection.Facts["files_changed"] = fmt.Sprint(diff.FilesChanged)
-	projection.Actions = []domain.Action{{Name: "snapshot", Command: fmt.Sprintf("pinax version snapshot --vault %s --message %s", shellQuote(root), shellQuote("snapshot before restore"))}}
-	projection.Data = map[string]any{"operations": []domain.PlanOperation{operation}, "file": file, "diff": diff}
+	projection.Facts["version_backend"] = fileBackend
+	projection.Facts["files_changed"] = fmt.Sprint(filesChanged)
+	projection.Facts["plan_id"] = plan.PlanID
+	projection.Facts["saved_path"] = plan.SavedPath
+	if gitCommit != "" {
+		projection.Facts["git_commit"] = gitCommit
+	}
+	projection.Actions = []domain.Action{
+		{Name: "snapshot", Command: fmt.Sprintf("pinax version snapshot --vault %s --message %s", shellQuote(root), shellQuote("snapshot before restore"))},
+		{Name: "apply", Command: fmt.Sprintf("pinax version restore apply --vault %s --plan %s --yes", shellQuote(root), shellQuote(plan.PlanID))},
+	}
+	projection.Data = map[string]any{"operations": []domain.PlanOperation{operation}, "plan_id": plan.PlanID, "saved_path": plan.SavedPath, "files_changed": filesChanged}
 	return projection, nil
+}
+
+// VersionRestoreApplyRequest drives version restore apply.
+type VersionRestoreApplyRequest struct {
+	VaultPath string
+	PlanID    string
+	Yes       bool
+}
+
+// VersionRestoreApply 消费已保存的 restore plan，把历史 revision 的文件内容写回本地
+// Markdown。它复用 version backend 的 ReadFile 读取历史内容，只做本地写入：
+// remote_write=false、local_write=true，绝不调用 provider/cloud/MCP 写面。
+// 必须显式 --yes；plan 的 vault hash 与 revision 必须与当前 vault 一致。
+func (s *Service) VersionRestoreApply(ctx context.Context, req VersionRestoreApplyRequest) (domain.Projection, error) {
+	if !req.Yes {
+		err := &domain.CommandError{Code: "approval_required", Message: "version restore apply requires explicit approval", Hint: "Rerun with --yes after reviewing the restore plan"}
+		return domain.NewErrorProjection("version.restore.apply", err), err
+	}
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("version.restore.apply", err), err
+	}
+	plan, err := loadRestorePlan(root, req.PlanID)
+	if err != nil {
+		return errorProjection("version.restore.apply", err), err
+	}
+	// 校验目标 vault 与 plan 来源一致：vault hash 漂移说明 vault 已被改动，plan 失效。
+	currentHash, hashErr := versionVaultHash(root)
+	if hashErr != nil {
+		return errorProjection("version.restore.apply", hashErr), hashErr
+	}
+	if plan.VaultHash != "" && currentHash != plan.VaultHash {
+		err := &domain.CommandError{Code: "restore_plan_stale", Message: "vault changed since restore plan was generated", Hint: "Regenerate the restore plan with pinax version restore --plan before applying"}
+		projection := domain.NewErrorProjection("version.restore.apply", err)
+		projection.Data = map[string]any{"plan_id": plan.PlanID}
+		return projection, err
+	}
+	// 恢复优先用 git checkout：plan 记录了生成时的 HEAD commit，checkout 把单个文件
+	// 工作区内容恢复到该 commit。这复用 git 历史真源，不发明内容，也不缓存明文在 plan 里。
+	restoredHash := plan.ContentHash
+	restoredBackend := plan.VersionBackend
+	if err := gitstore.RestorePathFromCommit(ctx, root, plan.GitCommit, plan.Path); err != nil {
+		failure, _ := writeReceipt(root, "restore", map[string]any{"plan_id": plan.PlanID, "path": plan.Path, "revision": plan.Revision, "status": "failed", "error": err.Error()})
+		projection := errorProjection("version.restore.apply", err)
+		projection.Facts["receipt"] = failure
+		return projection, err
+	}
+	receiptRel, err := writeReceipt(root, "restore", map[string]any{
+		"plan_id":         plan.PlanID,
+		"path":            plan.Path,
+		"revision":        plan.Revision,
+		"git_commit":      plan.GitCommit,
+		"version_backend": restoredBackend,
+		"content_hash":    restoredHash,
+		"status":          "applied",
+		"local_write":     true,
+		"remote_write":    false,
+	})
+	if err != nil {
+		return errorProjection("version.restore.apply", err), err
+	}
+	_ = appendEvent(root, "version.restore.apply", "success", map[string]string{"plan_id": plan.PlanID, "path": plan.Path, "revision": plan.Revision})
+	projection := domain.NewProjection("version.restore.apply", "Version restore applied to local Markdown.")
+	projection.Facts["local_write"] = "true"
+	projection.Facts["remote_write"] = "false"
+	projection.Facts["plan_id"] = plan.PlanID
+	projection.Facts["path"] = plan.Path
+	projection.Facts["revision"] = plan.Revision
+	projection.Facts["version_backend"] = restoredBackend
+	if restoredHash != "" {
+		projection.Facts["content_hash"] = restoredHash
+	}
+	projection.Evidence = []string{receiptRel, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
+	projection.Actions = []domain.Action{{Name: "history", Command: fmt.Sprintf("pinax version history --vault %s --json", shellQuote(root))}}
+	projection.Data = map[string]any{"plan_id": plan.PlanID, "receipt": receiptRel, "path": plan.Path, "revision": plan.Revision}
+	return projection, nil
+}
+
+func saveRestorePlan(root string, plan *domain.RestorePlan) error {
+	dir, err := safeJoin(root, ".pinax/restore-plans")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	rel := filepath.ToSlash(filepath.Join(".pinax", "restore-plans", plan.PlanID+".json"))
+	path, err := safeJoin(root, rel)
+	if err != nil {
+		return err
+	}
+	plan.SavedPath = rel
+	payload, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return err
+	}
+	payload = append(payload, '\n')
+	return os.WriteFile(path, payload, 0o644)
+}
+
+func loadRestorePlan(root, planRef string) (domain.RestorePlan, error) {
+	planRef = strings.TrimSpace(planRef)
+	if planRef == "" {
+		return domain.RestorePlan{}, &domain.CommandError{Code: "plan_required", Message: "restore plan id cannot be empty", Hint: "Run pinax version restore --plan to generate a restore plan"}
+	}
+	rel := planRef
+	if !strings.Contains(planRef, "/") && !strings.HasSuffix(planRef, ".json") {
+		rel = filepath.ToSlash(filepath.Join(".pinax", "restore-plans", planRef+".json"))
+	}
+	path, err := safeJoin(root, rel)
+	if err != nil {
+		return domain.RestorePlan{}, err
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return domain.RestorePlan{}, &domain.CommandError{Code: "restore_plan_not_found", Message: "restore plan could not be loaded", Hint: "Run pinax version restore --plan to generate a fresh restore plan"}
+	}
+	var plan domain.RestorePlan
+	if err := json.Unmarshal(payload, &plan); err != nil {
+		return domain.RestorePlan{}, err
+	}
+	if plan.SchemaVersion != "pinax.restore_plan.v1" {
+		return domain.RestorePlan{}, &domain.CommandError{Code: "restore_plan_schema_invalid", Message: "restore plan schema is not supported", Hint: "Rerun pinax version restore --plan"}
+	}
+	return plan, nil
+}
+
+// versionVaultHash 返回 vault 当前内容指纹，用于 restore plan 时效校验。
+// 它递归哈希 vault 下全部 Markdown 与 asset 文件路径+大小+mtime（排除 .pinax/.git），
+// 足以检测 plan 生成后 vault 内容是否被改动。
+func versionVaultHash(root string) (string, error) {
+	h := sha1.New()
+	paths := make([]string, 0)
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if entry.IsDir() {
+			if rel == ".pinax" || rel == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		paths = append(paths, rel)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(paths)
+	for _, rel := range paths {
+		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		_, _ = h.Write([]byte(rel))
+		_, _ = fmt.Fprintf(h, ":%d:%d\n", info.Size(), info.ModTime().UnixNano())
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func latestVersionSnapshotID(root string) string {
+	snapshots, err := loadVersionSnapshots(root, 1)
+	if err != nil || len(snapshots) == 0 {
+		return ""
+	}
+	return snapshots[0].SnapshotID
 }
 
 func loadVersionSnapshots(root string, limit int) ([]domain.VersionSnapshot, error) {
@@ -7530,11 +7762,11 @@ func cloudTransportForState(ctx context.Context, state pinaxcloud.State) (clouds
 		if err != nil {
 			return nil, &domain.CommandError{Code: "cloud_secret_unavailable", Message: "cloud credential is unavailable", Hint: "Check the configured cloud secret reference before retrying"}
 		}
-		client, err := cloudclient.New(cloudclient.Config{Endpoint: endpoint, WorkspaceID: state.Config.WorkspaceID, DeviceID: state.Config.DeviceID, Token: token})
+		client, err := cloudclient.New(cloudclient.Config{Endpoint: endpoint, VaultID: state.Config.WorkspaceID, DeviceID: state.Config.DeviceID, Token: token})
 		if err != nil {
 			return nil, err
 		}
-		return cloudclient.NewTransport(client, state.Config.WorkspaceID), nil
+		return cloudclient.NewTransport(client), nil
 	}
 	store, err := state.GetStore(ctx)
 	if err != nil {
@@ -8188,11 +8420,14 @@ func ensureOrganizePlanFresh(root string, plan domain.OrganizePlan) error {
 	if err == nil && time.Now().UTC().After(expires) {
 		return &domain.CommandError{Code: "plan_stale", Message: "organize plan has expired", Hint: "pinax organize plan --vault <vault> --save"}
 	}
+	// 校验前必须与 buildOrganizePlan 保持同一套候选事实：计划保存时通过
+	// organizeCandidateFacts 过滤掉 daily/journal 等非组织候选笔记，这里如果不
+	// 同样过滤，任何包含日志的 vault 都会因为 facts 数量不一致被误判为 stale。
 	facts, err := scanNoteFacts(root)
 	if err != nil {
 		return err
 	}
-	current := organizeSourceFacts(facts)
+	current := organizeSourceFacts(organizeCandidateFacts(facts))
 	if len(current) != len(plan.SourceFacts) {
 		return &domain.CommandError{Code: "plan_stale", Message: "organize plan does not match current vault facts", Hint: fmt.Sprintf("pinax organize plan --vault %s --save", shellQuote(root))}
 	}

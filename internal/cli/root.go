@@ -542,6 +542,8 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 
 	addGitCommands(cmd, ctx)
 
+	addProofCommands(cmd, ctx)
+
 	planCmd := &cobra.Command{Use: "plan", Short: "Manage personal planning workflows"}
 	planDailyCmd := &cobra.Command{
 		Use:   "daily",

@@ -35,32 +35,19 @@ Pinax SHALL distinguish centralized Local API access from distributed Cloud Sync
 
 Cloud Sync SHALL expose a transport-independent protocol so server, S3 direct, rclone direct, and embedded/local API paths share one push/pull/conflict engine.
 
-#### Scenario: Server transport
+#### Scenario: Server transport MLP contract
 
-- **WHEN** cloud backend kind is `server` or the endpoint is an HTTP Pinax Cloud Server endpoint
-- **THEN** Pinax SHALL use the HTTP cloud client transport for current revision, blob batch-check/upload/download, and revision commit
-- **AND** Pinax Cloud Server SHALL own auth/device scope, idempotency, revision CAS, audit, and readiness
-- **AND** successful push apply SHALL use the shared sync engine and SHALL report `remote_write=true` only after durable revision commit plus local sync-state evidence
+- **WHEN** cloud backend kind is `server` and the configured endpoint exposes the Pinax Cloud Sync MLP API
+- **THEN** Pinax SHALL use the HTTP cloud client transport for auth/session facts, vault create/link, changes cursor, blob batch-check/upload planning and revision commit
+- **AND** successful push apply SHALL use the shared sync engine
+- **AND** successful push apply SHALL report `remote_write=true` only after durable server CAS commit plus local sync-state evidence.
 
-#### Scenario: S3 direct transport
+#### Scenario: Server transport failure does not fallback
 
-- **WHEN** cloud backend kind is `s3-direct` and S3-compatible fields are configured
-- **THEN** Pinax SHALL use provider credentials locally to read/write encrypted Cloud Sync objects directly
-- **AND** it SHALL NOT require a running Pinax Cloud Server
-- **AND** `cloud doctor` output SHALL identify provider credentials as the auth boundary and `server_audit=false`
-
-#### Scenario: Rclone direct transport and OneDrive MVP boundary
-
-- **WHEN** cloud backend kind is `rclone-direct` with a remote such as `onedrive:PinaxSync`
-- **THEN** Pinax SHALL treat rclone as the provider boundary and SHALL NOT save OAuth tokens
-- **AND** the MVP SHALL use rclone examples for OneDrive instead of native Microsoft Graph
-- **AND** sync apply SHALL use the shared object-store transport with lock-object commit protection when provider conditional writes are unavailable, returning `remote_write=false` on uncertain or failed commits
-
-#### Scenario: Embedded Go API and local RPC
-
-- **WHEN** a local agent, desktop app, MCP bridge, or local RPC method invokes Cloud Sync
-- **THEN** it SHALL call the same application service and sync engine as the CLI
-- **AND** it SHALL NOT bypass approval, dry-run, snapshot, conflict, event, or redaction rules
+- **WHEN** server transport returns unauthenticated, forbidden, backend unavailable, blob missing, validation failed or revision conflict
+- **THEN** Pinax SHALL return a structured failed or partial projection
+- **AND** it SHALL report `remote_write=false`
+- **AND** it SHALL NOT silently fallback to local-only execution, direct transport or dummy success.
 
 ### Requirement: 端侧加密保护明文
 
@@ -220,25 +207,36 @@ Direct sync SHALL use an abstract remote object store where possible and SHALL p
 
 Cloud Sync release readiness SHALL be proven by focused tests and OpenSpec validation before archive.
 
-#### Scenario: 两台设备顺序同步后收敛
+#### Scenario: 两台设备通过 Pinax Cloud Server 顺序同步后收敛
 
-- **GIVEN** device A and device B in one workspace each have independent local vaults
-- **WHEN** device A creates a note and successfully pushes through a fake/local or direct transport
-- **AND** device B pulls the committed revision
+- **GIVEN** device A and device B each have independent local vaults linked to the same Pinax Cloud MLP vault
+- **WHEN** device A creates a note and successfully pushes through server transport
+- **AND** device B pulls the committed revision through server transport
 - **THEN** device B SHALL contain the decrypted note locally
-- **AND** protected evidence surfaces SHALL NOT contain plaintext note body or secret material
+- **AND** protected Cloud surfaces SHALL NOT contain plaintext note body, Authorization header, token or provider payload.
 
-#### Scenario: 两台设备并发编辑后保留冲突
+#### Scenario: 两台设备通过 Pinax Cloud Server 并发编辑后保留冲突
 
 - **GIVEN** device A and device B both start from revision `rev_a`
-- **WHEN** both edit the same note and one device commits `rev_b`
-- **AND** the other device pulls after its stale push is rejected or after remote trunk changes
-- **THEN** the second device SHALL preserve its local edit as a conflict copy
-- **AND** the remote trunk SHALL be applied to the canonical path
+- **WHEN** both edit the same note and one device commits `rev_b` through server transport
+- **AND** the other device pushes or pulls from the stale base
+- **THEN** stale push SHALL receive `REVISION_CONFLICT` or pull SHALL preserve the local edit as a conflict copy
+- **AND** output SHALL include next actions for conflict list, diff, show and resolve.
 
-#### Scenario: Archive readiness is explicit
+#### Scenario: Server integration evidence is explicit
 
-- **WHEN** maintainers prepare to archive `pinax-cloud-distributed-sync`
-- **THEN** they SHALL record focused Cloud Sync e2e evidence and `openspec validate --all`
-- **AND** SHALL exclude unrelated non-Cloud CLI contract drift from this change's completion definition
+- **WHEN** maintainers run `task test:integration` for Cloud server sync
+- **THEN** evidence SHALL be written under `temp/integration-test-runs/<run-id>/`
+- **AND** evidence SHALL include server-backed convergence, conflict and redaction checks.
+
+### Requirement: Server sync client SHALL wait for local proof-loop safety gates
+
+Pinax server sync client implementation SHALL not become the first writer that lacks local restore, shared redaction and proof-run evidence gates.
+
+#### Scenario: Local safety gate precedes server mutation
+
+- **GIVEN** server sync client work mutates local vault state based on remote revision state
+- **WHEN** implementation begins
+- **THEN** `pinax-proof-loop-operational-hardening` SHALL be complete or explicitly waived with reviewed evidence
+- **AND** server sync output SHALL use the same projection redaction gate as local proof-loop commands.
 

@@ -6,6 +6,18 @@ This directory is the source of truth for the Pinax subproject's product, design
 
 Pinax is a local-first unified notes Agent CLI: the Markdown vault is the user's source of truth, SQLite/GORM is a rebuildable index projection, the version backend only provides version evidence and the snapshot basis for protected workflows, and external platforms are integrated through CLI-backed Provider adapters.
 
+## Agent-safe Proof Loop
+
+The primary user and agent value of Pinax is a reproducible local proof loop built from five workflows. Every stage stays bounded: projections return facts and next actions, never full note bodies, tokens, or provider payloads; writes only happen through plan, snapshot, receipt and explicit apply.
+
+1. **Capture** — `pinax init`, `pinax note add`, `pinax inbox capture`, `pinax journal daily append`.
+2. **Retrieve** — `pinax index sync`, `pinax search`, `pinax note links/backlinks/orphans`.
+3. **Diagnose** — `pinax vault doctor`, `pinax vault stats`.
+4. **Plan** — `pinax repair plan --save`, `pinax organize plan --save`.
+5. **Apply safely** — `pinax version snapshot`, then `pinax repair apply --yes` or `pinax organize apply --yes`.
+
+Cloud Sync, daily briefing, native provider SDKs and hosted platform capabilities are separate advanced workflows tracked under their own OpenSpec changes, not part of this local proof loop.
+
 ## Current Status
 
 - Current phase: local-first notebook workflows are usable from the CLI and ready for external developer evaluation.
@@ -70,4 +82,11 @@ If Taskfile is installed, you can also run:
 
 ```bash
 task check
+task release:check
+```
+
+Before publishing or handing off release artifacts, run:
+
+```bash
+task release:local
 ```
