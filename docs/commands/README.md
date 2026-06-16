@@ -4,9 +4,23 @@ This directory manages Pinax CLI command documentation. The root README keeps on
 
 ## How to Read
 
-- If you do not know where to start: first read the command map below.
+- If you do not know where to start: first read the five core workflows below, then the command map.
 - To organize your note structure: see [organize](./organize.md).
 - If you only want to look up parameters for a specific command: run `pinax <command> --help`; help is the source of truth for the current binary.
+
+## Five Core Workflows
+
+Pinax is built around one agent-safe proof loop. Each path maps to a small set of real commands, and every command shares one bounded projection boundary (`--json`, `--agent`, `--events`).
+
+| Path | Commands | Description |
+| --- | --- | --- |
+| **Capture** | [`pinax init`](./init.md), [`pinax note add`](./note.md), [`pinax inbox capture`](./inbox.md), [`pinax journal daily append`](./journal.md) | Add notes, inbox items and journal entries. |
+| **Retrieve** | [`pinax index sync`](./index.md), [`pinax search`](./search.md), [`pinax note links`](./note.md), [`pinax note backlinks`](./note.md), [`pinax note orphans`](./note.md) | Build the index and read bounded context. |
+| **Diagnose** | [`pinax vault doctor`](./vault.md), [`pinax vault stats`](./vault.md) | Check vault health and surface issues. |
+| **Plan** | [`pinax repair plan --save`](./repair.md), [`pinax organize plan --save`](./organize.md) | Turn issues into reviewable saved plans. |
+| **Apply safely** | [`pinax version snapshot`](./version.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Snapshot first, then apply with explicit confirmation. |
+
+Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and provider expansion (`pinax backend`) are separate advanced workflows, not part of the local proof loop.
 
 ## Command Map
 

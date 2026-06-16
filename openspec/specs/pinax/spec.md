@@ -859,3 +859,90 @@ Pinax SHALL present journal and index template workflows as first-class local no
 - **THEN** help output SHALL describe default new note placement as vault-root content paths such as `demo.md` or `inbox/demo.md`
 - **AND** it SHALL describe `notes/` as a legacy-compatible folder rather than the default required note root.
 
+### Requirement: Pinax SHALL support reversible local proof-loop apply
+
+Pinax SHALL provide a CLI-authored restore apply path so a bad local apply can be reverted from an existing snapshot/restore plan without direct file surgery by an agent.
+
+#### Scenario: Restore apply refuses implicit writes
+
+- **GIVEN** a restore plan exists for a vault snapshot
+- **WHEN** the user runs restore apply without explicit approval
+- **THEN** Pinax SHALL refuse to mutate the vault
+- **AND** output SHALL include the exact approval flag or next command required.
+
+#### Scenario: Restore apply restores local Markdown safely
+
+- **GIVEN** a restore plan targets the current vault and a valid snapshot id
+- **WHEN** the user runs `pinax version restore apply --yes --plan <path>` or the accepted equivalent command
+- **THEN** Pinax SHALL restore local Markdown files from the snapshot plan
+- **AND** SHALL write a restore receipt
+- **AND** SHALL report `local_write=true` and `remote_write=false`
+- **AND** SHALL NOT call provider, cloud sync or MCP write surfaces.
+
+### Requirement: Pinax SHALL enforce shared projection redaction before rendering
+
+Pinax SHALL apply one shared redaction gate to command projections before rendering default, `--json`, `--agent`, `--events`, `--explain` or evidence sidecars.
+
+#### Scenario: Nested projection data is scanned
+
+- **GIVEN** a command projection contains nested facts, actions, evidence, data, error or event payloads
+- **WHEN** the projection is rendered
+- **THEN** Pinax SHALL redact or reject forbidden protected content before stdout/stderr/evidence persistence
+- **AND** forbidden content SHALL include note body sentinels, full body fields, Authorization headers, Bearer tokens, cookies, webhook URLs, provider payloads, raw prompts and hidden prompts.
+
+### Requirement: Pinax SHALL expose a single agent-callable proof loop run command
+
+Pinax SHALL provide one orchestration command for the local proof loop while preserving existing stage commands.
+
+#### Scenario: Proof loop run defaults to preview mode
+
+- **WHEN** an agent runs `pinax proof loop run --vault <vault>`
+- **THEN** Pinax SHALL emit one bounded projection with `proof_loop_run_id`, ordered stage facts, evidence paths and next actions
+- **AND** it SHALL NOT mutate the vault unless explicit apply flags are present.
+
+#### Scenario: Proof loop run applies only approved safe operations
+
+- **WHEN** an agent runs proof loop run with explicit apply approval
+- **THEN** Pinax SHALL take a fresh snapshot before applying allowed repair or organize operations
+- **AND** manual-review-only operations SHALL remain next actions instead of being auto-applied.
+
+### Requirement: Proof-loop output contracts SHALL cover all rendering modes
+
+Pinax SHALL contract-test proof-loop stage commands, proof-loop run and restore apply across default, `--json`, `--agent`, `--events` and `--explain` modes.
+
+#### Scenario: Machine modes stay bounded and parseable
+
+- **WHEN** proof-loop commands render machine output
+- **THEN** `--json` SHALL emit one valid envelope
+- **AND** `--agent` SHALL emit stable key=value facts
+- **AND** `--events` SHALL emit start/end NDJSON events
+- **AND** no mode SHALL leak note body, token, Authorization header, cookie, raw prompt, hidden prompt or provider payload.
+
+#### Scenario: Explain mode is evidence summary, not chain-of-thought
+
+- **WHEN** proof-loop commands render `--explain`
+- **THEN** the output SHALL include conclusion, evidence, confidence or risk where applicable and next action
+- **AND** it SHALL NOT include full chain-of-thought, raw prompts or hidden system prompts.
+
+### Requirement: Pinax SHALL use GORM Gen for local index database access
+
+Pinax SHALL route ordinary `.pinax/index.sqlite` projection reads and writes through GORM Gen generated DAO code. The local index remains a rebuildable projection of Markdown vault content, but field references, predicates, ordering and writes SHALL be type-backed rather than hardcoded SQL or direct GORM business chains.
+
+#### Scenario: Index rebuild writes through generated DAO
+- **GIVEN** a vault contains notes, tags, links, attachments, properties and assets
+- **WHEN** `pinax index rebuild --vault <vault>` updates `.pinax/index.sqlite`
+- **THEN** projection rows SHALL be created through generated DAO methods
+- **AND** ordinary rebuild code SHALL NOT call `database/sql`, `Raw`, `Exec`, or hardcoded SQL verb strings.
+
+#### Scenario: Search and lookup read through generated DAO
+- **GIVEN** the local index exists
+- **WHEN** Pinax lists notes, searches, resolves backlinks, checks assets, or serves readonly MCP resources
+- **THEN** queries SHALL use generated DAO fields and predicates
+- **AND** output ordering, machine fields, and stable error codes SHALL remain compatible with existing behavior.
+
+#### Scenario: Schema exceptions stay centralized
+- **GIVEN** Pinax needs connection, migration, transaction, or schema metadata behavior
+- **WHEN** GORM Gen cannot express the operation safely
+- **THEN** the exception SHALL live in a documented helper or migration boundary
+- **AND** guard tests SHALL prevent ordinary index business files from reintroducing raw SQL or direct GORM query chains.
+

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	gitstore "github.com/yeisme/pinax/internal/git"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -288,6 +290,198 @@ func TestVersionExtendedCommandsCLI(t *testing.T) {
 	assertVersionError([]string{"version", "show", "notes/version.md", "--revision", "rev_0", "--vault", root, "--json"}, "version.show", "version_read_unavailable")
 	assertVersionError([]string{"version", "diff", "--base", "rev_0", "--target", "rev_1", "--vault", root, "--json"}, "version.diff", "version_read_unavailable")
 	assertVersionError([]string{"version", "restore", "notes/version.md", "--revision", "rev_0", "--plan", "--vault", root, "--json"}, "version.restore", "version_read_unavailable")
+}
+
+// TestVersionRestoreApplyRevertsBadLocalApply 证明坏本地 apply 可通过 CLI 安全回滚：
+// 基线 git commit → 坏改动 → 生成 restore plan → apply 恢复到基线内容，
+// 全程 local_write=true / remote_write=false，且不带 --yes 时拒绝写入。
+func TestVersionRestoreApplyRevertsBadLocalApply(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	notePath := filepath.Join(root, "notes", "alpha.md")
+	writeCLIFixture(t, notePath, "# Alpha\n\noriginal baseline content\n")
+	// 基线 git commit：HEAD 记录原始内容。
+	if err := gitstore.Snapshot(context.Background(), root, "baseline before apply"); err != nil {
+		t.Fatalf("baseline git snapshot: %v", err)
+	}
+	// 坏本地 apply：覆盖成损坏内容。
+	writeCLIFixture(t, notePath, "# Alpha\n\ncorrupted by bad apply\n")
+
+	planOut := runCLI(t, "version", "restore", "notes/alpha.md", "--revision", "HEAD", "--plan", "--vault", root, "--json")
+	var planEnvelope map[string]any
+	if err := json.Unmarshal([]byte(planOut), &planEnvelope); err != nil {
+		t.Fatalf("restore plan json invalid: %v\n%s", err, planOut)
+	}
+	planFacts := planEnvelope["facts"].(map[string]any)
+	planID, ok := planFacts["plan_id"].(string)
+	if !ok || planID == "" {
+		t.Fatalf("restore plan missing plan_id: %#v", planFacts)
+	}
+	if gitCommit, ok := planFacts["git_commit"].(string); !ok || gitCommit == "" {
+		t.Fatalf("restore plan missing git_commit: %#v", planFacts)
+	}
+
+	// 不带 --yes 必须拒绝写入并给出审批提示。
+	refusedOut, refusedErr := runCLIExpectError("version", "restore", "apply", "--vault", root, "--plan", planID, "--json")
+	if refusedErr == nil {
+		t.Fatalf("restore apply without --yes succeeded:\n%s", refusedOut)
+	}
+	if !strings.Contains(refusedOut, "approval_required") || !strings.Contains(refusedOut, "--yes") {
+		t.Fatalf("restore apply refusal missing approval guidance:\n%s", refusedOut)
+	}
+
+	// 带 --yes 恢复到基线内容。
+	applyOut := runCLI(t, "version", "restore", "apply", "--vault", root, "--plan", planID, "--yes", "--json")
+	var applyEnvelope map[string]any
+	if err := json.Unmarshal([]byte(applyOut), &applyEnvelope); err != nil {
+		t.Fatalf("restore apply json invalid: %v\n%s", err, applyOut)
+	}
+	applyFacts := applyEnvelope["facts"].(map[string]any)
+	if applyEnvelope["command"] != "version.restore.apply" || applyEnvelope["status"] != "success" {
+		t.Fatalf("restore apply envelope = %#v\n%s", applyEnvelope, applyOut)
+	}
+	if applyFacts["local_write"] != "true" || applyFacts["remote_write"] != "false" {
+		t.Fatalf("restore apply must emit local_write=true remote_write=false: %#v", applyFacts)
+	}
+	restored := readCLIFile(t, notePath)
+	if !strings.Contains(restored, "original baseline content") || strings.Contains(restored, "corrupted by bad apply") {
+		t.Fatalf("restore apply did not revert to baseline content:\n%s", restored)
+	}
+	// receipt evidence 写入。
+	receipt, _ := applyEnvelope["data"].(map[string]any)["receipt"].(string)
+	if receipt == "" || !strings.Contains(receipt, ".pinax/receipts/") {
+		t.Fatalf("restore apply missing receipt path: %#v", applyEnvelope["data"])
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(receipt))); err != nil {
+		t.Fatalf("restore receipt file missing: %v", err)
+	}
+}
+
+// TestVersionRestoreApplyRefusesStalePlan 证明 vault 在 plan 生成后被改动时 apply 拒绝执行。
+func TestVersionRestoreApplyRefusesStalePlan(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	notePath := filepath.Join(root, "notes", "beta.md")
+	writeCLIFixture(t, notePath, "# Beta\n\nfirst\n")
+	if err := gitstore.Snapshot(context.Background(), root, "baseline"); err != nil {
+		t.Fatalf("baseline git snapshot: %v", err)
+	}
+	writeCLIFixture(t, notePath, "# Beta\n\nsecond\n")
+	planOut := runCLI(t, "version", "restore", "notes/beta.md", "--revision", "HEAD", "--plan", "--vault", root, "--json")
+	planID := jsonParseFacts(t, planOut)["plan_id"].(string)
+	// plan 生成后再改动 vault，vault hash 漂移。
+	writeCLIFixture(t, notePath, "# Beta\n\nthird drift\n")
+	staleOut, staleErr := runCLIExpectError("version", "restore", "apply", "--vault", root, "--plan", planID, "--yes", "--json")
+	if staleErr == nil {
+		t.Fatalf("stale restore apply succeeded:\n%s", staleOut)
+	}
+	if !strings.Contains(staleOut, "restore_plan_stale") {
+		t.Fatalf("stale restore apply missing restore_plan_stale:\n%s", staleOut)
+	}
+}
+
+func jsonParseFacts(t *testing.T, out string) map[string]any {
+	t.Helper()
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("json invalid: %v\n%s", err, out)
+	}
+	return envelope["facts"].(map[string]any)
+}
+
+// TestProofLoopRunPreviewEmitsRunIDAndStageFacts 证明 proof loop run preview 模式产出
+// 单一 projection 携带 proof_loop_run_id、有序 stage facts、saved plan paths 与 snapshot
+// next action，且不写 vault（没有 apply）。
+func TestProofLoopRunPreviewEmitsRunIDAndStageFacts(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), pinaxNoteFixture("note_alpha", "Alpha", "[]", "alpha body\n"))
+	runCLI(t, "index", "sync", "--vault", root, "--json")
+
+	out := runCLI(t, "proof", "loop", "run", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("proof loop run json invalid: %v\n%s", err, out)
+	}
+	if envelope["command"] != "proof.loop.run" || envelope["status"] != "success" {
+		t.Fatalf("proof loop run envelope = %#v\n%s", envelope, out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if facts["proof_loop_run_id"] == nil || facts["proof_loop_run_id"] == "" {
+		t.Fatalf("proof loop run missing proof_loop_run_id: %#v", facts)
+	}
+	if facts["mode"] != "preview" {
+		t.Fatalf("proof loop run mode = %v, want preview", facts["mode"])
+	}
+	for _, stage := range []string{"capture", "diagnose", "plan"} {
+		found := false
+		for k := range facts {
+			if strings.HasPrefix(k, stage+".") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("proof loop run missing stage facts for %q: %#v", stage, facts)
+		}
+	}
+	if facts["plan.repair_plan_id"] == nil || facts["plan.repair_plan_id"] == "" {
+		t.Fatalf("proof loop run missing saved repair plan id: %#v", facts)
+	}
+	data := envelope["data"].(map[string]any)
+	stages, _ := data["stages"].([]any)
+	if len(stages) == 0 {
+		t.Fatalf("proof loop run missing ordered stages in data: %#v", data)
+	}
+	// preview 必须有 snapshot next action（提示 apply 前先快照）。
+	actions := envelope["actions"].([]any)
+	hasSnapshotAction := false
+	for _, action := range actions {
+		cmd, _ := action.(map[string]any)["command"].(string)
+		if strings.Contains(cmd, "version snapshot") {
+			hasSnapshotAction = true
+		}
+	}
+	if !hasSnapshotAction {
+		t.Fatalf("proof loop run preview missing snapshot next action: %#v", actions)
+	}
+}
+
+// TestProofLoopRunApplyRequiresYes 证明 --apply 不带 --yes 时拒绝写入。
+func TestProofLoopRunApplyRequiresYes(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	out, err := runCLIExpectError("proof", "loop", "run", "--vault", root, "--apply", "--json")
+	if err == nil {
+		t.Fatalf("proof loop run --apply without --yes succeeded:\n%s", out)
+	}
+	if !strings.Contains(out, "approval_required") || !strings.Contains(out, "--yes") {
+		t.Fatalf("proof loop run --apply missing approval guidance:\n%s", out)
+	}
+}
+
+// TestProofLoopRunApplyExecutesAfterFreshSnapshot 证明 --apply --yes 先 fresh snapshot 再 apply。
+func TestProofLoopRunApplyExecutesAfterFreshSnapshot(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "No Tags.md"), "# No Tags\n\nbody without tags\n")
+	runCLI(t, "index", "sync", "--vault", root, "--json")
+
+	out := runCLI(t, "proof", "loop", "run", "--vault", root, "--apply", "--yes", "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("proof loop run apply json invalid: %v\n%s", err, out)
+	}
+	if envelope["status"] != "success" {
+		t.Fatalf("proof loop run apply status = %v\n%s", envelope["status"], out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if facts["mode"] != "apply" {
+		t.Fatalf("proof loop run apply mode = %v, want apply", facts["mode"])
+	}
+	if facts["apply.snapshot"] != "true" {
+		t.Fatalf("proof loop run apply missing fresh snapshot fact: %#v", facts)
+	}
 }
 
 func TestAssetLinkCommandCLI(t *testing.T) {
@@ -4690,13 +4884,13 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 		}
 		workspacePath := r.URL.Path
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(workspacePath, "/revision"):
+		case r.Method == http.MethodGet && strings.HasSuffix(workspacePath, "/head"):
 			writeServerJSON(w, http.StatusOK, map[string]any{"revision_id": serverRevision, "manifest_blob_id": "manifest_initial"})
-		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:batchCheck"):
+		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:batch-check"):
 			writeServerJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": []string{"blob_"}})
 		case r.Method == http.MethodPut && strings.Contains(workspacePath, "/blobs/"):
 			writeServerJSON(w, http.StatusCreated, map[string]any{"status": "stored"})
-		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/revisions:commit"):
+		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/revisions"):
 			if got := r.Header.Get("Idempotency-Key"); got == "" {
 				t.Fatalf("server transport missing idempotency key")
 			}

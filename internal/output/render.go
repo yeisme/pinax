@@ -66,6 +66,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 	if projection.Status == "" {
 		projection.Status = "success"
 	}
+	// 共享脱敏门禁：所有渲染模式在输出前统一递归扫描，拦截 note body、token、
+	// Authorization、cookie、webhook、provider payload 与 raw/hidden prompt。
+	ApplyProjectionRedaction(&projection)
 
 	switch mode {
 	case ModeJSON:

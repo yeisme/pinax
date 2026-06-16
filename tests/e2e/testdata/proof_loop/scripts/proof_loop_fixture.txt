@@ -1,0 +1,136 @@
+# Deterministic proof vault fixture: the vault is seeded with realistic notes
+# covering normal content, a broken link, an orphan note, a note with incomplete
+# metadata and a low-risk repair candidate. Doctor and plan commands must surface
+# these CONCRETE issues and operations, and must never leak note bodies or secrets.
+
+exec sh -c 'pinax init vault --title Vault --json > fixture_init.json'
+validate-json-envelope fixture_init.json
+grep '"status":"success"' fixture_init.json
+
+# Index the seeded fixture vault.
+exec sh -c 'pinax index sync --vault vault --json > fixture_index.json'
+validate-json-envelope fixture_index.json
+grep '"command":"index.sync"' fixture_index.json
+
+# Doctor must surface the concrete seeded issues: a broken link, missing tags and
+# orphan notes. These are real vault-health findings, not just envelope keys.
+exec sh -c 'pinax vault doctor --vault vault --json > fixture_doctor.json'
+validate-json-envelope fixture_doctor.json
+grep '"command":"vault.doctor"' fixture_doctor.json
+grep '"issues.total"' fixture_doctor.json
+grep 'broken_link' fixture_doctor.json
+grep 'missing_tags' fixture_doctor.json
+grep 'orphan_note' fixture_doctor.json
+grep 'broken-link-note.md' fixture_doctor.json
+grep 'incomplete-metadata.md' fixture_doctor.json
+grep 'orphan-root-note.md' fixture_doctor.json
+! grep '"Authorization"' fixture_doctor.json
+
+# Repair plan must produce concrete operations mapped to the seeded issues:
+# automatic tags_patch for missing tags, manual_review orphan_review and
+# link_resolution for the broken link.
+exec sh -c 'pinax repair plan --vault vault --json > fixture_repair_plan.json'
+validate-json-envelope fixture_repair_plan.json
+grep '"command":"repair.plan"' fixture_repair_plan.json
+grep 'tags_patch' fixture_repair_plan.json
+grep 'orphan_review' fixture_repair_plan.json
+grep 'link_resolution' fixture_repair_plan.json
+grep '"automatic"' fixture_repair_plan.json
+grep '"manual_review"' fixture_repair_plan.json
+! grep 'SECRET_FIXTURE_BODY' fixture_repair_plan.json
+
+# Organize plan must propose a concrete move for the root-level orphan note into
+# notes/, matching the seeded fixture structure.
+exec sh -c 'pinax organize plan --vault vault --json > fixture_organize_plan.json'
+validate-json-envelope fixture_organize_plan.json
+grep '"kind":"move"' fixture_organize_plan.json
+grep 'orphan-root-note.md' fixture_organize_plan.json
+grep 'notes/orphan-root-note.md' fixture_organize_plan.json
+! grep 'SECRET_FIXTURE_BODY' fixture_organize_plan.json
+
+# Agent projection stays bounded on diagnose commands.
+exec sh -c 'pinax vault doctor --vault vault --agent > fixture_doctor_agent.txt'
+validate-agent-format fixture_doctor_agent.txt
+grep 'command=vault.doctor' fixture_doctor_agent.txt
+grep 'fact.issues.total' fixture_doctor_agent.txt
+! grep 'SECRET_FIXTURE_BODY' fixture_doctor_agent.txt
+
+# Deterministic fixture files with no committed secrets.
+-- vault/notes/normal-note.md --
+---
+schema_version: pinax.note.v1
+note_id: note_normal_deterministic
+title: Normal Note
+tags: [reference]
+kind: reference
+status: active
+created_at: 2026-06-15T00:00:00Z
+updated_at: 2026-06-15T00:00:00Z
+---
+
+# Normal Note
+
+Links to [[algorithms]].
+
+-- vault/notes/algorithms.md --
+---
+schema_version: pinax.note.v1
+note_id: note_algorithms_deterministic
+title: Algorithms
+tags: [reference]
+kind: reference
+status: active
+created_at: 2026-06-15T00:00:00Z
+updated_at: 2026-06-15T00:00:00Z
+---
+
+# Algorithms
+
+Referenced by normal note.
+
+-- vault/notes/broken-link-note.md --
+---
+schema_version: pinax.note.v1
+note_id: note_broken_link_deterministic
+title: Broken Link Note
+tags: [reference]
+kind: reference
+status: active
+created_at: 2026-06-15T00:00:00Z
+updated_at: 2026-06-15T00:00:00Z
+---
+
+# Broken Link Note
+
+This note links to [[nonexistent-target]] which does not exist.
+
+-- vault/notes/incomplete-metadata.md --
+---
+schema_version: pinax.note.v1
+note_id: note_incomplete_deterministic
+title: Incomplete Metadata
+kind: note
+status: active
+created_at: 2026-06-15T00:00:00Z
+updated_at: 2026-06-15T00:00:00Z
+---
+
+# Incomplete Metadata
+
+Missing tags and kind is generic.
+
+-- vault/orphan-root-note.md --
+---
+schema_version: pinax.note.v1
+note_id: note_orphan_deterministic
+title: Orphan Root Note
+tags: [draft]
+kind: note
+status: active
+created_at: 2026-06-15T00:00:00Z
+updated_at: 2026-06-15T00:00:00Z
+---
+
+# Orphan Root Note
+
+SECRET_FIXTURE_BODY lives here and must stay inside the note file only.

@@ -2,17 +2,20 @@ package cloudclient
 
 import (
 	"context"
+	"errors"
 
 	"github.com/yeisme/pinax/internal/cloudsync"
 )
 
+// Transport 把 cloudclient.Client（MLP REST）适配为 cloudsync.Transport，
+// 让 Pinax 同步引擎统一通过 server transport 跑 push/pull。
+// remote_write 只在服务端 CAS commit 成功后才为 true（见 CommitRevision）。
 type Transport struct {
-	client  *Client
-	vaultID string
+	client *Client
 }
 
-func NewTransport(client *Client, vaultID string) *Transport {
-	return &Transport{client: client, vaultID: vaultID}
+func NewTransport(client *Client) *Transport {
+	return &Transport{client: client}
 }
 
 func (t *Transport) CurrentHead(ctx context.Context, vaultID string) (cloudsync.Head, error) {
@@ -21,7 +24,7 @@ func (t *Transport) CurrentHead(ctx context.Context, vaultID string) (cloudsync.
 		return cloudsync.Head{}, err
 	}
 	if vaultID == "" {
-		vaultID = t.vaultID
+		vaultID = t.client.VaultID()
 	}
 	return cloudsync.Head{SchemaVersion: cloudsync.HeadSchemaVersion, VaultID: vaultID, CurrentRevision: revision.RevisionID, ManifestBlobID: revision.ManifestBlobID}, nil
 }
@@ -54,12 +57,23 @@ func (t *Transport) GetManifest(ctx context.Context, blobID string) (cloudsync.E
 	return t.GetBlob(ctx, blobID)
 }
 
+// CommitRevision 只在服务端 CAS commit 成功后返回 RemoteWrite=true。
+// 服务端返回 REVISION_CONFLICT 时透传错误，RemoteWrite 保持 false。
 func (t *Transport) CommitRevision(ctx context.Context, req cloudsync.CommitRequest) (cloudsync.CommitResult, error) {
 	result, err := t.client.CommitRevision(ctx, CommitRequest{BaseRevision: req.BaseRevision, RevisionID: req.RevisionID, ManifestBlobID: req.ManifestBlobID, BlobIDs: req.BlobIDs, DeviceID: req.DeviceID, IdempotencyKey: req.RequestID})
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}
 	return cloudsync.CommitResult{RevisionID: result.RevisionID, ManifestBlobID: result.ManifestBlobID, RemoteWrite: true}, nil
+}
+
+// IsRevisionConflict 判断错误是否为服务端 CAS 冲突（REVISION_CONFLICT）。
+func IsRevisionConflict(err error) bool {
+	var cloudErr *Error
+	if errors.As(err, &cloudErr) {
+		return cloudErr.Code == CodeRevisionConflict
+	}
+	return false
 }
 
 func toBlobEnvelope(envelope cloudsync.Envelope) BlobEnvelope {

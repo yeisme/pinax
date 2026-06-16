@@ -1,12 +1,14 @@
 package index
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/index/query"
 	"gorm.io/gorm"
 )
 
@@ -22,14 +24,14 @@ type LookupResult struct {
 }
 
 func Lookup(root string, req LookupRequest) (LookupResult, error) {
-	query := strings.TrimSpace(req.Query)
+	queryText := strings.TrimSpace(req.Query)
 	status, db, ok, err := lookupReady(root)
-	if err != nil || !ok || query == "" {
+	if err != nil || !ok || queryText == "" {
 		return LookupResult{Status: status}, err
 	}
 	scope := lookupDefault(req.Scope, "registered")
 	kind := lookupDefault(req.Kind, "all")
-	q := strings.ToLower(query)
+	q := strings.ToLower(queryText)
 	candidates := []domain.VaultObjectCandidate{}
 
 	if lookupScopeAllows(scope, "registered") && lookupKindAllows(kind, "note") {
@@ -47,12 +49,16 @@ func Lookup(root string, req LookupRequest) (LookupResult, error) {
 	}
 
 	if lookupScopeAllows(scope, "adoptable") && lookupKindAllows(kind, "file") {
-		files := []VaultFileRecord{}
-		if err := db.Where("object_kind = ? AND managed_status = ?", string(domain.VaultObjectKindNote), string(domain.ManagedStatusUnmanaged)).Order("path asc").Find(&files).Error; err != nil {
+		querySet := query.Use(db)
+		files, err := querySet.VaultFileRecord.WithContext(context.Background()).
+			Where(querySet.VaultFileRecord.ObjectKind.Eq(string(domain.VaultObjectKindNote)), querySet.VaultFileRecord.ManagedStatus.Eq(string(domain.ManagedStatusUnmanaged))).
+			Order(querySet.VaultFileRecord.Path).
+			Find()
+		if err != nil {
 			return LookupResult{Status: status}, err
 		}
 		for _, file := range files {
-			fields, score := lookupVaultFileMatch(q, file)
+			fields, score := lookupVaultFileMatch(q, *file)
 			if score == 0 {
 				continue
 			}
@@ -61,12 +67,13 @@ func Lookup(root string, req LookupRequest) (LookupResult, error) {
 	}
 
 	if lookupScopeAllows(scope, "assets") && lookupKindAllows(kind, "asset") {
-		assets := []AssetRecord{}
-		if err := db.Order("path asc").Find(&assets).Error; err != nil {
+		querySet := query.Use(db)
+		assets, err := querySet.AssetRecord.WithContext(context.Background()).Order(querySet.AssetRecord.Path).Find()
+		if err != nil {
 			return LookupResult{Status: status}, err
 		}
 		for _, asset := range assets {
-			fields, score := lookupAssetRecordMatch(q, asset)
+			fields, score := lookupAssetRecordMatch(q, *asset)
 			if score == 0 {
 				continue
 			}
@@ -118,24 +125,30 @@ func lookupReady(root string) (Status, *gorm.DB, bool, error) {
 }
 
 func lookupNoteProjection(db *gorm.DB) ([]NoteRecord, map[string]NoteTextRecord, map[string][]string, error) {
-	notes := []NoteRecord{}
-	if err := db.Where("is_system = ?", false).Order("path asc").Find(&notes).Error; err != nil {
+	ctx := context.Background()
+	q := query.Use(db)
+	noteRows, err := q.NoteRecord.WithContext(ctx).Where(q.NoteRecord.IsSystem.Is(false)).Order(q.NoteRecord.Path).Find()
+	if err != nil {
 		return nil, nil, nil, err
 	}
-	texts := []NoteTextRecord{}
-	if err := db.Find(&texts).Error; err != nil {
+	notes := make([]NoteRecord, 0, len(noteRows))
+	for _, note := range noteRows {
+		notes = append(notes, *note)
+	}
+	textRows, err := q.NoteTextRecord.WithContext(ctx).Find()
+	if err != nil {
 		return nil, nil, nil, err
 	}
 	textByPath := map[string]NoteTextRecord{}
-	for _, text := range texts {
-		textByPath[text.NotePath] = text
+	for _, text := range textRows {
+		textByPath[text.NotePath] = *text
 	}
-	values := []PropertyValueRecord{}
-	if err := db.Where("name IN ?", []string{"alias", "aliases"}).Find(&values).Error; err != nil {
+	valueRows, err := q.PropertyValueRecord.WithContext(ctx).Where(q.PropertyValueRecord.Name.In("alias", "aliases")).Find()
+	if err != nil {
 		return nil, nil, nil, err
 	}
 	aliases := map[string][]string{}
-	for _, value := range values {
+	for _, value := range valueRows {
 		for _, alias := range strings.Split(value.Value, ",") {
 			alias = strings.TrimSpace(alias)
 			if alias != "" {

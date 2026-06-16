@@ -23,6 +23,16 @@ Build artifacts are only for local validation and are not committed:
 rm -rf dist
 ```
 
+Release rehearsal uses GoReleaser and does not publish artifacts:
+
+```bash
+task release:check
+task snapshot
+task release:local
+```
+
+`task snapshot` builds the current platform through GoReleaser. `task release:local` builds linux, macOS and Windows archives for amd64 and arm64, plus `dist/checksums.txt`.
+
 Create an OpenSpec change before adding a new implementation:
 
 ```bash

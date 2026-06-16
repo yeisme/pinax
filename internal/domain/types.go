@@ -297,6 +297,26 @@ type RepairOperation struct {
 	Evidence    []string `json:"evidence,omitempty"`
 }
 
+// RestorePlan 是 version restore 生成的只读恢复计划，restore apply 据此把单个 vault
+// 文件从历史 revision 安全写回本地 Markdown。它不发明内容，只复用 version backend
+// 已有的历史快照，并记录 snapshot id 以校验目标 vault 与 revision 一致。
+type RestorePlan struct {
+	SchemaVersion  string        `json:"schema_version"`
+	PlanID         string        `json:"plan_id"`
+	CreatedAt      string        `json:"created_at"`
+	ExpiresAt      string        `json:"expires_at"`
+	VaultRoot      string        `json:"vault_root"`
+	VaultHash      string        `json:"vault_hash"`
+	Path           string        `json:"path"`
+	Revision       string        `json:"revision"`
+	GitCommit      string        `json:"git_commit,omitempty"`
+	VersionBackend string        `json:"version_backend"`
+	SnapshotID     string        `json:"snapshot_id,omitempty"`
+	ContentHash    string        `json:"content_hash,omitempty"`
+	Operation      PlanOperation `json:"operation"`
+	SavedPath      string        `json:"saved_path,omitempty"`
+}
+
 type OrganizePlan struct {
 	SchemaVersion string              `json:"schema_version"`
 	PlanID        string              `json:"plan_id"`

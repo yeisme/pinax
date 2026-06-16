@@ -43,6 +43,29 @@ pinax cloud status --vault ./my-notes --json
 pinax cloud doctor --vault ./my-notes
 ```
 
+### Pinax Cloud Sync MLP server contract
+
+The server transport speaks the Pinax Cloud Sync MLP (minimum lovable product) REST contract. The public protocol uses `vault_id` terminology and never transfers plaintext Markdown:
+
+| Operation | Method & Path | Notes |
+| --- | --- | --- |
+| Health | `GET /v1/health` | Readiness probe. |
+| Bootstrap | `POST /v1/auth/bootstrap` | Self-hosted single-account bootstrap; issues a device session. |
+| Current principal | `GET /v1/auth/principal` | Login-state facts after bootstrap. |
+| Create vault | `POST /v1/vaults` | Returns `vault_id` and `crypto_mode`. |
+| Link device | `POST /v1/vaults/{vault_id}/link` | Binds the current device to the vault. |
+| Changes cursor | `GET /v1/vaults/{vault_id}/changes?since=<revision_id>` | Returns revision and object refs after the cursor; object refs use `path_hash`/`blob_hash`, never plaintext paths. |
+| Current head | `GET /v1/vaults/{vault_id}/head` | Current revision and manifest blob id. |
+| Blob batch check | `POST /v1/vaults/{vault_id}/blobs:batch-check` | Returns the subset of encrypted blobs missing from storage. |
+| Sign upload | `POST /v1/vaults/{vault_id}/blobs:sign-upload` | Returns a server-owned object key and upload plan. |
+| Upload blob | `PUT /v1/vaults/{vault_id}/blobs/{blob_id}` | Stores an encrypted envelope only. |
+| Download blob | `GET /v1/vaults/{vault_id}/blobs/{blob_id}` | Returns an encrypted envelope only. |
+| Revision CAS commit | `POST /v1/vaults/{vault_id}/revisions` | Atomic head update gated on `base_revision` matching the current head. |
+
+Stable error codes (uppercase, machine-readable): `UNAUTHENTICATED`, `DEVICE_REVOKED`, `FORBIDDEN_SCOPE`, `REVISION_CONFLICT`, `VALIDATION_FAILED`, `BLOB_MISSING`, `BACKEND_UNAVAILABLE`. `REVISION_CONFLICT` is retryable: the client should pull, rebase, and retry the commit.
+
+`remote_write=true` is emitted by the CLI only after the server CAS commit succeeds **and** the local sync-state receipt is written. Dry-run, blob upload only, failed upload, backend unavailable, and revision conflict all render `remote_write=false`. The `--workspace` flag stays for CLI/local config compatibility; at the MLP REST boundary it maps to `vault_id` so the public contract is vault-terminology only.
+
 S3-compatible direct transport:
 
 ```bash

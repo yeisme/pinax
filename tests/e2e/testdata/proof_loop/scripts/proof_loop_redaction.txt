@@ -1,0 +1,117 @@
+# Comprehensive redaction gate for the agent-safe proof loop. A realistic vault
+# is created through CLI commands carrying distinctive markers, then every output
+# surface — default summary, --json, --agent, --events, stderr, saved plan files,
+# events and integration evidence — is scanned for all forbidden sensitive classes.
+#
+# Bounded snippets around search matches are expected and allowed; full note body
+# dumps as data fields, tokens, Authorization headers and provider payloads are not.
+
+# Seed a vault with notes carrying distinctive body markers.
+exec sh -c 'pinax init vault --title Vault --json > red_init.json'
+validate-json-envelope red_init.json
+
+exec sh -c 'pinax inbox capture "redaction inbox marker" --vault vault --json > red_capture.json'
+validate-json-envelope red_capture.json
+
+exec sh -c 'pinax journal daily append --body "redaction journal marker" --vault vault --json > red_journal.json'
+validate-json-envelope red_journal.json
+
+# A normal note whose body must stay inside the note file for bounded reads.
+exec sh -c 'pinax note add "Redaction Target" --body "REDACT_FULL_BODY_SENTINEL must stay inside the note file" --vault vault --json > red_note.json'
+validate-json-envelope red_note.json
+
+exec sh -c 'pinax index sync --vault vault --json > red_index.json'
+validate-json-envelope red_index.json
+
+# ---------------------------------------------------------------------------
+# Surface 1: default summary mode (human-readable stdout).
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax vault doctor --vault vault > red_doctor_default.txt'
+exec sh -c 'pinax repair plan --vault vault > red_repair_default.txt'
+exec sh -c 'pinax organize plan --vault vault > red_organize_default.txt'
+exec sh -c 'pinax note orphans --vault vault > red_orphans_default.txt'
+
+# Default summary surfaces must not leak the full body sentinel.
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_doctor_default.txt red_repair_default.txt red_organize_default.txt red_orphans_default.txt'
+
+# ---------------------------------------------------------------------------
+# Surface 2: --json bounded projections.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax vault doctor --vault vault --json > red_doctor.json'
+validate-json-envelope red_doctor.json
+exec sh -c 'pinax repair plan --vault vault --json > red_repair.json'
+validate-json-envelope red_repair.json
+exec sh -c 'pinax organize plan --vault vault --json > red_organize.json'
+validate-json-envelope red_organize.json
+exec sh -c 'pinax note orphans --vault vault --json > red_orphans.json'
+validate-json-envelope red_orphans.json
+
+# JSON bounded projections must not dump full body as a data field.
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_doctor.json red_repair.json red_organize.json red_orphans.json'
+exec sh -c '! grep -q "\"body\":\"" red_doctor.json red_orphans.json'
+
+# ---------------------------------------------------------------------------
+# Surface 3: --agent bounded projections.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax vault doctor --vault vault --agent > red_doctor_agent.txt'
+validate-agent-format red_doctor_agent.txt
+exec sh -c 'pinax note orphans --vault vault --agent > red_orphans_agent.txt'
+validate-agent-format red_orphans_agent.txt
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_doctor_agent.txt red_orphans_agent.txt'
+
+# ---------------------------------------------------------------------------
+# Surface 4: --events bounded projections.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax vault doctor --vault vault --events > red_doctor_events.txt'
+exec sh -c 'pinax repair plan --vault vault --events > red_repair_events.txt'
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_doctor_events.txt red_repair_events.txt'
+
+# ---------------------------------------------------------------------------
+# Surface 5: stderr must stay clean (no sensitive markers on stderr).
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax vault doctor --vault vault --json > red_stdout.txt 2> red_stderr.txt'
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_stderr.txt'
+
+# ---------------------------------------------------------------------------
+# Surface 6: saved plan files under .pinax/ must not leak body.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax repair plan --save --vault vault --json > red_repair_saved.json'
+validate-json-envelope red_repair_saved.json
+exec sh -c 'pinax organize plan --save --vault vault --json > red_organize_saved.json'
+validate-json-envelope red_organize_saved.json
+exec sh -c 'cat vault/.pinax/repair-plans/*.json > red_repair_plan_file.json'
+exec sh -c 'cat vault/.pinax/organize-plans/*.json > red_organize_plan_file.json'
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_repair_plan_file.json red_organize_plan_file.json'
+
+# ---------------------------------------------------------------------------
+# Surface 7: snapshot evidence must not leak body.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax version snapshot --vault vault --message "redaction checkpoint" --json > red_snapshot.json'
+validate-json-envelope red_snapshot.json
+exec sh -c '! grep -q "REDACT_FULL_BODY_SENTINEL" red_snapshot.json'
+
+# ---------------------------------------------------------------------------
+# Forbidden classes: Authorization headers, bearer tokens and provider payloads
+# must never appear in any bounded surface.
+# ---------------------------------------------------------------------------
+exec sh -c '! grep -q "Authorization" red_doctor.json red_repair.json red_organize.json red_orphans.json red_doctor_agent.txt red_orphans_agent.txt red_doctor_events.txt red_repair_events.txt'
+exec sh -c '! grep -q "Bearer " red_doctor.json red_repair.json red_organize.json red_orphans.json red_doctor_agent.txt red_doctor_events.txt'
+exec sh -c '! grep -q "api_key=" red_doctor.json red_repair.json red_organize.json red_orphans.json'
+exec sh -c '! grep -q "secret=" red_doctor.json red_repair.json red_organize.json red_orphans.json'
+
+# ---------------------------------------------------------------------------
+# ANSI escape sequences must never appear in machine-readable surfaces.
+# ---------------------------------------------------------------------------
+validate-clean-stdout red_doctor.json
+validate-clean-stdout red_doctor_agent.txt
+validate-clean-stdout red_repair.json
+validate-clean-stdout red_organize.json
+validate-clean-stdout red_orphans.json
+validate-clean-stdout red_doctor_events.txt
+
+# Search returns bounded snippets around matches; it must never dump the full
+# note body as a "body":"..." data field. The snippet is allowed to show a short
+# excerpt, but a raw body field would be a projection boundary leak.
+exec sh -c 'pinax search "REDACT_FULL_BODY_SENTINEL" --vault vault --json > red_search.json'
+validate-json-envelope red_search.json
+exec sh -c '! grep -q "\"body\":\"" red_search.json'

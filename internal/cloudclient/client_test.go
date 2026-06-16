@@ -8,14 +8,16 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
 )
 
 func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
 	var gotAuth, gotDevice, gotRequestID string
 	var gotCommit CommitRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/workspaces/ws_123/revisions:commit" {
-			t.Fatalf("path = %s", r.URL.Path)
+		if r.URL.Path != "/v1/vaults/vault_1/revisions" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
 		}
 		gotAuth = r.Header.Get("Authorization")
 		gotDevice = r.Header.Get("X-Pinax-Device-ID")
@@ -27,11 +29,11 @@ func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL, WorkspaceID: "ws_123", DeviceID: "dev_laptop", Token: "secret-token"})
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: "secret-token"})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	res, err := client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "rev_a", RevisionID: "rev_b", ManifestBlobID: "blob_manifest", BlobIDs: []string{"blob_a", "blob_b"}, DeviceID: "dev_laptop", IdempotencyKey: "req_123"})
+	res, err := client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "", RevisionID: "rev_b", ManifestBlobID: "blob_manifest", BlobIDs: []string{"blob_a", "blob_b"}, DeviceID: "dev_laptop", IdempotencyKey: "req_123"})
 	if err != nil {
 		t.Fatalf("commit revision: %v", err)
 	}
@@ -46,58 +48,93 @@ func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
 	}
 }
 
-func TestClientReadsRevisionAndTransfersEncryptedBlobs(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/workspaces/ws_123/revision":
-			writeJSON(t, w, http.StatusOK, map[string]any{"revision_id": "rev_a", "manifest_blob_id": "blob_manifest"})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/workspaces/ws_123/blobs:batchCheck":
-			var req blobCheckRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode batch check: %v", err)
-			}
-			if len(req.BlobIDs) != 2 || req.BlobIDs[0] != "blob_a" || req.BlobIDs[1] != "blob_b" {
-				t.Fatalf("batch check ids = %#v", req.BlobIDs)
-			}
-			writeJSON(t, w, http.StatusOK, map[string]any{"missing_blob_ids": []string{"blob_b"}})
-		case r.Method == http.MethodPut && r.URL.Path == "/v1/workspaces/ws_123/blobs/blob_b":
-			var req BlobEnvelope
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode upload: %v", err)
-			}
-			if req.Ciphertext != "encrypted-note" || req.PlainSHA256 != "plain-sha" {
-				t.Fatalf("uploaded envelope = %#v", req)
-			}
-			writeJSON(t, w, http.StatusCreated, map[string]any{"blob_id": "blob_b"})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/workspaces/ws_123/blobs/blob_b":
-			writeJSON(t, w, http.StatusOK, BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Ciphertext: "encrypted-note", PlainSHA256: "plain-sha"})
-		default:
-			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
-		}
-	}))
+func TestClientBootstrapPrincipalAndVaultLifecycle(t *testing.T) {
+	server := mlptest.New(mlptest.Config{BootstrapToken: "boot-secret", SessionToken: "session-token"})
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL, WorkspaceID: "ws_123", DeviceID: "dev_laptop", Token: "secret-token"})
+	client, err := New(Config{Endpoint: server.URL, DeviceID: "dev_laptop", Token: server.Token()})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	revision, err := client.CurrentRevision(context.Background())
+	// bootstrap 成功且返回脱敏事实。
+	boot, err := client.Bootstrap(context.Background(), "boot-secret", "dev_laptop")
 	if err != nil {
-		t.Fatalf("current revision: %v", err)
+		t.Fatalf("bootstrap: %v", err)
 	}
-	if revision.RevisionID != "rev_a" || revision.ManifestBlobID != "blob_manifest" {
-		t.Fatalf("revision = %#v", revision)
+	if boot.AccountID == "" || boot.DeviceID != "dev_laptop" || boot.VaultID == "" {
+		t.Fatalf("bootstrap result = %#v", boot)
 	}
+	// bootstrap token mismatch 返回 UNAUTHENTICATED。
+	if _, err := client.Bootstrap(context.Background(), "wrong", "dev_laptop"); err == nil {
+		t.Fatalf("expected bootstrap auth error")
+	} else if cloudErr, ok := err.(*Error); !ok || cloudErr.Code != CodeUnauthenticated {
+		t.Fatalf("bootstrap error = %#v", err)
+	}
+
+	principal, err := client.CurrentPrincipal(context.Background())
+	if err != nil {
+		t.Fatalf("principal: %v", err)
+	}
+	if principal.AccountID == "" || principal.DeviceID != "dev_laptop" {
+		t.Fatalf("principal = %#v", principal)
+	}
+}
+
+func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
+	defer server.Close()
+
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	head, err := client.CurrentRevision(context.Background())
+	if err != nil {
+		t.Fatalf("current head: %v", err)
+	}
+	if head.RevisionID != "" {
+		t.Fatalf("empty vault head should have empty revision, got %#v", head)
+	}
+
+	changes, err := client.Changes(context.Background(), "")
+	if err != nil {
+		t.Fatalf("changes: %v", err)
+	}
+	if changes.HasMore {
+		t.Fatalf("changes has_more should be false on empty vault")
+	}
+
 	missing, err := client.BatchCheckBlobs(context.Background(), []string{"blob_a", "blob_b"})
 	if err != nil {
 		t.Fatalf("batch check: %v", err)
 	}
-	if len(missing.MissingBlobIDs) != 1 || missing.MissingBlobIDs[0] != "blob_b" {
+	if len(missing.MissingBlobIDs) != 2 {
 		t.Fatalf("missing = %#v", missing)
 	}
-	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Ciphertext: "encrypted-note", PlainSHA256: "plain-sha"}
+
+	plan, err := client.SignUpload(context.Background(), "blob_b", "sha256:blob_b", 128, "application/octet-stream")
+	if err != nil {
+		t.Fatalf("sign upload: %v", err)
+	}
+	if plan.BlobID != "blob_b" || plan.ObjectKey == "" || plan.URL == "" {
+		t.Fatalf("upload plan = %#v", plan)
+	}
+	if strings.Contains(plan.ObjectKey, "notes/") || strings.Contains(plan.ObjectKey, ".md") {
+		t.Fatalf("upload plan object key leaked plaintext path: %s", plan.ObjectKey)
+	}
+
+	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce-b", Ciphertext: "encrypted-note", PlainSHA256: "plain-sha"}
 	if err := client.UploadBlob(context.Background(), "blob_b", envelope); err != nil {
 		t.Fatalf("upload blob: %v", err)
+	}
+	// 上传后该 blob 不再 missing。
+	missingAfter, err := client.BatchCheckBlobs(context.Background(), []string{"blob_b"})
+	if err != nil {
+		t.Fatalf("batch check after upload: %v", err)
+	}
+	if len(missingAfter.MissingBlobIDs) != 0 {
+		t.Fatalf("blob should be present after upload, missing = %#v", missingAfter)
 	}
 	down, err := client.DownloadBlob(context.Background(), "blob_b")
 	if err != nil {
@@ -108,17 +145,16 @@ func TestClientReadsRevisionAndTransfersEncryptedBlobs(t *testing.T) {
 	}
 }
 
-func TestClientReturnsStableRedactedCloudErrors(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(t, w, http.StatusConflict, errorResponse{Error: ErrorBody{Code: "revision_conflict", Message: "base revision is stale", Retryable: true}})
-	}))
+func TestClientRevisionCASConflictReturnsStableError(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
 	defer server.Close()
 
-	client, err := New(Config{Endpoint: server.URL, WorkspaceID: "ws_123", DeviceID: "dev_laptop", Token: "secret-token"})
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: server.Token()})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	_, err = client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "rev_a", ManifestBlobID: "blob_manifest", IdempotencyKey: "req_123"})
+	// 用不匹配的 base revision 提交，必须拿到 REVISION_CONFLICT。
+	_, err = client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "rev_nonexistent", ManifestBlobID: "blob_manifest", IdempotencyKey: "req_123"})
 	if err == nil {
 		t.Fatalf("commit unexpectedly succeeded")
 	}
@@ -126,14 +162,34 @@ func TestClientReturnsStableRedactedCloudErrors(t *testing.T) {
 	if !ok {
 		t.Fatalf("error type = %T", err)
 	}
-	if cloudErr.Code != "revision_conflict" || cloudErr.StatusCode != http.StatusConflict || !cloudErr.Retryable {
+	if cloudErr.Code != CodeRevisionConflict || cloudErr.StatusCode != http.StatusConflict || !cloudErr.Retryable {
 		t.Fatalf("cloud error = %#v", cloudErr)
+	}
+	if !IsRevisionConflict(err) {
+		t.Fatalf("IsRevisionConflict should be true")
 	}
 	text := err.Error()
 	for _, secret := range []string{"secret-token", "Authorization", "Bearer"} {
 		if strings.Contains(text, secret) {
 			t.Fatalf("error leaked %q: %s", secret, text)
 		}
+	}
+}
+
+func TestClientRejectsMissingAuth(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "session-token"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: "wrong-token"})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	_, err = client.CurrentPrincipal(context.Background())
+	if err == nil {
+		t.Fatalf("expected auth error")
+	}
+	cloudErr, ok := err.(*Error)
+	if !ok || cloudErr.Code != CodeUnauthenticated {
+		t.Fatalf("expected UNAUTHENTICATED, got %#v", err)
 	}
 }
 
@@ -148,15 +204,27 @@ func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
 			Method string `json:"method"`
 			Path   string `json:"path"`
 		} `json:"operations"`
-		ErrorCodes []string `json:"error_codes"`
+		ErrorCodes  []string `json:"error_codes"`
+		Terminology string   `json:"terminology"`
 	}
 	if err := json.Unmarshal(payload, &fixture); err != nil {
 		t.Fatalf("decode contract fixture: %v", err)
 	}
-	wantOps := map[string]bool{"health": false, "current_revision": false, "blob_batch_check": false, "blob_upload": false, "blob_download": false, "revision_commit": false}
+	if fixture.Terminology != "vault_id" {
+		t.Fatalf("contract fixture terminology = %q, want vault_id", fixture.Terminology)
+	}
+	wantOps := map[string]bool{
+		"health": false, "bootstrap": false, "current_principal": false,
+		"create_vault": false, "link_vault": false, "changes": false,
+		"current_head": false, "blob_batch_check": false, "blob_sign_upload": false,
+		"blob_upload": false, "blob_download": false, "revision_commit": false,
+	}
 	for _, op := range fixture.Operations {
 		if op.Method == "" || op.Path == "" {
 			t.Fatalf("operation missing method/path: %#v", op)
+		}
+		if strings.Contains(op.Path, "{workspace_id}") || strings.Contains(op.Path, "/workspaces/") {
+			t.Fatalf("MLP contract must use vault_id terminology, got path %q", op.Path)
 		}
 		if _, ok := wantOps[op.Name]; ok {
 			wantOps[op.Name] = true
@@ -167,7 +235,11 @@ func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
 			t.Fatalf("contract fixture missing operation %s", name)
 		}
 	}
-	wantErrors := map[string]bool{"revision_conflict": false, "unauthorized": false, "backend_unavailable": false}
+	wantErrors := map[string]bool{
+		"UNAUTHENTICATED": false, "DEVICE_REVOKED": false, "REVISION_CONFLICT": false,
+		"FORBIDDEN_SCOPE": false, "VALIDATION_FAILED": false, "BLOB_MISSING": false,
+		"BACKEND_UNAVAILABLE": false,
+	}
 	for _, code := range fixture.ErrorCodes {
 		if _, ok := wantErrors[code]; ok {
 			wantErrors[code] = true
