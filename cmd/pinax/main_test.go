@@ -4888,6 +4888,19 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 			writeServerJSON(w, http.StatusOK, map[string]any{"revision_id": serverRevision, "manifest_blob_id": "manifest_initial"})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:batch-check"):
 			writeServerJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": []string{"blob_"}})
+		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:sign-upload"):
+			var req struct {
+				BlobID   string `json:"blob_id"`
+				BlobHash string `json:"blob_hash"`
+				Size     int64  `json:"size"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode sign-upload request: %v", err)
+			}
+			if req.BlobID == "" || req.BlobHash == "" || req.Size < 0 {
+				t.Fatalf("invalid sign-upload request: %#v", req)
+			}
+			writeServerJSON(w, http.StatusOK, map[string]any{"blob_id": req.BlobID, "object_key": "vaults/ws_123/" + req.BlobID, "method": "PUT", "url": "https://objects.example.local/" + req.BlobID})
 		case r.Method == http.MethodPut && strings.Contains(workspacePath, "/blobs/"):
 			writeServerJSON(w, http.StatusCreated, map[string]any{"status": "stored"})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/revisions"):
