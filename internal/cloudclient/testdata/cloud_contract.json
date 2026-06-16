@@ -25,7 +25,8 @@
         "account_id": "acc_1",
         "device_id": "dev_laptop",
         "vault_id": "vault_1",
-        "token_ref": "profile://cloud"
+        "token_ref": "profile://cloud",
+        "scope": "sync"
       }
     },
     {
@@ -41,6 +42,7 @@
         "account_id": "acc_1",
         "device_id": "dev_laptop",
         "vault_id": "vault_1",
+        "token_ref": "profile://cloud",
         "scope": "sync"
       }
     },
