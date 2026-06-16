@@ -12,7 +12,9 @@ import (
 	"time"
 
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
+	"github.com/yeisme/pinax/internal/cloudclient"
 	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
+	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 	"github.com/yeisme/pinax/internal/domain"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	pinaxversion "github.com/yeisme/pinax/internal/version"
@@ -417,6 +419,77 @@ func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T
 	if push.Facts["remote_write"] != "true" {
 		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
 	}
+}
+
+
+func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	body := "# Alpha\n\nexisting blob metadata repair\n"
+	writeFile(t, filepath.Join(root, "notes", "alpha.md"), body)
+	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
+	defer server.Close()
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
+		t.Fatalf("cloud login: %v", err)
+	}
+	manifest, err := pinaxcloud.BuildManifest(root)
+	if err != nil || len(manifest.Entries) != 1 {
+		t.Fatalf("build manifest entries=%#v err=%v", manifest.Entries, err)
+	}
+	client, err := cloudclient.New(cloudclient.Config{Endpoint: server.Endpoint(), VaultID: "personal", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	transport := cloudclient.NewTransport(client)
+	envelope, err := pinaxcloud.EncryptBlob(mustCloudKey(t), []byte(body), []byte(manifest.Entries[0].BlobID))
+	if err != nil {
+		t.Fatalf("encrypt blob: %v", err)
+	}
+	if err := transport.PutBlobWithMetadata(ctx, manifest.Entries[0].BlobID, "sha256:stale", 999, cloudEnvelope(envelope)); err != nil {
+		t.Fatalf("seed stale metadata: %v", err)
+	}
+	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("server sync push with stale metadata: %v", err)
+	}
+	if push.Facts["remote_write"] != "true" {
+		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
+	}
+}
+
+func TestServerBackedSyncPushAllowsEmptyNoteObjectRef(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "notes", "empty.md"), "")
+	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
+	defer server.Close()
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
+		t.Fatalf("cloud login: %v", err)
+	}
+	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("empty note server sync push: %v", err)
+	}
+	if push.Facts["remote_write"] != "true" {
+		t.Fatalf("empty note push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
+	}
+}
+
+func mustCloudKey(t *testing.T) pinaxcloud.CryptoKey {
+	t.Helper()
+	key, err := pinaxcloud.DeriveKey("plain:session-token")
+	if err != nil {
+		t.Fatalf("derive key: %v", err)
+	}
+	return key
 }
 
 func TestRcloneDirectSyncUsesObjectStoreEngineAndLockRecovery(t *testing.T) {

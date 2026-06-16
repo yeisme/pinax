@@ -41,8 +41,13 @@ func (t *Transport) PutBlob(ctx context.Context, blobID string, envelope cloudsy
 	return t.client.UploadBlob(ctx, blobID, toBlobEnvelope(envelope))
 }
 
+func (t *Transport) RegisterBlobMetadata(ctx context.Context, blobID, blobHash string, sizeBytes int64) error {
+	_, err := t.client.SignUpload(ctx, blobID, blobHash, sizeBytes, "application/octet-stream")
+	return err
+}
+
 func (t *Transport) PutBlobWithMetadata(ctx context.Context, blobID, blobHash string, sizeBytes int64, envelope cloudsync.Envelope) error {
-	if _, err := t.client.SignUpload(ctx, blobID, blobHash, sizeBytes, "application/octet-stream"); err != nil {
+	if err := t.RegisterBlobMetadata(ctx, blobID, blobHash, sizeBytes); err != nil {
 		return err
 	}
 	return t.client.UploadBlob(ctx, blobID, toBlobEnvelope(envelope))

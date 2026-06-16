@@ -342,7 +342,7 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		if ref.Deleted {
 			continue
 		}
-		if ref.PathHash == "" || ref.BlobID == "" || ref.BlobHash == "" || ref.SizeBytes <= 0 {
+		if ref.PathHash == "" || ref.BlobID == "" || ref.BlobHash == "" || ref.SizeBytes < 0 {
 			writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_refs are required")
 			return
 		}
