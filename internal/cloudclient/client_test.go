@@ -1,7 +1,10 @@
 package cloudclient
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +148,20 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 	if down.Ciphertext != "encrypted-note" || down.PlainSHA256 != "plain-sha" {
 		t.Fatalf("downloaded envelope = %#v", down)
 	}
+	if _, err := client.SignUpload(context.Background(), "blob_b", blobHash, blobSize, "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("re-sign uploaded blob: %v", err)
+	}
+	missingAfterResign, err := client.BatchCheckBlobs(context.Background(), []string{"blob_b"})
+	if err != nil {
+		t.Fatalf("batch check after re-sign: %v", err)
+	}
+	if len(missingAfterResign.MissingBlobIDs) != 0 || len(missingAfterResign.Present) != 1 {
+		t.Fatalf("re-sign downgraded uploaded blob: %#v", missingAfterResign)
+	}
+	downAfterResign, err := client.DownloadBlob(context.Background(), "blob_b")
+	if err != nil || downAfterResign.Ciphertext != "encrypted-note" {
+		t.Fatalf("download after re-sign envelope=%#v err=%v", downAfterResign, err)
+	}
 }
 
 func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
@@ -171,6 +188,81 @@ func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
 	if err := client.UploadBlob(context.Background(), "blob_expired", envelope); err == nil || !IsCode(err, "UPLOAD_PLAN_EXPIRED") {
 		t.Fatalf("expired upload err = %#v", err)
 	}
+}
+
+func TestClientUploadBlobRejectsMalformedEnvelopeAndPlaintextPathHash(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_validation", SessionToken: "secret-token"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_validation", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	extraPlaintext := map[string]any{"schema_version": "pinax.cloud.envelope.v1", "alg": "AES-256-GCM", "key_id": "key_1", "nonce": "nonce", "ciphertext": "cipher", "plain_sha256": "plain-sha", "note_body": "PLAINTEXT_NOTE_BODY_DO_NOT_LEAK"}
+	extraHash, extraSize := compactMapHashAndSize(t, extraPlaintext)
+	if _, err := client.SignUpload(context.Background(), "blob_extra_plaintext", extraHash, extraSize, "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign extra plaintext envelope: %v", err)
+	}
+	if err := putRawBlob(t, server.Endpoint(), server.Token(), "vault_validation", "dev_laptop", "blob_extra_plaintext", extraPlaintext); err == nil || !IsCode(err, CodeValidationFailed) {
+		t.Fatalf("extra plaintext upload err = %#v", err)
+	}
+
+	badEnvelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", PlainSHA256: "plain-sha"}
+	if _, err := client.SignUpload(context.Background(), "blob_bad_envelope", compactBlobEnvelopeHash(t, badEnvelope), int64(compactBlobEnvelopeSize(t, badEnvelope)), "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign bad envelope: %v", err)
+	}
+	if err := client.UploadBlob(context.Background(), "blob_bad_envelope", badEnvelope); err == nil || !IsCode(err, CodeValidationFailed) {
+		t.Fatalf("bad envelope upload err = %#v", err)
+	}
+	valid := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", Ciphertext: "cipher", PlainSHA256: "plain-sha"}
+	blobHash := compactBlobEnvelopeHash(t, valid)
+	sizeBytes := int64(compactBlobEnvelopeSize(t, valid))
+	if _, err := client.SignUpload(context.Background(), "manifest_plain_path", blobHash, sizeBytes, "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign valid envelope: %v", err)
+	}
+	if err := client.UploadBlob(context.Background(), "manifest_plain_path", valid); err != nil {
+		t.Fatalf("upload valid envelope: %v", err)
+	}
+	_, err = client.CommitRevision(context.Background(), CommitRequest{BaseRevision: "", RevisionID: "rev_plain", ManifestBlobID: "manifest_plain_path", ObjectRefs: []ObjectRef{{PathHash: "notes/private.md", BlobID: "manifest_plain_path", BlobHash: blobHash, Size: sizeBytes, SizeBytes: sizeBytes}}, DeviceID: "dev_laptop", IdempotencyKey: "req_plain"})
+	if err == nil || !IsCode(err, CodeValidationFailed) {
+		t.Fatalf("plaintext path_hash commit err = %#v", err)
+	}
+}
+
+func compactMapHashAndSize(t *testing.T, body map[string]any) (string, int64) {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		t.Fatalf("compact body: %v", err)
+	}
+	sum := sha256.Sum256(compact.Bytes())
+	return "sha256:" + hex.EncodeToString(sum[:]), int64(compact.Len())
+}
+
+func putRawBlob(t *testing.T, endpoint, token, vaultID, deviceID, blobID string, body map[string]any) error {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal raw blob: %v", err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, endpoint+"/v1/vaults/"+vaultID+"/blobs/"+blobID, strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Pinax-Device-ID", deviceID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("raw put: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	return decodeError(resp)
 }
 
 func compactBlobEnvelopeHash(t *testing.T, envelope BlobEnvelope) string {
@@ -303,14 +395,16 @@ func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
 		}
 	}
 	wantErrors := map[string]bool{
-		"UNAUTHENTICATED": false, "DEVICE_REVOKED": false, "REVISION_CONFLICT": false,
-		"FORBIDDEN_SCOPE": false, "VALIDATION_FAILED": false, "BLOB_MISSING": false,
-		"BACKEND_UNAVAILABLE": false,
+		CodeUnauthenticated: false, CodeDeviceRevoked: false, CodeRevisionConflict: false,
+		CodeRevisionNotFound: false, CodeForbiddenScope: false, CodeValidationFailed: false, CodeBlobMissing: false,
+		CodeBlobTooLarge: false, CodeBlobHashMismatch: false, CodeBlobSizeMismatch: false,
+		CodeUploadPlanExpired: false, CodeBackendUnavailable: false,
 	}
 	for _, code := range fixture.ErrorCodes {
-		if _, ok := wantErrors[code]; ok {
-			wantErrors[code] = true
+		if _, ok := wantErrors[code]; !ok {
+			t.Fatalf("contract fixture has untracked public error code %s", code)
 		}
+		wantErrors[code] = true
 	}
 	for code, seen := range wantErrors {
 		if !seen {

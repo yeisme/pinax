@@ -288,7 +288,13 @@ func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultI
 		return
 	}
 	expiresAt := time.Now().Add(15 * time.Minute).UTC()
-	vault.blobMetadata[req.BlobID] = blobMetadata{BlobHash: req.BlobHash, Size: req.Size, ExpiresAt: expiresAt}
+	metadata := vault.blobMetadata[req.BlobID]
+	if metadata.Uploaded && metadata.BlobHash == req.BlobHash && metadata.Size == req.Size {
+		expiresAt = metadata.ExpiresAt
+	} else {
+		metadata = blobMetadata{BlobHash: req.BlobHash, Size: req.Size, ExpiresAt: expiresAt}
+	}
+	vault.blobMetadata[req.BlobID] = metadata
 	writeJSON(w, http.StatusOK, map[string]any{
 		"blob_id":    req.BlobID,
 		"object_key": serverOwnedObjectKey(vaultID, req.BlobID, req.BlobHash),
@@ -311,7 +317,7 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request, vault *va
 		return
 	}
 	var envelope map[string]any
-	if err := json.Unmarshal(compact.Bytes(), &envelope); err != nil {
+	if err := json.Unmarshal(compact.Bytes(), &envelope); err != nil || !validEncryptedEnvelope(envelope) {
 		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid envelope")
 		return
 	}
@@ -393,7 +399,7 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		if ref.Deleted {
 			continue
 		}
-		if ref.PathHash == "" || ref.BlobID == "" || ref.BlobHash == "" || ref.SizeBytes < 0 {
+		if !validPathHash(ref.PathHash) || ref.BlobID == "" || ref.BlobHash == "" || ref.SizeBytes < 0 {
 			writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_refs are required")
 			return
 		}
@@ -452,6 +458,33 @@ func serverOwnedObjectKey(vaultID, blobID, blobHash string) string {
 	sum := sha256.Sum256([]byte(vaultID + "\x00" + blobID + "\x00" + blobHash))
 	digest := hex.EncodeToString(sum[:])
 	return "objects/" + digest[:2] + "/" + digest[2:4] + "/" + digest + ".blob"
+}
+
+func validEncryptedEnvelope(envelope map[string]any) bool {
+	allowed := map[string]struct{}{"schema_version": {}, "alg": {}, "key_id": {}, "nonce": {}, "ciphertext": {}, "plain_sha256": {}}
+	for field := range envelope {
+		lower := strings.ToLower(field)
+		if _, ok := allowed[field]; !ok {
+			return false
+		}
+		if field != "plain_sha256" && (strings.Contains(lower, "plain") || strings.Contains(lower, "body") || strings.Contains(lower, "content") || strings.Contains(lower, "path") || strings.Contains(lower, "note")) {
+			return false
+		}
+	}
+	return len(envelope) == len(allowed) && envelope["schema_version"] == "pinax.cloud.envelope.v1" && nonEmptyString(envelope["alg"]) && nonEmptyString(envelope["key_id"]) && nonEmptyString(envelope["nonce"]) && nonEmptyString(envelope["ciphertext"]) && nonEmptyString(envelope["plain_sha256"])
+}
+
+func nonEmptyString(value any) bool {
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
+}
+
+func validPathHash(value string) bool {
+	if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value {
+		return false
+	}
+	lower := strings.ToLower(value)
+	return !strings.ContainsAny(value, "/\\") && !strings.Contains(lower, ".md") && !strings.Contains(lower, "notes")
 }
 
 func validMLPID(value string) bool {
