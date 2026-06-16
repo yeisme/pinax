@@ -199,6 +199,30 @@ func TestClientSignUploadRejectsReplanMismatchAndPreservesOriginalUpload(t *test
 	}
 }
 
+func TestClientSignUploadRejectsPendingReplanMismatch(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_pending_replan", SessionToken: "secret-token"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_pending_replan", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	envelope := BlobEnvelope{SchemaVersion: "pinax.cloud.envelope.v1", Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce-pending", Ciphertext: "cipher-pending", PlainSHA256: "plain-sha"}
+	originalHash := compactBlobEnvelopeHash(t, envelope)
+	originalSize := int64(compactBlobEnvelopeSize(t, envelope))
+	if _, err := client.SignUpload(context.Background(), "blob_pending_replan", originalHash, originalSize, "application/vnd.pinax.encrypted-envelope+json"); err != nil {
+		t.Fatalf("sign original: %v", err)
+	}
+	if _, err := client.SignUpload(context.Background(), "blob_pending_replan", "sha256:different", originalSize, "application/vnd.pinax.encrypted-envelope+json"); err == nil || !IsCode(err, CodeBlobHashMismatch) {
+		t.Fatalf("pending hash replan err = %#v", err)
+	}
+	if _, err := client.SignUpload(context.Background(), "blob_pending_replan", originalHash, originalSize+1, "application/vnd.pinax.encrypted-envelope+json"); err == nil || !IsCode(err, CodeBlobSizeMismatch) {
+		t.Fatalf("pending size replan err = %#v", err)
+	}
+	if err := client.UploadBlob(context.Background(), "blob_pending_replan", envelope); err != nil {
+		t.Fatalf("upload after rejected pending replans: %v", err)
+	}
+}
+
 func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
 	server := mlptest.New(mlptest.Config{VaultID: "vault_plan", SessionToken: "secret-token"})
 	defer server.Close()
