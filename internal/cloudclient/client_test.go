@@ -145,6 +145,24 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 	}
 }
 
+
+func TestClientSignUploadRejectsNegativeSize(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	_, err = client.SignUpload(context.Background(), "blob_bad", "sha256:blob-bad", -1, "application/octet-stream")
+	if err == nil {
+		t.Fatalf("negative size sign-upload succeeded")
+	}
+	cloudErr, ok := err.(*Error)
+	if !ok || cloudErr.Code != CodeValidationFailed || cloudErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("negative size error = %#v", err)
+	}
+}
+
 func TestClientRevisionCASConflictReturnsStableError(t *testing.T) {
 	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
 	defer server.Close()

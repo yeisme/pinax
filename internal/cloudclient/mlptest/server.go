@@ -268,7 +268,14 @@ func (s *Server) handleSignUpload(w http.ResponseWriter, r *http.Request, vaultI
 		BlobHash string `json:"blob_hash"`
 		Size     int64  `json:"size"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid body")
+		return
+	}
+	if !validMLPID(req.BlobID) || strings.TrimSpace(req.BlobHash) == "" || req.Size < 0 {
+		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "blob_id, blob_hash, and size are required")
+		return
+	}
 	vault.blobMetadata[req.BlobID] = blobMetadata{BlobHash: req.BlobHash, Size: req.Size}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"blob_id":    req.BlobID,
@@ -334,10 +341,6 @@ func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vau
 		writeError(w, http.StatusBadRequest, "BLOB_MISSING", "manifest blob missing")
 		return
 	}
-	if len(req.ObjectRefs) == 0 {
-		writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "object_refs are required")
-		return
-	}
 	for _, ref := range req.ObjectRefs {
 		if ref.Deleted {
 			continue
@@ -380,6 +383,20 @@ func (s *Server) authorized(r *http.Request) bool {
 	return auth == "Bearer "+s.token
 }
 
+
+
+func validMLPID(value string) bool {
+	if value == "" || len(value) > 256 {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.' || r == ':' {
+			continue
+		}
+		return false
+	}
+	return true
+}
 
 func objectRefBlobIDs(refs []struct {
 	PathHash  string `json:"path_hash"`

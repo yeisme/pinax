@@ -13,6 +13,29 @@ import (
 // TestServerTransportTwoDeviceConvergence 是 Pinax Cloud MLP server transport 的两设备收敛 e2e：
 // 设备 A push（blob + manifest + CAS commit），设备 B pull（head → manifest → blob）后收敛到同一份加密内容。
 // 全程走 HTTP server transport，不替换为 direct file transport。
+
+func TestServerTransportAllowsManifestOnlyCommitAfterManifestUpload(t *testing.T) {
+	server := mlptest.New(mlptest.Config{VaultID: "vault_manifest_only", SessionToken: "secret"})
+	defer server.Close()
+	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_manifest_only", DeviceID: "laptop", Token: server.Token()})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	transport := NewTransport(client)
+	ctx := context.Background()
+	envelope := cloudsync.Envelope{SchemaVersion: cloudsync.EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "n", Ciphertext: "c", PlainSHA256: "s"}
+	if err := transport.PutManifest(ctx, "manifest_empty", envelope); err != nil {
+		t.Fatalf("put manifest: %v", err)
+	}
+	commit, err := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: "", RevisionID: "rev_empty", ManifestBlobID: "manifest_empty", DeviceID: "laptop", RequestID: "req_empty"})
+	if err != nil {
+		t.Fatalf("manifest-only commit: %v", err)
+	}
+	if !commit.RemoteWrite || commit.RevisionID != "rev_empty" {
+		t.Fatalf("commit = %#v", commit)
+	}
+}
+
 func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 	server := mlptest.New(mlptest.Config{VaultID: "vault_conv", SessionToken: "conv-token"})
 	defer server.Close()
