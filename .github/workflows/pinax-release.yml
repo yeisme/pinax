@@ -1,0 +1,134 @@
+name: Pinax Release
+
+on:
+  push:
+    tags:
+      - "pinax/v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_TEST_TIMEOUT: 30m
+
+jobs:
+  check:
+    name: task check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Node.js (for OpenSpec)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install OpenSpec CLI
+        run: npm install -g @fission-ai/openspec
+
+      - name: Setup Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+      - name: task check
+        run: task check
+
+  snapshot:
+    name: snapshot build (no release)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: check
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: goreleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish
+
+      - name: upload snapshot artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snapshot-dist-${{ github.run_id }}
+          path: dist/
+          retention-days: 7
+
+  release:
+    name: publish tagged release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: check
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Validate release tag
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^pinax/v[0-9]+\.[0-9]+\.[0-9] ]]; then
+            printf 'Pinax releases must use pinax/vX.Y.Z tags, got %s\n' "$GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: goreleaser release
+        uses: goreleaser/goreleaser-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+
+      - name: upload release artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-dist-${{ github.ref_name }}
+          path: dist/
+          retention-days: 30
