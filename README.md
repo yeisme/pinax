@@ -2,9 +2,97 @@
 
 [中文说明](./README.zh-CN.md)
 
-Pinax is a local-first Markdown notes CLI for people and agents who want a portable knowledge base instead of another hosted note silo. Your Markdown vault stays the source of truth; `.pinax/` stores CLI-authored config, indexes, receipts, events, and audit projections that can be rebuilt or reviewed.
+Pinax is the **agent-safe knowledge control plane for your Markdown vault** — it lets AI safely read, diagnose, repair, and sync a real local knowledge base, while keeping every agent write auditable, previewable, and reversible. Your Markdown vault stays the source of truth; the agent never sees plaintext it should not, and the cloud never stores plaintext notes.
 
-Pinax focuses on safe local workflows: capture notes, index and search them, inspect links and backlinks, plan repairs and organization, snapshot before risky writes, expose bounded JSON/agent output, and sync encrypted revisions through explicit Cloud Sync transports.
+> Three ideas to remember: **Local Vault is the source of truth / the Proof Loop protects every agent write / Cloud Sync only coordinates ciphertext.**
+
+## The aha moment
+
+Run the whole agent-safe loop in one command — preview first, then plan, snapshot, apply, and restore if needed. Every step is bounded: the agent reads projections, never raw note bodies, and writes only happen through an explicit plan → snapshot → apply chain.
+
+```bash
+pinax proof loop run --vault ./my-notes --json            # preview: one projection with proof_loop_run_id
+pinax repair plan --vault ./my-notes --save                # turn vault health issues into a reviewable plan
+pinax version snapshot --vault ./my-notes --message "before repair"   # protective snapshot before any write
+pinax repair apply --vault ./my-notes --plan repair-abc123 --yes      # apply approved low-risk fixes only
+pinax version restore notes/example.md --revision HEAD --plan --vault ./my-notes          # something went wrong?
+pinax version restore apply --vault ./my-notes --plan restore-<id> --yes                 # revert through a CLI-authored path
+```
+
+## Why Pinax
+
+| Differentiator | What it means |
+| --- | --- |
+| **Proof loop safe writes** | Every agent-driven change is plan → snapshot → apply → receipt → restore. No direct file surgery, no silent writes, every apply is reversible. |
+| **Plaintext boundary** | Read commands default to `--display card`, not the full body. Agents, MCP, dashboard, and project boards share one bounded projection; only explicit `--display body` puts the body in a local JSON projection. |
+| **Self-hosted encrypted sync** | Pinax Cloud only coordinates encrypted revisions — AES-256-GCM client-side encryption, the server never sees plaintext notes and never executes local tools. |
+
+Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer for your vault, **avoids** Notion's cloud lock-in, and is **more programmable and verifiable** than Reflect. It is not another notes app — it is the control plane that makes your existing Markdown vault safe for AI.
+
+## Status
+
+| Area | Status |
+| --- | --- |
+| Local Markdown vault, notes, journals, inbox/drafts, templates, search, links/backlinks, assets, project boards, repair/organize plans | Supported |
+| CLI output modes: default summary, `--agent`, `--json`, `--events`, `--explain` | Supported |
+| Local dashboard, read-only MCP, localhost REST/RPC adapter | Supported |
+| Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
+| Provider automation and briefing delivery | Experimental |
+
+## Installation
+
+Prerequisites:
+
+- Go 1.26.1 or newer, or download a prebuilt archive below.
+- Optional: [Task](https://taskfile.dev/) for `task check` and local development shortcuts.
+
+Install from source:
+
+```bash
+go install github.com/yeisme/pinax/cmd/pinax@latest
+```
+
+Download a prebuilt archive from GitHub Releases (the current series is a **pre-release**, `pinax/v0.1.0-preview`):
+
+```bash
+# linux x86_64 (adjust os/arch for your platform: darwin, windows; x86_64, aarch64)
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/pinax/v0.1.0-preview.1/pinax_0.1.0-preview.1_linux_x86_64.tar.gz
+tar xzf pinax.tar.gz
+./pinax version
+
+# verify the checksum (download checksums.txt from the same release page)
+sha256sum -c checksums.txt --ignore-missing
+```
+
+Windows uses a `.zip` archive instead of `.tar.gz`. See the release page for the full asset list (`darwin`, `linux`, `windows` × `x86_64`, `aarch64`).
+
+For local development from a checkout:
+
+```bash
+go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
+./dist/pinax version
+```
+
+For release rehearsal from a checkout:
+
+```bash
+task release:check
+task release:local
+```
+
+`task release:local` builds linux, macOS and Windows archives for amd64 and arm64, plus `dist/checksums.txt`, without publishing.
+
+## Quick start
+
+```bash
+pinax init ./my-notes --title "My Knowledge Base"
+pinax vault validate --vault ./my-notes --json
+pinax note add "Research Log" --body "First note" --tags research --vault ./my-notes
+pinax index refresh --vault ./my-notes --json
+pinax search "First note" --vault ./my-notes --json
+```
+
+See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
 
 ## Five core workflows
 
@@ -45,57 +133,6 @@ pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
 ```
 
 Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync, daily briefing, provider expansion and hosted platform capabilities are separate advanced workflows, not part of this local proof loop.
-
-## Status
-
-| Area | Status |
-| --- | --- |
-| Local Markdown vault, notes, journals, inbox/drafts, templates, search, links/backlinks, assets, project boards, repair/organize plans | Supported |
-| CLI output modes: default summary, `--agent`, `--json`, `--events`, `--explain` | Supported |
-| Local dashboard, read-only MCP, localhost REST/RPC adapter | Supported |
-| Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
-| Provider automation and briefing delivery | Experimental |
-
-## Installation
-
-Prerequisites:
-
-- Go 1.26.1 or newer.
-- Optional: [Task](https://taskfile.dev/) for `task check` and local development shortcuts.
-
-Install from source:
-
-```bash
-go install github.com/yeisme/pinax/cmd/pinax@latest
-```
-
-For local development from a checkout:
-
-```bash
-go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
-./dist/pinax version
-```
-
-For release rehearsal from a checkout:
-
-```bash
-task release:check
-task release:local
-```
-
-`task release:local` builds linux, macOS and Windows archives for amd64 and arm64, plus `dist/checksums.txt`, without publishing.
-
-## Quick start
-
-```bash
-pinax init ./my-notes --title "My Knowledge Base"
-pinax vault validate --vault ./my-notes --json
-pinax note add "Research Log" --body "First note" --tags research --vault ./my-notes
-pinax index refresh --vault ./my-notes --json
-pinax search "First note" --vault ./my-notes --json
-```
-
-See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
 
 ## Local vault workflow
 
@@ -407,6 +444,7 @@ openspec validate --all
 ## Documentation entry points
 
 - [Documentation map](./docs/README.md)
+- [Agent-safe boundary](./docs/overview/agent-safe-boundary.md)
 - [Product positioning](./docs/overview/product-positioning.md)
 - [Command manual](./docs/commands/README.md)
 - [Architecture boundaries](./docs/architecture/architecture-boundaries.md)

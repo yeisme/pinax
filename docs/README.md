@@ -4,19 +4,13 @@
 
 This directory is the source of truth for the Pinax subproject's product, design, operations, protocol, implementation, QA, and release documentation. The root repository only keeps cross-project handoff and governance indexes, and does not maintain a mirror of Pinax documentation.
 
-Pinax is a local-first unified notes Agent CLI: the Markdown vault is the user's source of truth, SQLite/GORM is a rebuildable index projection, the version backend only provides version evidence and the snapshot basis for protected workflows, and external platforms are integrated through CLI-backed Provider adapters.
+Pinax is the **agent-safe knowledge control plane for your Markdown vault**. Three concepts: the Markdown vault is the user's source of truth, the Proof Loop protects every agent write, and Cloud Sync only coordinates ciphertext. SQLite/GORM is a rebuildable index projection, the version backend only provides version evidence and the snapshot basis for protected workflows, and external platforms are integrated through CLI-backed Provider adapters.
+
+The central guarantee is an [agent-safe boundary](./overview/agent-safe-boundary.md): read commands default to bounded projections (not full note bodies), MCP tools are read-only, and the cloud never stores plaintext or executes local tools.
 
 ## Agent-safe Proof Loop
 
-The primary user and agent value of Pinax is a reproducible local proof loop built from five workflows. Every stage stays bounded: projections return facts and next actions, never full note bodies, tokens, or provider payloads; writes only happen through plan, snapshot, receipt and explicit apply.
-
-1. **Capture** — `pinax init`, `pinax note add`, `pinax inbox capture`, `pinax journal daily append`.
-2. **Retrieve** — `pinax index sync`, `pinax search`, `pinax note links/backlinks/orphans`.
-3. **Diagnose** — `pinax vault doctor`, `pinax vault stats`.
-4. **Plan** — `pinax repair plan --save`, `pinax organize plan --save`.
-5. **Apply safely** — `pinax version snapshot`, then `pinax repair apply --yes` or `pinax organize apply --yes`.
-
-Cloud Sync, daily briefing, native provider SDKs and hosted platform capabilities are separate advanced workflows tracked under their own OpenSpec changes, not part of this local proof loop.
+The primary user and agent value of Pinax is a reproducible local proof loop built from five workflows. Every stage stays bounded: projections return facts and next actions, never full note bodies, tokens, or provider payloads; writes only happen through the plan → snapshot → apply → receipt → restore control chain.
 
 ## Current Status
 
@@ -50,8 +44,8 @@ Cloud Sync, daily briefing, native provider SDKs and hosted platform capabilitie
 
 ## Documentation Sections
 
+- [Agent-Safe Boundary](./overview/agent-safe-boundary.md)
 - [Product Positioning](./overview/product-positioning.md)
-- [MVP Scope](./product/mvp-scope.md)
 - [Architecture Boundaries](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
