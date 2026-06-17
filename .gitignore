@@ -7,6 +7,13 @@ coverage.out
 tmp/
 *.log
 
+# Demo vault fixture: keep minimal machine-readable config + empty events log
+# so pinax vault validate passes out of the box, but never commit runtime
+# snapshots / plans / receipts / sync-state produced by the proof loop.
+!examples/messy-vault/.pinax/
+!examples/messy-vault/.pinax/config.yaml
+!examples/messy-vault/.pinax/events.jsonl
+
 temp/integration-test-runs/
 temp/
 
@@ -20,3 +27,4 @@ docs/superpowers/
 
 # Notes directory for testing
 notes/
+!examples/messy-vault/notes/
