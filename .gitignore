@@ -26,5 +26,5 @@ temp/
 docs/superpowers/
 
 # Notes directory for testing
-notes/
+/notes/
 !examples/messy-vault/notes/
