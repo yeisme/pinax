@@ -65,10 +65,10 @@ tar xzf pinax.tar.gz
 
 Windows uses a `.zip` archive instead of `.tar.gz`. See the release page for the full asset list (`darwin`, `linux`, `windows` × `x86_64`, `aarch64`), `checksums.txt`, source archives, and archive SBOMs.
 
-Install with Homebrew after a tagged release publishes the cask:
+Install with Homebrew after a tagged release publishes the formula:
 
 ```bash
-brew install --cask yeisme/tap/pinax
+brew install yeisme/tap/pinax
 pinax version
 ```
 
