@@ -61,7 +61,7 @@ pinax sync pull --target cloud --vault ./device-b --yes --json
 Configure server and rclone backends; a push claims a completed write only after the selected transport commits a durable revision:
 
 ```bash
-pinax cloud login --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault ./my-notes
+pinax cloud login --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref env://PINAX_CLOUD_TOKEN --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./my-notes
 pinax sync push --target cloud --vault ./my-notes --yes --json
 
 pinax cloud backend set rclone --remote onedrive:PinaxSync --workspace personal --device laptop --vault ./my-notes

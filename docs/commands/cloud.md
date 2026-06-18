@@ -38,6 +38,7 @@ pinax cloud login \
   --workspace ws_123 \
   --device laptop \
   --secret-ref env://PINAX_CLOUD_TOKEN \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./my-notes
 pinax cloud status --vault ./my-notes --json
 pinax cloud doctor --vault ./my-notes
@@ -94,7 +95,7 @@ pinax cloud doctor --vault ./my-notes --json
 
 Native Microsoft Graph / OneDrive OAuth is intentionally not part of the MVP. OneDrive examples should use rclone until a separate native Graph adapter design owns device-code login, token refresh, keychain storage, eTag conditional writes, and Graph-specific failure handling.
 
-`cloud login` requires all four server configuration fields: `--endpoint`, `--workspace`, `--device`, and `--secret-ref`. For direct S3/rclone backends, Pinax stores provider references such as AWS profile or rclone remote name, not raw secrets.
+`cloud login` requires the server configuration fields `--endpoint`, `--workspace`, `--device`, and `--secret-ref`. `--secret-ref` points to the cloud auth token. `--encryption-secret-ref` points to the shared client-side sync encryption secret and falls back to `--secret-ref` only for older configs. For direct S3/rclone backends, Pinax stores provider references such as AWS profile or rclone remote name, not raw secrets.
 
 Cloud Sync state is CLI-authored. The primary human-readable config is `.pinax/cloud/config.yaml`. For S3 direct backends, Pinax stores structured fields instead of an escaped endpoint URI:
 
