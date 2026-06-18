@@ -317,7 +317,11 @@ func putRawBlob(t *testing.T, endpoint, token, vaultID, deviceID, blobID string,
 	if err != nil {
 		t.Fatalf("raw put: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Fatalf("close raw put response: %v", err)
+		}
+	}()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}

@@ -24,25 +24,27 @@ const (
 var ErrNotConfigured = errors.New("cloud not configured")
 
 type LoginRequest struct {
-	Endpoint    string
-	WorkspaceID string
-	DeviceID    string
-	SecretRef   string
-	BackendKind string
-	S3          *S3Config
-	Now         time.Time
+	Endpoint            string
+	WorkspaceID         string
+	DeviceID            string
+	SecretRef           string
+	EncryptionSecretRef string
+	BackendKind         string
+	S3                  *S3Config
+	Now                 time.Time
 }
 
 type Config struct {
-	SchemaVersion string    `json:"schema_version" yaml:"schema_version"`
-	BackendKind   string    `json:"backend_kind,omitempty" yaml:"backend_kind,omitempty"`
-	Endpoint      string    `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	WorkspaceID   string    `json:"workspace_id" yaml:"workspace_id"`
-	DeviceID      string    `json:"device_id" yaml:"device_id"`
-	SecretRef     string    `json:"secret_ref,omitempty" yaml:"secret_ref,omitempty"`
-	S3            *S3Config `json:"s3,omitempty" yaml:"s3,omitempty"`
-	CreatedAt     string    `json:"created_at" yaml:"created_at"`
-	UpdatedAt     string    `json:"updated_at" yaml:"updated_at"`
+	SchemaVersion       string    `json:"schema_version" yaml:"schema_version"`
+	BackendKind         string    `json:"backend_kind,omitempty" yaml:"backend_kind,omitempty"`
+	Endpoint            string    `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	WorkspaceID         string    `json:"workspace_id" yaml:"workspace_id"`
+	DeviceID            string    `json:"device_id" yaml:"device_id"`
+	SecretRef           string    `json:"secret_ref,omitempty" yaml:"secret_ref,omitempty"`
+	EncryptionSecretRef string    `json:"encryption_secret_ref,omitempty" yaml:"encryption_secret_ref,omitempty"`
+	S3                  *S3Config `json:"s3,omitempty" yaml:"s3,omitempty"`
+	CreatedAt           string    `json:"created_at" yaml:"created_at"`
+	UpdatedAt           string    `json:"updated_at" yaml:"updated_at"`
 }
 
 type S3Config struct {
@@ -90,6 +92,7 @@ func Login(root string, req LoginRequest) (State, error) {
 	workspaceID := strings.TrimSpace(req.WorkspaceID)
 	deviceID := strings.TrimSpace(req.DeviceID)
 	secretRef := strings.TrimSpace(req.SecretRef)
+	encryptionSecretRef := strings.TrimSpace(req.EncryptionSecretRef)
 	s3Config := normalizeS3Config(req.S3)
 	if endpoint == "" && s3Config != nil {
 		endpoint = endpointFromS3Config(*s3Config)
@@ -120,7 +123,7 @@ func Login(root string, req LoginRequest) (State, error) {
 	if backendKind == "" {
 		backendKind = backendKindForEndpoint(endpoint)
 	}
-	config := Config{SchemaVersion: ConfigSchemaVersion, BackendKind: backendKind, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, S3: s3Config, CreatedAt: createdAt, UpdatedAt: now.Format(time.RFC3339)}
+	config := Config{SchemaVersion: ConfigSchemaVersion, BackendKind: backendKind, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, EncryptionSecretRef: encryptionSecretRef, S3: s3Config, CreatedAt: createdAt, UpdatedAt: now.Format(time.RFC3339)}
 	config = normalizeConfig(config)
 	session := DeviceSession{SchemaVersion: SessionSchemaVersion, SessionID: sessionID(root, workspaceID, deviceID, now), DeviceID: deviceID, Status: "active", IssuedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}
 	if err := writeYAML(configPath(root), configForDisk(config), 0o600); err != nil {
@@ -208,18 +211,20 @@ func IsNotConfigured(err error) bool {
 
 func RedactedData(state State) map[string]any {
 	secretConfigured := strings.TrimSpace(state.Config.SecretRef) != ""
+	encryptionSecretConfigured := strings.TrimSpace(EncryptionSecretRef(state.Config)) != ""
 	return map[string]any{
 		"config": map[string]any{
-			"schema_version":          state.Config.SchemaVersion,
-			"backend_kind":            resolvedBackendKind(state.Config),
-			"endpoint":                state.Config.Endpoint,
-			"workspace_id":            state.Config.WorkspaceID,
-			"device_id":               state.Config.DeviceID,
-			"secret_ref_configured":   secretConfigured,
-			"provider_ref_configured": secretConfigured,
-			"s3":                      state.Config.S3,
-			"created_at":              state.Config.CreatedAt,
-			"updated_at":              state.Config.UpdatedAt,
+			"schema_version":                   state.Config.SchemaVersion,
+			"backend_kind":                     resolvedBackendKind(state.Config),
+			"endpoint":                         state.Config.Endpoint,
+			"workspace_id":                     state.Config.WorkspaceID,
+			"device_id":                        state.Config.DeviceID,
+			"secret_ref_configured":            secretConfigured,
+			"encryption_secret_ref_configured": encryptionSecretConfigured,
+			"provider_ref_configured":          secretConfigured,
+			"s3":                               state.Config.S3,
+			"created_at":                       state.Config.CreatedAt,
+			"updated_at":                       state.Config.UpdatedAt,
 		},
 		"session": state.Session,
 	}
@@ -289,6 +294,7 @@ func normalizeConfig(config Config) Config {
 	config.WorkspaceID = strings.TrimSpace(config.WorkspaceID)
 	config.DeviceID = strings.TrimSpace(config.DeviceID)
 	config.SecretRef = strings.TrimSpace(config.SecretRef)
+	config.EncryptionSecretRef = strings.TrimSpace(config.EncryptionSecretRef)
 	config.BackendKind = strings.TrimSpace(config.BackendKind)
 	config.S3 = normalizeS3Config(config.S3)
 	if config.S3 == nil && backendKindForEndpoint(config.Endpoint) == "s3-direct" {
@@ -301,6 +307,13 @@ func normalizeConfig(config Config) Config {
 		config.BackendKind = backendKindForEndpoint(config.Endpoint)
 	}
 	return config
+}
+
+func EncryptionSecretRef(config Config) string {
+	if ref := strings.TrimSpace(config.EncryptionSecretRef); ref != "" {
+		return ref
+	}
+	return strings.TrimSpace(config.SecretRef)
 }
 
 func configForDisk(config Config) Config {

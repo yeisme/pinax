@@ -1,13 +1,18 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
 version: 2
 
 project_name: pinax
 
 before:
   hooks:
-    - go mod tidy
+    - go mod download
+    - go mod verify
 
 builds:
-  - main: ./cmd/pinax
+  - id: pinax
+    main: ./cmd/pinax
     binary: pinax
     flags:
       - -trimpath
@@ -24,7 +29,10 @@ builds:
       - arm64
 
 archives:
-  - formats:
+  - id: pinax-archives
+    ids:
+      - pinax
+    formats:
       - tar.gz
     name_template: >-
       {{ .ProjectName }}_
@@ -34,16 +42,98 @@ archives:
       {{- else if eq .Arch "arm64" }}aarch64
       {{- else }}{{ .Arch }}
       {{- end }}
+    files:
+      - README.md
+      - LICENSE
+      - docs/operations/release-packaging.md
     format_overrides:
       - goos: windows
         formats:
           - zip
 
+source:
+  enabled: true
+  name_template: "{{ .ProjectName }}_{{ .Version }}_source"
+
 checksum:
   name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: pinax-archive-sbom
+    artifacts: archive
+    documents:
+      - "${artifact}.spdx.json"
+
+nfpms:
+  - id: linux-packages
+    ids:
+      - pinax
+    package_name: pinax
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    homepage: https://github.com/yeisme/pinax
+    maintainer: yeisme
+    description: Agent-safe knowledge control plane for local Markdown vaults.
+    license: MIT
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/pinax/README.md
+      - src: docs/operations/release-packaging.md
+        dst: /usr/share/doc/pinax/release-packaging.md
+      - src: LICENSE
+        dst: /usr/share/licenses/pinax/LICENSE
+
+homebrew_casks:
+  - name: pinax
+    ids:
+      - pinax-archives
+    repository:
+      owner: yeisme
+      name: homebrew-tap
+      token: "{{ .Env.PUBLISHER_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/yeisme/pinax
+    description: Agent-safe knowledge control plane for local Markdown vaults.
+    license: MIT
+    binaries:
+      - pinax
+    skip_upload: "{{ .IsSnapshot }}"
+    commit_msg_template: "Homebrew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    commit_author:
+      name: yeisme
+      email: yeisme@users.noreply.github.com
+
+scoops:
+  - name: pinax
+    ids:
+      - pinax-archives
+    repository:
+      owner: yeisme
+      name: scoop-bucket
+      token: "{{ .Env.PUBLISHER_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/yeisme/pinax
+    description: Agent-safe knowledge control plane for local Markdown vaults.
+    license: MIT
+    url_template: "https://github.com/yeisme/pinax/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    skip_upload: "{{ .IsSnapshot }}"
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    commit_author:
+      name: yeisme
+      email: yeisme@users.noreply.github.com
+
 release:
-  prerelease: true
+  prerelease: "false"
   name_template: "Pinax {{ .Version }}"
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

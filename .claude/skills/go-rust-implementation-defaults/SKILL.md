@@ -10,6 +10,7 @@ Use this skill when a Yeisme task involves language choice, backend architecture
 ## Default Policy
 
 Yeisme projects should not default to language migration. Start from the project's main language, then escalate only when the capability needs it.
+> A language or module-path migration is a generation-breaking change even when behavior is preserved. Follow `yeisme-evolutionary-change-policy`: gate it behind an OpenSpec change with a dual-run transition, consumer migration, deprecation window, and rollback before moving a capability across languages or changing a Go module / TS package path.
 
 - Prefer **TypeScript/Bun** for Cohors, agent/team tools, provider orchestration, plugin SDKs, typed clients, output renderers, TUI glue, and fast control-plane iteration.
 - Prefer **Go** for separate backend services, MCP servers, gateways, daemons, workers, long-running processes, sync tools, HTTP/SSE servers, health checks, resource control, and operational tooling when a service/process boundary is clear.

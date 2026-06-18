@@ -3,7 +3,7 @@ name: Pinax Release
 on:
   push:
     tags:
-      - "pinax/v*"
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -94,8 +94,11 @@ jobs:
     name: publish tagged release
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
+    env:
+      HAS_RELEASE_APP: ${{ vars.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     needs: check
     steps:
       - name: Checkout
@@ -111,8 +114,29 @@ jobs:
 
       - name: Validate release tag
         run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^pinax/v[0-9]+\.[0-9]+\.[0-9] ]]; then
-            printf 'Pinax releases must use pinax/vX.Y.Z tags, got %s\n' "$GITHUB_REF_NAME"
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'Pinax releases must use vX.Y.Z tags, got %s\n' "$GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Mint package-manager publisher token
+        id: publisher-token
+        if: env.HAS_RELEASE_APP == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: yeisme
+          repositories: |
+            homebrew-tap
+            scoop-bucket
+
+      - name: Check package-manager publisher token
+        env:
+          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
+        run: |
+          if [ -z "$PUBLISHER_TOKEN" ]; then
+            printf 'release environment secret PUBLISHER_TOKEN is required for Homebrew/Scoop publication\n'
             exit 1
           fi
 
@@ -120,6 +144,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
         with:
           distribution: goreleaser
           version: "~> v2"

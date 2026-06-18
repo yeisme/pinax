@@ -57,6 +57,157 @@ tasks:
     cmds:
       - '{{.GORELEASER}} release --snapshot --clean --skip=publish'
 
+  release:package:validate:
+    desc: Validate release packages locally without publishing or credentials.
+    silent: true
+    cmds:
+      - task: release:check
+      - |
+        set -eu
+        {{.GORELEASER}} release --snapshot --clean --skip=publish
+
+        python3 - <<'PY'
+        from pathlib import Path
+        import hashlib
+        import sys
+
+        dist = Path('dist')
+        checksum_file = dist / 'checksums.txt'
+        if not checksum_file.is_file():
+            raise SystemExit('missing dist/checksums.txt')
+
+        checked = 0
+        for line in checksum_file.read_text().splitlines():
+            fields = line.split()
+            if len(fields) < 2:
+                continue
+            want = fields[0].lower()
+            name = fields[-1].lstrip('*')
+            path = dist / name
+            if not path.is_file():
+                continue
+            got = hashlib.sha256(path.read_bytes()).hexdigest()
+            if got != want:
+                raise SystemExit(f'checksum mismatch for {name}')
+            checked += 1
+            print(f'{name}: OK')
+
+        if checked == 0:
+            raise SystemExit('no generated artifacts matched dist/checksums.txt')
+        PY
+
+        archive="$(python3 - <<'PY'
+        from pathlib import Path
+        preferred = sorted(Path('dist').glob('pinax_*_linux_x86_64.tar.gz'))
+        candidates = preferred or sorted(Path('dist').glob('pinax_*.tar.gz')) or sorted(Path('dist').glob('pinax_*.zip'))
+        if not candidates:
+            raise SystemExit('no generated Pinax archive found in dist')
+        print(candidates[0])
+        PY
+        )"
+
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        mkdir -p "$tmp/extract"
+        case "$archive" in
+          *.tar.gz)
+            if ! command -v tar >/dev/null 2>&1; then
+              printf 'tar is required to extract %s\n' "$archive"
+              exit 1
+            fi
+            tar -xzf "$archive" -C "$tmp/extract"
+            ;;
+          *.zip)
+            if ! command -v unzip >/dev/null 2>&1; then
+              printf 'unzip is required to extract %s\n' "$archive"
+              exit 1
+            fi
+            unzip -q "$archive" -d "$tmp/extract"
+            ;;
+          *)
+            printf 'unsupported archive format: %s\n' "$archive"
+            exit 1
+            ;;
+        esac
+
+        bin="$(python3 - "$tmp/extract" <<'PY'
+        import os
+        import sys
+        from pathlib import Path
+        root = Path(sys.argv[1])
+        matches = []
+        for path in root.rglob('pinax*'):
+            if path.name in {'pinax', 'pinax.exe'} and path.is_file():
+                matches.append(path)
+        if not matches:
+            raise SystemExit('extracted archive did not contain a pinax binary')
+        print(matches[0])
+        PY
+        )"
+        "$bin" version
+        "$bin" --help >/dev/null
+
+        deb="$(python3 - <<'PY'
+        from pathlib import Path
+        matches = sorted(Path('dist').glob('*.deb'))
+        print(matches[0] if matches else '')
+        PY
+        )"
+        if [ -n "$deb" ] && command -v dpkg-deb >/dev/null 2>&1; then
+          dpkg-deb --field "$deb" Package Version Architecture Description >/dev/null
+          printf 'checked deb metadata: %s\n' "$deb"
+        elif [ -n "$deb" ]; then
+          printf 'skip deb metadata check: dpkg-deb is not installed\n'
+        else
+          printf 'skip deb metadata check: no .deb package generated\n'
+        fi
+
+        rpm_pkg="$(python3 - <<'PY'
+        from pathlib import Path
+        matches = sorted(Path('dist').glob('*.rpm'))
+        print(matches[0] if matches else '')
+        PY
+        )"
+        if [ -n "$rpm_pkg" ] && command -v rpm >/dev/null 2>&1; then
+          rpm -qip "$rpm_pkg" >/dev/null
+          printf 'checked rpm metadata: %s\n' "$rpm_pkg"
+        elif [ -n "$rpm_pkg" ]; then
+          printf 'skip rpm metadata check: rpm is not installed\n'
+        else
+          printf 'skip rpm metadata check: no .rpm package generated\n'
+        fi
+
+        apk_pkg="$(python3 - <<'PY'
+        from pathlib import Path
+        matches = sorted(Path('dist').glob('*.apk'))
+        print(matches[0] if matches else '')
+        PY
+        )"
+        if [ -n "$apk_pkg" ] && command -v tar >/dev/null 2>&1; then
+          if tar --warning=no-unknown-keyword -tzf "$apk_pkg" >/dev/null 2>&1; then
+            printf 'checked apk archive metadata: %s\n' "$apk_pkg"
+          else
+            tar -tzf "$apk_pkg" >/dev/null
+            printf 'checked apk archive metadata: %s\n' "$apk_pkg"
+          fi
+        elif [ -n "$apk_pkg" ]; then
+          printf 'skip apk metadata check: tar is not installed\n'
+        else
+          printf 'skip apk metadata check: no .apk package generated\n'
+        fi
+
+        sbom="$(python3 - <<'PY'
+        from pathlib import Path
+        matches = sorted(Path('dist').glob('*.spdx.json'))
+        print(matches[0] if matches else '')
+        PY
+        )"
+        if [ -z "$sbom" ]; then
+          printf 'missing archive SBOM artifact in dist\n'
+          exit 1
+        fi
+        printf 'checked archive smoke and SBOM: %s\n' "$archive"
+
   release:build:
     desc: Build release binaries with GoReleaser without publishing.
     cmds:

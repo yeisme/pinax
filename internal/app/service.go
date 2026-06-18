@@ -405,11 +405,12 @@ type SyncRequest struct {
 }
 
 type CloudLoginRequest struct {
-	VaultPath   string
-	Endpoint    string
-	WorkspaceID string
-	DeviceID    string
-	SecretRef   string
+	VaultPath           string
+	Endpoint            string
+	WorkspaceID         string
+	DeviceID            string
+	SecretRef           string
+	EncryptionSecretRef string
 }
 
 type CloudBackendSetRequest struct {
@@ -7395,7 +7396,7 @@ func (s *Service) CloudLogin(_ context.Context, req CloudLoginRequest) (domain.P
 	if err := ensureVaultAssets(root); err != nil {
 		return errorProjection("cloud.login", err), err
 	}
-	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: req.Endpoint, WorkspaceID: req.WorkspaceID, DeviceID: req.DeviceID, SecretRef: req.SecretRef})
+	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: req.Endpoint, WorkspaceID: req.WorkspaceID, DeviceID: req.DeviceID, SecretRef: req.SecretRef, EncryptionSecretRef: req.EncryptionSecretRef})
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "unsupported remote scheme") || strings.Contains(msg, "invalid endpoint URI") || strings.Contains(msg, "endpoint URI must specify a scheme") {
@@ -7482,6 +7483,7 @@ func addCloudStateFacts(projection *domain.Projection, state pinaxcloud.State) {
 	projection.Facts["device_id"] = state.Config.DeviceID
 	projection.Facts["session_status"] = state.Session.Status
 	projection.Facts["secret_ref_configured"] = fmt.Sprint(strings.TrimSpace(state.Config.SecretRef) != "")
+	projection.Facts["encryption_secret_ref_configured"] = fmt.Sprint(strings.TrimSpace(pinaxcloud.EncryptionSecretRef(state.Config)) != "")
 }
 
 func cloudStateErrorProjection(command, root string, err error) (domain.Projection, error) {
@@ -7794,7 +7796,7 @@ func executeCloudPull(root string, state pinaxcloud.State) (directPullResult, er
 	if strings.TrimSpace(head.CurrentRevision) == "" || strings.TrimSpace(head.ManifestBlobID) == "" {
 		return directPullResult{}, &domain.CommandError{Code: "cloud_empty_remote", Message: "cloud backend has no committed revision", Hint: "Run pinax sync push --target cloud --yes from a device with notes first"}
 	}
-	key, err := pinaxcloud.DeriveKey(state.Config.SecretRef)
+	key, err := pinaxcloud.DeriveKey(pinaxcloud.EncryptionSecretRef(state.Config))
 	if err != nil {
 		return directPullResult{}, err
 	}
@@ -7867,10 +7869,6 @@ func localCloudBaseRevision(root string, cloudState pinaxcloud.State) string {
 	return strings.TrimSpace(state.LastSyncedRevision)
 }
 
-type cloudBlobMetadataWriter interface {
-	RegisterBlobMetadata(ctx context.Context, blobID, blobHash string, sizeBytes int64) error
-}
-
 func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string) (cloudsync.CommitResult, error) {
 	transport, err := cloudTransportForState(context.Background(), state)
 	if err != nil {
@@ -7879,7 +7877,7 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 	if strings.TrimSpace(baseRevision) == "" {
 		baseRevision = localCloudBaseRevision(root, state)
 	}
-	key, err := pinaxcloud.DeriveKey(state.Config.SecretRef)
+	key, err := pinaxcloud.DeriveKey(pinaxcloud.EncryptionSecretRef(state.Config))
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}

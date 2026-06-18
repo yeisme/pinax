@@ -161,6 +161,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var cloudWorkspace string
 	var cloudDevice string
 	var cloudSecretRef string
+	var cloudEncryptionSecretRef string
 	var staleAfter string
 	var repairSave bool
 	var repairPlanID string
@@ -476,16 +477,17 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	cloudLoginCmd := &cobra.Command{
 		Use:     "login",
 		Short:   "Configure Pinax cloud backend state",
-		Example: "pinax cloud login --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref op://pinax/cloud-token --vault ./my-notes",
+		Example: "pinax cloud login --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref op://pinax/cloud-token --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./my-notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.CloudLogin(cmd.Context(), app.CloudLoginRequest{VaultPath: vaultPath, Endpoint: cloudEndpoint, WorkspaceID: cloudWorkspace, DeviceID: cloudDevice, SecretRef: cloudSecretRef})
+			projection, err := svc.CloudLogin(cmd.Context(), app.CloudLoginRequest{VaultPath: vaultPath, Endpoint: cloudEndpoint, WorkspaceID: cloudWorkspace, DeviceID: cloudDevice, SecretRef: cloudSecretRef, EncryptionSecretRef: cloudEncryptionSecretRef})
 			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
 		},
 	}
 	cloudLoginCmd.Flags().StringVar(&cloudEndpoint, "endpoint", "", "Pinax cloud backend URL")
 	cloudLoginCmd.Flags().StringVar(&cloudWorkspace, "workspace", "", "Pinax cloud workspace id")
 	cloudLoginCmd.Flags().StringVar(&cloudDevice, "device", "", "Local device id")
-	cloudLoginCmd.Flags().StringVar(&cloudSecretRef, "secret-ref", "", "Secret manager reference; do not save the raw token")
+	cloudLoginCmd.Flags().StringVar(&cloudSecretRef, "secret-ref", "", "Cloud auth token reference; do not save the raw token")
+	cloudLoginCmd.Flags().StringVar(&cloudEncryptionSecretRef, "encryption-secret-ref", "", "Shared encryption secret reference; defaults to --secret-ref for old configs")
 	cloudCmd.AddCommand(cloudLoginCmd)
 	cloudBackendCmd := &cobra.Command{Use: "backend", Short: "Configure Cloud Sync transport backend"}
 	cloudBackendSetCmd := &cobra.Command{Use: "set", Short: "Set Cloud Sync transport backend"}

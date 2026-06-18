@@ -14,7 +14,7 @@
 |---|---|---|---|
 | Broken link | `notes/research/auth-design.md`（含 `[[Nonexistent]]`） | `broken_link` | manual review |
 | Orphan note | `notes/research/api-notes.md`（无入链/出链） | `orphan_note` | manual review |
-| Missing metadata | `notes/research/meeting-2026.md`（缺 tags/kind/status） | `missing_tags` | automatic（低风险 metadata 补全） |
+| Missing metadata | `notes/research/meeting-2026.md`（缺 frontmatter tags） | `missing_tags` | automatic（低风险 metadata patch） |
 | Duplicate title | `notes/projects/pinax-plan.md` 与 `notes/projects/pinax-plan-2.md` 同名 | `duplicate_title` | manual review |
 | Empty body | `notes/inbox/random-thought.md`（frontmatter 后无正文） | `empty_note` | manual review |
 | Stale note | `notes/archive/old-spec.md`（>90 天未更新） | `stale_note` | archive suggestion |

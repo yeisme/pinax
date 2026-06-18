@@ -23,15 +23,16 @@ Build artifacts are only for local validation and are not committed:
 rm -rf dist
 ```
 
-Release rehearsal uses GoReleaser and does not publish artifacts:
+Release rehearsal uses GoReleaser and does not publish artifacts or require package-manager credentials:
 
 ```bash
 task release:check
 task snapshot
 task release:local
+task release:package:validate
 ```
 
-`task snapshot` builds the current platform through GoReleaser. `task release:local` builds linux, macOS and Windows archives for amd64 and arm64, plus `dist/checksums.txt`.
+`task snapshot` builds the current platform through GoReleaser. `task release:local` builds linux, macOS and Windows archives for amd64 and arm64, direct `.deb`/`.rpm`/`.apk` package assets, source archives, SBOMs, and `dist/checksums.txt`. `task release:package:validate` verifies checksums, extracts an archive, runs `pinax version` and `pinax --help`, checks SBOM presence, and reports unavailable Linux package inspection tools as explicit skips. See [Release Packaging](./release-packaging.md) for the tag flow, Homebrew/Scoop publisher-token model, and post-release checklist.
 
 Create an OpenSpec change before adding a new implementation:
 

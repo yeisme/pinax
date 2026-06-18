@@ -8,6 +8,7 @@ description: Use when designing, implementing, testing, or reviewing CLI output 
 Use this skill whenever a command-line interface is created or changed. It enforces one shared projection rendered through multiple modes instead of letting each command hand-roll unrelated text, JSON, and agent output.
 
 ## Contract
+> Removing, renaming, or retyping any released envelope field, `status` enum value, `--agent` key, `--events` type, or command name is a generation-breaking change. Follow `yeisme-evolutionary-change-policy`: stop and gate it behind an OpenSpec change with a migration, deprecation window, and rollback before editing the renderer.
 
 All CLI output must follow "one core, multiple renderers":
 
@@ -99,6 +100,19 @@ Privacy controls are part of the contract:
 - For commands likely to touch credentials, provide `--no-output`, `--output none`, or an equivalent sidecar-only path when the product surface supports it.
 - Sidecar, trace, audit, and test snapshot output must use the same redaction policy as stdout.
 - Reasoning summaries may be persisted only through CLI/service-authored structured evidence after redaction; never by direct agent-written metadata files.
+
+## Command Line Parameter Rules
+
+Design flags for readable long-form usage first:
+
+- Every public option must have a clear long flag, and `--help` must document long flags as the default teaching surface.
+- Short flags are optional convenience aliases, not the primary contract. Do not add one-letter aliases for every flag.
+- Lowercase short flags are reserved for established CLI conventions already common in the product or ecosystem, such as `-h` for help or `-v` for verbose when the project already uses it.
+- New Yeisme-specific short aliases must use uppercase letters, for example `-A`, so they do not consume conventional lowercase namespace or collide with future ecosystem expectations.
+- Do not create ambiguous pairs where the same concept has multiple short aliases, or where `-a` and `-A` mean unrelated actions in the same command family.
+- Help, docs, examples, and generated command references should show the long flag first. Mention uppercase short aliases only as optional shortcuts.
+
+Tests for command-line parameter changes should cover `--help` output, long-flag behavior, any accepted uppercase short alias, and rejection or absence of unintended lowercase short aliases.
 
 ## Implementation Workflow
 

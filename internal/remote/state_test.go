@@ -11,7 +11,7 @@ import (
 
 func TestCloudStateLifecycle(t *testing.T) {
 	root := t.TempDir()
-	state, err := Login(root, LoginRequest{Endpoint: "https://cloud.example.test", WorkspaceID: "ws_123", DeviceID: "dev_laptop", SecretRef: "op://pinax/cloud-token"})
+	state, err := Login(root, LoginRequest{Endpoint: "https://cloud.example.test", WorkspaceID: "ws_123", DeviceID: "dev_laptop", SecretRef: "op://pinax/cloud-token", EncryptionSecretRef: "env://PINAX_SYNC_SECRET"})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
@@ -20,6 +20,14 @@ func TestCloudStateLifecycle(t *testing.T) {
 	}
 	if state.Config.SecretRef != "op://pinax/cloud-token" {
 		t.Fatalf("secret ref not persisted as reference: %#v", state.Config)
+	}
+	if state.Config.EncryptionSecretRef != "env://PINAX_SYNC_SECRET" || EncryptionSecretRef(state.Config) != "env://PINAX_SYNC_SECRET" {
+		t.Fatalf("encryption secret ref not persisted as reference: %#v", state.Config)
+	}
+	legacy := state.Config
+	legacy.EncryptionSecretRef = ""
+	if EncryptionSecretRef(legacy) != "op://pinax/cloud-token" {
+		t.Fatalf("legacy encryption secret fallback = %q", EncryptionSecretRef(legacy))
 	}
 	asset := readYAMLCloudAsset(t, filepath.Join(root, ".pinax", "cloud", "config.yaml"))
 	if strings.Contains(asset, "raw-token") || strings.Contains(asset, "Authorization") {

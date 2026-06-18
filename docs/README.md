@@ -12,6 +12,9 @@ The central guarantee is an [agent-safe boundary](./overview/agent-safe-boundary
 
 The primary user and agent value of Pinax is a reproducible local proof loop built from five workflows. Every stage stays bounded: projections return facts and next actions, never full note bodies, tokens, or provider payloads; writes only happen through the plan → snapshot → apply → receipt → restore control chain.
 
+- [Demo Proof Loop](./demo-proof-loop.md): copy the synthetic messy vault fixture and run diagnose → plan → snapshot → apply → restore end to end.
+- [Documentation Design](./overview/documentation-design.md): explains reader paths, section ownership, command documentation shape, and maintenance rules for Pinax docs.
+
 ## Current Status
 
 - Current phase: local-first notebook workflows are usable from the CLI and ready for external developer evaluation.
@@ -25,7 +28,7 @@ The primary user and agent value of Pinax is a reproducible local proof loop bui
 - `pinax note backlinks <ref>` shows backlinks, supporting `--include-broken` and `--limit`.
 - `pinax note orphans --mode full|no-incoming|no-outgoing` shows fully orphaned notes, notes with no incoming links, or notes with no outgoing links.
 - `pinax search <query> --link-target <note-id|path|title|raw-target>` filters search results by relationship target; when the target is ambiguous, it returns `link_target_ambiguous` and does not automatically select a candidate.
-- The SQLite/GORM index is only a rebuildable projection; first use `pinax index --vault <vault>` to view the summary. When `index_status=missing|stale`, prioritize running `pinax index refresh --vault <vault>`. For structural anomalies, use `pinax index doctor --vault <vault>` to view issues, and, if necessary, then execute `pinax index rebuild --vault <vault>` as prompted. Do not manually write `.pinax/*.json` or index metadata.
+- The SQLite/GORM index is only a rebuildable projection; first use `pinax index --vault <vault>` to view the summary. When `index_status=missing|stale`, prioritize running `pinax index refresh --vault <vault>`. For structural anomalies, use `pinax index doctor --vault <vault>` to view issues, and, if necessary, then execute an explicit `rebuild` as prompted. Do not manually write `.pinax/*.json` or index metadata.
 - `repair plan`, `organize plan --save`, and the dashboard only generate manual review recommendations for broken/ambiguous/orphan items; MCP relationship tools are read-only and do not write to the vault, `.pinax/`, Git, providers, or remote state.
 
 ## Version and Asset Boundaries
@@ -45,14 +48,17 @@ The primary user and agent value of Pinax is a reproducible local proof loop bui
 ## Documentation Sections
 
 - [Agent-Safe Boundary](./overview/agent-safe-boundary.md)
+- [Documentation Design](./overview/documentation-design.md)
 - [Product Positioning](./overview/product-positioning.md)
 - [Architecture Boundaries](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
 - [CLI Output Contract](./interfaces/cli-output-contract.md)
 - [Local REST/RPC Contract](./interfaces/remote-api-contract.md)
+- [Demo Proof Loop](./demo-proof-loop.md)
 - [Command Manual](./commands/README.md)
 - [Operations Manual](./operations/local-development.md)
+- [Release Packaging](./operations/release-packaging.md)
 - [Chinese Documentation Map](./README.zh-CN.md)
 - [Contributing](../CONTRIBUTING.md) / [贡献指南](../CONTRIBUTING.zh-CN.md)
 - [Security Policy](../SECURITY.md) / [安全策略](../SECURITY.zh-CN.md)
@@ -82,5 +88,7 @@ task release:check
 Before publishing or handing off release artifacts, run:
 
 ```bash
-task release:local
+task release:package:validate
 ```
+
+The package validation target runs GoReleaser in snapshot/no-publish mode, verifies checksums, smokes an extracted archive, checks for SBOM artifacts, and skips unavailable Linux package inspection tools with explicit messages.

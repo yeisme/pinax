@@ -1,0 +1,23 @@
+# Dogfood demo vault diagnosis: fixture setup → validate → doctor.
+# The fixture is synthetic and local-only; the test copies it before mutating mtimes.
+
+prepare-demo-vault vault
+
+exec sh -c 'pinax vault validate --vault vault --json > validate.json'
+validate-json-envelope validate.json
+validate-clean-stdout validate.json
+grep '"command":"vault.validate"' validate.json
+grep '"status":"success"' validate.json
+
+exec sh -c 'pinax vault doctor --vault vault --json > doctor.json'
+validate-json-envelope doctor.json
+validate-clean-stdout doctor.json
+grep '"command":"vault.doctor"' doctor.json
+grep '"status":"partial"' doctor.json
+assert-demo-doctor doctor.json
+
+exec sh -c 'pinax vault doctor --vault vault --agent > doctor.agent'
+validate-agent-format doctor.agent
+validate-clean-stdout doctor.agent
+grep 'command=vault.doctor' doctor.agent
+grep 'issue.1.code=' doctor.agent

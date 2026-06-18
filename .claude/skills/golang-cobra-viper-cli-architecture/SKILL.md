@@ -77,6 +77,9 @@ testdata/
 - 长逻辑不要写进 `PreRunE` 或 `RunE`；抽到 service 或 use case。
 - 使用 `context.Context` 贯穿命令执行、外部命令、网络请求和长任务。
 - Flag help must be English; command names, flag names, and schema keys stay stable English.
+- Public options must be long-flag-first: `--help` teaches `--long-name` as the default surface, docs/examples show the long flag first, and short aliases are optional.
+- Do not mint lowercase short aliases for new Yeisme-specific flags. If a short alias is truly needed, use an uppercase letter such as `-A`; keep lowercase aliases only for established conventions already used by that CLI, such as `-h` or an existing `-v`.
+- Tests for new flags must cover `--help`, the long flag, any uppercase short alias, and the absence or rejection of accidental lowercase aliases.
 - completion 函数只做轻量读取，不触发危险操作或远程写入。
 - 测试中通过 command factory 创建新实例，避免全局 command 和全局 flag 污染。
 

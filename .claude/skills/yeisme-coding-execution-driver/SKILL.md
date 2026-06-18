@@ -187,6 +187,7 @@ Stop and ask only when continuing would risk one of these:
 - a missing credential, service, dependency, or artifact that cannot be worked around locally
 - repeated verification failure after evidence-driven recursive debugging has isolated a blocker that requires user input
 - the next required leaf is outside the user's requested scope or permission boundary
+- a generation-breaking change (per `yeisme-evolutionary-change-policy`: removing/renaming/retyping a released CLI field, RPC/API method or field, database column, config key, public Go/TS symbol, package path, or skill schema) that has no approved OpenSpec change with migration + deprecation + rollback; stop and create the owning change before continuing
 
 When blocked, report:
 

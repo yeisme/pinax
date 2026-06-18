@@ -12,7 +12,7 @@ Execution rule: 这是 preview release，不做 multi-channel 分发。Homebrew/
 ## 1. LICENSE 文件
 
 - [x] 1.1 Owner: `cli/pinax`; Lane: A; Depends on: 0.1; Scope: 在 `cli/pinax/` 根目录创建 LICENSE 文件，使用选择的 License 全文。Acceptance: LICENSE 文件存在且是标准 License 文本。Validation: `test -f cli/pinax/LICENSE`。Expected: 文件存在。
-- [ ] 1.2 Owner: `cli/pinax`; Lane: A; Depends on: 1.1; Scope: 更新 `README.md` License 段落：删除"No open-source license has been selected"声明，替换为实际 License 名称和链接。Acceptance: README License 段与实际 LICENSE 文件一致。Validation: 人工审阅。Expected: 一致。
+- [x] 1.2 Owner: `cli/pinax`; Lane: A; Depends on: 1.1; Scope: 更新 `README.md` License 段落：删除"No open-source license has been selected"声明，替换为实际 License 名称和链接。Acceptance: README License 段与实际 LICENSE 文件一致。Validation: 人工审阅。Expected: 一致。Validation note: `README.md` License section links to `./LICENSE`, and `LICENSE` begins with `MIT License`; no stale "No open-source license has been selected" text remains.
 
 ## 2. Release workflow
 
@@ -23,7 +23,7 @@ Execution rule: 这是 preview release，不做 multi-channel 分发。Homebrew/
 ## 3. Quickstart 文档
 
 - [x] 3.1 Owner: `cli/pinax`; Lane: C; Depends on: 1.2; Scope: 创建 `docs/quickstart.md`：5 分钟从安装到 proof loop run/plan/snapshot/apply/restore 的最小流程。Acceptance: 只使用真实可运行命令；不覆盖 Cloud Sync/MCP/Templates/Boards。Validation: 人工审阅 + 命令可运行性检查。Expected: Quickstart 独立可完成。
-- [ ] 3.2 Owner: `cli/pinax`; Lane: C; Depends on: 3.1; Scope: 更新 README 安装段：新增 GitHub Release archive 下载方式（curl + tar + checksum verify），保留 `go install` 和 `task release:local`。Acceptance: 三种安装方式都真实可用。Validation: 人工审阅。Expected: 安装段完整。
+- [x] 3.2 Owner: `cli/pinax`; Lane: C; Depends on: 3.1; Scope: 更新 README 安装段：新增 GitHub Release archive 下载方式（curl + tar + checksum verify），保留 `go install` 和 `task release:local`。Acceptance: 三种安装方式都真实可用。Validation: 人工审阅。Expected: 安装段完整。Validation note: README Installation documents `go install`, GitHub Release archive download with `curl`, checksum verification with `sha256sum -c`, extraction, and local release rehearsal with `task release:local`.
 
 ## 4. Spec 更新
 

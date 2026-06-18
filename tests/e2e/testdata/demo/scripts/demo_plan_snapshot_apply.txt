@@ -1,0 +1,38 @@
+# Dogfood demo proof loop: plan → snapshot → apply.
+# The repair apply may only touch low-risk metadata/index/archive status operations;
+# manual-review issues must remain in the note files.
+
+prepare-demo-vault vault
+capture-demo-baseline vault baseline
+
+exec sh -c 'pinax repair plan --save --vault vault --json > repair_plan.json'
+validate-json-envelope repair_plan.json
+validate-clean-stdout repair_plan.json
+grep '"command":"repair.plan"' repair_plan.json
+grep '"plan_id"' repair_plan.json
+grep '"saved_path"' repair_plan.json
+exists vault/.pinax/repair-plans
+assert-demo-plan repair_plan.json
+
+exec sh -c 'pinax version snapshot --vault vault --message "dogfood demo pre-apply" --json > snapshot.json'
+validate-json-envelope snapshot.json
+validate-clean-stdout snapshot.json
+grep '"command":"version.snapshot"' snapshot.json
+grep '"status":"success"' snapshot.json
+exists vault/.pinax/version/snapshots
+exists vault/.pinax/last_snapshot
+
+exec sh -c 'plan=$(python3 -c "import json; print(json.load(open(\"repair_plan.json\"))[\"facts\"][\"plan_id\"])"); pinax repair apply --plan "$plan" --yes --vault vault --json > repair_apply.json'
+validate-json-envelope repair_apply.json
+validate-clean-stdout repair_apply.json
+grep '"command":"repair.apply"' repair_apply.json
+grep '"status":"success"' repair_apply.json
+assert-demo-apply repair_apply.json
+
+assert-demo-metadata-patched baseline/notes/research/meeting-2026.md vault/notes/research/meeting-2026.md
+assert-demo-manual-unchanged baseline vault
+
+exec sh -c 'pinax vault doctor --vault vault --json > doctor_after_apply.json'
+validate-json-envelope doctor_after_apply.json
+validate-clean-stdout doctor_after_apply.json
+assert-demo-post-apply-doctor doctor_after_apply.json

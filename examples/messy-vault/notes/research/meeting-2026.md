@@ -8,4 +8,4 @@ updated_at: 2026-06-17T00:00:00Z
 
 # Meeting 2026
 
-会议纪要，故意缺少 tags / kind / status 字段（missing metadata demo，低风险可自动补全）。
+Synthetic meeting note intentionally missing frontmatter tags (missing metadata demo). Pinax records a low-risk metadata patch for this note through the repair proof loop.

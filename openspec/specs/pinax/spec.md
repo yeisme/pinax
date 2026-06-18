@@ -946,3 +946,56 @@ Pinax SHALL route ordinary `.pinax/index.sqlite` projection reads and writes thr
 - **THEN** the exception SHALL live in a documented helper or migration boundary
 - **AND** guard tests SHALL prevent ordinary index business files from reintroducing raw SQL or direct GORM query chains.
 
+### Requirement: 产品定位
+
+Pinax 的对外定位 SHALL 是 **agent-safe knowledge control plane for Markdown vault**，不是通用笔记 App 或云笔记平台。
+
+#### Scenario: README 第一屏传达核心价值
+
+- **WHEN** 用户打开 README.md
+- **THEN** 第一屏在一句话内传达"让 AI 安全操作你的私人知识库"
+- **AND** 展示 proof loop aha moment 代码块
+- **AND** 不以功能列表作为第一印象
+
+#### Scenario: 竞品关系互补定位
+
+- **WHEN** 文档描述与 Obsidian/Logseq/Notion/Reflect 的关系
+- **THEN** 明确表达互补关系（complements Obsidian/Logseq）
+- **AND** 明确避开主战场（不打 Notion 团队协作、不比个人笔记体验）
+- **AND** 不做正面功能清单对比
+
+### Requirement: 三个可复述概念
+
+产品复杂度 MUST 压缩为三个可被用户复述的概念。
+
+#### Scenario: 用户可以复述核心概念
+
+- **GIVEN** 用户阅读过 README 第一屏
+- **WHEN** 被问 Pinax 是什么
+- **THEN** 能复述：Local Vault 是真源 / Proof Loop 保护 agent 写入 / Cloud Sync 只协调密文
+
+### Requirement: Dogfood Demo Vault
+
+Pinax SHALL 提供一个标准 synthetic demo vault fixture，用于 proof loop 演示和 E2E 测试。
+
+#### Scenario: Demo vault 包含可诊断问题
+
+- **GIVEN** `examples/messy-vault/` 存在且包含故意制造的 6 类问题
+- **WHEN** 运行 `pinax vault doctor --vault ./examples/messy-vault --json`
+- **THEN** 诊断结果包含 broken_links、orphan_notes、missing_metadata、duplicate_titles、empty_notes、stale_notes
+
+#### Scenario: Demo vault proof loop 可完整运行
+
+- **GIVEN** demo vault fixture
+- **WHEN** 按顺序执行 diagnose → plan --save → snapshot → apply --yes → restore
+- **THEN** 低风险操作（metadata 补全）成功应用
+- **AND** manual review 项（broken/orphan/duplicate/empty/stale）不变
+- **AND** restore 后文件内容回到 apply 前状态
+
+#### Scenario: Demo vault 不含敏感数据
+
+- **GIVEN** demo vault fixture
+- **WHEN** 扫描全部文件
+- **THEN** 不包含真实人名、项目名、credentials、tokens、webhook URL
+- **AND** `.pinax/config.yaml` 只包含最小配置
+

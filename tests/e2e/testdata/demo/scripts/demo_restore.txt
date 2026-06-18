@@ -1,0 +1,38 @@
+# Dogfood demo proof loop restore: baseline git evidence → apply → restore one file.
+# Restore uses the existing Pinax restore commands. The local git baseline gives
+# version restore a readable HEAD revision while Pinax snapshot evidence still gates apply.
+
+prepare-demo-vault vault
+seed-demo-git-baseline vault
+capture-demo-baseline vault baseline
+
+exec sh -c 'pinax repair plan --save --vault vault --json > repair_plan.json'
+validate-json-envelope repair_plan.json
+validate-clean-stdout repair_plan.json
+assert-demo-plan repair_plan.json
+
+exec sh -c 'pinax version snapshot --vault vault --message "dogfood demo pre-restore apply" --json > snapshot.json'
+validate-json-envelope snapshot.json
+validate-clean-stdout snapshot.json
+grep '"status":"success"' snapshot.json
+
+exec sh -c 'plan=$(python3 -c "import json; print(json.load(open(\"repair_plan.json\"))[\"facts\"][\"plan_id\"])"); pinax repair apply --plan "$plan" --yes --vault vault --json > repair_apply.json'
+validate-json-envelope repair_apply.json
+validate-clean-stdout repair_apply.json
+assert-demo-apply repair_apply.json
+assert-demo-metadata-patched baseline/notes/research/meeting-2026.md vault/notes/research/meeting-2026.md
+
+exec sh -c 'pinax version restore notes/research/meeting-2026.md --revision HEAD --plan --vault vault --json > restore_plan.json'
+validate-json-envelope restore_plan.json
+validate-clean-stdout restore_plan.json
+grep '"command":"version.restore"' restore_plan.json
+grep '"plan_id"' restore_plan.json
+assert-demo-restore-plan restore_plan.json
+
+exec sh -c 'plan=$(python3 -c "import json; print(json.load(open(\"restore_plan.json\"))[\"facts\"][\"plan_id\"])"); pinax version restore apply --vault vault --plan "$plan" --yes --json > restore_apply.json'
+validate-json-envelope restore_apply.json
+validate-clean-stdout restore_apply.json
+grep '"command":"version.restore.apply"' restore_apply.json
+grep '"status":"success"' restore_apply.json
+assert-demo-restore-apply restore_apply.json
+assert-file-equals baseline/notes/research/meeting-2026.md vault/notes/research/meeting-2026.md
