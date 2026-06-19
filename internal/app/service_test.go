@@ -56,6 +56,13 @@ func writeAppFixture(t *testing.T, path, content string) {
 	}
 }
 
+func TestCommandErrorFromErrorClassifiesMissingRcloneAsTransportUnavailable(t *testing.T) {
+	got := commandErrorFromError(errors.New(`rclone lsf failed: exec: "rclone": executable file not found in `))
+	if got.Code != "transport_unavailable" {
+		t.Fatalf("code = %q, want transport_unavailable", got.Code)
+	}
+}
+
 func recordLedgerSize(t *testing.T, root string) int64 {
 	t.Helper()
 	info, err := os.Stat(filepath.Join(root, ".pinax", "records", "ledger.jsonl"))

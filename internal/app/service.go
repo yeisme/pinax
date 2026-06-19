@@ -7577,11 +7577,15 @@ func commandErrorFromError(err error) *domain.CommandError {
 	switch {
 	case strings.Contains(rawMessage, "lock_held"):
 		return &domain.CommandError{Code: "lock_held", Message: message, Hint: "Retry after the current cloud sync finishes"}
-	case strings.Contains(rawMessage, "transport_unavailable"), strings.Contains(rawMessage, "rclone copyto failed"):
+	case strings.Contains(rawMessage, "transport_unavailable"), isRcloneCommandFailure(rawMessage):
 		return &domain.CommandError{Code: "transport_unavailable", Message: message, Hint: "Check the configured cloud transport before retrying"}
 	default:
 		return &domain.CommandError{Code: "cloud_sync_failed", Message: message, Hint: "Run pinax cloud doctor --vault <vault> --json"}
 	}
+}
+
+func isRcloneCommandFailure(message string) bool {
+	return strings.Contains(message, "rclone ") && strings.Contains(message, " failed")
 }
 
 func directBackendKind(state pinaxcloud.State) string {
