@@ -35,6 +35,17 @@ tasks:
     cmds:
       - go run ./internal/testkit/integrationevidence
 
+  kb:sidecar:test:
+    desc: Run Python LanceDB KB sidecar tests.
+    cmds:
+      - python3 -m compileall tools/pinax-lancedb-sidecar
+      - |
+        venv_dir="$(mktemp -d)"
+        trap 'rm -rf "$venv_dir"' EXIT
+        python3 -m venv "$venv_dir/venv"
+        "$venv_dir/venv/bin/python" -m pip install -e tools/pinax-lancedb-sidecar
+        PYTHONPATH=tools/pinax-lancedb-sidecar/src "$venv_dir/venv/bin/python" -m unittest discover tools/pinax-lancedb-sidecar/tests
+
   build:
     desc: Build the Pinax CLI.
     deps: [fmt-check]
@@ -255,7 +266,7 @@ tasks:
 
   check:
     desc: Run the local Pinax quality gate.
-    deps: [fmt-check, lint, test, build, openspec]
+    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:test]
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.

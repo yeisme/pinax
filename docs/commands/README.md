@@ -43,6 +43,7 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | Organization and retrieval | [`pinax view`](./view.md) | Save and reuse a set of note filtering criteria. |
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
 | Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target. |
+| Organization and retrieval | [`pinax kb`](./kb.md) | Import text/Markdown, rebuild the local LanceDB semantic projection, and return bounded agent context. |
 | Organization and retrieval | [`pinax query`](./query.md) | Run controlled Pinax SQL queries against the local note database. |
 | Organization and retrieval | [`pinax database`](./database.md) | Manage database views and property schemas. |
 | Organization and retrieval | [`pinax metadata`](./metadata.md) | Plan and apply frontmatter metadata completion. |
@@ -78,6 +79,7 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | Collect unorganized content first | `pinax inbox capture "Temporary idea" --vault work` |
 | View today's note | `pinax journal daily show --vault work` |
 | Search content | `pinax search "keyword" --vault work` |
+| Search semantic context | `pinax kb search "project context" --vault work` |
 | Manage directories | `pinax folder create spaces/research --purpose notes --vault ./my-notes` |
 | View vault health | `pinax vault doctor --vault ./my-notes` |
 | Fix health issues | `pinax repair plan --vault ./my-notes --save` |

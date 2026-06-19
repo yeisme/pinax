@@ -256,6 +256,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addNoteCommands(cmd, ctx)
 
 	addSearchCommand(cmd, ctx)
+	addKBCommands(cmd, ctx)
 	addQueryCommands(cmd, ctx)
 	addDatabaseCommands(cmd, ctx)
 	addImportExportCommands(cmd, ctx)
@@ -306,6 +307,7 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"import":     "Note workflows",
 		"export":     "Note workflows",
 		"search":     "Organization and search",
+		"kb":         "Organization and search",
 		"view":       "Organization and search",
 		"folder":     "Organization and search",
 		"query":      "Organization and search",
