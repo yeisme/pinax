@@ -59,7 +59,7 @@ testdata/script/        fixture file tree and golden stdout/stderr
 
 Every user entry point must render from the same command projection:
 
-- Default human output is English.
+- Default human output is Chinese for this subproject.
 - `--agent` low-token `key=value`.
 - `--json` single JSON envelope.
 - `--events` NDJSON.

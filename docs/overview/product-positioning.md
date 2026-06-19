@@ -8,7 +8,7 @@ In one sentence: **Pinax makes AI safe to operate on your private knowledge base
 
 1. **Local Vault is the source of truth** — Markdown files are always the source of truth; SQLite/`.pinax/` are rebuildable projections.
 2. **The Proof Loop protects every agent write** — Capture → Retrieve → Diagnose → Plan → Snapshot → Apply → Restore.
-3. **Cloud Sync only coordinates ciphertext** — the server never stores plaintext notes and never executes local tools.
+3. **Share and Sync are surfaces, not sources** — publish targets are generated delivery artifacts; Cloud Sync coordinates encrypted revisions and never stores plaintext notes or executes local tools.
 
 ## Target users
 
@@ -33,10 +33,11 @@ Pinax does not compete on note-editing UX or feature checklists. It occupies a d
 - Initialize and validate a local Markdown vault.
 - Create, capture, organize, and retrieve notes through the proof loop.
 - Manage note versions, rollback plans, and changed-path evidence through `pinax version`; Git is one optional backend, not the user-facing workflow name.
-- Sync with external systems through CLI-backed Provider adapters and local-first Pinax Cloud distributed sync.
+- Share local notes through reviewed publish surfaces such as Pages, Wiki, Gist, HTTP endpoints and loopback preview.
+- Sync local files across devices through CLI-backed Provider adapters and local-first Pinax Cloud distributed sync.
 - Serve agent workflows through stable `--agent` / `--json` output.
 
-Cloud Sync positioning: Pinax Cloud is a synchronization coordinator, not the note source of truth. Each user device keeps a local vault that remains usable offline; the Cloud backend stores encrypted sync artifacts and orders revisions so devices can converge safely.
+Cloud Sync positioning: Pinax Cloud is a synchronization coordinator, not the note source of truth. Each user device keeps a local vault that remains usable offline; server transport stores encrypted sync artifacts and orders revisions so devices can converge safely.
 
 ## Non-goals
 

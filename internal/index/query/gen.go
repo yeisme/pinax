@@ -16,21 +16,25 @@ import (
 )
 
 var (
-	Q                        = new(Query)
-	AssetLinkRecord          *assetLinkRecord
-	AssetRecord              *assetRecord
-	AttachmentRecord         *attachmentRecord
-	DimensionCountRecord     *dimensionCountRecord
-	FolderRecord             *folderRecord
-	IndexMetaRecord          *indexMetaRecord
-	LinkRecord               *linkRecord
-	NoteRecord               *noteRecord
-	NoteTextRecord           *noteTextRecord
-	PropertyDefinitionRecord *propertyDefinitionRecord
-	PropertyValueRecord      *propertyValueRecord
-	SearchTokenRecord        *searchTokenRecord
-	TagRecord                *tagRecord
-	VaultFileRecord          *vaultFileRecord
+	Q                          = new(Query)
+	AssetLinkRecord            *assetLinkRecord
+	AssetRecord                *assetRecord
+	AttachmentRecord           *attachmentRecord
+	DimensionCountRecord       *dimensionCountRecord
+	FolderRecord               *folderRecord
+	IndexMetaRecord            *indexMetaRecord
+	LinkRecord                 *linkRecord
+	NoteRecord                 *noteRecord
+	NoteTextRecord             *noteTextRecord
+	PromptAssetRecord          *promptAssetRecord
+	PromptAssetSourceRefRecord *promptAssetSourceRefRecord
+	PromptAssetVersionRecord   *promptAssetVersionRecord
+	PromptUsageFeedbackRecord  *promptUsageFeedbackRecord
+	PropertyDefinitionRecord   *propertyDefinitionRecord
+	PropertyValueRecord        *propertyValueRecord
+	SearchTokenRecord          *searchTokenRecord
+	TagRecord                  *tagRecord
+	VaultFileRecord            *vaultFileRecord
 )
 
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
@@ -44,6 +48,10 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	LinkRecord = &Q.LinkRecord
 	NoteRecord = &Q.NoteRecord
 	NoteTextRecord = &Q.NoteTextRecord
+	PromptAssetRecord = &Q.PromptAssetRecord
+	PromptAssetSourceRefRecord = &Q.PromptAssetSourceRefRecord
+	PromptAssetVersionRecord = &Q.PromptAssetVersionRecord
+	PromptUsageFeedbackRecord = &Q.PromptUsageFeedbackRecord
 	PropertyDefinitionRecord = &Q.PropertyDefinitionRecord
 	PropertyValueRecord = &Q.PropertyValueRecord
 	SearchTokenRecord = &Q.SearchTokenRecord
@@ -53,41 +61,49 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 
 func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 	return &Query{
-		db:                       db,
-		AssetLinkRecord:          newAssetLinkRecord(db, opts...),
-		AssetRecord:              newAssetRecord(db, opts...),
-		AttachmentRecord:         newAttachmentRecord(db, opts...),
-		DimensionCountRecord:     newDimensionCountRecord(db, opts...),
-		FolderRecord:             newFolderRecord(db, opts...),
-		IndexMetaRecord:          newIndexMetaRecord(db, opts...),
-		LinkRecord:               newLinkRecord(db, opts...),
-		NoteRecord:               newNoteRecord(db, opts...),
-		NoteTextRecord:           newNoteTextRecord(db, opts...),
-		PropertyDefinitionRecord: newPropertyDefinitionRecord(db, opts...),
-		PropertyValueRecord:      newPropertyValueRecord(db, opts...),
-		SearchTokenRecord:        newSearchTokenRecord(db, opts...),
-		TagRecord:                newTagRecord(db, opts...),
-		VaultFileRecord:          newVaultFileRecord(db, opts...),
+		db:                         db,
+		AssetLinkRecord:            newAssetLinkRecord(db, opts...),
+		AssetRecord:                newAssetRecord(db, opts...),
+		AttachmentRecord:           newAttachmentRecord(db, opts...),
+		DimensionCountRecord:       newDimensionCountRecord(db, opts...),
+		FolderRecord:               newFolderRecord(db, opts...),
+		IndexMetaRecord:            newIndexMetaRecord(db, opts...),
+		LinkRecord:                 newLinkRecord(db, opts...),
+		NoteRecord:                 newNoteRecord(db, opts...),
+		NoteTextRecord:             newNoteTextRecord(db, opts...),
+		PromptAssetRecord:          newPromptAssetRecord(db, opts...),
+		PromptAssetSourceRefRecord: newPromptAssetSourceRefRecord(db, opts...),
+		PromptAssetVersionRecord:   newPromptAssetVersionRecord(db, opts...),
+		PromptUsageFeedbackRecord:  newPromptUsageFeedbackRecord(db, opts...),
+		PropertyDefinitionRecord:   newPropertyDefinitionRecord(db, opts...),
+		PropertyValueRecord:        newPropertyValueRecord(db, opts...),
+		SearchTokenRecord:          newSearchTokenRecord(db, opts...),
+		TagRecord:                  newTagRecord(db, opts...),
+		VaultFileRecord:            newVaultFileRecord(db, opts...),
 	}
 }
 
 type Query struct {
 	db *gorm.DB
 
-	AssetLinkRecord          assetLinkRecord
-	AssetRecord              assetRecord
-	AttachmentRecord         attachmentRecord
-	DimensionCountRecord     dimensionCountRecord
-	FolderRecord             folderRecord
-	IndexMetaRecord          indexMetaRecord
-	LinkRecord               linkRecord
-	NoteRecord               noteRecord
-	NoteTextRecord           noteTextRecord
-	PropertyDefinitionRecord propertyDefinitionRecord
-	PropertyValueRecord      propertyValueRecord
-	SearchTokenRecord        searchTokenRecord
-	TagRecord                tagRecord
-	VaultFileRecord          vaultFileRecord
+	AssetLinkRecord            assetLinkRecord
+	AssetRecord                assetRecord
+	AttachmentRecord           attachmentRecord
+	DimensionCountRecord       dimensionCountRecord
+	FolderRecord               folderRecord
+	IndexMetaRecord            indexMetaRecord
+	LinkRecord                 linkRecord
+	NoteRecord                 noteRecord
+	NoteTextRecord             noteTextRecord
+	PromptAssetRecord          promptAssetRecord
+	PromptAssetSourceRefRecord promptAssetSourceRefRecord
+	PromptAssetVersionRecord   promptAssetVersionRecord
+	PromptUsageFeedbackRecord  promptUsageFeedbackRecord
+	PropertyDefinitionRecord   propertyDefinitionRecord
+	PropertyValueRecord        propertyValueRecord
+	SearchTokenRecord          searchTokenRecord
+	TagRecord                  tagRecord
+	VaultFileRecord            vaultFileRecord
 }
 
 func (q *Query) Available() bool { return q.db != nil }
@@ -96,21 +112,25 @@ func (q *Query) UnderlyingDB() *gorm.DB { return q.db }
 
 func (q *Query) clone(db *gorm.DB) *Query {
 	return &Query{
-		db:                       db,
-		AssetLinkRecord:          q.AssetLinkRecord.clone(db),
-		AssetRecord:              q.AssetRecord.clone(db),
-		AttachmentRecord:         q.AttachmentRecord.clone(db),
-		DimensionCountRecord:     q.DimensionCountRecord.clone(db),
-		FolderRecord:             q.FolderRecord.clone(db),
-		IndexMetaRecord:          q.IndexMetaRecord.clone(db),
-		LinkRecord:               q.LinkRecord.clone(db),
-		NoteRecord:               q.NoteRecord.clone(db),
-		NoteTextRecord:           q.NoteTextRecord.clone(db),
-		PropertyDefinitionRecord: q.PropertyDefinitionRecord.clone(db),
-		PropertyValueRecord:      q.PropertyValueRecord.clone(db),
-		SearchTokenRecord:        q.SearchTokenRecord.clone(db),
-		TagRecord:                q.TagRecord.clone(db),
-		VaultFileRecord:          q.VaultFileRecord.clone(db),
+		db:                         db,
+		AssetLinkRecord:            q.AssetLinkRecord.clone(db),
+		AssetRecord:                q.AssetRecord.clone(db),
+		AttachmentRecord:           q.AttachmentRecord.clone(db),
+		DimensionCountRecord:       q.DimensionCountRecord.clone(db),
+		FolderRecord:               q.FolderRecord.clone(db),
+		IndexMetaRecord:            q.IndexMetaRecord.clone(db),
+		LinkRecord:                 q.LinkRecord.clone(db),
+		NoteRecord:                 q.NoteRecord.clone(db),
+		NoteTextRecord:             q.NoteTextRecord.clone(db),
+		PromptAssetRecord:          q.PromptAssetRecord.clone(db),
+		PromptAssetSourceRefRecord: q.PromptAssetSourceRefRecord.clone(db),
+		PromptAssetVersionRecord:   q.PromptAssetVersionRecord.clone(db),
+		PromptUsageFeedbackRecord:  q.PromptUsageFeedbackRecord.clone(db),
+		PropertyDefinitionRecord:   q.PropertyDefinitionRecord.clone(db),
+		PropertyValueRecord:        q.PropertyValueRecord.clone(db),
+		SearchTokenRecord:          q.SearchTokenRecord.clone(db),
+		TagRecord:                  q.TagRecord.clone(db),
+		VaultFileRecord:            q.VaultFileRecord.clone(db),
 	}
 }
 
@@ -124,57 +144,69 @@ func (q *Query) WriteDB() *Query {
 
 func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 	return &Query{
-		db:                       db,
-		AssetLinkRecord:          q.AssetLinkRecord.replaceDB(db),
-		AssetRecord:              q.AssetRecord.replaceDB(db),
-		AttachmentRecord:         q.AttachmentRecord.replaceDB(db),
-		DimensionCountRecord:     q.DimensionCountRecord.replaceDB(db),
-		FolderRecord:             q.FolderRecord.replaceDB(db),
-		IndexMetaRecord:          q.IndexMetaRecord.replaceDB(db),
-		LinkRecord:               q.LinkRecord.replaceDB(db),
-		NoteRecord:               q.NoteRecord.replaceDB(db),
-		NoteTextRecord:           q.NoteTextRecord.replaceDB(db),
-		PropertyDefinitionRecord: q.PropertyDefinitionRecord.replaceDB(db),
-		PropertyValueRecord:      q.PropertyValueRecord.replaceDB(db),
-		SearchTokenRecord:        q.SearchTokenRecord.replaceDB(db),
-		TagRecord:                q.TagRecord.replaceDB(db),
-		VaultFileRecord:          q.VaultFileRecord.replaceDB(db),
+		db:                         db,
+		AssetLinkRecord:            q.AssetLinkRecord.replaceDB(db),
+		AssetRecord:                q.AssetRecord.replaceDB(db),
+		AttachmentRecord:           q.AttachmentRecord.replaceDB(db),
+		DimensionCountRecord:       q.DimensionCountRecord.replaceDB(db),
+		FolderRecord:               q.FolderRecord.replaceDB(db),
+		IndexMetaRecord:            q.IndexMetaRecord.replaceDB(db),
+		LinkRecord:                 q.LinkRecord.replaceDB(db),
+		NoteRecord:                 q.NoteRecord.replaceDB(db),
+		NoteTextRecord:             q.NoteTextRecord.replaceDB(db),
+		PromptAssetRecord:          q.PromptAssetRecord.replaceDB(db),
+		PromptAssetSourceRefRecord: q.PromptAssetSourceRefRecord.replaceDB(db),
+		PromptAssetVersionRecord:   q.PromptAssetVersionRecord.replaceDB(db),
+		PromptUsageFeedbackRecord:  q.PromptUsageFeedbackRecord.replaceDB(db),
+		PropertyDefinitionRecord:   q.PropertyDefinitionRecord.replaceDB(db),
+		PropertyValueRecord:        q.PropertyValueRecord.replaceDB(db),
+		SearchTokenRecord:          q.SearchTokenRecord.replaceDB(db),
+		TagRecord:                  q.TagRecord.replaceDB(db),
+		VaultFileRecord:            q.VaultFileRecord.replaceDB(db),
 	}
 }
 
 type queryCtx struct {
-	AssetLinkRecord          IAssetLinkRecordDo
-	AssetRecord              IAssetRecordDo
-	AttachmentRecord         IAttachmentRecordDo
-	DimensionCountRecord     IDimensionCountRecordDo
-	FolderRecord             IFolderRecordDo
-	IndexMetaRecord          IIndexMetaRecordDo
-	LinkRecord               ILinkRecordDo
-	NoteRecord               INoteRecordDo
-	NoteTextRecord           INoteTextRecordDo
-	PropertyDefinitionRecord IPropertyDefinitionRecordDo
-	PropertyValueRecord      IPropertyValueRecordDo
-	SearchTokenRecord        ISearchTokenRecordDo
-	TagRecord                ITagRecordDo
-	VaultFileRecord          IVaultFileRecordDo
+	AssetLinkRecord            IAssetLinkRecordDo
+	AssetRecord                IAssetRecordDo
+	AttachmentRecord           IAttachmentRecordDo
+	DimensionCountRecord       IDimensionCountRecordDo
+	FolderRecord               IFolderRecordDo
+	IndexMetaRecord            IIndexMetaRecordDo
+	LinkRecord                 ILinkRecordDo
+	NoteRecord                 INoteRecordDo
+	NoteTextRecord             INoteTextRecordDo
+	PromptAssetRecord          IPromptAssetRecordDo
+	PromptAssetSourceRefRecord IPromptAssetSourceRefRecordDo
+	PromptAssetVersionRecord   IPromptAssetVersionRecordDo
+	PromptUsageFeedbackRecord  IPromptUsageFeedbackRecordDo
+	PropertyDefinitionRecord   IPropertyDefinitionRecordDo
+	PropertyValueRecord        IPropertyValueRecordDo
+	SearchTokenRecord          ISearchTokenRecordDo
+	TagRecord                  ITagRecordDo
+	VaultFileRecord            IVaultFileRecordDo
 }
 
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
-		AssetLinkRecord:          q.AssetLinkRecord.WithContext(ctx),
-		AssetRecord:              q.AssetRecord.WithContext(ctx),
-		AttachmentRecord:         q.AttachmentRecord.WithContext(ctx),
-		DimensionCountRecord:     q.DimensionCountRecord.WithContext(ctx),
-		FolderRecord:             q.FolderRecord.WithContext(ctx),
-		IndexMetaRecord:          q.IndexMetaRecord.WithContext(ctx),
-		LinkRecord:               q.LinkRecord.WithContext(ctx),
-		NoteRecord:               q.NoteRecord.WithContext(ctx),
-		NoteTextRecord:           q.NoteTextRecord.WithContext(ctx),
-		PropertyDefinitionRecord: q.PropertyDefinitionRecord.WithContext(ctx),
-		PropertyValueRecord:      q.PropertyValueRecord.WithContext(ctx),
-		SearchTokenRecord:        q.SearchTokenRecord.WithContext(ctx),
-		TagRecord:                q.TagRecord.WithContext(ctx),
-		VaultFileRecord:          q.VaultFileRecord.WithContext(ctx),
+		AssetLinkRecord:            q.AssetLinkRecord.WithContext(ctx),
+		AssetRecord:                q.AssetRecord.WithContext(ctx),
+		AttachmentRecord:           q.AttachmentRecord.WithContext(ctx),
+		DimensionCountRecord:       q.DimensionCountRecord.WithContext(ctx),
+		FolderRecord:               q.FolderRecord.WithContext(ctx),
+		IndexMetaRecord:            q.IndexMetaRecord.WithContext(ctx),
+		LinkRecord:                 q.LinkRecord.WithContext(ctx),
+		NoteRecord:                 q.NoteRecord.WithContext(ctx),
+		NoteTextRecord:             q.NoteTextRecord.WithContext(ctx),
+		PromptAssetRecord:          q.PromptAssetRecord.WithContext(ctx),
+		PromptAssetSourceRefRecord: q.PromptAssetSourceRefRecord.WithContext(ctx),
+		PromptAssetVersionRecord:   q.PromptAssetVersionRecord.WithContext(ctx),
+		PromptUsageFeedbackRecord:  q.PromptUsageFeedbackRecord.WithContext(ctx),
+		PropertyDefinitionRecord:   q.PropertyDefinitionRecord.WithContext(ctx),
+		PropertyValueRecord:        q.PropertyValueRecord.WithContext(ctx),
+		SearchTokenRecord:          q.SearchTokenRecord.WithContext(ctx),
+		TagRecord:                  q.TagRecord.WithContext(ctx),
+		VaultFileRecord:            q.VaultFileRecord.WithContext(ctx),
 	}
 }
 

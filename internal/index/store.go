@@ -30,20 +30,24 @@ const PropertySchemaVersion = "pinax.properties.v1"
 // 以下类型别名指向 internal/index/model 中的 GORM 模型，保持本包公开 API 稳定。
 // 普通业务读写必须通过 internal/index/query 生成的类型化 DAO，模型定义集中在 model 包。
 type (
-	IndexMetaRecord          = model.IndexMetaRecord
-	NoteRecord               = model.NoteRecord
-	NoteTextRecord           = model.NoteTextRecord
-	TagRecord                = model.TagRecord
-	LinkRecord               = model.LinkRecord
-	SearchTokenRecord        = model.SearchTokenRecord
-	AttachmentRecord         = model.AttachmentRecord
-	AssetRecord              = model.AssetRecord
-	AssetLinkRecord          = model.AssetLinkRecord
-	VaultFileRecord          = model.VaultFileRecord
-	FolderRecord             = model.FolderRecord
-	DimensionCountRecord     = model.DimensionCountRecord
-	PropertyDefinitionRecord = model.PropertyDefinitionRecord
-	PropertyValueRecord      = model.PropertyValueRecord
+	IndexMetaRecord            = model.IndexMetaRecord
+	NoteRecord                 = model.NoteRecord
+	NoteTextRecord             = model.NoteTextRecord
+	TagRecord                  = model.TagRecord
+	LinkRecord                 = model.LinkRecord
+	SearchTokenRecord          = model.SearchTokenRecord
+	AttachmentRecord           = model.AttachmentRecord
+	AssetRecord                = model.AssetRecord
+	AssetLinkRecord            = model.AssetLinkRecord
+	VaultFileRecord            = model.VaultFileRecord
+	FolderRecord               = model.FolderRecord
+	DimensionCountRecord       = model.DimensionCountRecord
+	PropertyDefinitionRecord   = model.PropertyDefinitionRecord
+	PropertyValueRecord        = model.PropertyValueRecord
+	PromptAssetRecord          = model.PromptAssetRecord
+	PromptAssetVersionRecord   = model.PromptAssetVersionRecord
+	PromptAssetSourceRefRecord = model.PromptAssetSourceRefRecord
+	PromptUsageFeedbackRecord  = model.PromptUsageFeedbackRecord
 )
 
 // globalUpdate 开启 GORM 全局更新/删除会话，仅用于重建/增量投影清空整表等受控场景。

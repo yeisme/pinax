@@ -1,0 +1,25 @@
+schema_version: yeisme.prompt_asset.v1
+id: novel_character_portrait_v1
+title: Novel character portrait
+domain: visual_generation
+tags: [character, portrait]
+lifecycle: draft
+permission: internal
+owner_project: auctra
+variables:
+  character_name:
+    type: string
+    required: true
+    description: Character display name.
+  style:
+    type: string
+    required: false
+prompt_template: |
+  Create a portrait of {{character_name}} in {{style}} style.
+constraints:
+  - Do not include private biographical details.
+review_guidance: Confirm likeness, mood, and style fit the source brief.
+source_refs:
+  - uri: pinax://note/character-brief
+    label: Character brief
+    evidence: "frontmatter:character"

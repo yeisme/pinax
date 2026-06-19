@@ -1,0 +1,9 @@
+schema_version: yeisme.prompt_asset.v1
+id: novel_character_portrait_v1
+domain: visual_generation
+lifecycle: draft
+permission: public_web
+variables:
+  character_name:
+    type: string
+prompt_template: Create a portrait of {{character_name}}.

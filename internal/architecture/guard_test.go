@@ -20,6 +20,7 @@ var capabilityPackages = []string{
 	"versionops",
 	"briefingops",
 	"planningops",
+	"publishops",
 }
 
 func TestCapabilityPackagesDeclareOwnership(t *testing.T) {

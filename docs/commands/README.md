@@ -52,6 +52,8 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | Automation and integration | [`pinax cloud`](./cloud.md) | Manage local state for cloud sync. |
 | Automation and integration | [`pinax sync`](./sync.md) | Generate and execute sync plans. |
 | Automation and integration | [`pinax plan`](./plan.md) | Manage personal daily, weekly, and monthly planning workflows. |
+| Automation and integration | [`pinax prompt`](./prompt.md) | Manage reusable prompt assets, lifecycle decisions, URI resolution, and prompt usage feedback. |
+| Automation and integration | [`pinax publish`](./publish.md) | Build safe GitHub Pages or GitHub Wiki publishing surfaces from the local vault. |
 | Automation and integration | [`pinax backend`](./backend.md) | Manage vault backend providers. |
 | Automation and integration | [`pinax mcp`](./mcp.md) | Start a read-only MCP surface. |
 | Configuration and maintenance | [`pinax config`](./config.md) | View, set, and diagnose Pinax configuration. |
@@ -92,7 +94,7 @@ By default, Pinax commands can be divided into three categories:
 | Save plan | `repair plan --save`, `organize plan --save` | Writes only `.pinax/*-plans/<plan_id>.json`. |
 | Apply changes | `metadata apply --yes`, `repair apply --yes`, `organize apply --yes` | Writes to the local vault; high-risk commands also require a snapshot. |
 
-`--json`, `--agent`, `--events`, and `--explain` are output modes and do not change business semantics. Machine protocol fields remain in English, and the default human output remains in English.
+`--json`, `--agent`, `--events`, and `--explain` are output modes and do not change business semantics. Machine protocol fields remain in English, and the default human output is Chinese.
 
 ## Remote API Mode
 

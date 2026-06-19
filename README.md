@@ -111,6 +111,29 @@ pinax search "First note" --vault ./my-notes --json
 
 See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
 
+### Static publishing
+
+Build Pages or Wiki output from the vault without making GitHub the source of truth:
+
+```bash
+pinax publish profile init public --target github-pages --renderer hugo --vault ./my-notes --json
+pinax publish plan --profile public --target github-pages --vault ./my-notes --json
+pinax publish build --profile public --target github-pages --out ./dist/site --vault ./my-notes --json
+pinax publish deploy --profile public --target github-pages --out ./dist/site --repo ../kb-pages --yes --vault ./my-notes --json
+
+pinax publish profile init wiki --target github-wiki --renderer none --vault ./my-notes --json
+pinax publish build --profile wiki --target github-wiki --out ./dist/wiki --vault ./my-notes --json
+pinax publish profile init gist --target github-gist --renderer none --vault ./my-notes --json
+pinax publish build --profile gist --target github-gist --out ./dist/gist --vault ./my-notes --json
+pinax publish deploy --profile gist --target github-gist --out ./dist/gist --yes --vault ./my-notes --json
+pinax publish profile init share --target http --renderer none --vault ./my-notes --json
+pinax publish build --profile share --target http --out ./dist/share --vault ./my-notes --json
+pinax publish deploy --profile share --target http --out ./dist/share --endpoint https://share.example.test/publish --yes --vault ./my-notes --json
+pinax publish serve --profile wiki --out ./dist/wiki --host 127.0.0.1 --port 4173 --vault ./my-notes
+```
+
+Use a separate Pages/Wiki repository, Gist, HTTP endpoint, or loopback preview, not the private vault repository. Deploy validates the build receipt, output hash and scan result before writing.
+
 ## Five core workflows
 
 Pinax is built around one agent-safe proof loop. A user or agent drives a real Markdown vault through five stages, and every stage stays bounded — projections never dump full note bodies, and writes only happen through plan, snapshot, receipt and explicit apply.
@@ -175,7 +198,7 @@ pinax vault remote list --profile cloud-work --json
 ```
 
 Shell completion reads only local registry/cache files: it completes registered local aliases and cached remote selectors without contacting remotes, resolving secrets, or writing state.
-Regular commands support default English summaries, `--agent`, `--json`, `--events`, and `--explain` output modes; only one of these modes can be selected at a time.
+Regular commands support default Chinese summaries, `--agent`, `--json`, `--events`, and `--explain` output modes; only one of these modes can be selected at a time. Machine protocol fields, facts, error codes, and schema keys remain stable English.
 
 The new primary path should prefer `pinax vault stats|validate|doctor|dashboard`, `pinax journal daily|weekly|monthly`, and `pinax storage set local|s3`; old root aliases remain compatible with existing scripts.
 

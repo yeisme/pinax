@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yeisme/pinax/internal/app/searchops"
 	"github.com/yeisme/pinax/internal/domain"
 )
 
@@ -344,7 +345,7 @@ func TestFilterSearchNotes_DiscardedFilter(t *testing.T) {
 	}
 
 	t.Run("excludes_discarded_by_default", func(t *testing.T) {
-		filtered := filterSearchNotes(notes, SearchRequest{})
+		filtered := searchops.FilterNotes(notes, searchops.Request{})
 		for _, n := range filtered {
 			if n.Status == "discarded" {
 				t.Error("discarded should be excluded by default")
@@ -356,7 +357,7 @@ func TestFilterSearchNotes_DiscardedFilter(t *testing.T) {
 	})
 
 	t.Run("includes_discarded_when_explicit", func(t *testing.T) {
-		filtered := filterSearchNotes(notes, SearchRequest{Status: "discarded"})
+		filtered := searchops.FilterNotes(notes, searchops.Request{Status: "discarded"})
 		if len(filtered) != 1 || filtered[0].Status != "discarded" {
 			t.Errorf("expected 1 discarded note, got %v", filtered)
 		}

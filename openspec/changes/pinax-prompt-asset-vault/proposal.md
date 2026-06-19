@@ -28,6 +28,20 @@ This change is intended to be additive. It may add new CLI commands, optional JS
 
 If implementation discovers an existing surface must change, pause coding and update this OpenSpec with migration, deprecation window, consumer update list, and rollback steps before continuing.
 
+### Affected surfaces
+
+- CLI commands: additive `pinax prompt create/import/search/show/resolve/lifecycle/feedback import`; no existing command names or flags are removed or repurposed.
+- CLI output: additive prompt-specific `data` and `facts` fields under the existing Pinax JSON envelope; additive `--agent` keys for prompt asset ID, lifecycle, permission, and next action.
+- Database and migrations: additive GORM tables for prompt assets, versions, source refs, and usage feedback; no existing table or column is dropped, renamed, narrowed, or made newly required.
+- Config and structured assets: no new config keys are required in the first validator slice; later structured assets must be created or modified through Pinax app services and CLI commands.
+- Vault schema: additive `yeisme.prompt_asset.v1` import schema; existing `pinax.note.v1` and `pinax.template.v2` documents are unchanged.
+
+### Migration, rollback, and deprecation
+
+- Migration: use expand-only migrations for prompt asset tables. Existing vaults remain valid when the prompt asset feature is unused.
+- Rollback: because the current plan is additive, rollback is to disable or revert prompt commands and leave unused prompt asset tables intact until a later cleanup change; no existing note/index data requires rewrite.
+- Deprecation: no deprecation window is needed for the current additive scope. If a later implementation needs to rename or remove an existing surface, this change must be updated with a release-length deprecation window before coding continues.
+
 ## Impact
 
 - CLI: new `pinax prompt ...` command group and machine output projections.

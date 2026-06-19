@@ -85,6 +85,21 @@ pinax search "First note" --vault ./my-notes --json
 
 更多命令入口见 [Command Manual](./docs/commands/README.md)。详细命令文档保持英文，以保证 flag、schema key、错误码和机器输出字段稳定一致。
 
+### 静态发布
+
+从 vault 构建 Pages 或 Wiki 发布面，但不要让 GitHub 成为笔记真源：
+
+```bash
+pinax publish profile init public --target github-pages --renderer hugo --vault ./my-notes --json
+pinax publish plan --profile public --target github-pages --vault ./my-notes --json
+pinax publish build --profile public --target github-pages --out ./dist/site --vault ./my-notes --json
+pinax publish deploy --profile public --target github-pages --out ./dist/site --repo ../kb-pages --yes --vault ./my-notes --json
+
+pinax publish build --profile wiki --target github-wiki --out ./dist/wiki --vault ./my-notes --json
+```
+
+请使用独立的 Pages/Wiki 仓库，不要直接发布私有 vault 仓库。Deploy 前会校验 build receipt、output hash 和扫描结果。
+
 ## 五大核心工作流
 
 Pinax 围绕一条 agent-safe proof loop 构建。用户或 agent 驱动一个真实 Markdown vault 经过五个阶段，每个阶段都保持有界——projection 永不输出完整正文，写入只通过 plan、snapshot、receipt 和显式 apply 发生。

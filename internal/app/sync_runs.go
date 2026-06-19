@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,9 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yeisme/pinax/internal/cloudsync"
+	"github.com/yeisme/pinax/internal/app/syncops"
 	"github.com/yeisme/pinax/internal/domain"
-	"github.com/yeisme/pinax/internal/redaction"
 	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 	syncplan "github.com/yeisme/pinax/internal/sync"
 )
@@ -93,7 +91,7 @@ type syncRunRecord struct {
 func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud.State, pathPolicy string) SyncRunReceipt {
 	createdAt := time.Now().UTC()
 	runID := "sync_" + createdAt.Format("20060102T150405.000000000")
-	policy := normalizeSyncPathPolicy(pathPolicy)
+	policy := syncops.NormalizePathPolicy(pathPolicy)
 	return SyncRunReceipt{
 		SchemaVersion: syncRunSchemaVersion,
 		RunID:         runID,
@@ -103,26 +101,15 @@ func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud
 		Status:        "success",
 		BackendKind:   directBackendKind(state),
 		Transport:     syncTransportName(state),
-		WorkspaceID:   sanitizeSyncString(state.Config.WorkspaceID),
+		WorkspaceID:   syncops.SanitizeString(state.Config.WorkspaceID),
 		VaultID:       syncVaultID(state, state.Config.WorkspaceID),
-		DeviceID:      sanitizeSyncString(state.Config.DeviceID),
+		DeviceID:      syncops.SanitizeString(state.Config.DeviceID),
 		RequestID:     "pinax-" + createdAt.Format("20060102T150405.000000000"),
 		Counts:        map[string]int{},
 		TimingsMS:     map[string]int64{},
 		Actions:       []domain.Action{},
 		Redaction:     SyncRunRedaction{PathPolicy: policy, SecretPolicy: "cloud"},
 		CreatedAt:     createdAt.Format(time.RFC3339),
-	}
-}
-
-func normalizeSyncPathPolicy(policy string) string {
-	switch strings.ToLower(strings.TrimSpace(policy)) {
-	case "hash", "hashed":
-		return "hash"
-	case "omit", "omitted", "none":
-		return "omitted"
-	default:
-		return "default"
 	}
 }
 
@@ -142,7 +129,7 @@ func syncTransportName(state pinaxcloud.State) string {
 
 func syncVaultID(state pinaxcloud.State, fallback string) string {
 	if strings.TrimSpace(fallback) != "" {
-		return sanitizeSyncString(fallback)
+		return syncops.SanitizeString(fallback)
 	}
 	sum := sha256.Sum256([]byte(state.Config.Endpoint + "|" + state.Config.WorkspaceID))
 	return "vault_" + hex.EncodeToString(sum[:])[:16]
@@ -157,9 +144,9 @@ func syncRunReceiptPath(root string, receipt SyncRunReceipt) string {
 }
 
 func writeSyncRunReceipt(root string, receipt SyncRunReceipt) (string, error) {
-	receipt.WorkspaceID = sanitizeSyncString(receipt.WorkspaceID)
-	receipt.DeviceID = sanitizeSyncString(receipt.DeviceID)
-	receipt.RequestID = sanitizeSyncString(receipt.RequestID)
+	receipt.WorkspaceID = syncops.SanitizeString(receipt.WorkspaceID)
+	receipt.DeviceID = syncops.SanitizeString(receipt.DeviceID)
+	receipt.RequestID = syncops.SanitizeString(receipt.RequestID)
 	if receipt.Counts == nil {
 		receipt.Counts = map[string]int{}
 	}
@@ -179,11 +166,11 @@ func writeCurrentSyncState(root string, state pinaxcloud.State, receipt SyncRunR
 		SchemaVersion:      syncStateSchemaVersion,
 		Target:             "cloud",
 		BackendKind:        directBackendKind(state),
-		Endpoint:           sanitizeSyncString(state.Config.Endpoint),
-		WorkspaceID:        sanitizeSyncString(state.Config.WorkspaceID),
+		Endpoint:           syncops.SanitizeString(state.Config.Endpoint),
+		WorkspaceID:        syncops.SanitizeString(state.Config.WorkspaceID),
 		VaultID:            syncVaultID(state, state.Config.WorkspaceID),
-		DeviceID:           sanitizeSyncString(state.Config.DeviceID),
-		LastSyncedRevision: sanitizeSyncString(syncedRevision),
+		DeviceID:           syncops.SanitizeString(state.Config.DeviceID),
+		LastSyncedRevision: syncops.SanitizeString(syncedRevision),
 		LastSyncRunID:      receipt.RunID,
 		LastDirection:      receipt.Direction,
 		LastStatus:         receipt.Status,
@@ -206,14 +193,14 @@ func readCurrentSyncState(root string) (currentSyncState, error) {
 
 func finishSyncRun(root string, state pinaxcloud.State, receipt SyncRunReceipt, plan syncplan.Plan, status string, commandErr *domain.CommandError, actions []domain.Action, pathPolicy string, started time.Time) (SyncRunReceipt, string, error) {
 	receipt.Status = status
-	receipt.BaseRevision = sanitizeSyncString(plan.BaseRevision)
-	receipt.RemoteRevisionBefore = sanitizeSyncString(plan.RemoteRevision)
+	receipt.BaseRevision = syncops.SanitizeString(plan.BaseRevision)
+	receipt.RemoteRevisionBefore = syncops.SanitizeString(plan.RemoteRevision)
 	receipt.RemoteWrite = plan.RemoteWrite
 	receipt.Counts = syncRunCounts(plan, receipt.Counts)
 	receipt.TimingsMS["total"] = time.Since(started).Milliseconds()
 	receipt.Error = sanitizeCommandError(commandErr)
 	receipt.Actions = sanitizeActions(actions)
-	receipt.Operations = sanitizeSyncOperations(plan.Operations, pathPolicy)
+	receipt.Operations = syncops.SanitizeOperations(plan.Operations, pathPolicy)
 	path, err := writeSyncRunReceipt(root, receipt)
 	if err != nil {
 		return receipt, path, err
@@ -261,88 +248,19 @@ func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
 	return appendEvent(root, "sync.run", receipt.Status, facts)
 }
 
-func sanitizeSyncOperations(ops []syncplan.Operation, policy string) []syncplan.Operation {
-	if len(ops) == 0 {
-		return nil
-	}
-	policy = normalizeSyncPathPolicy(policy)
-	out := make([]syncplan.Operation, 0, len(ops))
-	for _, op := range ops {
-		op.Path = redactSyncPath(op.Path, policy)
-		if policy == "hash" && op.PathHash == "" && op.Path != "" {
-			op.PathHash = op.Path
-		}
-		if policy == "omitted" {
-			op.PathHash = ""
-		}
-		out = append(out, op)
-	}
-	return out
-}
-
-func sanitizeSyncPlan(plan syncplan.Plan, policy string) syncplan.Plan {
-	plan.Operations = sanitizeSyncOperations(plan.Operations, policy)
-	return plan
-}
-
-func redactSyncPath(pathValue, policy string) string {
-	pathValue = filepath.ToSlash(strings.TrimSpace(pathValue))
-	if pathValue == "" {
-		return ""
-	}
-	switch normalizeSyncPathPolicy(policy) {
-	case "hash":
-		sum := sha256.Sum256([]byte(pathValue))
-		return "path_sha256:" + hex.EncodeToString(sum[:])
-	case "omitted":
-		return ""
-	default:
-		return sanitizeSyncString(pathValue)
-	}
-}
-
 func sanitizeCommandError(err *domain.CommandError) *domain.CommandError {
 	if err == nil {
 		return nil
 	}
-	return &domain.CommandError{Code: sanitizeSyncString(err.Code), Message: sanitizeSyncString(err.Message), Hint: sanitizeSyncString(err.Hint)}
+	return &domain.CommandError{Code: syncops.SanitizeString(err.Code), Message: syncops.SanitizeString(err.Message), Hint: syncops.SanitizeString(err.Hint)}
 }
 
 func sanitizeActions(actions []domain.Action) []domain.Action {
 	out := make([]domain.Action, 0, len(actions))
 	for _, action := range actions {
-		out = append(out, domain.Action{Name: sanitizeSyncString(action.Name), Command: sanitizeSyncString(action.Command)})
+		out = append(out, domain.Action{Name: syncops.SanitizeString(action.Name), Command: syncops.SanitizeString(action.Command)})
 	}
 	return out
-}
-
-func sanitizeSyncString(value string) string {
-	value = redaction.Cloud(value)
-	for _, marker := range []string{"Authorization", "Cookie", "provider payload", "provider stderr"} {
-		value = strings.ReplaceAll(value, marker, "[REDACTED]")
-	}
-	return value
-}
-
-func commandErrorFromError(err error) *domain.CommandError {
-	if err == nil {
-		return nil
-	}
-	var commandErr *domain.CommandError
-	if errors.As(err, &commandErr) {
-		return commandErr
-	}
-	if errors.Is(err, cloudsync.ErrLockHeld) {
-		return &domain.CommandError{Code: "lock_held", Message: "cloud commit lock is held", Hint: "Retry after the current or expired direct backend commit lock clears"}
-	}
-	if errors.Is(err, cloudsync.ErrRevisionConflict) {
-		return &domain.CommandError{Code: "revision_conflict", Message: "cloud revision conflict", Hint: "Pull remote changes and resolve conflicts before retrying"}
-	}
-	msg := err.Error()
-	if strings.Contains(msg, "rclone ") || strings.Contains(msg, "NOTICE:") || strings.Contains(msg, "CRITICAL:") || strings.Contains(msg, "provider stderr") {
-		return &domain.CommandError{Code: "transport_unavailable", Message: "cloud transport is unavailable", Hint: "Run pinax cloud doctor --vault <vault> --json and verify provider credentials"}
-	}
-	return &domain.CommandError{Code: "internal_error", Message: sanitizeSyncString(msg)}
 }
 
 func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, direction syncplan.Direction, commandErr *domain.CommandError, projection *domain.Projection) error {
@@ -351,7 +269,7 @@ func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, 
 		return err
 	}
 	started := time.Now()
-	pathPolicy := normalizeSyncPathPolicy(req.PathPolicy)
+	pathPolicy := syncops.NormalizePathPolicy(req.PathPolicy)
 	receipt := syncRunStart(command, direction, state, pathPolicy)
 	plan := syncplan.Plan{SchemaVersion: syncplan.PlanSchemaVersion, Status: "approval_required", Direction: direction, Target: "cloud", DryRun: req.DryRun, RequiresApproval: true, RemoteWrite: false}
 	if projection.Actions == nil {

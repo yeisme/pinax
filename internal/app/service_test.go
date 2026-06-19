@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yeisme/pinax/internal/app/planningops"
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/cloudclient"
 	"github.com/yeisme/pinax/internal/cloudclient/mlptest"
@@ -1378,7 +1379,7 @@ func TestPlanningActionDraftBuildsTaskBridgeActionsSchema(t *testing.T) {
 		NextActions: []domain.Action{{Name: "open", Command: "pinax daily open --vault ./notes"}},
 	}
 
-	draft := buildPlanningActionDraft("daily", snapshot, decision, now)
+	draft := planningops.BuildActionDraft("daily", snapshot, decision, now)
 
 	if draft.SchemaVersion != "taskbridge.actions.v1" {
 		t.Fatalf("schema = %q", draft.SchemaVersion)

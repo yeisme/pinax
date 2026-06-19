@@ -10,7 +10,7 @@ flowchart TD
   APP --> VERSION[VersionBackend\nlocal / none / optional Git]
   APP --> PROVIDER[CLI-backed Provider Adapters]
   APP --> OUT[Command Projection]
-  OUT --> HUMAN[Default English summary]
+  OUT --> HUMAN[Default Chinese summary]
   OUT --> AGENT[--agent]
   OUT --> JSON[--json]
   OUT --> EVENTS[--events]
@@ -43,6 +43,22 @@ Boundary rules:
 | `internal/app/planningops` | plan, planning workflows | Planning workflow orchestration, plan state transitions, facade-facing planning results. | `internal/cli`, `internal/output`, root OpenSpec governance ownership, direct stdout/stderr writes. | `go test ./internal/app ./cmd/pinax -run 'Plan|Planning|Task|Decision' -count=1` |
 
 Each app capability package must keep a `doc.go` with the same ownership fields. The architecture guard in `internal/architecture` verifies the docs and import boundaries.
+
+
+## Current Facade Extractions
+
+`app.Service` remains the CLI-facing compatibility facade. Current extracted logic includes:
+
+- `noteops`: note list predicate and tag/date filter helpers used by list/query flows.
+- `searchops`: search request validation, result shaping, link-target filtering, fallback search filtering, and Pinax SQL parse/execute helpers.
+- `vaultops`: vault stats aggregation and index freshness classification.
+- `templateops`: query-result Markdown rendering for query-backed template blocks.
+- `syncops`: sync path policy normalization, sync plan redaction, and cloud sync string sanitization.
+- `versionops`: vault-relative version object path validation.
+- `briefingops`: briefing recipe projection shaping.
+- `planningops`: planning period parsing, capacity risk rules, preview extraction, and TaskBridge action draft construction.
+
+New use-case logic should extend the relevant capability package first, then expose or preserve the facade method needed by CLI callers. Existing facade methods may keep IO, persistence, event append, and compatibility glue while pure business rules and projection shaping move into capability packages.
 
 ## Architecture Guard
 

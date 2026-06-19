@@ -177,6 +177,57 @@ type PropertyValueRecord struct {
 	Source   string `gorm:"index"`
 }
 
+// PromptAssetRecord stores the stable searchable projection for a reusable prompt asset.
+type PromptAssetRecord struct {
+	PromptAssetID      string `gorm:"primaryKey"`
+	SchemaVersion      string `gorm:"index"`
+	Title              string
+	Domain             string `gorm:"index"`
+	Lifecycle          string `gorm:"index"`
+	Permission         string `gorm:"index"`
+	OwnerProject       string `gorm:"index"`
+	CurrentVersionID   string `gorm:"index"`
+	PromptTemplateHash string `gorm:"index"`
+	TagsJSON           string
+	CreatedAt          string
+	UpdatedAt          string
+}
+
+// PromptAssetVersionRecord stores versioned prompt body metadata for one prompt asset.
+type PromptAssetVersionRecord struct {
+	VersionID          string `gorm:"primaryKey"`
+	PromptAssetID      string `gorm:"index"`
+	PromptTemplate     string
+	PromptTemplateHash string `gorm:"index"`
+	VariablesJSON      string
+	ConstraintsJSON    string
+	ReviewGuidance     string
+	CreatedAt          string
+}
+
+// PromptAssetSourceRefRecord links a prompt asset to note, URI, or evidence references.
+type PromptAssetSourceRefRecord struct {
+	ID            uint   `gorm:"primaryKey"`
+	PromptAssetID string `gorm:"index"`
+	VersionID     string `gorm:"index"`
+	URI           string `gorm:"index"`
+	Label         string
+	Evidence      string
+}
+
+// PromptUsageFeedbackRecord records imported usage feedback without letting external projects mutate lifecycle directly.
+type PromptUsageFeedbackRecord struct {
+	FeedbackID         string `gorm:"primaryKey"`
+	PromptAssetID      string `gorm:"index"`
+	VersionID          string `gorm:"index"`
+	PromptTemplateHash string `gorm:"index"`
+	ExternalRunRef     string `gorm:"index"`
+	Decision           string `gorm:"index"`
+	Reason             string
+	ArtifactRefsJSON   string
+	ImportedAt         string
+}
+
 // AllModels 返回索引全部 GORM 模型，供 AutoMigrate 与 GORM Gen 复用。
 func AllModels() []any {
 	return []any{
@@ -194,5 +245,9 @@ func AllModels() []any {
 		&DimensionCountRecord{},
 		&PropertyDefinitionRecord{},
 		&PropertyValueRecord{},
+		&PromptAssetRecord{},
+		&PromptAssetVersionRecord{},
+		&PromptAssetSourceRefRecord{},
+		&PromptUsageFeedbackRecord{},
 	}
 }

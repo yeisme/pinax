@@ -196,7 +196,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var feishuText string
 	var deliveryDryRun bool
 
-	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, backendDryRun: &backendDryRun, planFromPeriod: &planFromPeriod, planWithTaskBridge: &planWithTaskBridge, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
+	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, backendDryRun: &backendDryRun, planFromPeriod: &planFromPeriod, planWithTaskBridge: &planWithTaskBridge, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
 
 	cmd := &cobra.Command{
 		Use:           "pinax",
@@ -239,6 +239,8 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 
 	addVersionCommands(cmd, ctx)
 	addAssetCommands(cmd, ctx)
+	addPromptCommands(cmd, ctx)
+	addPublishCommands(cmd, ctx)
 
 	addVaultCommands(cmd, ctx)
 	addRecordCommands(cmd, ctx)
@@ -253,169 +255,10 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 
 	addNoteCommands(cmd, ctx)
 
-	searchCmd := &cobra.Command{
-		Use:     "search <query>",
-		Short:   "Search local notes",
-		Example: "pinax search \"project retrospective\" --vault ./my-notes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "note.search", "argument_required", "search requires a query", "pinax search <query> --vault <vault>")
-			}
-			projection, err := svc.SearchProjection(cmd.Context(), app.SearchRequest{VaultPath: vaultPath, Query: args[0], Tags: splitCSV(noteTags), Group: noteGroup, Folder: noteFolder, Kind: noteKind, Status: noteStatus, CreatedAfter: searchCreatedAfter, UpdatedAfter: searchUpdatedAfter, LinkTarget: searchLinkTarget, HasAttachment: searchHasAttachment, Limit: noteLimit, Sort: noteListSort, AllowStale: searchAllowStale, At: searchAt, IncludeDirty: searchIncludeDirty, ChangedSince: searchChangedSince, Revision: searchRevision})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	searchCmd.Flags().StringVar(&noteTags, "tag", "", "Filter by tag")
-	searchCmd.Flags().StringVar(&noteGroup, "group", "", "Filter by group")
-	searchCmd.Flags().StringVar(&noteFolder, "folder", "", "Filter by folder")
-	searchCmd.Flags().StringVar(&noteKind, "kind", "", "Filter by kind")
-	searchCmd.Flags().StringVar(&noteStatus, "status", "", "Filter by status")
-	searchCmd.Flags().StringVar(&searchCreatedAfter, "created-after", "", "Filter by minimum creation date; format YYYY-MM-DD or RFC3339")
-	searchCmd.Flags().StringVar(&searchUpdatedAfter, "updated-after", "", "Filter by minimum update date; format YYYY-MM-DD or RFC3339")
-	searchCmd.Flags().StringVar(&searchLinkTarget, "link-target", "", "Filter by link target")
-	searchCmd.Flags().BoolVar(&searchHasAttachment, "has-attachment", false, "Return only notes with attachment references")
-	searchCmd.Flags().BoolVar(&searchAllowStale, "allow-stale", false, "Allow stale index partial results")
-	searchCmd.Flags().StringVar(&searchAt, "at", "", "Read the specified projection through the version backend; currently supports HEAD")
-	searchCmd.Flags().BoolVar(&searchIncludeDirty, "include-dirty", false, "Include dirty worktree content in version-aware search")
-	searchCmd.Flags().StringVar(&searchChangedSince, "changed-since", "", "Filter to notes changed after the revision")
-	searchCmd.Flags().StringVar(&searchRevision, "revision", "", "Read the historical projection for the specified revision")
-	searchCmd.Flags().StringVar(&noteListSort, "sort", "", "Sort: relevance, updated, created, title, or path")
-	_ = searchCmd.RegisterFlagCompletionFunc("sort", staticCompletion("sort", "relevance", "updated", "created", "title", "path"))
-	searchCmd.Flags().IntVar(&noteLimit, "limit", 0, "Limit the number of results")
-	cmd.AddCommand(searchCmd)
-
-	queryCmd := &cobra.Command{
-		Use:   "query",
-		Short: "Query the local notes database",
-		Long:  "Query the local notes database. Common workflow: pinax index status --vault ./my-notes, pinax query explain 'SELECT title FROM notes LIMIT 20' --vault ./my-notes, pinax query run 'SELECT title FROM notes LIMIT 20' --vault ./my-notes, pinax database view save active --query 'SELECT title FROM notes' --vault ./my-notes.",
-	}
-	queryRunCmd := &cobra.Command{Use: "run <sql>", Short: "Run a Pinax SQL query", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "query.run", "argument_required", "query run requires SQL", "pinax query run 'SELECT title FROM notes LIMIT 20' --vault <vault>")
-		}
-		projection, err := svc.QueryRun(cmd.Context(), app.QueryRequest{VaultPath: vaultPath, SQL: args[0], LazyIndex: queryLazyIndex, Limit: noteLimit, Sort: noteListSort, Cursor: queryCursor})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	queryRunCmd.Flags().StringVar(&noteListSort, "sort", "", "Sort by property")
-	queryRunCmd.Flags().IntVar(&noteLimit, "limit", 0, "Limit the number of results")
-	queryRunCmd.Flags().StringVar(&queryCursor, "cursor", "", "Pagination cursor")
-	queryRunCmd.Flags().BoolVar(&queryLazyIndex, "lazy-index", false, "Allow explicit lazy index loading")
-	_ = queryRunCmd.RegisterFlagCompletionFunc("sort", staticCompletion("property", "title", "updated_at", "created_at", "status", "path"))
-	queryCmd.AddCommand(queryRunCmd)
-	queryCmd.AddCommand(&cobra.Command{Use: "explain <sql>", Short: "Explain the Pinax SQL query plan", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "query.explain", "argument_required", "query explain requires SQL", "pinax query explain 'SELECT title FROM notes LIMIT 20' --vault <vault>")
-		}
-		projection, err := svc.QueryExplain(cmd.Context(), app.QueryRequest{VaultPath: vaultPath, SQL: args[0]})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	cmd.AddCommand(queryCmd)
-
-	databaseCmd := &cobra.Command{Use: "database", Short: "Manage local notes database views", Long: "Manage local notes database views. Common workflow: pinax index status --vault ./my-notes, pinax query explain 'SELECT title FROM notes LIMIT 20' --vault ./my-notes, pinax query run 'SELECT title FROM notes LIMIT 20' --vault ./my-notes, pinax database view save active --query 'SELECT title FROM notes' --vault ./my-notes."}
-	databaseViewCmd := &cobra.Command{Use: "view", Short: "Manage database views"}
-	databaseViewSaveCmd := &cobra.Command{Use: "save <name>", Short: "Save a database view", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "database.view.save", "argument_required", "database view save requires a name", "pinax database view save <name> --vault <vault>")
-		}
-		var projection domain.Projection
-		var err error
-		if strings.TrimSpace(databaseViewQuery) != "" {
-			projection, err = svc.SaveDatabaseView(cmd.Context(), app.ViewRequest{VaultPath: vaultPath, Name: args[0], Kind: noteKind, Query: databaseViewQuery, Columns: databaseViewColumns, Limit: noteLimit})
-		} else {
-			projection, err = svc.SaveView(cmd.Context(), app.ViewRequest{VaultPath: vaultPath, Name: args[0], Tags: splitCSV(noteListTag), Group: noteGroup, Folder: noteFolder, Kind: noteKind, Status: noteListStatus, Sort: noteListSort, Limit: noteLimit, CreatedAfter: noteListCreatedAfter, UpdatedBefore: noteListUpdatedBefore})
-			projection.Command = "database.view.save"
-		}
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	databaseViewSaveCmd.Flags().StringVar(&noteListTag, "tag", "", "Filter by tags; comma-separated values are allowed")
-	databaseViewSaveCmd.Flags().StringVar(&noteGroup, "group", "", "Filter by group")
-	databaseViewSaveCmd.Flags().StringVar(&noteFolder, "folder", "", "Filter by folder")
-	databaseViewSaveCmd.Flags().StringVar(&noteKind, "kind", "", "Filter by kind")
-	databaseViewSaveCmd.Flags().StringVar(&noteListStatus, "status", "", "Filter by status")
-	databaseViewSaveCmd.Flags().StringVar(&noteListCreatedAfter, "created-after", "", "Filter by minimum creation date; format YYYY-MM-DD or RFC3339")
-	databaseViewSaveCmd.Flags().StringVar(&noteListUpdatedBefore, "updated-before", "", "Filter by maximum update date; format YYYY-MM-DD or RFC3339")
-	databaseViewSaveCmd.Flags().StringVar(&noteListSort, "sort", "", "Sort: updated, path, or title")
-	databaseViewSaveCmd.Flags().StringVar(&databaseViewQuery, "query", "", "Pinax SQL query")
-	databaseViewSaveCmd.Flags().StringArrayVar(&databaseViewColumns, "column", nil, "Display columns; repeatable")
-	databaseViewSaveCmd.Flags().IntVar(&noteLimit, "limit", 0, "Limit the number of results")
-	databaseViewCmd.AddCommand(databaseViewSaveCmd)
-	databaseViewCmd.AddCommand(&cobra.Command{Use: "list", Short: "List database views", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.ListViews(cmd.Context(), app.VaultRequest{VaultPath: vaultPath})
-		projection.Command = "database.view.list"
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	databaseViewCmd.AddCommand(&cobra.Command{Use: "show <name>", Short: "Show a database view", ValidArgsFunction: savedViewCompletion(func() string { return vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "database.view.show", "argument_required", "database view show requires a name", "pinax database view show <name> --vault <vault>")
-		}
-		projection, err := svc.ShowDatabaseView(cmd.Context(), app.ViewRequest{VaultPath: vaultPath, Name: args[0]})
-		projection.Command = "database.view.show"
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	databaseViewDeleteCmd := &cobra.Command{Use: "delete <name>", Short: "Delete a database view", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "database.view.delete", "argument_required", "database view delete requires a name", "pinax database view delete <name> --vault <vault> --yes")
-		}
-		projection, err := svc.DeleteView(cmd.Context(), app.ViewRequest{VaultPath: vaultPath, Name: args[0], Yes: yes})
-		projection.Command = "database.view.delete"
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	databaseViewDeleteCmd.Flags().BoolVar(&yes, "yes", false, "Confirm database view deletion")
-	databaseViewCmd.AddCommand(databaseViewDeleteCmd)
-	databaseCmd.AddCommand(databaseViewCmd)
-	databaseSchemaCmd := &cobra.Command{Use: "schema", Short: "Manage database property schema"}
-	databaseSchemaCmd.AddCommand(&cobra.Command{Use: "infer", Short: "Infer property schema", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.DatabaseSchemaInfer(cmd.Context(), app.VaultRequest{VaultPath: vaultPath})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	databaseSchemaSetCmd := &cobra.Command{Use: "set <property>", Short: "Set a property type", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "database.schema.set", "argument_required", "database schema set requires a property name", "pinax database schema set status --type select --vault <vault>")
-		}
-		projection, err := svc.DatabaseSchemaSet(cmd.Context(), app.DatabaseSchemaRequest{VaultPath: vaultPath, Name: args[0], Type: databaseSchemaType, Values: splitCSV(databaseSchemaValues)})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	databaseSchemaSetCmd.Flags().StringVar(&databaseSchemaType, "type", "", "Property type")
-	databaseSchemaSetCmd.Flags().StringVar(&databaseSchemaValues, "values", "", "Allowed select/list values, comma-separated")
-	_ = databaseSchemaSetCmd.RegisterFlagCompletionFunc("type", staticCompletion("type", "string", "number", "boolean", "date", "select", "list", "link"))
-	databaseSchemaCmd.AddCommand(databaseSchemaSetCmd)
-	databaseCmd.AddCommand(databaseSchemaCmd)
-	cmd.AddCommand(databaseCmd)
-
-	importCmd := &cobra.Command{Use: "import", Short: "Import local Markdown content"}
-	importMarkdownCmd := &cobra.Command{Use: "markdown <source>", Short: "Import a local Markdown file or directory", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "import.markdown", "argument_required", "import markdown requires a source file or directory", "pinax import markdown <source> --vault <vault>")
-		}
-		projection, err := svc.ImportMarkdown(cmd.Context(), app.ImportMarkdownRequest{VaultPath: vaultPath, Source: args[0], Group: noteGroup, Folder: noteFolder, Kind: noteKind, Status: noteStatus, Tags: splitCSV(noteTags), Conflict: importConflict, DryRun: importDryRun, Yes: yes})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	importMarkdownCmd.Flags().StringVar(&noteGroup, "group", "", "Import target group")
-	importMarkdownCmd.Flags().StringVar(&noteFolder, "folder", "", "Import target folder")
-	importMarkdownCmd.Flags().StringVar(&noteKind, "kind", "", "Import note kind")
-	importMarkdownCmd.Flags().StringVar(&noteStatus, "status", "", "Import note status")
-	importMarkdownCmd.Flags().StringVar(&noteTags, "tags", "", "Import note tags, comma-separated")
-	importMarkdownCmd.Flags().StringVar(&importConflict, "conflict", "skip", "Conflict strategy: skip, rename, or overwrite")
-	importMarkdownCmd.Flags().BoolVar(&importDryRun, "dry-run", false, "Only output the import plan; do not write the vault")
-	importMarkdownCmd.Flags().BoolVar(&yes, "yes", false, "Confirm import writes")
-	importCmd.AddCommand(importMarkdownCmd)
-	cmd.AddCommand(importCmd)
-
-	exportCmd := &cobra.Command{Use: "export", Short: "Export local Markdown content"}
-	exportMarkdownCmd := &cobra.Command{Use: "markdown <output-dir>", Short: "Export a Markdown bundle", RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "export.markdown", "argument_required", "export markdown requires an output directory", "pinax export markdown <output-dir> --vault <vault>")
-		}
-		projection, err := svc.ExportMarkdown(cmd.Context(), app.ExportMarkdownRequest{VaultPath: vaultPath, OutputDir: args[0], Tags: splitCSV(noteListTag), Group: noteGroup, Folder: noteFolder, Kind: noteKind, Status: noteStatus})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	exportMarkdownCmd.Flags().StringVar(&noteListTag, "tag", "", "Filter by tag")
-	exportMarkdownCmd.Flags().StringVar(&noteGroup, "group", "", "Filter by group")
-	exportMarkdownCmd.Flags().StringVar(&noteFolder, "folder", "", "Filter by folder")
-	exportMarkdownCmd.Flags().StringVar(&noteKind, "kind", "", "Filter by kind")
-	exportMarkdownCmd.Flags().StringVar(&noteStatus, "status", "", "Filter by status")
-	exportCmd.AddCommand(exportMarkdownCmd)
-	cmd.AddCommand(exportCmd)
+	addSearchCommand(cmd, ctx)
+	addQueryCommands(cmd, ctx)
+	addDatabaseCommands(cmd, ctx)
+	addImportExportCommands(cmd, ctx)
 
 	addProjectCommands(cmd, ctx)
 
@@ -427,116 +270,8 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 
 	addIndexCommands(cmd, ctx)
 
-	briefingCmd := &cobra.Command{Use: "briefing", Short: "Manage daily hot-notes briefing"}
-	briefingRecipeCmd := &cobra.Command{Use: "recipe", Short: "Manage briefing recipes"}
-	briefingRecipeInitCmd := &cobra.Command{Use: "init", Short: "Create the default briefing recipe", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.BriefingRecipeInit(cmd.Context(), app.BriefingRecipeRequest{VaultPath: vaultPath, Topic: briefingTopic, Limit: briefingLimit})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	briefingRecipeInitCmd.Flags().StringVar(&briefingTopic, "topic", "", "briefing topic")
-	briefingRecipeInitCmd.Flags().IntVar(&briefingLimit, "limit", 0, "Maximum number of candidates")
-	briefingRecipeCmd.AddCommand(briefingRecipeInitCmd)
-	briefingRecipeCmd.AddCommand(&cobra.Command{Use: "show", Short: "Show the briefing recipe", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.BriefingRecipeShow(cmd.Context(), app.BriefingRecipeRequest{VaultPath: vaultPath})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	briefingRecipeSetCmd := &cobra.Command{Use: "set", Short: "Update the briefing recipe", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.BriefingRecipeSet(cmd.Context(), app.BriefingRecipeRequest{VaultPath: vaultPath, Topic: briefingTopic, Limit: briefingLimit, Source: briefingSource})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	briefingRecipeSetCmd.Flags().StringVar(&briefingTopic, "topic", "", "briefing topic")
-	briefingRecipeSetCmd.Flags().IntVar(&briefingLimit, "limit", 0, "Maximum number of candidates")
-	briefingRecipeSetCmd.Flags().StringVar(&briefingSource, "source", "", "New research source id")
-	briefingRecipeCmd.AddCommand(briefingRecipeSetCmd)
-
-	briefingDeliverCmd := &cobra.Command{Use: "deliver", Short: "Deliver a briefing"}
-	feishuCmd := &cobra.Command{Use: "feishu", Short: "Deliver a briefing through a Feishu webhook", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.DeliverFeishu(cmd.Context(), app.FeishuDeliveryRequest{VaultPath: vaultPath, WebhookURL: feishuWebhook, SecretRef: feishuSecretRef, Title: feishuTitle, Text: feishuText, DryRun: deliveryDryRun, Yes: yes})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	feishuCmd.Flags().StringVar(&feishuWebhook, "webhook", "", "Feishu webhook URL")
-	feishuCmd.Flags().StringVar(&feishuSecretRef, "secret-ref", "", "Webhook secret reference; do not output the raw value")
-	feishuCmd.Flags().StringVar(&feishuTitle, "title", "", "Delivery title")
-	feishuCmd.Flags().StringVar(&feishuText, "text", "", "Delivery text")
-	feishuCmd.Flags().BoolVar(&deliveryDryRun, "dry-run", false, "Only generate a receipt preview; do not send the HTTP POST")
-	feishuCmd.Flags().BoolVar(&yes, "yes", false, "Confirm sending the Feishu webhook")
-	briefingDeliverCmd.AddCommand(feishuCmd)
-	briefingCmd.AddCommand(briefingDeliverCmd)
-	briefingCmd.AddCommand(briefingRecipeCmd)
-
-	briefingRunCmd := &cobra.Command{Use: "run", Short: "Run the daily hot-notes briefing", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.BriefingRun(cmd.Context(), app.BriefingRunRequest{VaultPath: vaultPath, DryRun: briefingDryRun, Yes: yes})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}}
-	briefingRunCmd.Flags().BoolVar(&briefingDryRun, "dry-run", false, "Only output candidates; do not write the vault or deliver")
-	briefingRunCmd.Flags().BoolVar(&yes, "yes", false, "Confirm writing briefing candidate notes")
-	briefingCmd.AddCommand(briefingRunCmd)
-	cmd.AddCommand(briefingCmd)
-
-	cloudCmd := &cobra.Command{Use: "cloud", Short: "Manage Pinax cloud sync state"}
-	cloudLoginCmd := &cobra.Command{
-		Use:     "login",
-		Short:   "Configure Pinax cloud backend state",
-		Example: "pinax cloud login --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref op://pinax/cloud-token --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./my-notes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.CloudLogin(cmd.Context(), app.CloudLoginRequest{VaultPath: vaultPath, Endpoint: cloudEndpoint, WorkspaceID: cloudWorkspace, DeviceID: cloudDevice, SecretRef: cloudSecretRef, EncryptionSecretRef: cloudEncryptionSecretRef})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	cloudLoginCmd.Flags().StringVar(&cloudEndpoint, "endpoint", "", "Pinax cloud backend URL")
-	cloudLoginCmd.Flags().StringVar(&cloudWorkspace, "workspace", "", "Pinax cloud workspace id")
-	cloudLoginCmd.Flags().StringVar(&cloudDevice, "device", "", "Local device id")
-	cloudLoginCmd.Flags().StringVar(&cloudSecretRef, "secret-ref", "", "Cloud auth token reference; do not save the raw token")
-	cloudLoginCmd.Flags().StringVar(&cloudEncryptionSecretRef, "encryption-secret-ref", "", "Shared encryption secret reference; defaults to --secret-ref for old configs")
-	cloudCmd.AddCommand(cloudLoginCmd)
-	cloudBackendCmd := &cobra.Command{Use: "backend", Short: "Configure Cloud Sync transport backend"}
-	cloudBackendSetCmd := &cobra.Command{Use: "set", Short: "Set Cloud Sync transport backend"}
-	cloudBackendSetS3Cmd := &cobra.Command{
-		Use:     "s3",
-		Short:   "Configure S3-compatible direct Cloud Sync backend",
-		Example: "pinax cloud backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.CloudBackendSetS3(cmd.Context(), app.CloudBackendSetRequest{VaultPath: vaultPath, Kind: "s3", Bucket: s3Bucket, Region: s3Region, Prefix: s3Prefix, Endpoint: s3Endpoint, Profile: s3Profile, WorkspaceID: cloudWorkspace, DeviceID: cloudDevice, SecretRef: cloudSecretRef})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	cloudBackendSetS3Cmd.Flags().StringVar(&s3Bucket, "bucket", "", "S3 bucket name")
-	cloudBackendSetS3Cmd.Flags().StringVar(&s3Region, "region", "", "S3 region")
-	cloudBackendSetS3Cmd.Flags().StringVar(&s3Prefix, "prefix", "", "S3 object key prefix")
-	cloudBackendSetS3Cmd.Flags().StringVar(&s3Endpoint, "endpoint", "", "S3-compatible endpoint URL")
-	cloudBackendSetS3Cmd.Flags().StringVar(&s3Profile, "profile", "", "S3 credential profile name; do not save the secret")
-	cloudBackendSetS3Cmd.Flags().StringVar(&cloudWorkspace, "workspace", "", "Cloud workspace id")
-	cloudBackendSetS3Cmd.Flags().StringVar(&cloudDevice, "device", "", "Local device id")
-	cloudBackendSetS3Cmd.Flags().StringVar(&cloudSecretRef, "secret-ref", "", "Secret manager reference; do not save the raw secret")
-	cloudBackendSetRcloneCmd := &cobra.Command{
-		Use:     "rclone",
-		Short:   "Configure rclone direct Cloud Sync backend",
-		Example: "pinax cloud backend set rclone --remote onedrive:PinaxSync --workspace personal --device laptop --vault ./my-notes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.CloudBackendSetRclone(cmd.Context(), app.CloudBackendSetRequest{VaultPath: vaultPath, Kind: "rclone", Remote: backendRemote, WorkspaceID: cloudWorkspace, DeviceID: cloudDevice})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	cloudBackendSetRcloneCmd.Flags().StringVar(&backendRemote, "remote", "", "Rclone remote and path, for example onedrive:PinaxSync")
-	cloudBackendSetRcloneCmd.Flags().StringVar(&cloudWorkspace, "workspace", "", "Cloud workspace id")
-	cloudBackendSetRcloneCmd.Flags().StringVar(&cloudDevice, "device", "", "Local device id")
-	cloudBackendSetCmd.AddCommand(cloudBackendSetRcloneCmd)
-	cloudBackendSetCmd.AddCommand(cloudBackendSetS3Cmd)
-	cloudBackendCmd.AddCommand(cloudBackendSetCmd)
-	cloudCmd.AddCommand(cloudBackendCmd)
-	cloudCmd.AddCommand(&cobra.Command{Use: "status", Short: "Show Pinax cloud state", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.CloudStatus(cmd.Context(), app.CloudRequest{VaultPath: vaultPath})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	cloudCmd.AddCommand(&cobra.Command{Use: "logout", Short: "Log out the local cloud device session", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.CloudLogout(cmd.Context(), app.CloudRequest{VaultPath: vaultPath})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	cloudCmd.AddCommand(&cobra.Command{Use: "doctor", Short: "Diagnose Pinax cloud state", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := svc.CloudDoctor(cmd.Context(), app.CloudRequest{VaultPath: vaultPath})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}})
-	cmd.AddCommand(cloudCmd)
+	addBriefingCommands(cmd, ctx)
+	addCloudCommands(cmd, ctx)
 
 	addSyncCommands(cmd, ctx)
 
@@ -546,232 +281,8 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 
 	addProofCommands(cmd, ctx)
 
-	planCmd := &cobra.Command{Use: "plan", Short: "Manage personal planning workflows"}
-	planDailyCmd := &cobra.Command{
-		Use:   "daily",
-		Short: "Generate a daily plan",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.PlanDaily(cmd.Context(), app.PlanningRequest{VaultPath: vaultPath, WithTaskBridge: planWithTaskBridge, DryRun: planDryRun, Yes: yes, Save: planSave})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	planDailyCmd.Flags().BoolVar(&planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
-	planDailyCmd.Flags().BoolVar(&planDryRun, "dry-run", false, "Preview the plan only; do not write")
-	planDailyCmd.Flags().BoolVar(&planSave, "save", false, "Save a plan snapshot")
-	planDailyCmd.Flags().BoolVar(&yes, "yes", false, "Confirm plan writes")
-	planCmd.AddCommand(planDailyCmd)
-	planWeeklyCmd := &cobra.Command{
-		Use:   "weekly",
-		Short: "Generate a weekly plan",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.PlanWeekly(cmd.Context(), app.PlanningRequest{VaultPath: vaultPath, WithTaskBridge: planWithTaskBridge, DryRun: planDryRun, Yes: yes, Save: planSave})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	planWeeklyCmd.Flags().BoolVar(&planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
-	planWeeklyCmd.Flags().BoolVar(&planDryRun, "dry-run", false, "Preview the plan only; do not write")
-	planWeeklyCmd.Flags().BoolVar(&planSave, "save", false, "Save a plan snapshot")
-	planWeeklyCmd.Flags().BoolVar(&yes, "yes", false, "Confirm plan writes")
-	planCmd.AddCommand(planWeeklyCmd)
-	planMonthlyCmd := &cobra.Command{
-		Use:   "monthly",
-		Short: "Generate a monthly plan",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.PlanMonthly(cmd.Context(), app.PlanningRequest{VaultPath: vaultPath, WithTaskBridge: planWithTaskBridge, DryRun: planDryRun, Yes: yes, Save: planSave})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	planMonthlyCmd.Flags().BoolVar(&planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
-	planMonthlyCmd.Flags().BoolVar(&planDryRun, "dry-run", false, "Preview the plan only; do not write")
-	planMonthlyCmd.Flags().BoolVar(&planSave, "save", false, "Save a plan snapshot")
-	planMonthlyCmd.Flags().BoolVar(&yes, "yes", false, "Confirm plan writes")
-	planCmd.AddCommand(planMonthlyCmd)
-	planActionsCmd := &cobra.Command{
-		Use:   "actions",
-		Short: "Generate TaskBridge action drafts",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.PlanActions(cmd.Context(), app.PlanningRequest{VaultPath: vaultPath, FromPeriod: planFromPeriod, Save: planSave})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	planActionsCmd.Flags().StringVar(&planFromPeriod, "from", "daily", "Source planning period: daily or weekly")
-	planActionsCmd.Flags().BoolVar(&planSave, "save", false, "Save action drafts")
-	planCmd.AddCommand(planActionsCmd)
-	planSnapshotCmd := &cobra.Command{
-		Use:   "snapshot",
-		Short: "Generate a plan snapshot",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := svc.PlanSnapshot(cmd.Context(), app.PlanningRequest{VaultPath: vaultPath})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	planCmd.AddCommand(planSnapshotCmd)
-	cmd.AddCommand(planCmd)
-
-	backendCmd := &cobra.Command{
-		Use:   "backend",
-		Short: "Manage vault backend providers",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 0 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.list", "argument_unexpected", "backend does not accept positional arguments", "pinax backend list --vault <vault>")
-			}
-			projection, err := svc.ListBackends(cmd.Context(), app.VaultRequest{VaultPath: vaultPath})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendListRun := func(cmd *cobra.Command, args []string) error {
-		if len(args) != 0 {
-			return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.list", "argument_unexpected", "backend list does not accept positional arguments", "pinax backend list --vault <vault>")
-		}
-		projection, err := svc.ListBackends(cmd.Context(), app.VaultRequest{VaultPath: vaultPath})
-		return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-	}
-	backendCmd.AddCommand(&cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List all vault backends",
-		RunE:    backendListRun,
-	})
-	backendAddCmd := &cobra.Command{
-		Use:     "add <kind> <name>",
-		Short:   "Add a backend profile",
-		Example: "pinax backend add s3 work-s3 --bucket notes --region us-east-1 --vault ./my-notes\npinax backend add rclone work-drive --remote workdrive:pinax --vault ./my-notes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 2 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.add", "argument_required", "backend add requires a backend kind and name", "pinax backend add <kind> <name> --vault <vault>")
-			}
-			projection, err := svc.AddBackend(cmd.Context(), app.BackendAddRequest{VaultPath: vaultPath, Name: args[1], Kind: args[0], Root: backendRoot, Bucket: s3Bucket, Region: s3Region, Prefix: s3Prefix, Endpoint: s3Endpoint, Profile: s3Profile, Remote: backendRemote})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendAddCmd.Flags().StringVar(&backendRoot, "root", "", "Local backend root directory")
-	backendAddCmd.Flags().StringVar(&s3Bucket, "bucket", "", "S3 bucket name")
-	backendAddCmd.Flags().StringVar(&s3Region, "region", "", "S3 region")
-	backendAddCmd.Flags().StringVar(&s3Prefix, "prefix", "", "S3 object key prefix")
-	backendAddCmd.Flags().StringVar(&s3Endpoint, "endpoint", "", "S3-compatible endpoint URL")
-	backendAddCmd.Flags().StringVar(&s3Profile, "profile", "", "S3 credential profile name")
-	backendAddCmd.Flags().StringVar(&backendRemote, "remote", "", "rclone remote path")
-	backendCmd.AddCommand(backendAddCmd)
-	backendShowCmd := &cobra.Command{
-		Use:     "show <name>",
-		Aliases: []string{"status"},
-		Short:   "Show backend status",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.show", "argument_required", "backend show requires a backend name", "pinax backend show <name> --vault <vault>")
-			}
-			projection, err := svc.BackendShow(cmd.Context(), app.BackendRequest{VaultPath: vaultPath, Name: args[0]})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendCmd.AddCommand(backendShowCmd)
-	backendDoctorCmd := &cobra.Command{
-		Use:   "doctor <name>",
-		Short: "Diagnose backend configuration",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.doctor", "argument_required", "backend doctor requires a backend name", "pinax backend doctor <name> --vault <vault>")
-			}
-			projection, err := svc.BackendDoctor(cmd.Context(), app.BackendRequest{VaultPath: vaultPath, Name: args[0]})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendCmd.AddCommand(backendDoctorCmd)
-	backendCapabilitiesCmd := &cobra.Command{
-		Use:   "capabilities <name>",
-		Short: "Show backend capabilities",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.capabilities", "argument_required", "backend capabilities requires a backend name", "pinax backend capabilities <name> --vault <vault>")
-			}
-			projection, err := svc.BackendCapabilities(cmd.Context(), app.BackendRequest{VaultPath: vaultPath, Name: args[0]})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendCmd.AddCommand(backendCapabilitiesCmd)
-	backendDiffCmd := &cobra.Command{
-		Use:   "diff <name>",
-		Short: "Generate a backend dry-run sync plan",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.diff", "argument_required", "backend diff requires a backend name", "pinax backend diff <name> --vault <vault>")
-			}
-			projection, err := svc.BackendDiff(cmd.Context(), app.BackendPlanRequest{VaultPath: vaultPath, Name: args[0]})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendCmd.AddCommand(backendDiffCmd)
-	backendPushCmd := &cobra.Command{
-		Use:   "push <name>",
-		Short: "Run backend push sync",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.push", "argument_required", "backend push requires a backend name", "pinax backend push <name> --vault <vault> --dry-run")
-			}
-			projection, err := svc.BackendPush(cmd.Context(), app.BackendPlanRequest{VaultPath: vaultPath, Name: args[0], DryRun: backendDryRun, Yes: yes})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendPushCmd.Flags().BoolVar(&backendDryRun, "dry-run", false, "Preview the plan only; do not write")
-	backendPushCmd.Flags().BoolVar(&yes, "yes", false, "Confirm writes")
-	backendCmd.AddCommand(backendPushCmd)
-	backendPullCmd := &cobra.Command{
-		Use:   "pull <name>",
-		Short: "Run backend pull sync",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.pull", "argument_required", "backend pull requires a backend name", "pinax backend pull <name> --vault <vault> --dry-run")
-			}
-			projection, err := svc.BackendPull(cmd.Context(), app.BackendPlanRequest{VaultPath: vaultPath, Name: args[0], DryRun: backendDryRun, Yes: yes})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendPullCmd.Flags().BoolVar(&backendDryRun, "dry-run", false, "Preview the plan only; do not write")
-	backendPullCmd.Flags().BoolVar(&yes, "yes", false, "Confirm writes")
-	backendCmd.AddCommand(backendPullCmd)
-	backendRemoveCmd := &cobra.Command{
-		Use:   "remove <name>",
-		Short: "Remove a backend profile",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.remove", "argument_required", "backend remove requires a backend name", "pinax backend remove <name> --vault <vault>")
-			}
-			projection, err := svc.RemoveBackend(cmd.Context(), app.BackendRequest{VaultPath: vaultPath, Name: args[0]})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendCmd.AddCommand(backendRemoveCmd)
-	backendObjectCmd := &cobra.Command{Use: "object", Short: "Browse backend objects"}
-	backendObjectListCmd := &cobra.Command{
-		Use:   "list <name> [prefix]",
-		Short: "List backend objects",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) < 1 || len(args) > 2 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.object.list", "argument_required", "backend object list requires a backend name", "pinax backend object list <name> [prefix] --vault <vault>")
-			}
-			prefix := ""
-			if len(args) == 2 {
-				prefix = args[1]
-			}
-			projection, err := svc.BackendObjectList(cmd.Context(), app.BackendObjectListRequest{VaultPath: vaultPath, Name: args[0], Prefix: prefix})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendObjectCmd.AddCommand(backendObjectListCmd)
-	backendObjectStatCmd := &cobra.Command{
-		Use:   "stat <name> <key>",
-		Short: "Show backend object status",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 2 {
-				return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "backend.object.stat", "argument_required", "backend object stat requires a backend name and key", "pinax backend object stat <name> <key> --vault <vault>")
-			}
-			projection, err := svc.BackendObjectStat(cmd.Context(), app.BackendObjectStatRequest{VaultPath: vaultPath, Name: args[0], Key: args[1]})
-			return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), renderOptions, projection, err)
-		},
-	}
-	backendObjectCmd.AddCommand(backendObjectStatCmd)
-	backendCmd.AddCommand(backendObjectCmd)
-	cmd.AddCommand(backendCmd)
+	addPlanningCommands(cmd, ctx)
+	addBackendCommands(cmd, ctx)
 
 	addMCPCommands(cmd, ctx)
 
@@ -807,6 +318,7 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"sync":       "Automation and integrations",
 		"backend":    "Automation and integrations",
 		"cloud":      "Automation and integrations",
+		"publish":    "Automation and integrations",
 		"mcp":        "Automation and integrations",
 		"git":        "Automation and integrations",
 		"config":     "Configuration and maintenance",
@@ -926,7 +438,9 @@ func explicitConfigFlags(cmd *cobra.Command) map[string]string {
 	add("vault", "vault")
 	add("api-url", "remote.api_url")
 	add("color", "output.color")
-	add("theme", "output.theme")
+	if cmd.CommandPath() != "pinax publish profile init" {
+		add("theme", "output.theme")
+	}
 	add("width", "output.width")
 	add("markdown-style", "output.markdown.style")
 	return flags

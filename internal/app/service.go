@@ -20,6 +20,14 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/yeisme/pinax/internal/app/briefingops"
+	"github.com/yeisme/pinax/internal/app/noteops"
+	"github.com/yeisme/pinax/internal/app/planningops"
+	"github.com/yeisme/pinax/internal/app/searchops"
+	"github.com/yeisme/pinax/internal/app/syncops"
+	"github.com/yeisme/pinax/internal/app/templateops"
+	"github.com/yeisme/pinax/internal/app/vaultops"
+	"github.com/yeisme/pinax/internal/app/versionops"
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/briefing"
 	"github.com/yeisme/pinax/internal/cloudclient"
@@ -29,6 +37,7 @@ import (
 	gitstore "github.com/yeisme/pinax/internal/git"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	pinaxprofile "github.com/yeisme/pinax/internal/profile"
+	"github.com/yeisme/pinax/internal/promptasset"
 	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 	notesearch "github.com/yeisme/pinax/internal/search"
 	syncplan "github.com/yeisme/pinax/internal/sync"
@@ -75,6 +84,20 @@ type AssetRequest struct {
 	PreviewAs       string
 	MaxPreviewBytes int
 }
+
+type PromptAssetRequest struct {
+	VaultPath string
+	From      string
+	Ref       string
+	Query     string
+	Domain    string
+	Tag       string
+	Lifecycle string
+	To        string
+	Reason    string
+	Limit     int
+}
+
 type IndexRepairRequest struct {
 	VaultPath string
 	Kind      string
@@ -181,6 +204,10 @@ type SearchRequest struct {
 	IncludeDirty  bool
 	ChangedSince  string
 	Revision      string
+}
+
+func toSearchOpsRequest(req SearchRequest) searchops.Request {
+	return searchops.Request{VaultPath: req.VaultPath, Query: req.Query, Tags: req.Tags, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, LinkTarget: req.LinkTarget, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: req.Sort, AllowStale: req.AllowStale, At: req.At, ChangedSince: req.ChangedSince, Revision: req.Revision}
 }
 
 type CreateNoteRequest struct {
@@ -738,7 +765,7 @@ func (s *Service) VaultStats(_ context.Context, req VaultStatsRequest) (domain.P
 		return errorProjection("vault.stats", err), err
 	}
 	facts = ordinaryNoteFacts(facts)
-	stats := VaultAnalyticsService{}.Stats(root, facts, time.Since(started))
+	stats := vaultops.Stats(root, toVaultOpsFacts(facts), time.Since(started))
 	projection := domain.NewProjection("vault.stats", "Vault statistics generated.")
 	projection.Facts["vault"] = root
 	projection.Facts["notes"] = fmt.Sprint(stats.NoteCount)
@@ -767,7 +794,7 @@ func (s *Service) VaultDoctor(_ context.Context, req VaultDoctorRequest) (domain
 	if err != nil {
 		return errorProjection("vault.doctor", err), err
 	}
-	stats := VaultAnalyticsService{}.Stats(root, facts, time.Since(started))
+	stats := vaultops.Stats(root, toVaultOpsFacts(facts), time.Since(started))
 	facts = ordinaryNoteFacts(facts)
 	issues := VaultHealthService{}.Issues(root, facts, stats, req.StaleAfter)
 	report := domain.VaultDoctorReport{VaultPath: root, Issues: issues, Counts: countIssuesBySeverity(issues), Stats: stats}
@@ -799,7 +826,7 @@ func (s *Service) PlanRepair(_ context.Context, req RepairPlanRequest) (domain.P
 	}
 	elapsed := time.Since(started)
 	facts = ordinaryNoteFacts(facts)
-	stats := VaultAnalyticsService{}.Stats(root, facts, elapsed)
+	stats := vaultops.Stats(root, toVaultOpsFacts(facts), elapsed)
 	issues := VaultHealthService{}.Issues(root, facts, stats, 90*24*time.Hour)
 	issues = append(issues, assetAndVersionRepairIssues(root, issues)...)
 	plan := buildRepairPlan(root, facts, stats, issues, elapsed)
@@ -928,12 +955,6 @@ func (s *Service) applyRepairOperation(ctx context.Context, root string, op doma
 	}
 }
 
-type VaultAnalyticsService struct{}
-
-func (VaultAnalyticsService) Stats(root string, facts []noteFact, elapsed time.Duration) domain.VaultStats {
-	return buildVaultStats(root, facts, elapsed)
-}
-
 type VaultHealthService struct{}
 
 func (VaultHealthService) Issues(root string, facts []noteFact, stats domain.VaultStats, staleAfter time.Duration) []domain.VaultIssue {
@@ -947,6 +968,14 @@ type noteFact struct {
 	modTime        time.Time
 	size           int64
 	hasFrontmatter bool
+}
+
+func toVaultOpsFacts(facts []noteFact) []vaultops.Fact {
+	out := make([]vaultops.Fact, 0, len(facts))
+	for _, fact := range facts {
+		out = append(out, vaultops.Fact{Note: fact.note, Meta: fact.meta, Rel: fact.rel, ModTime: fact.modTime, Size: fact.size, HasFrontmatter: fact.hasFrontmatter})
+	}
+	return out
 }
 
 func scanNoteFacts(root string) ([]noteFact, error) {
@@ -1001,38 +1030,6 @@ func scanNoteFacts(root string) ([]noteFact, error) {
 	}
 	sort.Slice(facts, func(i, j int) bool { return facts[i].rel < facts[j].rel })
 	return facts, nil
-}
-
-func buildVaultStats(root string, facts []noteFact, elapsed time.Duration) domain.VaultStats {
-	dirs := map[string]int{}
-	facts = ordinaryNoteFacts(facts)
-	tags := map[string]bool{}
-	frontmatterReady := 0
-	recentUpdates := 0
-	notes := make([]domain.NoteStat, 0, len(facts))
-	for _, fact := range facts {
-		dir := filepath.ToSlash(filepath.Dir(fact.rel))
-		if dir == "." {
-			dir = "/"
-		}
-		dirs[dir]++
-		for _, tag := range noteAllTags(fact.note) {
-			tags[tag] = true
-		}
-		if fact.meta["schema_version"] == "pinax.note.v1" && fact.meta["note_id"] != "" {
-			frontmatterReady++
-		}
-		if time.Since(fact.modTime) <= 7*24*time.Hour {
-			recentUpdates++
-		}
-		notes = append(notes, domain.NoteStat{ID: fact.note.ID, Title: fact.note.Title, Path: fact.rel, Tags: fact.note.Tags, HasFrontmatter: fact.hasFrontmatter, UpdatedAt: fact.modTime.UTC().Format(time.RFC3339), SizeBytes: fact.size})
-	}
-	coverage := 0
-	if len(facts) > 0 {
-		coverage = frontmatterReady * 100 / len(facts)
-	}
-	status, indexPath := indexStatus(root, facts)
-	return domain.VaultStats{VaultPath: root, NoteCount: len(facts), TagCount: len(tags), DirectoryCounts: dirs, FrontmatterCoverage: coverage, RecentUpdates: recentUpdates, ScanDurationMillis: elapsed.Milliseconds(), IndexStatus: status, IndexPath: indexPath, Notes: notes}
 }
 
 func buildVaultIssues(root string, facts []noteFact, stats domain.VaultStats, staleAfter time.Duration) []domain.VaultIssue {
@@ -1431,7 +1428,7 @@ func ensureRepairPlanFresh(root string, plan domain.RepairPlan) error {
 	if err != nil {
 		return err
 	}
-	stats := VaultAnalyticsService{}.Stats(root, facts, 0)
+	stats := vaultops.Stats(root, toVaultOpsFacts(facts), 0)
 	facts = ordinaryNoteFacts(facts)
 	current := repairSourceFacts(facts, stats)
 	for key, want := range plan.SourceFacts {
@@ -1471,23 +1468,6 @@ func applyRepairFrontmatterPatch(root, rel string, fields map[string]string) err
 
 func vaultIssue(code, severity string, fact noteFact, message string, evidence []string, actions []domain.Action) domain.VaultIssue {
 	return domain.VaultIssue{Code: code, Severity: severity, Path: fact.rel, NoteID: fact.note.ID, Message: message, Evidence: evidence, NextActions: actions}
-}
-
-func indexStatus(root string, facts []noteFact) (string, string) {
-	path := filepath.Join(root, ".pinax", "index.sqlite")
-	info, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return "missing", filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))
-	}
-	if err != nil {
-		return "unreadable", filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))
-	}
-	for _, fact := range facts {
-		if fact.modTime.After(info.ModTime()) {
-			return "stale", filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))
-		}
-	}
-	return "fresh", filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))
 }
 
 func noteAllTags(note domain.Note) []string {
@@ -3012,7 +2992,7 @@ func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) 
 			return block
 		}
 		result := templateQueryResultFromProjection(projection)
-		markdown := renderTemplateQueryResultMarkdown(result)
+		markdown := templateops.QueryResultMarkdown(result)
 		byName[name] = markdown
 		facts[name] = projection.Facts
 		count++
@@ -3040,14 +3020,6 @@ func replaceManagedRenderBlocks(body string, rendered map[string]string) (string
 		return fmt.Sprintf("<!-- pinax:render %s start -->\n%s\n<!-- pinax:render %s end -->", name, strings.TrimSpace(content), name)
 	})
 	return updated, changed
-}
-
-func renderTemplateQueryResultMarkdown(result templateengine.QueryResult) string {
-	rendered, err := templateengine.New().Render(templateengine.TemplateDocument{Name: "query-result", Engine: templateengine.EngineGoTemplate, Body: "{{ table .Queries.result }}"}, templateengine.Context{Queries: map[string]templateengine.QueryResult{"result": result}})
-	if err != nil {
-		return ""
-	}
-	return rendered.Body
 }
 
 func (s *Service) NoteLinks(ctx context.Context, req NoteLinkRequest) (domain.Projection, error) {
@@ -3992,28 +3964,17 @@ func folderRenameTargetPath(note domain.Note, oldFolder, newFolder string) strin
 	return filepath.ToSlash(filepath.Join(newFolder, base))
 }
 
-func validateVersionAwareSearch(req SearchRequest) error {
-	if strings.TrimSpace(req.At) != "" && strings.TrimSpace(req.At) != "HEAD" {
-		return &domain.CommandError{Code: "version_query_unsupported", Message: "search --at currently only supports HEAD", Hint: "Use pinax search <query> --at HEAD or remove --at"}
-	}
-	if strings.TrimSpace(req.Revision) != "" {
-		return &domain.CommandError{Code: domain.ErrorCodeVersionReadUnavailable, Message: "Current version backend does not support reading historical projections by revision", Hint: "Use pinax version snapshot first or remove --revision"}
-	}
-	if strings.TrimSpace(req.ChangedSince) != "" {
-		return &domain.CommandError{Code: "changed_since_unavailable", Message: "Current index has not cached changed-since historical projections", Hint: "Run pinax index sync first or remove --changed-since"}
-	}
-	return nil
-}
-
 func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (SearchResult, error) {
+	searchReq := toSearchOpsRequest(req)
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	if err := validateVersionAwareSearch(req); err != nil {
+	searchReq.VaultPath = root
+	if err := searchops.ValidateVersionAware(searchReq); err != nil {
 		return SearchResult{}, err
 	}
-	if err := validateSearchDateFilters(req); err != nil {
+	if err := searchops.ValidateDateFilters(searchReq); err != nil {
 		return SearchResult{}, err
 	}
 	notes, err := scanNotes(root)
@@ -4021,13 +3982,16 @@ func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (SearchRes
 		return SearchResult{}, err
 	}
 	notes = ordinaryNotes(notes)
-	linkFilter, err := buildSearchLinkTargetFilter(notes, req.LinkTarget)
+	linkFilter, err := searchops.BuildLinkTargetFilter(notes, req.LinkTarget, func(notes []domain.Note) map[string][]domain.NoteLink {
+		outgoing, _ := BuildEnhancedLinkGraph(notes)
+		return outgoing
+	})
 	if err != nil {
 		return SearchResult{}, err
 	}
 	status, err := noteindex.Inspect(root, notes)
 	indexLoaded := ""
-	if err == nil && searchLazyIndexAllowed(req, status, notes) {
+	if err == nil && searchops.LazyIndexAllowed(searchReq, status, notes) {
 		select {
 		case <-ctx.Done():
 			return SearchResult{}, ctx.Err()
@@ -4041,364 +4005,29 @@ func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (SearchRes
 		}
 	}
 	if err == nil && (status.Status == "fresh" || (status.Status == "stale" && req.AllowStale)) {
-		indexReq := noteindex.SearchRequest{Query: req.Query, Tags: cleanTags(req.Tags), Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: normalizedSearchSort(req.Sort)}
-		if linkFilter.active {
-			indexReq.Limit = 0
-		}
+		indexReq := searchops.BuildIndexRequest(searchReq, linkFilter)
 		result, searchErr := noteindex.Search(root, indexReq)
 		if searchErr == nil && (result.Returned > 0 || strings.TrimSpace(req.Query) == "") {
 			result.IndexStatus = status.Status
-			if linkFilter.active {
-				result.Results = filterSearchResultItemsByLinkTarget(result.Results, linkFilter)
-				result.Total = len(result.Results)
-				if req.Limit > 0 && len(result.Results) > req.Limit {
-					result.Results = result.Results[:req.Limit]
-				}
-				result.Returned = len(result.Results)
-			}
-			resultNotes := make([]domain.Note, 0, len(result.Results))
-			for _, item := range result.Results {
-				resultNotes = append(resultNotes, item.Note)
-			}
-			return SearchResult{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: result.Total, Returned: result.Returned, Notes: resultNotes, Results: result.Results, LinkTargetStatus: linkFilter.status, LinkTargetMatches: linkFilter.matches, LinkTargetCandidates: linkFilter.candidates}, nil
+			return searchops.ResultFromIndex(searchReq, indexLoaded, result, linkFilter), nil
 		}
 	}
 	result := notesearch.Notes(ctx, root, req.Query, notes)
-	filtered := filterSearchNotes(result.Notes, req)
-	if linkFilter.active {
-		filtered = filterNotesByLinkTarget(filtered, linkFilter)
-	}
-	sortFallbackNotes(filtered, normalizedSearchSort(req.Sort))
-	total := len(filtered)
-	limit := req.Limit
-	if limit > 0 && len(filtered) > limit {
-		filtered = filtered[:limit]
-	}
-	items := make([]noteindex.ResultItem, 0, len(filtered))
-	for _, note := range filtered {
-		items = append(items, noteindex.ResultItem{Note: note, Score: 1, MatchedFields: []string{result.Engine}, Snippet: firstSnippet(note.Body, req.Query)})
-	}
 	indexStatus := "missing"
 	if err == nil && status.Status != "" {
 		indexStatus = status.Status
 	}
-	return SearchResult{Engine: result.Engine, IndexStatus: indexStatus, Total: total, Returned: len(items), Notes: filtered, Results: items, LinkTargetStatus: linkFilter.status, LinkTargetMatches: linkFilter.matches, LinkTargetCandidates: linkFilter.candidates}, nil
+	return searchops.ResultFromFallback(searchReq, result.Engine, result.Notes, indexStatus, linkFilter), nil
 }
 
-func searchLazyIndexAllowed(req SearchRequest, status noteindex.Status, notes []domain.Note) bool {
-	if req.AllowStale {
-		return false
-	}
-	if status.Status != "missing" && status.Status != "stale" {
-		return false
-	}
-	// scanNotes 已按 Pinax frontmatter 和系统目录过滤；根目录内容布局不再要求 note.Path 必须带 `notes/` 前缀。
-	const lazyIndexNoteBudget = 10000
-	return len(notes) <= lazyIndexNoteBudget
-}
-
-type SearchResult struct {
-	Engine               string                     `json:"engine"`
-	IndexStatus          string                     `json:"index_status,omitempty"`
-	IndexLoaded          string                     `json:"index_loaded,omitempty"`
-	Total                int                        `json:"total"`
-	Returned             int                        `json:"returned"`
-	Notes                []domain.Note              `json:"notes,omitempty"`
-	Results              []noteindex.ResultItem     `json:"results,omitempty"`
-	LinkTargetStatus     string                     `json:"link_target_status,omitempty"`
-	LinkTargetMatches    int                        `json:"link_target_matches,omitempty"`
-	LinkTargetCandidates []domain.NoteLinkCandidate `json:"link_target_candidates,omitempty"`
-}
+type SearchResult = searchops.Result
 
 func (s *Service) SearchProjection(ctx context.Context, req SearchRequest) (domain.Projection, error) {
 	result, err := s.SearchNotes(ctx, req)
 	if err != nil {
 		return errorProjection("note.search", err), err
 	}
-	projection := domain.NewProjection("note.search", "Search completed.")
-	projection.Facts["matches"] = fmt.Sprint(result.Returned)
-	projection.Facts["total"] = fmt.Sprint(result.Total)
-	projection.Facts["returned"] = fmt.Sprint(result.Returned)
-	projection.Facts["engine"] = result.Engine
-	projection.Facts["sort"] = normalizedSearchSort(req.Sort)
-	if result.IndexStatus != "" {
-		projection.Facts["index_status"] = result.IndexStatus
-	}
-	if result.IndexLoaded != "" {
-		projection.Facts["index_loaded"] = result.IndexLoaded
-	}
-	if result.LinkTargetStatus != "" {
-		projection.Facts["link_target.status"] = result.LinkTargetStatus
-		projection.Facts["link_target.matches"] = fmt.Sprint(result.LinkTargetMatches)
-		if len(result.LinkTargetCandidates) > 0 {
-			projection.Facts["link_target.candidates"] = fmt.Sprint(len(result.LinkTargetCandidates))
-		}
-	}
-	if result.Engine == "index" && result.IndexStatus == "stale" {
-		projection.Status = "partial"
-		projection.Actions = []domain.Action{{Name: "index_rebuild", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(req.VaultPath))}}
-	}
-	addSearchFilterFacts(projection.Facts, req)
-	projection.Data = result
-	return projection, nil
-}
-
-func normalizedSearchSort(sortMode string) string {
-	sortMode = strings.TrimSpace(sortMode)
-	switch sortMode {
-	case "", "relevance":
-		return "relevance"
-	case "updated", "created", "title", "path":
-		return sortMode
-	default:
-		return "relevance"
-	}
-}
-
-func sortFallbackNotes(notes []domain.Note, mode string) {
-	sort.Slice(notes, func(i, j int) bool {
-		a := notes[i]
-		b := notes[j]
-		switch mode {
-		case "title":
-			if a.Title == b.Title {
-				return a.Path < b.Path
-			}
-			return a.Title < b.Title
-		case "path":
-			return a.Path < b.Path
-		case "created":
-			return noteTimeDesc(a.CreatedAt, b.CreatedAt, a.Path, b.Path)
-		case "updated":
-			return noteTimeDesc(a.UpdatedAt, b.UpdatedAt, a.Path, b.Path)
-		default:
-			return a.Path < b.Path
-		}
-	})
-}
-
-func noteTimeDesc(a, b, pathA, pathB string) bool {
-	at, aErr := parseUserDate(a)
-	bt, bErr := parseUserDate(b)
-	if aErr != nil || bErr != nil || at.Equal(bt) {
-		return pathA < pathB
-	}
-	return at.After(bt)
-}
-
-type searchLinkTargetFilter struct {
-	active     bool
-	status     string
-	sourcePath map[string]bool
-	matches    int
-	candidates []domain.NoteLinkCandidate
-}
-
-func buildSearchLinkTargetFilter(notes []domain.Note, target string) (searchLinkTargetFilter, error) {
-	if target == "" {
-		return searchLinkTargetFilter{}, nil
-	}
-	target = strings.TrimSpace(target)
-	if target == "" {
-		return searchLinkTargetFilter{}, &domain.CommandError{Code: "invalid_link_filter", Message: "link target filter cannot be empty", Hint: "Provide a note_id, path, title, or unresolved raw target"}
-	}
-	matchedNote, candidates, ambiguous := resolveSearchLinkTargetNote(notes, target)
-	if ambiguous {
-		return searchLinkTargetFilter{}, &domain.CommandError{Code: "link_target_ambiguous", Message: "link target matched multiple candidate notes", Hint: "Retry with a note_id or full path; candidates: " + formatLinkTargetCandidates(candidates)}
-	}
-	outgoing, _ := BuildEnhancedLinkGraph(notes)
-	filter := searchLinkTargetFilter{active: true, status: "raw", sourcePath: map[string]bool{}, candidates: candidates}
-	for sourcePath, links := range outgoing {
-		for _, link := range links {
-			if searchLinkMatchesTarget(link, target, matchedNote) {
-				filter.sourcePath[sourcePath] = true
-				filter.matches++
-				switch link.Status {
-				case string(domain.LinkStatusResolved):
-					filter.status = "resolved"
-				case string(domain.LinkStatusBroken):
-					if filter.status == "raw" {
-						filter.status = "broken"
-					}
-				case string(domain.LinkStatusAmbiguous):
-					if filter.status == "raw" {
-						filter.status = "ambiguous"
-					}
-				}
-			}
-		}
-	}
-	return filter, nil
-}
-
-func resolveSearchLinkTargetNote(notes []domain.Note, target string) (domain.Note, []domain.NoteLinkCandidate, bool) {
-	lowerTarget := strings.ToLower(target)
-	cleanTarget := filepath.ToSlash(filepath.Clean(target))
-	if cleanTarget == "." {
-		cleanTarget = target
-	}
-	for _, note := range notes {
-		if note.ID != "" && strings.EqualFold(note.ID, target) {
-			return note, []domain.NoteLinkCandidate{{Path: note.Path, Title: note.Title, NoteID: note.ID}}, false
-		}
-	}
-	for _, note := range notes {
-		if note.Path == cleanTarget || strings.TrimPrefix(note.Path, "notes/") == cleanTarget {
-			return note, []domain.NoteLinkCandidate{{Path: note.Path, Title: note.Title, NoteID: note.ID}}, false
-		}
-	}
-	titleMatches := make([]domain.NoteLinkCandidate, 0)
-	var matched domain.Note
-	for _, note := range notes {
-		if strings.ToLower(note.Title) == lowerTarget {
-			matched = note
-			titleMatches = append(titleMatches, domain.NoteLinkCandidate{Path: note.Path, Title: note.Title, NoteID: note.ID})
-		}
-	}
-	if len(titleMatches) > 1 {
-		return domain.Note{}, titleMatches, true
-	}
-	if len(titleMatches) == 1 {
-		return matched, titleMatches, false
-	}
-	return domain.Note{}, nil, false
-}
-
-func searchLinkMatchesTarget(link domain.NoteLink, rawTarget string, matchedNote domain.Note) bool {
-	if matchedNote.Path != "" {
-		return link.Status == string(domain.LinkStatusResolved) && (link.TargetNoteID == matchedNote.ID || link.TargetPath == matchedNote.Path || strings.EqualFold(link.TargetTitle, matchedNote.Title))
-	}
-	return strings.EqualFold(link.Target, rawTarget) || strings.EqualFold(link.TargetRaw, rawTarget)
-}
-
-func filterSearchResultItemsByLinkTarget(items []noteindex.ResultItem, filter searchLinkTargetFilter) []noteindex.ResultItem {
-	filtered := make([]noteindex.ResultItem, 0, len(items))
-	for _, item := range items {
-		if filter.sourcePath[item.Note.Path] {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
-func filterNotesByLinkTarget(notes []domain.Note, filter searchLinkTargetFilter) []domain.Note {
-	filtered := make([]domain.Note, 0, len(notes))
-	for _, note := range notes {
-		if filter.sourcePath[note.Path] {
-			filtered = append(filtered, note)
-		}
-	}
-	return filtered
-}
-
-func formatLinkTargetCandidates(candidates []domain.NoteLinkCandidate) string {
-	parts := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		parts = append(parts, candidate.Path)
-	}
-	return strings.Join(parts, ",")
-}
-
-func filterSearchNotes(notes []domain.Note, req SearchRequest) []domain.Note {
-	filtered := make([]domain.Note, 0, len(notes))
-	for _, note := range notes {
-		// 默认排除 discarded，除非显式请求
-		if req.Status != "discarded" && note.Status == "discarded" {
-			continue
-		}
-		if req.Group != "" && note.Project != req.Group {
-			continue
-		}
-		if req.Folder != "" && note.Folder != req.Folder {
-			continue
-		}
-		if req.Kind != "" && note.Kind != req.Kind {
-			continue
-		}
-		if req.Status != "" && note.Status != req.Status {
-			continue
-		}
-		if req.CreatedAfter != "" && !noteTimestampAfterOrEqual(note.CreatedAt, req.CreatedAfter) {
-			continue
-		}
-		if req.UpdatedAfter != "" && !noteTimestampAfterOrEqual(note.UpdatedAt, req.UpdatedAfter) {
-			continue
-		}
-		ok := true
-		for _, tag := range cleanTags(req.Tags) {
-			if !stringSliceContains(cleanTags(note.Tags), tag) {
-				ok = false
-				break
-			}
-		}
-		if ok {
-			filtered = append(filtered, note)
-		}
-	}
-	return filtered
-}
-
-func addSearchFilterFacts(facts map[string]string, req SearchRequest) {
-	if tags := cleanTags(req.Tags); len(tags) > 0 {
-		facts["filter.tag"] = strings.Join(tags, ",")
-	}
-	if req.Group != "" {
-		facts["filter.group"] = req.Group
-	}
-	if req.Folder != "" {
-		facts["filter.folder"] = req.Folder
-	}
-	if req.Kind != "" {
-		facts["filter.kind"] = req.Kind
-	}
-	if req.Status != "" {
-		facts["filter.status"] = req.Status
-	}
-	if req.CreatedAfter != "" {
-		facts["filter.created_after"] = req.CreatedAfter
-	}
-	if req.UpdatedAfter != "" {
-		facts["filter.updated_after"] = req.UpdatedAfter
-	}
-	if req.LinkTarget != "" {
-		facts["filter.link_target"] = req.LinkTarget
-	}
-	if req.HasAttachment {
-		facts["filter.has_attachment"] = "true"
-	}
-}
-
-func validateSearchDateFilters(req SearchRequest) error {
-	for _, item := range []struct {
-		name  string
-		value string
-	}{
-		{name: "created-after", value: req.CreatedAfter},
-		{name: "updated-after", value: req.UpdatedAfter},
-	} {
-		if strings.TrimSpace(item.value) == "" {
-			continue
-		}
-		if _, err := parseUserDate(item.value); err != nil {
-			return &domain.CommandError{Code: "invalid_date_filter", Message: "Date filter is invalid", Hint: "Use YYYY-MM-DD or an RFC3339 timestamp, for example 2026-01-01"}
-		}
-	}
-	return nil
-}
-
-func noteTimestampAfterOrEqual(value, boundary string) bool {
-	if strings.TrimSpace(value) == "" {
-		return false
-	}
-	valueTime, err := parseUserDate(value)
-	if err != nil {
-		return false
-	}
-	boundaryTime, err := parseUserDate(boundary)
-	if err != nil {
-		return false
-	}
-	return valueTime.Equal(boundaryTime) || valueTime.After(boundaryTime)
+	return searchops.Projection(toSearchOpsRequest(req), result, shellQuote), nil
 }
 
 func parseUserDate(value string) (time.Time, error) {
@@ -4407,41 +4036,6 @@ func parseUserDate(value string) (time.Time, error) {
 		return t, nil
 	}
 	return time.Parse("2006-01-02", value)
-}
-
-func firstSnippet(body, query string) string {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return ""
-	}
-	query = strings.ToLower(strings.TrimSpace(query))
-	if query != "" {
-		idx := strings.Index(strings.ToLower(body), query)
-		if idx >= 0 {
-			start := idx - 30
-			if start < 0 {
-				start = 0
-			}
-			end := idx + len(query) + 60
-			if end > len(body) {
-				end = len(body)
-			}
-			return strings.TrimSpace(body[start:end])
-		}
-	}
-	if len(body) > 120 {
-		return body[:120]
-	}
-	return body
-}
-
-func stringSliceContains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Projection, error) {
@@ -4752,6 +4346,260 @@ func applyOrganizeMetadataOperation(root string, op domain.PlanOperation) error 
 		return nil
 	}
 	return applyRepairFrontmatterPatch(root, op.Path, fields)
+}
+
+func (s *Service) PromptImport(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	return s.promptImport(ctx, req, "prompt.import")
+}
+
+func (s *Service) PromptCreate(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	return s.promptImport(ctx, req, "prompt.create")
+}
+
+func (s *Service) PromptSearch(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("prompt.search", err), err
+	}
+	repo, err := promptasset.OpenVaultRepository(root)
+	if err != nil {
+		return errorProjection("prompt.search", err), err
+	}
+	assets, err := repo.Search(ctx, promptasset.SearchRequest{Query: req.Query, Domain: req.Domain, Tag: req.Tag, Lifecycle: req.Lifecycle, Limit: req.Limit})
+	if err != nil {
+		return errorProjection("prompt.search", err), err
+	}
+	projection := domain.NewProjection("prompt.search", "Prompt asset search completed.")
+	projection.Facts["results"] = fmt.Sprint(len(assets))
+	if req.Query != "" {
+		projection.Facts["query"] = req.Query
+	}
+	if req.Domain != "" {
+		projection.Facts["domain"] = req.Domain
+	}
+	for i, asset := range assets {
+		prefix := fmt.Sprintf("prompt_asset.%d.", i+1)
+		projection.Facts[prefix+"id"] = asset.PromptAssetID
+		projection.Facts[prefix+"lifecycle"] = asset.Lifecycle
+		projection.Facts[prefix+"permission"] = asset.Permission
+	}
+	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
+	projection.Data = map[string]any{"prompt_assets": assets}
+	return projection, nil
+}
+
+func (s *Service) PromptShow(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	return s.promptDetails(ctx, req, "prompt.show")
+}
+
+func (s *Service) PromptResolve(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	return s.promptDetails(ctx, req, "prompt.resolve")
+}
+
+func (s *Service) PromptLifecycle(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("prompt.lifecycle", err), err
+	}
+	if strings.TrimSpace(req.Ref) == "" || strings.TrimSpace(req.To) == "" {
+		err := &domain.CommandError{Code: "argument_required", Message: "prompt lifecycle requires an asset id and --to", Hint: "pinax prompt lifecycle <id> --to tested --reason <reason> --vault <vault> --json"}
+		return domain.NewErrorProjection("prompt.lifecycle", err), err
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		err := &domain.CommandError{Code: "reason_required", Message: "prompt lifecycle requires --reason", Hint: "Record why Pinax changed the lifecycle"}
+		return domain.NewErrorProjection("prompt.lifecycle", err), err
+	}
+	repo, err := promptasset.OpenVaultRepository(root)
+	if err != nil {
+		return errorProjection("prompt.lifecycle", err), err
+	}
+	record, err := repo.UpdateLifecycle(ctx, req.Ref, req.To)
+	if err != nil {
+		if promptasset.IsNotFound(err) {
+			err := &domain.CommandError{Code: "prompt_asset_not_found", Message: "Prompt asset not found", Hint: fmt.Sprintf("pinax prompt search %s --vault %s --json", shellQuote(req.Ref), shellQuote(root))}
+			return domain.NewErrorProjection("prompt.lifecycle", err), err
+		}
+		err := &domain.CommandError{Code: "prompt_lifecycle_invalid", Message: err.Error(), Hint: "Use draft, tested, accepted, promoted, or retired"}
+		return domain.NewErrorProjection("prompt.lifecycle", err), err
+	}
+	feedbackID := lifecycleFeedbackID(record.PromptAssetID, req.To, req.Reason)
+	_, _ = repo.ImportFeedback(ctx, promptasset.Feedback{FeedbackID: feedbackID, PromptAssetID: record.PromptAssetID, VersionID: record.CurrentVersionID, PromptTemplateHash: record.PromptTemplateHash, ExternalRunRef: "pinax://prompt/lifecycle", Decision: req.To, Reason: req.Reason})
+	projection := domain.NewProjection("prompt.lifecycle", "Prompt asset lifecycle updated.")
+	promptAssetFacts(&projection, record)
+	projection.Facts["reason_recorded"] = "true"
+	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
+	projection.Data = map[string]any{"prompt_asset": record, "feedback_id": feedbackID}
+	return projection, nil
+}
+
+func (s *Service) PromptFeedbackImport(ctx context.Context, req PromptAssetRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("prompt.feedback.import", err), err
+	}
+	if strings.TrimSpace(req.From) == "" {
+		err := &domain.CommandError{Code: "argument_required", Message: "prompt feedback import requires --from", Hint: "pinax prompt feedback import --from <file> --vault <vault> --json"}
+		return domain.NewErrorProjection("prompt.feedback.import", err), err
+	}
+	content, err := os.ReadFile(req.From)
+	if err != nil {
+		err := &domain.CommandError{Code: "prompt_feedback_source_unreadable", Message: "Prompt feedback source cannot be read", Hint: "Check the --from file path and retry"}
+		return domain.NewErrorProjection("prompt.feedback.import", err), err
+	}
+	var payload promptFeedbackPayload
+	if err := json.Unmarshal(content, &payload); err != nil {
+		err := &domain.CommandError{Code: "prompt_feedback_invalid", Message: err.Error(), Hint: "Provide a valid Eikona prompt usage feedback JSON file"}
+		return domain.NewErrorProjection("prompt.feedback.import", err), err
+	}
+	feedback, commandErr := payload.toFeedback()
+	if commandErr != nil {
+		return domain.NewErrorProjection("prompt.feedback.import", commandErr), commandErr
+	}
+	repo, err := promptasset.OpenVaultRepository(root)
+	if err != nil {
+		return errorProjection("prompt.feedback.import", err), err
+	}
+	if _, err := repo.Resolve(ctx, feedback.PromptAssetID); err != nil {
+		if promptasset.IsNotFound(err) {
+			err := &domain.CommandError{Code: "prompt_asset_not_found", Message: "Prompt asset not found", Hint: fmt.Sprintf("pinax prompt import --from <asset-file> --vault %s --json", shellQuote(root))}
+			return domain.NewErrorProjection("prompt.feedback.import", err), err
+		}
+		return errorProjection("prompt.feedback.import", err), err
+	}
+	result, err := repo.ImportFeedback(ctx, feedback)
+	if err != nil {
+		return errorProjection("prompt.feedback.import", err), err
+	}
+	projection := domain.NewProjection("prompt.feedback.import", "Prompt usage feedback imported.")
+	projection.Facts["prompt_asset_id"] = result.Record.PromptAssetID
+	projection.Facts["feedback_id"] = result.Record.FeedbackID
+	projection.Facts["imported"] = fmt.Sprint(result.Imported)
+	projection.Facts["decision"] = result.Record.Decision
+	if result.Record.Decision != "" {
+		projection.Actions = []domain.Action{{Name: "lifecycle", Command: fmt.Sprintf("pinax prompt lifecycle %s --to %s --reason <reason> --json", shellQuote(result.Record.PromptAssetID), shellQuote(result.Record.Decision))}}
+	}
+	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
+	projection.Data = map[string]any{"feedback": result.Record, "imported": result.Imported}
+	return projection, nil
+}
+
+func (s *Service) promptImport(ctx context.Context, req PromptAssetRequest, command string) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	if strings.TrimSpace(req.From) == "" {
+		err := &domain.CommandError{Code: "argument_required", Message: "prompt import requires --from", Hint: "pinax prompt import --from <file> --vault <vault> --json"}
+		if command == "prompt.create" {
+			err.Message = "prompt create requires --from"
+			err.Hint = "pinax prompt create --from <file> --vault <vault> --json"
+		}
+		return domain.NewErrorProjection(command, err), err
+	}
+	content, err := os.ReadFile(req.From)
+	if err != nil {
+		err := &domain.CommandError{Code: "prompt_asset_source_unreadable", Message: "Prompt asset source cannot be read", Hint: "Check the --from file path and retry"}
+		return domain.NewErrorProjection(command, err), err
+	}
+	asset, err := promptasset.Load(content)
+	if err != nil {
+		err := &domain.CommandError{Code: "prompt_asset_invalid", Message: err.Error(), Hint: "Provide a valid yeisme.prompt_asset.v1 YAML file"}
+		return domain.NewErrorProjection(command, err), err
+	}
+	if err := promptasset.Validate(asset); err != nil {
+		err := &domain.CommandError{Code: "prompt_asset_invalid", Message: err.Error(), Hint: "Fix required prompt asset fields and retry"}
+		return domain.NewErrorProjection(command, err), err
+	}
+	repo, err := promptasset.OpenVaultRepository(root)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	record, err := repo.Create(ctx, asset)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	projection := domain.NewProjection(command, "Prompt asset imported.")
+	if command == "prompt.create" {
+		projection.Summary = "Prompt asset created."
+	}
+	promptAssetFacts(&projection, record)
+	projection.Actions = []domain.Action{{Name: "resolve", Command: fmt.Sprintf("pinax prompt resolve pinax://prompt/%s --agent", shellQuote(record.PromptAssetID))}}
+	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
+	projection.Data = map[string]any{"prompt_asset": record}
+	return projection, nil
+}
+
+func (s *Service) promptDetails(ctx context.Context, req PromptAssetRequest, command string) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	if strings.TrimSpace(req.Ref) == "" {
+		err := &domain.CommandError{Code: "argument_required", Message: command + " requires a prompt asset id or URI", Hint: "pinax prompt show <id> --vault <vault> --json"}
+		if command == "prompt.resolve" {
+			err.Hint = "pinax prompt resolve pinax://prompt/<id> --vault <vault> --agent"
+		}
+		return domain.NewErrorProjection(command, err), err
+	}
+	repo, err := promptasset.OpenVaultRepository(root)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	details, err := repo.Details(ctx, req.Ref)
+	if err != nil {
+		if promptasset.IsNotFound(err) {
+			err := &domain.CommandError{Code: "prompt_asset_not_found", Message: "Prompt asset not found", Hint: fmt.Sprintf("pinax prompt search %s --vault %s --json", shellQuote(req.Ref), shellQuote(root))}
+			return domain.NewErrorProjection(command, err), err
+		}
+		return errorProjection(command, err), err
+	}
+	projection := domain.NewProjection(command, "Prompt asset details read.")
+	if command == "prompt.resolve" {
+		projection.Summary = "Prompt asset resolved."
+	}
+	promptAssetFacts(&projection, details.Asset)
+	projection.Actions = []domain.Action{{Name: "resolve", Command: fmt.Sprintf("pinax prompt resolve pinax://prompt/%s --agent", shellQuote(details.Asset.PromptAssetID))}}
+	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
+	projection.Data = map[string]any{"prompt_asset": details.Asset, "version": details.Version, "source_refs": details.SourceRefs}
+	return projection, nil
+}
+
+func promptAssetFacts(projection *domain.Projection, asset noteindex.PromptAssetRecord) {
+	projection.Facts["prompt_asset_id"] = asset.PromptAssetID
+	projection.Facts["version"] = asset.CurrentVersionID
+	projection.Facts["lifecycle"] = asset.Lifecycle
+	projection.Facts["permission"] = asset.Permission
+	projection.Facts["domain"] = asset.Domain
+	if asset.OwnerProject != "" {
+		projection.Facts["owner_project"] = asset.OwnerProject
+	}
+}
+
+type promptFeedbackPayload struct {
+	SchemaVersion      string   `json:"schema_version"`
+	FeedbackID         string   `json:"feedback_id"`
+	PromptAssetID      string   `json:"prompt_asset_id"`
+	VersionID          string   `json:"version_id"`
+	PromptTemplateHash string   `json:"prompt_template_hash"`
+	ExternalRunRef     string   `json:"external_run_ref"`
+	Decision           string   `json:"decision"`
+	Reason             string   `json:"reason"`
+	ArtifactRefs       []string `json:"artifact_refs"`
+}
+
+func (p promptFeedbackPayload) toFeedback() (promptasset.Feedback, *domain.CommandError) {
+	if strings.TrimSpace(p.FeedbackID) == "" {
+		return promptasset.Feedback{}, &domain.CommandError{Code: "prompt_feedback_invalid", Message: "feedback_id is required", Hint: "Add feedback_id to the feedback record"}
+	}
+	if strings.TrimSpace(p.PromptAssetID) == "" {
+		return promptasset.Feedback{}, &domain.CommandError{Code: "prompt_feedback_invalid", Message: "prompt_asset_id is required", Hint: "Add prompt_asset_id to the feedback record"}
+	}
+	return promptasset.Feedback{FeedbackID: p.FeedbackID, PromptAssetID: p.PromptAssetID, VersionID: p.VersionID, PromptTemplateHash: p.PromptTemplateHash, ExternalRunRef: p.ExternalRunRef, Decision: p.Decision, Reason: p.Reason, ArtifactRefs: p.ArtifactRefs}, nil
+}
+
+func lifecycleFeedbackID(assetID, lifecycle, reason string) string {
+	sum := sha1.Sum([]byte(assetID + "\x00" + lifecycle + "\x00" + reason))
+	return "lifecycle_" + assetID + "_" + hex.EncodeToString(sum[:])[:12]
 }
 
 func (s *Service) AssetAdd(_ context.Context, req AssetRequest) (domain.Projection, error) {
@@ -5458,7 +5306,7 @@ func (s *Service) VersionShow(ctx context.Context, req VersionShowRequest) (doma
 	if err != nil {
 		return errorProjection("version.show", err), err
 	}
-	path, err := cleanVersionObjectPath(req.Path)
+	path, err := versionops.CleanObjectPath(req.Path)
 	if err != nil {
 		return errorProjection("version.show", err), err
 	}
@@ -5497,7 +5345,7 @@ func (s *Service) VersionRestorePlan(ctx context.Context, req VersionRestorePlan
 	if len(resolverResult.Candidates) == 1 {
 		path = resolverResult.Candidates[0].Path
 	} else {
-		path, err = cleanVersionObjectPath(req.Path)
+		path, err = versionops.CleanObjectPath(req.Path)
 		if err != nil {
 			return errorProjection("version.restore", err), err
 		}
@@ -5789,13 +5637,6 @@ func loadVersionSnapshots(root string, limit int) ([]domain.VersionSnapshot, err
 		snapshots = append(snapshots, snapshot)
 	}
 	return snapshots, nil
-}
-func cleanVersionObjectPath(path string) (string, error) {
-	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
-	if clean == "" || clean == "." || clean == ".." || filepath.IsAbs(path) || strings.HasPrefix(clean, "../") {
-		return "", &domain.CommandError{Code: "version_path_invalid", Message: "version path must be vault-relative", Hint: "Use a path like notes/example.md"}
-	}
-	return clean, nil
 }
 func (s *Service) GitSnapshot(ctx context.Context, req SnapshotRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
@@ -7226,7 +7067,7 @@ func (s *Service) BriefingRecipeInit(_ context.Context, req BriefingRecipeReques
 	if err != nil {
 		return errorProjection("briefing.recipe.init", err), err
 	}
-	projection := briefingRecipeProjection("briefing.recipe.init", "Briefing recipe created.", root, recipe)
+	projection := briefingops.RecipeProjection("briefing.recipe.init", "Briefing recipe created.", root, recipe)
 	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax briefing recipe show --vault %s --json", shellQuote(root))}}
 	return projection, nil
 }
@@ -7240,7 +7081,7 @@ func (s *Service) BriefingRecipeShow(_ context.Context, req BriefingRecipeReques
 	if err != nil {
 		return errorProjection("briefing.recipe.show", err), err
 	}
-	projection := briefingRecipeProjection("briefing.recipe.show", "Briefing recipe read.", root, recipe)
+	projection := briefingops.RecipeProjection("briefing.recipe.show", "Briefing recipe read.", root, recipe)
 	projection.Actions = []domain.Action{{Name: "set", Command: fmt.Sprintf("pinax briefing recipe set --vault %s --topic <topic>", shellQuote(root))}}
 	return projection, nil
 }
@@ -7257,20 +7098,9 @@ func (s *Service) BriefingRecipeSet(_ context.Context, req BriefingRecipeRequest
 	if err != nil {
 		return errorProjection("briefing.recipe.set", err), err
 	}
-	projection := briefingRecipeProjection("briefing.recipe.set", "Briefing recipe updated.", root, recipe)
+	projection := briefingops.RecipeProjection("briefing.recipe.set", "Briefing recipe updated.", root, recipe)
 	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax briefing recipe show --vault %s --json", shellQuote(root))}}
 	return projection, nil
-}
-
-func briefingRecipeProjection(command, summary, root string, recipe briefing.Recipe) domain.Projection {
-	projection := domain.NewProjection(command, summary)
-	projection.Facts["topic"] = recipe.Topic
-	projection.Facts["limit"] = fmt.Sprint(recipe.Limit)
-	projection.Facts["sources"] = fmt.Sprint(len(recipe.Sources))
-	projection.Facts["output_format"] = recipe.Output.Format
-	projection.Evidence = []string{filepath.ToSlash(filepath.Join(root, ".pinax", "briefing", "recipe.json"))}
-	projection.Data = map[string]any{"recipe": recipe}
-	return projection
 }
 
 func (s *Service) CloudBackendSetS3(_ context.Context, req CloudBackendSetRequest) (domain.Projection, error) {
@@ -7588,7 +7418,7 @@ func cloudStateForSync(root string, req SyncRequest) (pinaxcloud.State, error) {
 
 func buildCloudSyncProjection(command, root string, req SyncRequest, direction syncplan.Direction) (domain.Projection, error) {
 	started := time.Now()
-	pathPolicy := normalizeSyncPathPolicy(req.PathPolicy)
+	pathPolicy := syncops.NormalizePathPolicy(req.PathPolicy)
 	state, err := cloudStateForSync(root, req)
 	if err != nil {
 		return cloudStateErrorProjection(command, root, err)
@@ -7619,7 +7449,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 			projection.Evidence = []string{receiptPath}
 		}
 		addCloudSyncFacts(&projection, state, plan)
-		projection.Data = map[string]any{"plan": sanitizeSyncPlan(plan, pathPolicy), "receipt": receipt}
+		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
 		return projection, commandErr
 	}
 	if planErr != nil {
@@ -7639,7 +7469,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
-			projection.Data = map[string]any{"plan": sanitizeSyncPlan(plan, pathPolicy), "receipt": receipt}
+			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
 			return projection, commandErr
 		}
 		plan.RemoteWrite = commit.RemoteWrite
@@ -7660,7 +7490,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 		projection.Facts["run_id"] = receipt.RunID
 		projection.Facts["revision_id"] = commit.RevisionID
 		projection.Evidence = []string{receiptPath}
-		projection.Data = map[string]any{"plan": sanitizeSyncPlan(plan, pathPolicy), "remote_write": commit.RemoteWrite, "revision_id": commit.RevisionID, "manifest_blob_id": commit.ManifestBlobID, "receipt": receipt}
+		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": commit.RemoteWrite, "revision_id": commit.RevisionID, "manifest_blob_id": commit.ManifestBlobID, "receipt": receipt}
 		return projection, nil
 	}
 	if direction == syncplan.DirectionPull && req.Yes && !req.DryRun && isExecutableCloudState(state) {
@@ -7675,7 +7505,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
-			projection.Data = map[string]any{"plan": sanitizeSyncPlan(plan, pathPolicy), "receipt": receipt}
+			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
 			return projection, commandErr
 		}
 		receipt.LocalWrite = pullResult.FilesApplied > 0
@@ -7702,7 +7532,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 		projection.Facts["conflicts"] = fmt.Sprint(len(pullResult.Conflicts))
 		addSyncConflictFacts(&projection, pullResult.Conflicts)
 		projection.Evidence = []string{receiptPath}
-		projection.Data = map[string]any{"plan": sanitizeSyncPlan(plan, pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": receipt}
+		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": receipt}
 		return projection, nil
 	}
 	projection := domain.NewProjection(command, "Cloud sync plan generated; real remote writes are not wired yet.")
@@ -7733,8 +7563,25 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 	addCloudSyncFacts(&projection, state, plan)
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Evidence = []string{receiptPath}
-	projection.Data = map[string]any{"plan": sanitizeSyncPlan(plan, pathPolicy), "blocked_by": projection.Facts["blocked_by"], "receipt": receipt}
+	projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "blocked_by": projection.Facts["blocked_by"], "receipt": receipt}
 	return projection, nil
+}
+
+func commandErrorFromError(err error) *domain.CommandError {
+	var commandErr *domain.CommandError
+	if errors.As(err, &commandErr) {
+		return commandErr
+	}
+	rawMessage := err.Error()
+	message := syncops.SanitizeString(rawMessage)
+	switch {
+	case strings.Contains(rawMessage, "lock_held"):
+		return &domain.CommandError{Code: "lock_held", Message: message, Hint: "Retry after the current cloud sync finishes"}
+	case strings.Contains(rawMessage, "transport_unavailable"), strings.Contains(rawMessage, "rclone copyto failed"):
+		return &domain.CommandError{Code: "transport_unavailable", Message: message, Hint: "Check the configured cloud transport before retrying"}
+	default:
+		return &domain.CommandError{Code: "cloud_sync_failed", Message: message, Hint: "Run pinax cloud doctor --vault <vault> --json"}
+	}
 }
 
 func directBackendKind(state pinaxcloud.State) string {
@@ -9005,52 +8852,8 @@ func resolveNoteRef(notes []domain.Note, ref string) (domain.Note, error) {
 }
 
 func noteMatchesQuery(note domain.Note, req NoteListRequest) bool {
-	// list query 只做显式维度过滤，不做模糊标题/正文匹配，保持 CLI 输出可预测。
-	if req.Project != "" && note.Project != req.Project {
-		return false
-	}
-	if req.Group != "" && note.Project != req.Group {
-		return false
-	}
-	if req.Folder != "" && note.Folder != req.Folder {
-		return false
-	}
-	if req.Kind != "" && note.Kind != req.Kind {
-		return false
-	}
-	if req.Status != "" && note.Status != req.Status {
-		return false
-	}
-	if req.CreatedAfter != "" && !noteTimestampAfterOrEqual(note.CreatedAt, req.CreatedAfter) {
-		return false
-	}
-	if req.UpdatedBefore != "" && !noteTimestampBeforeOrEqual(note.UpdatedAt, req.UpdatedBefore) {
-		return false
-	}
-	if req.PathPrefix != "" && !strings.HasPrefix(note.Path, filepath.ToSlash(req.PathPrefix)) {
-		return false
-	}
-	for _, tag := range req.Tags {
-		if tag != "" && !containsString(noteAllTags(note), strings.TrimPrefix(tag, "#")) {
-			return false
-		}
-	}
-	return true
-}
-
-func noteTimestampBeforeOrEqual(value, boundary string) bool {
-	if strings.TrimSpace(value) == "" {
-		return false
-	}
-	valueTime, err := parseUserDate(value)
-	if err != nil {
-		return false
-	}
-	boundaryTime, err := parseUserDate(boundary)
-	if err != nil {
-		return false
-	}
-	return valueTime.Equal(boundaryTime) || valueTime.Before(boundaryTime)
+	// List query only applies explicit dimensions; it avoids fuzzy title/body matching so CLI output remains predictable.
+	return noteops.MatchesList(note, noteops.ListRequest{Project: req.Project, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedBefore: req.UpdatedBefore, PathPrefix: req.PathPrefix, Tags: req.Tags})
 }
 
 func sortNotes(notes []domain.Note, req NoteListRequest) {
@@ -10752,14 +10555,7 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 	} else if ok {
 		mergeProjectBoardPlanningFacts(&snapshot, board, rel)
 	}
-	// MVP: 基于笔记数量生成简单容量建议。
-	maxCommitments := 3
-	switch period {
-	case domain.PlanningWeekly:
-		maxCommitments = 7
-	case domain.PlanningMonthly:
-		maxCommitments = 15
-	}
+	maxCommitments := planningops.MaxCommitments(period)
 	snapshot.Facts["max_commitments"] = fmt.Sprint(maxCommitments)
 	// 生成 decision。
 	decision := domain.PlanningDecision{
@@ -10772,16 +10568,7 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 		NextActions:   []domain.Action{},
 		CreatedAt:     now.Format(time.RFC3339),
 	}
-	// 容量检查：如果笔记过多则添加风险。
-	if len(facts) > maxCommitments*5 {
-		snapshot.Risks = append(snapshot.Risks, domain.PlanningRisk{
-			Code: "OVER_CAPACITY", Message: "vault note count may exceed planning capacity",
-			Evidence: []string{fmt.Sprintf("notes=%d max_commitments=%d", len(facts), maxCommitments)},
-		})
-		decision.Reasons = append(decision.Reasons, domain.PlanningReason{
-			Kind: "capacity", Summary: fmt.Sprintf("vault has %d notes; prioritize %d items", len(facts), maxCommitments),
-		})
-	}
+	planningops.AddCapacityRisk(&snapshot, &decision, len(facts), maxCommitments)
 	command := "plan." + string(period)
 	if req.DryRun || !req.Yes {
 		projection := domain.NewProjection(command, string(period)+" plan previewed.")
@@ -10839,7 +10626,7 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 	if period == "" {
 		period = "daily"
 	}
-	planningPeriod, err := parsePlanningPeriod(period)
+	planningPeriod, err := planningops.ParsePeriod(period)
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
@@ -10847,11 +10634,11 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	snapshot, decision, err := planningPreviewData(preview)
+	snapshot, decision, err := planningops.PreviewData(preview)
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	draft := buildPlanningActionDraft(period, snapshot, decision, now)
+	draft := planningops.BuildActionDraft(period, snapshot, decision, now)
 	if req.DryRun || !req.Save {
 		projection := domain.NewProjection("plan.actions", "Action draft previewed.")
 		projection.Facts["period"] = period
@@ -10885,86 +10672,6 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 		{Name: "execute", Command: fmt.Sprintf("taskbridge agent execute --action-file %s --dry-run", rel)},
 	}
 	return projection, nil
-}
-
-func parsePlanningPeriod(value string) (domain.PlanningPeriod, error) {
-	switch domain.PlanningPeriod(strings.TrimSpace(value)) {
-	case domain.PlanningDaily:
-		return domain.PlanningDaily, nil
-	case domain.PlanningWeekly:
-		return domain.PlanningWeekly, nil
-	case domain.PlanningMonthly:
-		return domain.PlanningMonthly, nil
-	default:
-		return "", &domain.CommandError{Code: "invalid_planning_period", Message: "Unsupported planning period", Hint: "Use daily, weekly, or monthly"}
-	}
-}
-
-func planningPreviewData(projection domain.Projection) (domain.PlanningSnapshot, domain.PlanningDecision, error) {
-	data, ok := projection.Data.(map[string]any)
-	if !ok {
-		return domain.PlanningSnapshot{}, domain.PlanningDecision{}, &domain.CommandError{Code: "planning_preview_invalid", Message: "Planning preview data is missing"}
-	}
-	snapshot, ok := data["snapshot"].(domain.PlanningSnapshot)
-	if !ok {
-		return domain.PlanningSnapshot{}, domain.PlanningDecision{}, &domain.CommandError{Code: "planning_preview_invalid", Message: "Planning snapshot data is missing"}
-	}
-	decision, ok := data["decision"].(domain.PlanningDecision)
-	if !ok {
-		return domain.PlanningSnapshot{}, domain.PlanningDecision{}, &domain.CommandError{Code: "planning_preview_invalid", Message: "Planning decision data is missing"}
-	}
-	return snapshot, decision, nil
-}
-
-func buildPlanningActionDraft(period string, snapshot domain.PlanningSnapshot, decision domain.PlanningDecision, now time.Time) domain.PlanningActionDraft {
-	draftID := planningActionIDFromRefs(period, snapshot.SnapshotID, decision.DecisionID, now)
-	draft := domain.PlanningActionDraft{
-		SchemaVersion:        "taskbridge.actions.v1",
-		ActionID:             draftID,
-		SourcePeriod:         period,
-		SourceDecision:       decision.DecisionID,
-		SourceSnapshot:       snapshot.SnapshotID,
-		RequiresConfirmation: false,
-		Tasks:                []domain.ActionDraftTask{},
-		EvidenceRefs:         []string{"snapshot:" + snapshot.SnapshotID, "decision:" + decision.DecisionID},
-		CreatedAt:            now.Format(time.RFC3339),
-	}
-	reason := planningActionReason(decision)
-	for i, taskID := range decision.Deferred {
-		taskID = strings.TrimSpace(taskID)
-		if taskID == "" {
-			continue
-		}
-		// Action draft 只表达待确认的 TaskBridge 写入意图；真实远端写入仍交给 taskbridge agent execute。
-		draft.Tasks = append(draft.Tasks, domain.ActionDraftTask{
-			ActionID:             planningTaskActionID(draftID, taskID, i),
-			TaskID:               taskID,
-			Kind:                 "defer",
-			Reason:               reason,
-			RequiresConfirmation: true,
-		})
-	}
-	draft.RequiresConfirmation = len(draft.Tasks) > 0
-	return draft
-}
-
-func planningActionReason(decision domain.PlanningDecision) string {
-	for _, reason := range decision.Reasons {
-		if strings.TrimSpace(reason.Summary) != "" {
-			return reason.Summary
-		}
-	}
-	return "Planning recommendations should be confirmed by TaskBridge before writing tasks."
-}
-
-func planningActionIDFromRefs(period, snapshotID, decisionID string, t time.Time) string {
-	h := sha1.Sum([]byte(period + "\x00" + snapshotID + "\x00" + decisionID + "\x00" + t.Format(time.RFC3339Nano)))
-	return "plan_act_" + hex.EncodeToString(h[:])[:16]
-}
-
-func planningTaskActionID(draftID, taskID string, index int) string {
-	h := sha1.Sum([]byte(draftID + "\x00" + taskID + "\x00" + fmt.Sprint(index)))
-	return "act_" + hex.EncodeToString(h[:])[:16]
 }
 
 // PlanSnapshot 生成Plan快照。

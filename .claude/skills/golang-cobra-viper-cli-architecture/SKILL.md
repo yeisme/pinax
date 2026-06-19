@@ -25,7 +25,7 @@ description: Use when designing, implementing, refactoring, or reviewing a Yeism
 - Cobra / pflag 负责 command tree、flags、completion、help 和 `RunE`。
 - Viper 负责 defaults、config files、environment overrides 和 typed config unmarshal。
 - `internal/*` 承载业务、输出、配置、runner、存储和 provider adapter；命令层只接线和渲染。
-- Default human output is English; machine protocol fields remain stable English.
+- Default CLI human output is English; local project docs and OpenSpec artifacts default to Chinese; machine protocol fields remain stable English.
 
 允许例外，但必须写清原因：
 

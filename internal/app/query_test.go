@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/yeisme/pinax/internal/app/searchops"
+
 	"github.com/yeisme/pinax/internal/domain"
 )
 
 func TestPinaxSQLParserBuildsQueryAST(t *testing.T) {
-	ast, err := parsePinaxSQL(`SELECT title, status AS state FROM notes WHERE status = "active" AND tags CONTAINS "pinax" ORDER BY updated_at DESC LIMIT 20`)
+	ast, err := searchops.ParseSQL(`SELECT title, status AS state FROM notes WHERE status = "active" AND tags CONTAINS "pinax" ORDER BY updated_at DESC LIMIT 20`)
 	if err != nil {
 		t.Fatalf("parse sql: %v", err)
 	}
@@ -51,7 +53,7 @@ func TestPinaxSQLRejectsForbiddenAndUnsupportedSyntax(t *testing.T) {
 		{name: "source", sql: `SELECT title FROM files`, code: "sql_unsupported_source"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := parsePinaxSQL(tc.sql)
+			_, err := searchops.ParseSQL(tc.sql)
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -180,7 +182,7 @@ func TestQueryRunProjectsSelectedColumnsAndRejectsUnsupportedComparisons(t *test
 	if _, ok := result.Rows[0].Values["secret"]; ok {
 		t.Fatalf("unselected property leaked into row values: %#v", result.Rows[0].Values)
 	}
-	if _, err := parsePinaxSQL(`SELECT title FROM notes WHERE priority > 1`); !hasCommandCode(err, "sql_unsupported_operator") {
+	if _, err := searchops.ParseSQL(`SELECT title FROM notes WHERE priority > 1`); !hasCommandCode(err, "sql_unsupported_operator") {
 		t.Fatalf("comparison operator should be rejected, got %v", err)
 	}
 }

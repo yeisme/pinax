@@ -1,0 +1,98 @@
+# Publish profile commands are CLI-authored structured asset operations.
+exec sh -c 'pinax publish profile init public --target github-pages --renderer hugo --title Knowledge --base-url https://example.github.io/kb/ --theme builtin:pinax-encyclopedia --vault vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+exec grep -q '"command":"publish.profile.init"' init.json
+exec grep -q '"profile":"public"' init.json
+exists vault/.pinax/publish/profiles/public.yaml
+exec grep -q 'schema_version: pinax.publish_profile.v1' vault/.pinax/publish/profiles/public.yaml
+exec grep -q 'theme: builtin:pinax-encyclopedia' vault/.pinax/publish/profiles/public.yaml
+
+exec sh -c 'pinax publish profile validate public --vault vault --json > validate.json'
+validate-json-envelope validate.json
+validate-clean-stdout validate.json
+exec grep -q '"command":"publish.profile.validate"' validate.json
+exec grep -q '"issues":"0"' validate.json
+
+exec sh -c 'pinax publish profile show public --vault vault --json > show.json'
+validate-json-envelope show.json
+validate-clean-stdout show.json
+exec grep -q '"command":"publish.profile.show"' show.json
+
+exec sh -c 'pinax publish profile list --vault vault --json > list.json'
+validate-json-envelope list.json
+validate-clean-stdout list.json
+exec grep -q '"command":"publish.profile.list"' list.json
+exec grep -q '"profiles":"1"' list.json
+
+exec sh -c 'pinax publish profile validate public --vault vault --agent > validate.agent'
+validate-agent-format validate.agent
+validate-clean-stdout validate.agent
+exec grep -q 'command=publish.profile.validate' validate.agent
+exec grep -q 'fact.issues=0' validate.agent
+
+exec mkdir -p bad/.pinax/publish/profiles
+exec sh -c 'printf "%s\n" "schema_version: pinax.publish_profile.v1" "name: bad" "target: ftp" "renderer: jekyll" "body_policy: all-notes" "output:" "  path: ../public" "safety:" "  block_secrets: false" "  block_private_bodies: true" "  block_pinax_internals: true" > bad/.pinax/publish/profiles/bad.yaml'
+! exec sh -c 'pinax publish profile validate bad --vault bad --json > bad.json'
+validate-json-envelope bad.json
+validate-clean-stdout bad.json
+exec grep -q 'publish_target_invalid' bad.json
+exec grep -q 'publish_safety_gate_disabled' bad.json
+
+exec mkdir -p vault/notes vault/assets
+exec sh -c 'printf "%s\n" "fake image" > vault/assets/diagram.png'
+exec sh -c 'printf "%s\n" "not publishable" > vault/assets/raw.exe'
+exec sh -c 'printf "%s\n" "UNLINKED_ASSET_SENTINEL" > vault/assets/unlinked.pdf'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_public" "title: Public Note" "kind: concept" "status: active" "publish: public" "---" "" "# Public" "Allowed body with ![Diagram](../assets/diagram.png), ![Raw](../assets/raw.exe), and [[Missing Target]]." > vault/notes/public.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_draft" "title: Draft Note" "kind: concept" "status: draft" "publish: public" "---" "" "DRAFT_BODY_SENTINEL" > vault/notes/draft.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_private" "title: Private Note" "kind: concept" "status: active" "publish: public" "privacy: private" "---" "" "PRIVATE_BODY_SENTINEL" > vault/notes/private.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_unpublished" "title: Unpublished Note" "kind: concept" "status: active" "publish: false" "---" "" "UNPUBLISHED_BODY_SENTINEL" > vault/notes/unpublished.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_secret" "title: Secret Note" "kind: concept" "status: active" "publish: public" "---" "" "Authorization: Bearer SECRET_SENTINEL_TOKEN" > vault/notes/secret.md'
+exec sh -c 'pinax publish plan --profile public --target github-pages --vault vault --json > plan.json'
+validate-json-envelope plan.json
+validate-clean-stdout plan.json
+exec grep -q '"command":"publish.plan"' plan.json
+exec grep -q '"selected_count":"1"' plan.json
+exec grep -q '"selected_asset_count":"1"' plan.json
+exec grep -q '"asset_violation_count":"1"' plan.json
+exec grep -q '"skipped_count":"3"' plan.json
+exec grep -q '"blocking_count":"2"' plan.json
+exec grep -q '"link_count":"1"' plan.json
+exec grep -q '"broken_link_count":"1"' plan.json
+exec grep -q 'asset_not_allowed' plan.json
+exec grep -q 'Missing Target' plan.json
+! exec grep -q 'SECRET_SENTINEL_TOKEN' plan.json
+! exec grep -q 'PRIVATE_BODY_SENTINEL' plan.json
+! exec grep -q 'DRAFT_BODY_SENTINEL' plan.json
+! exec grep -q 'UNPUBLISHED_BODY_SENTINEL' plan.json
+! exec grep -q 'UNLINKED_ASSET_SENTINEL' plan.json
+
+exec sh -c 'pinax publish plan --profile public --target github-pages --vault vault --agent > plan.agent'
+validate-agent-format plan.agent
+validate-clean-stdout plan.agent
+exec grep -q 'command=publish.plan' plan.agent
+exec grep -q 'fact.selected_count=1' plan.agent
+exec grep -q 'fact.selected_asset_count=1' plan.agent
+exec grep -q 'fact.asset_violation_count=1' plan.agent
+exec grep -q 'fact.broken_link_count=1' plan.agent
+! exec grep -q 'SECRET_SENTINEL_TOKEN' plan.agent
+
+exec mkdir -p wiki-vault/notes wiki-vault/assets
+exec sh -c 'pinax publish profile init wiki --target github-wiki --renderer none --vault wiki-vault --json > wiki-init.json'
+validate-json-envelope wiki-init.json
+exec sh -c 'printf "%s\n" "fake image" > wiki-vault/assets/diagram.png'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_zh" "title: 知识图谱" "kind: concept" "status: active" "publish: public" "tags: wiki,zh" "---" "" "# 知识图谱" "See [[Beta Note]] and ![Diagram](../assets/diagram.png)." > wiki-vault/notes/zh.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_beta" "title: Beta Note" "kind: source" "status: active" "publish: public" "tags: wiki" "---" "" "# Beta Note" > wiki-vault/notes/beta.md'
+exec sh -c 'pinax publish build --profile wiki --target github-wiki --out wiki-dist --vault wiki-vault --json > wiki-build.json'
+validate-json-envelope wiki-build.json
+validate-clean-stdout wiki-build.json
+exec grep -q '"command":"publish.build"' wiki-build.json
+exec grep -q '"target":"github-wiki"' wiki-build.json
+exists wiki-dist/Home.md
+exists wiki-dist/zh.md
+exists wiki-dist/beta-note.md
+exists wiki-dist/assets/diagram.png
+exists wiki-dist/pinax-publish-manifest.json
+exec grep -q '\[\[Beta Note|beta-note\]\]' wiki-dist/zh.md
+exec grep -q '](assets/diagram.png)' wiki-dist/zh.md
+exec grep -q '知识图谱' wiki-dist/Home.md

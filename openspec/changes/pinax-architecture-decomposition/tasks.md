@@ -40,7 +40,7 @@
 
 ## 3. CLI Structure Split
 
-- [ ] 3.1 Split command-family builders from `internal/cli/root.go`.
+- [x] 3.1 Split command-family builders from `internal/cli/root.go`.
   - Owner: `cli/pinax`
   - Lane: B
   - Depends on: 2.2
@@ -49,7 +49,7 @@
   - Expected: Focused CLI tests pass with no output contract regression.
   - Failure re-check: If a command behavior changes, restore the old behavior before continuing the split.
 
-- [ ] 3.2 Split command tests from `cmd/pinax/main_test.go`.
+- [x] 3.2 Split command tests from `cmd/pinax/main_test.go`.
   - Owner: `cli/pinax`
   - Lane: B
   - Depends on: 3.1
@@ -60,7 +60,7 @@
 
 ## 4. App Capability Extraction
 
-- [ ] 4.1 Extract note/search/vault use cases behind the `app.Service` facade.
+- [x] 4.1 Extract note/search/vault use cases behind the `app.Service` facade.
   - Owner: `cli/pinax`
   - Lane: C
   - Depends on: 2.2
@@ -69,7 +69,7 @@
   - Expected: Existing behavior remains compatible and app tests pass.
   - Failure re-check: If a move requires output rendering, keep rendering in `internal/output` and return a projection from the app layer.
 
-- [ ] 4.2 Extract template/sync/version/briefing/planning use cases behind the facade.
+- [x] 4.2 Extract template/sync/version/briefing/planning use cases behind the facade.
   - Owner: `cli/pinax`
   - Lane: C
   - Depends on: 4.1
@@ -80,7 +80,7 @@
 
 ## 5. Documentation and Final Gate
 
-- [ ] 5.1 Update Pinax architecture docs.
+- [x] 5.1 Update Pinax architecture docs.
   - Owner: `cli/pinax`
   - Lane: D
   - Depends on: 4.1
@@ -89,7 +89,7 @@
   - Expected: Docs and OpenSpec describe the same package ownership model.
   - Failure re-check: If docs drift from code, update docs in the same slice as the code move.
 
-- [ ] 5.2 Run full quality gate and record closeout evidence.
+- [x] 5.2 Run full quality gate and record closeout evidence.
   - Owner: `cli/pinax`
   - Lane: sequential
   - Depends on: 3.2, 4.2, 5.1
@@ -104,3 +104,9 @@
 - 2026-06-18: `go test ./internal/architecture -count=1` passed after adding capability package docs and import guard tests.
 - 2026-06-18: `openspec validate --all` passed with 38 items.
 - 2026-06-18: `task check` passed after OpenSpec, guard tests, capability docs, and architecture docs were added.
+- 2026-06-18: `go test ./internal/cli ./cmd/pinax -run 'Help|Flag|CLITree|Output|Command' -count=1` passed after moving search/query/database/import/export/briefing/cloud/plan/backend command-family builders out of `internal/cli/root.go`.
+- 2026-06-18: `go test ./cmd/pinax -count=1` passed after splitting command tests into command-family files and moving shared helpers into `cmd/pinax/cli_testkit_test.go`.
+- 2026-06-18: `go test ./internal/app ./internal/index ./cmd/pinax -run 'Note|Search|Query|Database|Vault|Repair|Organize|Folder|Record' -count=1` passed after moving search projection/filtering and query parse/execute logic into `internal/app/searchops`, note list predicates into `internal/app/noteops`, and vault stats aggregation into `internal/app/vaultops`.
+- 2026-06-18: `go test ./internal/app ./internal/cloudsync ./internal/cloudclient ./cmd/pinax ./tests/e2e -run 'Template|Journal|Render|IndexPage|Cloud|Sync|Conflict|Backend|Version|Briefing|Plan|Redaction' -count=1` passed after moving planning pure logic into `internal/app/planningops`, sync redaction into `internal/app/syncops`, version path validation into `internal/app/versionops`, template query-result rendering into `internal/app/templateops`, and briefing recipe projection shaping into `internal/app/briefingops`.
+- 2026-06-18: `rg -n "noteops|searchops|vaultops|Service facade|architecture guard" docs/architecture openspec/changes/pinax-architecture-decomposition` passed after documenting current facade extraction status and capability package responsibilities.
+- 2026-06-18: `task check` passed after architecture decomposition, prompt asset vault changes, docs updates, lint, full tests, build, and `openspec validate --all`.

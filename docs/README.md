@@ -43,6 +43,7 @@ The primary user and agent value of Pinax is a reproducible local proof loop bui
 - `pinax project item add|move|archive` writes controlled Markdown through the application service. archive must first have `--yes` and a version snapshot; when missing, it returns a stable `approval_required` or `snapshot_required` projection.
 - `pinax note read/show --display card|detail|context|body`, project board, dashboard, MCP, REST, and RPC reuse the same `NoteDisplay` projection; the default bounded display does not output the full body.
 - `pinax api routes`, `pinax api schema export`, and `pinax api serve --readonly --port 0` are local REST/RPC projection adapters. The server binds to `127.0.0.1` by default and does not provide a public hosted API, CORS, TLS, multi-user permissions, or token auth.
+- `pinax prompt` stores reusable `yeisme.prompt_asset.v1` prompt assets, resolves `pinax://prompt/<id>` references, records Pinax-owned lifecycle decisions, and imports metadata-only usage feedback from tools such as Eikona.
 - Cloud Sync is a separate distributed sync design: every device keeps a local vault, while the Cloud backend coordinates encrypted revisions, blobs, and conflicts. See [Cloud Sync Architecture](./architecture/cloud-sync-design.md).
 
 ## Documentation Sections
@@ -66,6 +67,8 @@ The primary user and agent value of Pinax is a reproducible local proof loop bui
 ## Command Manual
 
 - [Command Map](./commands/README.md): explains what each root command manages by workflow.
+- [prompt](./commands/prompt.md): describes prompt asset lifecycle, `pinax://prompt/<id>` resolution, cross-project boundaries, and feedback import.
+- [publish](./commands/publish.md): describes safe GitHub Pages and Wiki publishing surfaces, Hugo/theme use, deploy gates, and why the vault remains the source of truth.
 - [organize](./commands/organize.md): describes the organization flow, write boundaries, and snapshot protection for `pinax organize plan/list/apply`.
 - [version](./commands/version.md), [asset](./commands/asset.md), [index](./commands/index.md), and other root commands each maintain independent dedicated pages in the [Command Manual](./commands/README.md).
 

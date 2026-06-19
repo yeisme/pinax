@@ -112,10 +112,10 @@ If scripts are still using `suggest`, they can be migrated gradually to `plan --
 
 | Mode | Command | Purpose |
 | --- | --- | --- |
-| Default English summary | `pinax organize plan --vault ./my-notes` | For humans to quickly scan risks and next steps. |
+| Default Chinese summary | `pinax organize plan --vault ./my-notes` | For humans to quickly scan risks and next steps. |
 | JSON envelope | `pinax organize plan --vault ./my-notes --json` | For scripts, tests, and debugging to read the full plan. |
 | agent key=value | `pinax organize plan --vault ./my-notes --save --agent` | For agents to read the plan id, operation count, risk counts, and saved path with low token usage. |
-| explain | `pinax organize plan --vault ./my-notes --explain` | View an English reviewable explanation. |
+| explain | `pinax organize plan --vault ./my-notes --explain` | View a Chinese reviewable explanation. |
 
 Output modes only change the shape of stdout; they do not change whether anything is written. What actually determines writing is `--save`, `apply`, `--yes`, and snapshot parameters.
 

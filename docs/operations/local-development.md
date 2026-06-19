@@ -100,7 +100,7 @@ curl -s http://127.0.0.1:8787/v1/capabilities
 ./dist/pinax mcp serve --vault /tmp/pinax-notes
 ```
 
-`pinax init` can initialize the current directory without arguments; positional arguments and `--vault` are used to specify another vault path. The default human output is English; for machine consumption, prefer `--agent`, `--json`, `--events`, or `--explain`.
+`pinax init` can initialize the current directory without arguments; positional arguments and `--vault` are used to specify another vault path. The default human output is Chinese; for machine consumption, prefer `--agent`, `--json`, `--events`, or `--explain`.
 
 For the main CLI tree paths, prefer `pinax vault ...`, `pinax journal ...`, and `pinax storage set ...`; old commands are kept as compatibility aliases, and their output projection is equivalent to the main paths.
 

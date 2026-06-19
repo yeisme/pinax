@@ -40,7 +40,7 @@ func RenderBriefingCandidateMarkdown(candidate BriefingCandidate) string {
 	if len(candidate.Backlinks) > 0 {
 		b.WriteString("## Related\n\n")
 		for _, backlink := range candidate.Backlinks {
-			b.WriteString(fmt.Sprintf("- [[%s]]\n", backlink))
+			fmt.Fprintf(&b, "- [[%s]]\n", backlink)
 		}
 	}
 	return b.String()
