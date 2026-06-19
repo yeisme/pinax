@@ -15,7 +15,7 @@ Pinax is built around one agent-safe proof loop. Each path maps to a small set o
 | Path | Commands | Description |
 | --- | --- | --- |
 | **Capture** | [`pinax init`](./init.md), [`pinax note add`](./note.md), [`pinax inbox capture`](./inbox.md), [`pinax journal daily append`](./journal.md) | Add notes, inbox items and journal entries. |
-| **Retrieve** | [`pinax index sync`](./index.md), [`pinax search`](./search.md), [`pinax note links`](./note.md), [`pinax note backlinks`](./note.md), [`pinax note orphans`](./note.md) | Build the index and read bounded context. |
+| **Retrieve** | [`pinax index sync`](./index.md), [`pinax search`](./search.md), [`pinax memory`](./memory.md), [`pinax note links`](./note.md), [`pinax note backlinks`](./note.md), [`pinax note orphans`](./note.md) | Build the index and read bounded context. |
 | **Diagnose** | [`pinax vault doctor`](./vault.md), [`pinax vault stats`](./vault.md) | Check vault health and surface issues. |
 | **Plan** | [`pinax repair plan --save`](./repair.md), [`pinax organize plan --save`](./organize.md) | Turn issues into reviewable saved plans. |
 | **Apply safely** | [`pinax version snapshot`](./version.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Snapshot first, then apply with explicit confirmation. |
@@ -44,6 +44,7 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
 | Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target. |
 | Organization and retrieval | [`pinax kb`](./kb.md) | Import text/Markdown, rebuild the local LanceDB semantic projection, and return bounded agent context. |
+| Organization and retrieval | [`pinax memory`](./memory.md) | Capture cited facts, decisions, events, and tasks for deterministic agent memory. |
 | Organization and retrieval | [`pinax query`](./query.md) | Run controlled Pinax SQL queries against the local note database. |
 | Organization and retrieval | [`pinax database`](./database.md) | Manage database views and property schemas. |
 | Organization and retrieval | [`pinax metadata`](./metadata.md) | Plan and apply frontmatter metadata completion. |
@@ -80,6 +81,7 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | View today's note | `pinax journal daily show --vault work` |
 | Search content | `pinax search "keyword" --vault work` |
 | Search semantic context | `pinax kb search "project context" --vault work` |
+| Recall agent memory | `pinax memory recall "release workflow" --entity pinax --vault work` |
 | Manage directories | `pinax folder create spaces/research --purpose notes --vault ./my-notes` |
 | View vault health | `pinax vault doctor --vault ./my-notes` |
 | Fix health issues | `pinax repair plan --vault ./my-notes --save` |

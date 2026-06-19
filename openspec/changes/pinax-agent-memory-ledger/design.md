@@ -85,3 +85,10 @@ pinax memory stats --vault ./my-notes --json
 - `go test ./internal/output -run 'Memory|Agent|JSON' -count=1`：验证输出 envelope 和 agent facts。
 - `task check`：全量质量门禁。
 - `openspec validate --all --strict`：OpenSpec 严格校验。
+
+## Implementation Evidence
+
+- 2026-06-19: `go test ./cmd/pinax -run 'TestMemory' -count=1` 初始失败为缺少 `memory` 命令，实现后通过。
+- 2026-06-19: `go test ./internal/memory -count=1` 通过，覆盖 GORM migration、FTS recall 和默认状态过滤。
+- 2026-06-19: `go test ./internal/app -run 'TestMemory' -count=1` 通过，覆盖 app service projection 和 `recall_reason`。
+- 本轮 `pinax memory link` 与 `pinax memory prune` 只保留命令入口并返回明确 unavailable 错误；写入型 link/prune 行为 deferred 到后续增量 change。
