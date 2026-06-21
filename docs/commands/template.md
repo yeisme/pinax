@@ -38,3 +38,9 @@ Template functions are allowlisted. They do not execute scripts, read environmen
 `template preview` is a read-only path. When a query-backed template preview has a missing or stale index, it returns an error/partial projection and the next step `pinax index rebuild --vault <vault>`; it does not implicitly create `.pinax/index.sqlite` or write events. `template render` can still use query-backed rendering within controlled boundaries; `template inspect` only explains the query and does not execute it.
 
 Built-in starter note templates can declare `defaults.kind`, `defaults.status`, and `output.path_pattern`. When creating notes with `pinax note add/new --template <name>`, template defaults participate in path and metadata calculation; explicit CLI parameters such as `--kind`, `--status`, `--dir`, `--folder`, and `--slug` take precedence.
+
+`source.github` is the built-in durable source note template for GitHub repositories. It is local-only, does not call the GitHub API, and creates an ordinary Markdown source card. See [Durable Source Notes](../overview/durable-source-notes.md).
+
+```bash
+pinax note add "iptv-org/iptv" --template source.github --var url=https://github.com/iptv-org/iptv --vault ./my-notes --json
+```

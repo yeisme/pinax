@@ -165,8 +165,12 @@ type ViewRequest struct {
 	CreatedAfter  string
 	UpdatedBefore string
 	Yes           bool
+	Language      string
 	Query         string
 	Columns       []string
+	GroupBy       string
+	CalendarField string
+	BoardColumn   string
 }
 
 type DatabaseSchemaRequest struct {
@@ -179,6 +183,15 @@ type DatabaseSchemaRequest struct {
 type QueryRequest struct {
 	VaultPath string
 	SQL       string
+	LazyIndex bool
+	Limit     int
+	Sort      string
+	Cursor    string
+}
+
+type DataviewRequest struct {
+	VaultPath string
+	Query     string
 	LazyIndex bool
 	Limit     int
 	Sort      string
@@ -2354,6 +2367,16 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		if req.Dir != "" || req.Folder != "" || req.Slug != "" || req.Project != "" {
 			templateOverrides = append(templateOverrides, "path")
 		}
+		if len(req.Tags) == 0 && templateDefaults["tags"] != "" {
+			req.Tags = splitCommaValues(templateDefaults["tags"])
+			var tagErr *domain.CommandError
+			req.Tags, tagErr = normalizeTagsForWrite(req.Tags)
+			if tagErr != nil {
+				return domain.NewErrorProjection("note.new", tagErr), tagErr
+			}
+		} else if len(req.Tags) > 0 && templateDefaults["tags"] != "" {
+			templateOverrides = append(templateOverrides, "tags")
+		}
 	}
 	body, err := noteBodyFromRequest(req)
 	if err != nil {
@@ -2965,8 +2988,9 @@ type renderedNoteBody struct {
 	QueryCount int
 }
 
-var noteQueryFencePattern = regexp.MustCompile("(?ms)^```pinax-sql(?:[ \\t]+(?:name=)?([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(.*?)\\n```[ \\t]*(?:\\n|$)")
+var noteQueryFencePattern = regexp.MustCompile("(?ms)^```(pinax-sql|pinax-dataview)(?:[ \\t]+(?:name=)?([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(.*?)\\n```[ \\t]*(?:\\n|$)")
 var managedRenderBlockPattern = regexp.MustCompile("(?ms)<!-- pinax:render ([A-Za-z_][A-Za-z0-9_:-]*) start -->.*?<!-- pinax:render ([A-Za-z_][A-Za-z0-9_:-]*) end -->")
+var managedDataviewBlockPattern = regexp.MustCompile("(?ms)<!-- pinax:managed name=([A-Za-z_][A-Za-z0-9_:-]*) -->.*?<!-- /pinax:managed -->")
 
 func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) (renderedNoteBody, map[string]map[string]string, error) {
 	byName := map[string]string{}
@@ -2978,15 +3002,22 @@ func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) 
 			return block
 		}
 		match := noteQueryFencePattern.FindStringSubmatch(block)
-		if len(match) < 3 {
+		if len(match) < 4 {
 			return block
 		}
-		name := strings.TrimSpace(match[1])
+		kind := strings.TrimSpace(match[1])
+		name := strings.TrimSpace(match[2])
 		if name == "" {
 			name = fmt.Sprintf("query%d", count+1)
 		}
-		sql := strings.TrimSpace(match[2])
-		projection, err := s.QueryRun(ctx, QueryRequest{VaultPath: root, SQL: sql, Limit: 50, LazyIndex: true})
+		query := strings.TrimSpace(match[3])
+		var projection domain.Projection
+		var err error
+		if kind == "pinax-dataview" {
+			projection, err = s.DataviewRun(ctx, DataviewRequest{VaultPath: root, Query: query, Limit: 50, LazyIndex: true})
+		} else {
+			projection, err = s.QueryRun(ctx, QueryRequest{VaultPath: root, SQL: query, Limit: 50, LazyIndex: true})
+		}
 		if err != nil {
 			firstErr = templateQueryCommandError(name, err)
 			return block
@@ -3018,6 +3049,19 @@ func replaceManagedRenderBlocks(body string, rendered map[string]string) (string
 		}
 		changed++
 		return fmt.Sprintf("<!-- pinax:render %s start -->\n%s\n<!-- pinax:render %s end -->", name, strings.TrimSpace(content), name)
+	})
+	updated = managedDataviewBlockPattern.ReplaceAllStringFunc(updated, func(block string) string {
+		match := managedDataviewBlockPattern.FindStringSubmatch(block)
+		if len(match) < 2 {
+			return block
+		}
+		name := match[1]
+		content, ok := rendered[name]
+		if !ok {
+			return block
+		}
+		changed++
+		return fmt.Sprintf("<!-- pinax:managed name=%s -->\n%s\n<!-- /pinax:managed -->", name, strings.TrimSpace(content))
 	})
 	return updated, changed
 }
@@ -4076,6 +4120,7 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 					if noteNeedsMetadataInVault(root, note) {
 						ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: note.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
 					}
+					ops = append(ops, durableSourceMetadataOperations(note)...)
 				}
 				if !matchedNote {
 					ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: candidate.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
@@ -4099,6 +4144,7 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 		if noteNeedsMetadataInVault(root, note) {
 			ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: note.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
 		}
+		ops = append(ops, durableSourceMetadataOperations(note)...)
 	}
 	projection := domain.NewProjection("metadata.plan", "Metadata plan generated.")
 	projection.Facts["planned_updates"] = fmt.Sprint(len(ops))
@@ -4158,14 +4204,24 @@ func (s *Service) PlanOrganize(_ context.Context, req VaultRequest) (domain.Proj
 	if err != nil {
 		return errorProjection("organize.plan", err), err
 	}
+	facts, err := scanNoteFacts(root)
+	if err != nil {
+		return errorProjection("organize.plan", err), err
+	}
+	ops = append(ops, organizeFactOperations(root, organizeCandidateFacts(facts))...)
 	moves := 0
+	manualReview := 0
 	for _, op := range ops {
 		if op.Kind == "move" && op.Status == "planned" {
 			moves++
 		}
+		if op.Status == "manual_review" {
+			manualReview++
+		}
 	}
 	projection := domain.NewProjection("organize.plan", "Organize plan generated.")
 	projection.Facts["planned_moves"] = fmt.Sprint(moves)
+	projection.Facts["manual_review"] = fmt.Sprint(manualReview)
 	projection.Data = map[string]any{"operations": ops}
 	if moves > 0 {
 		projection.Actions = []domain.Action{{Name: "snapshot", Command: fmt.Sprintf("pinax version snapshot --vault %s --message %s", shellQuote(root), shellQuote("snapshot before organize"))}}
@@ -8107,6 +8163,12 @@ func organizeOperationFromPlan(planID string, op domain.PlanOperation) domain.Or
 	case "manual_review":
 		before = map[string]string{"path": op.Path}
 		after = map[string]string{"review": "required"}
+	case "source_move":
+		before = map[string]string{"path": op.Path}
+		after = map[string]string{"path": op.Target}
+	case "source_review":
+		before = map[string]string{"path": op.Path}
+		after = map[string]string{"review": op.Target}
 	}
 	evidence := op.Evidence
 	if len(evidence) == 0 {
@@ -8132,6 +8194,15 @@ func organizeFactOperations(root string, facts []noteFact) []domain.PlanOperatio
 	outgoing, incoming := BuildEnhancedLinkGraph(notes)
 	ops := make([]domain.PlanOperation, 0)
 	for _, fact := range facts {
+		if info, ok := durableSourceInfo(fact.note); ok {
+			target := durableSourceTargetPath(info)
+			if target != "" && fact.rel != target {
+				ops = append(ops, domain.PlanOperation{Kind: "source_move", Path: fact.rel, Target: target, Reason: "Move durable GitHub source note under sources/github/", Status: "manual_review", Evidence: []string{"source_url=" + info.URL, "repo=" + info.Owner + "/" + info.Repo}})
+			}
+			if missing := missingDurableSourceSections(fact.note.Body); len(missing) > 0 {
+				ops = append(ops, domain.PlanOperation{Kind: "source_review", Path: fact.rel, Target: strings.Join(missing, ","), Reason: "Missing durable source sections", Status: "manual_review", Evidence: []string{"source_url=" + info.URL, "missing=" + strings.Join(missing, ",")}})
+			}
+		}
 		inlineTags := cleanTags(noteAllTags(fact.note))
 		if len(fact.note.Tags) == 0 && len(inlineTags) > 0 {
 			ops = append(ops, domain.PlanOperation{Kind: "tag_patch", Path: fact.rel, Target: strings.Join(inlineTags, ","), Reason: "Add frontmatter tags from inline body tags", Status: "planned"})
@@ -8181,6 +8252,129 @@ func inferNoteKind(note domain.Note) string {
 		return "daily"
 	}
 	return "reference"
+}
+
+type durableSourceCandidate struct {
+	URL   string
+	Owner string
+	Repo  string
+}
+
+var githubRepoURLPattern = regexp.MustCompile(`https?://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(?:[/?#][^\s)\]]*)?`)
+
+func durableSourceInfo(note domain.Note) (durableSourceCandidate, bool) {
+	if value := strings.TrimSpace(note.Frontmatter["source_url"]); value != "" {
+		if candidate, ok := parseGitHubRepoURL(value); ok {
+			return candidate, true
+		}
+	}
+	if candidate, ok := firstGitHubRepoURL(note.Body); ok {
+		return candidate, true
+	}
+	if candidate, ok := ownerRepoFromTitle(note.Title); ok && durableSourceTagSignal(note) {
+		candidate.URL = "https://github.com/" + candidate.Owner + "/" + candidate.Repo
+		return candidate, true
+	}
+	return durableSourceCandidate{}, false
+}
+
+func durableSourceMetadataOperations(note domain.Note) []domain.PlanOperation {
+	info, ok := durableSourceInfo(note)
+	if !ok {
+		return nil
+	}
+	targets := []string{"source_url=" + info.URL}
+	if strings.TrimSpace(note.Kind) != "source" {
+		targets = append(targets, "kind=source")
+	}
+	tags := durableSourceRecommendedTags(note)
+	if len(tags) > 0 {
+		targets = append(targets, "tags="+strings.Join(tags, ","))
+	}
+	for _, key := range []string{"last_checked_at", "source_license", "review_after"} {
+		if strings.TrimSpace(note.Frontmatter[key]) == "" {
+			targets = append(targets, key+"=<review>")
+		}
+	}
+	return []domain.PlanOperation{{Kind: "source_metadata", Path: note.Path, Target: strings.Join(targets, ";"), Reason: "Review durable source metadata for external GitHub reference", Status: "manual_review", Evidence: []string{"source_url=" + info.URL, "repo=" + info.Owner + "/" + info.Repo}}}
+}
+
+func durableSourceRecommendedTags(note domain.Note) []string {
+	recommended := []string{"source/github", "reference/source"}
+	existing := map[string]bool{}
+	for _, tag := range noteAllTags(note) {
+		existing[strings.ToLower(tag)] = true
+	}
+	missing := make([]string, 0, len(recommended))
+	for _, tag := range recommended {
+		if !existing[strings.ToLower(tag)] {
+			missing = append(missing, tag)
+		}
+	}
+	return missing
+}
+
+func durableSourceTargetPath(info durableSourceCandidate) string {
+	slug := slugify(info.Owner + "-" + info.Repo)
+	if slug == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Join("sources", "github", slug+".md"))
+}
+
+func firstGitHubRepoURL(body string) (durableSourceCandidate, bool) {
+	match := githubRepoURLPattern.FindStringSubmatch(body)
+	if len(match) < 3 {
+		return durableSourceCandidate{}, false
+	}
+	raw := match[0]
+	if candidate, ok := parseGitHubRepoURL(raw); ok {
+		return candidate, true
+	}
+	return durableSourceCandidate{URL: "https://github.com/" + match[1] + "/" + strings.TrimSuffix(match[2], ".git"), Owner: match[1], Repo: strings.TrimSuffix(match[2], ".git")}, true
+}
+
+func parseGitHubRepoURL(raw string) (durableSourceCandidate, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !strings.EqualFold(parsed.Host, "github.com") {
+		return durableSourceCandidate{}, false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return durableSourceCandidate{}, false
+	}
+	repo := strings.TrimSuffix(parts[1], ".git")
+	return durableSourceCandidate{URL: "https://github.com/" + parts[0] + "/" + repo, Owner: parts[0], Repo: repo}, true
+}
+
+func ownerRepoFromTitle(title string) (durableSourceCandidate, bool) {
+	parts := strings.Split(strings.TrimSpace(title), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(title, " \t\n") {
+		return durableSourceCandidate{}, false
+	}
+	return durableSourceCandidate{Owner: parts[0], Repo: strings.TrimSuffix(parts[1], ".git")}, true
+}
+
+func durableSourceTagSignal(note domain.Note) bool {
+	for _, tag := range noteAllTags(note) {
+		switch strings.ToLower(tag) {
+		case "github", "source", "reference", "repo", "source/github", "reference/source":
+			return true
+		}
+	}
+	return false
+}
+
+func missingDurableSourceSections(body string) []string {
+	required := []string{"Use decision", "Risk and boundary", "Verification", "Related notes"}
+	lower := strings.ToLower(body)
+	missing := make([]string, 0, len(required))
+	for _, section := range required {
+		if !strings.Contains(lower, strings.ToLower(section)) {
+			missing = append(missing, section)
+		}
+	}
+	return missing
 }
 
 func organizeSourceFacts(facts []noteFact) map[string]string {
@@ -9671,6 +9865,18 @@ func cleanTags(tags []string) []string {
 		}
 	}
 	return cleaned
+}
+
+func splitCommaValues(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 func normalizeTagsForWrite(tags []string) ([]string, *domain.CommandError) {

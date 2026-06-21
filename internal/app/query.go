@@ -73,8 +73,16 @@ func (s *Service) SaveDatabaseView(_ context.Context, req ViewRequest) (domain.P
 	if err != nil {
 		return errorProjection("database.view.save", err), err
 	}
-	registry.SchemaVersion = "pinax.views.v2"
-	view := domain.SavedView{ID: stableViewID(req.Name), Name: strings.TrimSpace(req.Name), Kind: strings.TrimSpace(req.Kind), Query: strings.TrimSpace(req.Query), Columns: req.Columns, Limit: req.Limit, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
+	language := strings.TrimSpace(req.Language)
+	if language == "" {
+		language = "sql"
+	}
+	if language != "sql" && language != "dataview" {
+		err := &domain.CommandError{Code: "view_language_unsupported", Message: "database view language is unsupported", Hint: "Use --language sql or --language dataview"}
+		return domain.NewErrorProjection("database.view.save", err), err
+	}
+	registry.SchemaVersion = "pinax.views.v3"
+	view := domain.SavedView{ID: stableViewID(req.Name), Name: strings.TrimSpace(req.Name), Kind: strings.TrimSpace(req.Kind), Language: language, Query: strings.TrimSpace(req.Query), Columns: req.Columns, GroupBy: strings.TrimSpace(req.GroupBy), CalendarField: strings.TrimSpace(req.CalendarField), BoardColumn: strings.TrimSpace(req.BoardColumn), Limit: req.Limit, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
 	if view.Kind == "" {
 		view.Kind = "table"
 	}
@@ -85,6 +93,7 @@ func (s *Service) SaveDatabaseView(_ context.Context, req ViewRequest) (domain.P
 	projection := domain.NewProjection("database.view.save", "Database view saved.")
 	projection.Facts["view"] = view.Name
 	projection.Facts["schema_version"] = registry.SchemaVersion
+	projection.Facts["language"] = view.Language
 	projection.Facts["views"] = fmt.Sprint(len(registry.Views))
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "views.json"))}
 	projection.Data = map[string]any{"view": view}
@@ -110,7 +119,12 @@ func (s *Service) ShowDatabaseView(ctx context.Context, req ViewRequest) (domain
 		projection.Command = "database.view.show"
 		return projection, err
 	}
-	projection, err := s.QueryRun(ctx, QueryRequest{VaultPath: root, SQL: view.Query, Limit: view.Limit, LazyIndex: true})
+	var projection domain.Projection
+	if view.Language == "dataview" {
+		projection, err = s.DataviewRun(ctx, DataviewRequest{VaultPath: root, Query: view.Query, Limit: view.Limit, LazyIndex: true})
+	} else {
+		projection, err = s.QueryRun(ctx, QueryRequest{VaultPath: root, SQL: view.Query, Limit: view.Limit, LazyIndex: true})
+	}
 	projection.Command = "database.view.show"
 	projection.Summary = "Database view queried."
 	projection.Facts["view"] = view.Name
@@ -132,15 +146,35 @@ func (s *Service) QueryRun(ctx context.Context, req QueryRequest) (domain.Projec
 	if err != nil {
 		return errorProjection("query.run", err), err
 	}
-	notes, err := scanNotes(root)
+	ast, err := searchops.ParseSQL(req.SQL)
 	if err != nil {
 		return errorProjection("query.run", err), err
+	}
+	return s.runQueryAST(ctx, "query.run", "Query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast)
+}
+
+func (s *Service) DataviewRun(ctx context.Context, req DataviewRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("dataview.run", err), err
+	}
+	ast, err := searchops.ParseDataview(req.Query)
+	if err != nil {
+		return errorProjection("dataview.run", err), err
+	}
+	return s.runQueryAST(ctx, "dataview.run", "Dataview query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast)
+}
+
+func (s *Service) runQueryAST(ctx context.Context, command, summary, root string, lazyIndex bool, limit int, sort string, cursor string, ast domain.QueryAST) (domain.Projection, error) {
+	notes, err := scanNotes(root)
+	if err != nil {
+		return errorProjection(command, err), err
 	}
 	notes = ordinaryNotes(notes)
 	status, _ := noteindex.Inspect(root, notes)
 	indexLoaded := ""
 	if status.Status != "fresh" {
-		if !req.LazyIndex {
+		if !lazyIndex {
 			code := "property_index_stale"
 			message := "Query index is not fresh"
 			if status.Status == "missing" {
@@ -148,25 +182,21 @@ func (s *Service) QueryRun(ctx context.Context, req QueryRequest) (domain.Projec
 				message = "Query requires building the local index first"
 			}
 			err := &domain.CommandError{Code: code, Message: message, Hint: "Run pinax index rebuild --vault " + shellQuote(root) + ", or add --lazy-index explicitly"}
-			return domain.NewErrorProjection("query.run", err), err
+			return domain.NewErrorProjection(command, err), err
 		}
 		select {
 		case <-ctx.Done():
-			return errorProjection("query.run", ctx.Err()), ctx.Err()
+			return errorProjection(command, ctx.Err()), ctx.Err()
 		default:
 		}
 		if _, err := noteindex.Rebuild(root, notes); err != nil {
-			return errorProjection("query.run", err), err
+			return errorProjection(command, err), err
 		}
 		status, _ = noteindex.Inspect(root, notes)
 		indexLoaded = "lazy_rebuild"
 	}
-	ast, err := searchops.ParseSQL(req.SQL)
-	if err != nil {
-		return errorProjection("query.run", err), err
-	}
-	result := searchops.ExecuteQuery(notes, ast, searchops.QueryRequest{Limit: req.Limit, Sort: req.Sort, Cursor: req.Cursor})
-	projection := domain.NewProjection("query.run", "Query executed.")
+	result := searchops.ExecuteQuery(notes, ast, searchops.QueryRequest{Limit: limit, Sort: sort, Cursor: cursor})
+	projection := domain.NewProjection(command, summary)
 	projection.Facts["engine"] = "planner"
 	projection.Facts["index_status"] = status.Status
 	projection.Facts["columns"] = strings.Join(result.Columns, ",")
@@ -189,7 +219,19 @@ func (s *Service) QueryExplain(_ context.Context, req QueryRequest) (domain.Proj
 	if err != nil {
 		return errorProjection("query.explain", err), err
 	}
-	projection := domain.NewProjection("query.explain", "Query plan parsed.")
+	return queryExplainProjection("query.explain", "Query plan parsed.", ast), nil
+}
+
+func (s *Service) DataviewExplain(_ context.Context, req DataviewRequest) (domain.Projection, error) {
+	ast, err := searchops.ParseDataview(req.Query)
+	if err != nil {
+		return errorProjection("dataview.explain", err), err
+	}
+	return queryExplainProjection("dataview.explain", "Dataview query plan parsed.", ast), nil
+}
+
+func queryExplainProjection(command, summary string, ast domain.QueryAST) domain.Projection {
+	projection := domain.NewProjection(command, summary)
 	projection.Facts["source"] = string(ast.Source)
 	projection.Facts["columns"] = searchops.QuerySelectColumns(ast.Select)
 	projection.Facts["filters"] = fmt.Sprint(len(ast.Filters))
@@ -197,5 +239,5 @@ func (s *Service) QueryExplain(_ context.Context, req QueryRequest) (domain.Proj
 	projection.Facts["groups"] = fmt.Sprint(len(ast.Groups))
 	projection.Facts["limit"] = fmt.Sprint(ast.Limit)
 	projection.Data = map[string]any{"ast": ast, "warnings": []string{}}
-	return projection, nil
+	return projection
 }

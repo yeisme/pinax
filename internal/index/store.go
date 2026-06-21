@@ -44,6 +44,7 @@ type (
 	DimensionCountRecord       = model.DimensionCountRecord
 	PropertyDefinitionRecord   = model.PropertyDefinitionRecord
 	PropertyValueRecord        = model.PropertyValueRecord
+	TaskRecord                 = model.TaskRecord
 	PromptAssetRecord          = model.PromptAssetRecord
 	PromptAssetVersionRecord   = model.PromptAssetVersionRecord
 	PromptAssetSourceRefRecord = model.PromptAssetSourceRefRecord
@@ -93,6 +94,7 @@ func clearAllProjections(q *query.Query, ctx context.Context) error {
 			_, err := q.PropertyValueRecord.WithContext(ctx).Session(globalUpdate()).Delete()
 			return err
 		},
+		func() error { _, err := q.TaskRecord.WithContext(ctx).Session(globalUpdate()).Delete(); return err },
 	}
 	for _, clear := range clearers {
 		if err := clear(); err != nil {

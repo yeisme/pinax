@@ -38,6 +38,7 @@ Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer fo
 | Local dashboard, read-only MCP, localhost REST/RPC adapter | Supported |
 | Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
 | Provider automation and briefing delivery | Experimental |
+| Dynamic plugin manifest, registry, permission, and runner contracts | Experimental |
 
 ## Installation
 
@@ -133,6 +134,20 @@ pinax publish serve --profile wiki --out ./dist/wiki --host 127.0.0.1 --port 417
 ```
 
 Use a separate Pages/Wiki repository, Gist, HTTP endpoint, or loopback preview, not the private vault repository. Deploy validates the build receipt, output hash and scan result before writing.
+
+### Dynamic plugins
+
+Validate and install local plugins without making them the source of truth:
+
+```bash
+pinax plugin validate ./plugins/project-dashboard --vault ./my-notes --json
+pinax plugin install ./plugins/project-dashboard --scope vault --vault ./my-notes --json
+pinax plugin enable project-dashboard --vault ./my-notes --yes --json
+pinax plugin permissions grant project-dashboard projection.read --capability render_dashboard --vault ./my-notes --yes --json
+pinax plugin run project-dashboard render_dashboard --vault ./my-notes --dry-run --json
+```
+
+Registry, lock, permission grants, and audit events are CLI-authored under `.pinax/plugins/` and `.pinax/events/`; do not hand-edit them. WASM is the preferred untrusted runtime direction. JavaScript, Python, and process plugins use external trusted runners and are not claimed to be a strong sandbox. See [Plugin Runtime](./docs/architecture/plugin-runtime.md) and [`pinax plugin`](./docs/commands/plugin.md).
 
 ## Five core workflows
 
@@ -361,10 +376,12 @@ Templates are stored in `.pinax/templates/*.md` and are ordinary Markdown text. 
 
 Built-in templates are divided into journal, index, and note starter packs: `journal.daily|weekly|monthly` create root-level journals, `index.home` and topic index pages only refresh `pinax:managed` managed blocks, and starter templates such as `note.quick`, `inbox.capture`, and `learning.video` are suitable for quick capture. `template list --pack starter` and `template recommend --intent <intent>` are the recommended entry points for choosing templates; JSON/agent output from `template inspect <name>` gives next-step actions, and template names, `--template`, `--var`, and render runs support shell Tab completion.
 
-Query-backed templates use Pinax SQL, not raw SQLite. Templates can declare `language: sql` in `queries` in v2 frontmatter, or use `pinax-sql` fenced blocks in the body; `template inspect` only explains, while `template preview/render` executes bounded queries and puts results into `.Queries`, such as `{{ table .Queries.active }}` or `{{ list .Queries.active "title" }}`.
+Query-backed templates use Pinax SQL, not raw SQLite. Templates can declare `language: sql` in `queries` in v2 frontmatter, or use `pinax-sql` fenced blocks in the body; `template inspect` only explains, while `template preview/render` executes bounded queries and puts results into `.Queries`, such as `{{ table .Queries.active }}` or `{{ list .Queries.active "title" }}`. Note rendered views also support safe `pinax-dataview` fenced blocks.
 
 ```bash
 pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 5' --lazy-index --vault ./my-notes --json
+pinax dataview run 'TABLE title, status FROM #pinax LIMIT 5' --lazy-index --vault ./my-notes --json
+pinax database view save active-dv --language dataview --query 'TABLE title, status FROM #pinax LIMIT 20' --vault ./my-notes --json
 pinax template preview project-dashboard --vault ./my-notes --json
 ```
 
@@ -380,7 +397,7 @@ pinax note show projects/dashboard.md --view rendered --snapshot latest --vault 
 pinax note show projects/dashboard.md --runs --vault ./my-notes --json
 ```
 
-`note show --view rendered` read-only executes restricted `pinax-sql` blocks and does not write Markdown, `.pinax/`, Git, or providers. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->`, preserving source `pinax-sql` blocks and user body text; note-scoped render runs are saved in `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
+`note show --view rendered` read-only executes restricted `pinax-sql` and `pinax-dataview` blocks and does not write Markdown, `.pinax/`, Git, or providers. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->` or `<!-- pinax:managed name=<name> -->` to `<!-- /pinax:managed -->`, preserving source query blocks and user body text; note-scoped render runs are saved in `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
 
 Configure the storage backend for vault artifacts and diagnostics. S3-compatible configuration stores non-secret profile metadata; credentials stay in the provider profile or environment:
 
@@ -471,7 +488,10 @@ MCP tools and resources are read-only, including `pinax.note.links`, `pinax.note
 task build
 task test
 task check
+task kb:sidecar:test
 ```
+
+`task check` uses the offline LanceDB sidecar protocol test so local validation does not depend on PyPI availability. Run `task kb:sidecar:test` when you need the real Python `lancedb` package install and rebuild/search smoke.
 
 When `task` is not installed, use the equivalent commands:
 

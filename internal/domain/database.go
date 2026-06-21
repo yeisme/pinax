@@ -57,22 +57,36 @@ func (r DatabaseRow) Identity() string {
 type QuerySource string
 
 const (
-	QuerySourceNotes QuerySource = "notes"
-	QuerySourceTasks QuerySource = "tasks"
+	QuerySourceNotes     QuerySource = "notes"
+	QuerySourceTasks     QuerySource = "tasks"
+	QuerySourceLinks     QuerySource = "links"
+	QuerySourceBacklinks QuerySource = "backlinks"
+	QuerySourceAssets    QuerySource = "assets"
 )
 
 type QueryOperator string
 
 const (
-	QueryOperatorEquals   QueryOperator = "="
-	QueryOperatorNotEqual QueryOperator = "!="
-	QueryOperatorContains QueryOperator = "CONTAINS"
-	QueryOperatorLike     QueryOperator = "LIKE"
-	QueryOperatorIn       QueryOperator = "IN"
-	QueryOperatorGT       QueryOperator = ">"
-	QueryOperatorGTE      QueryOperator = ">="
-	QueryOperatorLT       QueryOperator = "<"
-	QueryOperatorLTE      QueryOperator = "<="
+	QueryOperatorEquals     QueryOperator = "="
+	QueryOperatorNotEqual   QueryOperator = "!="
+	QueryOperatorContains   QueryOperator = "CONTAINS"
+	QueryOperatorLike       QueryOperator = "LIKE"
+	QueryOperatorIn         QueryOperator = "IN"
+	QueryOperatorGT         QueryOperator = ">"
+	QueryOperatorGTE        QueryOperator = ">="
+	QueryOperatorLT         QueryOperator = "<"
+	QueryOperatorLTE        QueryOperator = "<="
+	QueryOperatorExists     QueryOperator = "EXISTS"
+	QueryOperatorIsEmpty    QueryOperator = "IS EMPTY"
+	QueryOperatorIsNotEmpty QueryOperator = "IS NOT EMPTY"
+)
+
+type QueryAggregate string
+
+const (
+	QueryAggregateCount QueryAggregate = "COUNT"
+	QueryAggregateMin   QueryAggregate = "MIN"
+	QueryAggregateMax   QueryAggregate = "MAX"
 )
 
 type SortDirection string
@@ -83,8 +97,9 @@ const (
 )
 
 type QuerySelect struct {
-	Property string `json:"property"`
-	Alias    string `json:"alias,omitempty"`
+	Property  string         `json:"property"`
+	Alias     string         `json:"alias,omitempty"`
+	Aggregate QueryAggregate `json:"aggregate,omitempty"`
 }
 
 type QueryFilter struct {

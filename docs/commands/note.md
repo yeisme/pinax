@@ -47,6 +47,12 @@ After `note tag` succeeds, it updates Markdown frontmatter, appends a record led
 
 When creating a note with `--template`, the v2 note template's `defaults.kind`, `defaults.status`, and `output.path_pattern` are used as defaults; explicit CLI arguments take precedence.
 
+For long-lived GitHub repository source cards, use the built-in `source.github` template. It writes an ordinary Markdown note under `sources/github/` with `kind: source` and source-oriented tags; see [Durable Source Notes](../overview/durable-source-notes.md) for the storage and review workflow.
+
+```bash
+pinax note add "iptv-org/iptv" --template source.github --var url=https://github.com/iptv-org/iptv --vault ./my-notes --json
+```
+
 ## Links and Attachments
 
 ```bash

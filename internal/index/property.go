@@ -1,6 +1,7 @@
 package index
 
 import (
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,12 +10,94 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 )
 
+var markdownTaskLineRE = regexp.MustCompile(`^\s*[-*]\s+\[([ xX])\]\s+(.+)$`)
+var markdownTaskTagRE = regexp.MustCompile(`(^|\s)#([A-Za-z0-9_-]+)`)
+var markdownTaskBlockIDRE = regexp.MustCompile(`(^|\s)\^([A-Za-z0-9_-]+)`)
+
 func ExtractPropertyRows(notes []domain.Note) []domain.DatabaseRow {
 	rows := make([]domain.DatabaseRow, 0, len(notes))
 	for _, note := range notes {
 		rows = append(rows, domain.DatabaseRow{Source: string(domain.QuerySourceNotes), Note: note, Values: ExtractProperties(note)})
 	}
 	return rows
+}
+
+func ExtractTaskRows(notes []domain.Note) []domain.DatabaseRow {
+	rows := []domain.DatabaseRow{}
+	for _, note := range notes {
+		for lineIndex, line := range strings.Split(note.Body, "\n") {
+			matches := markdownTaskLineRE.FindStringSubmatch(line)
+			if len(matches) != 3 {
+				continue
+			}
+			text := strings.TrimSpace(matches[2])
+			completed := strings.EqualFold(matches[1], "x")
+			values := map[string]domain.PropertyValue{}
+			putTaskValue(values, "note_path", domain.PropertyTypeString, note.Path, note.Path)
+			putTaskValue(values, "path", domain.PropertyTypeString, note.Path, note.Path)
+			putTaskValue(values, "note_id", domain.PropertyTypeString, note.ID, note.ID)
+			putTaskValue(values, "title", domain.PropertyTypeString, note.Title, note.Title)
+			putTaskValue(values, "folder", domain.PropertyTypeString, note.Folder, note.Folder)
+			putTaskValue(values, "line", domain.PropertyTypeNumber, strconv.Itoa(lineIndex+1), lineIndex+1)
+			putTaskValue(values, "text", domain.PropertyTypeString, text, text)
+			putTaskValue(values, "completed", domain.PropertyTypeBoolean, strconv.FormatBool(completed), completed)
+			putTaskValue(values, "due", domain.PropertyTypeDate, taskInlineField(text, "due"), taskInlineField(text, "due"))
+			putTaskValue(values, "scheduled", domain.PropertyTypeDate, taskInlineField(text, "scheduled"), taskInlineField(text, "scheduled"))
+			putTaskValue(values, "priority", domain.PropertyTypeSelect, taskInlineField(text, "priority"), taskInlineField(text, "priority"))
+			if tags := taskTags(text); len(tags) > 0 {
+				putTaskValue(values, "tags", domain.PropertyTypeList, strings.Join(tags, ","), tags)
+			}
+			putTaskValue(values, "block_id", domain.PropertyTypeString, taskBlockID(text), taskBlockID(text))
+			rows = append(rows, domain.DatabaseRow{Source: string(domain.QuerySourceTasks), Note: domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Folder: note.Folder}, Values: values})
+		}
+	}
+	return rows
+}
+
+func putTaskValue(values map[string]domain.PropertyValue, name string, typ domain.PropertyType, raw string, value any) {
+	if raw == "" && value == nil {
+		return
+	}
+	values[name] = domain.PropertyValue{Name: name, Type: typ, Raw: raw, Value: value, Source: "task"}
+}
+
+func taskInlineField(text, name string) string {
+	for _, field := range strings.Fields(text) {
+		if strings.HasPrefix(field, name+"::") {
+			if value := strings.TrimSpace(strings.TrimPrefix(field, name+"::")); value != "" {
+				return value
+			}
+		}
+	}
+	needle := name + "::"
+	idx := strings.Index(text, needle)
+	if idx < 0 {
+		return ""
+	}
+	value := strings.TrimSpace(text[idx+len(needle):])
+	if cut := strings.IndexAny(value, " \t"); cut >= 0 {
+		return strings.TrimSpace(value[:cut])
+	}
+	return value
+}
+
+func taskTags(text string) []string {
+	matches := markdownTaskTagRE.FindAllStringSubmatch(text, -1)
+	tags := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) == 3 {
+			tags = append(tags, match[2])
+		}
+	}
+	return tags
+}
+
+func taskBlockID(text string) string {
+	match := markdownTaskBlockIDRE.FindStringSubmatch(text)
+	if len(match) == 3 {
+		return match[2]
+	}
+	return ""
 }
 
 func ExtractProperties(note domain.Note) map[string]domain.PropertyValue {

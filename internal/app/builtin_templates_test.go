@@ -46,7 +46,7 @@ func TestBuiltInTemplateLegacyAndRecommendedInspect(t *testing.T) {
 }
 
 func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
-	required := []string{"note.quick", "inbox.capture", "meeting.notes", "decision.record", "project.brief", "learning.video", "learning.book", "research.topic", "person.profile"}
+	required := []string{"note.quick", "inbox.capture", "meeting.notes", "decision.record", "project.brief", "learning.video", "learning.book", "research.topic", "source.github", "person.profile"}
 	for _, name := range required {
 		body, ok := builtInTemplates()[name]
 		if !ok {
@@ -76,21 +76,27 @@ func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
 	checks := []struct {
 		template   string
 		title      string
+		vars       map[string]string
 		pathPrefix string
 		kind       string
 		status     string
+		tags       []string
 	}{
 		{template: "inbox.capture", title: "Later idea", pathPrefix: "inbox/", kind: "inbox", status: "inbox"},
 		{template: "meeting.notes", title: "客户同步", pathPrefix: "meetings/", kind: "meeting", status: "active"},
 		{template: "decision.record", title: "选择同步策略", pathPrefix: "decisions/", kind: "decision", status: "active"},
+		{template: "source.github", title: "iptv-org/iptv", vars: map[string]string{"url": "https://github.com/iptv-org/iptv"}, pathPrefix: "sources/github/", kind: "source", status: "active", tags: []string{"source/github", "reference/source"}},
 	}
 	for _, check := range checks {
-		projection, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: check.title, Template: check.template})
+		projection, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: check.title, Template: check.template, Vars: check.vars})
 		if err != nil {
 			t.Fatalf("create %s: %v", check.template, err)
 		}
 		if !strings.HasPrefix(projection.Facts["path"], check.pathPrefix) || projection.Facts["kind"] != check.kind || projection.Facts["status"] != check.status || projection.Facts["template"] != check.template {
 			t.Fatalf("template %s facts = %#v", check.template, projection.Facts)
+		}
+		if len(check.tags) > 0 && projection.Facts["tags"] != strings.Join(check.tags, ",") {
+			t.Fatalf("template %s tags = %#v", check.template, projection.Facts)
 		}
 	}
 
@@ -101,6 +107,123 @@ func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
 	if !strings.HasPrefix(override.Facts["path"], "notes/custom/") || override.Facts["kind"] != "reference" || override.Facts["status"] != "active" || override.Facts["template.defaults_source"] != "inbox.capture" || override.Facts["template.overrides"] == "" {
 		t.Fatalf("override facts = %#v", override.Facts)
 	}
+}
+
+func TestDurableSourceCandidateDetection(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+
+	note, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "iptv-org/iptv", Body: "# iptv-org/iptv\n\nSource: https://github.com/iptv-org/iptv\n", Kind: "reference", Tags: []string{"github"}, Dir: "research"})
+	if err != nil {
+		t.Fatalf("create source candidate note: %v", err)
+	}
+	plan, err := svc.PlanOrganize(ctx, VaultRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("organize plan: %v", err)
+	}
+	ops := projectionPlanOperations(t, plan)
+	sourceMove := findPlanOperation(ops, "source_move")
+	if sourceMove == nil {
+		t.Fatalf("missing source_move operation: %#v", ops)
+	}
+	if sourceMove.Path != note.Facts["path"] || sourceMove.Target != "sources/github/iptv-org-iptv.md" || sourceMove.Status != "manual_review" {
+		t.Fatalf("source_move = %#v, note facts=%#v", sourceMove, note.Facts)
+	}
+	if !strings.Contains(strings.Join(sourceMove.Evidence, ","), "source_url=https://github.com/iptv-org/iptv") {
+		t.Fatalf("source_move evidence = %#v", sourceMove.Evidence)
+	}
+}
+
+func TestMetadataPlanSuggestsDurableSourceFields(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "iptv-org/iptv", Body: "# iptv-org/iptv\n\nSource: https://github.com/iptv-org/iptv\n", Kind: "reference", Tags: []string{"github"}, Dir: "research"}); err != nil {
+		t.Fatalf("create source candidate note: %v", err)
+	}
+
+	plan, err := svc.PlanMetadata(ctx, VaultRequest{VaultPath: root, Query: "iptv-org/iptv"})
+	if err != nil {
+		t.Fatalf("metadata plan: %v", err)
+	}
+	if plan.Facts["writes"] != "false" {
+		t.Fatalf("metadata plan writes fact = %#v", plan.Facts)
+	}
+	sourceMetadata := findPlanOperation(projectionPlanOperations(t, plan), "source_metadata")
+	if sourceMetadata == nil {
+		t.Fatalf("missing source_metadata operation: %#v", plan.Data)
+	}
+	for _, want := range []string{"source_url=https://github.com/iptv-org/iptv", "kind=source", "tags=source/github,reference/source", "last_checked_at=<review>", "source_license=<review>", "review_after=<review>"} {
+		if !strings.Contains(sourceMetadata.Target, want) {
+			t.Fatalf("source_metadata target missing %q: %#v", want, sourceMetadata)
+		}
+	}
+	if sourceMetadata.Status != "manual_review" {
+		t.Fatalf("source_metadata must remain manual review: %#v", sourceMetadata)
+	}
+}
+
+func TestOrganizePlanSuggestsDurableSourceLayout(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "iptv-org/iptv", Body: "# iptv-org/iptv\n\nSource: https://github.com/iptv-org/iptv\n", Kind: "reference", Tags: []string{"github"}, Dir: "research"}); err != nil {
+		t.Fatalf("create source candidate note: %v", err)
+	}
+
+	plan, err := svc.PlanOrganize(ctx, VaultRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("organize plan: %v", err)
+	}
+	ops := projectionPlanOperations(t, plan)
+	sourceMove := findPlanOperation(ops, "source_move")
+	sourceReview := findPlanOperation(ops, "source_review")
+	if sourceMove == nil || sourceReview == nil {
+		t.Fatalf("durable source organize operations missing: %#v", ops)
+	}
+	if sourceMove.Target != "sources/github/iptv-org-iptv.md" || sourceMove.Status != "manual_review" {
+		t.Fatalf("source_move = %#v", sourceMove)
+	}
+	for _, want := range []string{"Use decision", "Risk and boundary", "Verification", "Related notes"} {
+		if !strings.Contains(sourceReview.Target, want) {
+			t.Fatalf("source_review target missing %q: %#v", want, sourceReview)
+		}
+	}
+	if sourceReview.Status != "manual_review" || !strings.Contains(sourceReview.Reason, "Missing durable source sections") {
+		t.Fatalf("source_review = %#v", sourceReview)
+	}
+}
+
+func projectionPlanOperations(t *testing.T, projection domain.Projection) []domain.PlanOperation {
+	t.Helper()
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("projection data has type %T: %#v", projection.Data, projection.Data)
+	}
+	ops, ok := data["operations"].([]domain.PlanOperation)
+	if !ok {
+		t.Fatalf("projection operations have type %T: %#v", data["operations"], data["operations"])
+	}
+	return ops
+}
+
+func findPlanOperation(ops []domain.PlanOperation, kind string) *domain.PlanOperation {
+	for i := range ops {
+		if ops[i].Kind == kind {
+			return &ops[i]
+		}
+	}
+	return nil
 }
 
 func TestBuiltInIndexTemplatesCatalogMetadata(t *testing.T) {

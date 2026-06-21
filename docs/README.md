@@ -50,6 +50,7 @@ The primary user and agent value of Pinax is a reproducible local proof loop bui
 
 - [Agent-Safe Boundary](./overview/agent-safe-boundary.md)
 - [Documentation Design](./overview/documentation-design.md)
+- [Durable Source Notes](./overview/durable-source-notes.md)
 - [Product Positioning](./overview/product-positioning.md)
 - [Architecture Boundaries](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)

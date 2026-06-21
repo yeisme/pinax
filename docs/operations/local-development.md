@@ -7,7 +7,10 @@ task build
 task test
 task test:integration
 task check
+task kb:sidecar:test
 ```
+
+`task check` runs the offline LanceDB sidecar protocol gate. It validates the sidecar JSON protocol and redaction boundary without installing Python packages from PyPI. Use `task kb:sidecar:test` before release or when changing `tools/pinax-lancedb-sidecar`; that command installs the real `lancedb` dependency in a temporary venv and runs the real rebuild/search sidecar tests.
 
 If `task` is not installed, use Go and OpenSpec commands directly:
 
@@ -94,6 +97,8 @@ rm -rf /tmp/pinax-notes
 ./dist/pinax organize plan --vault /tmp/pinax-notes --json
 ./dist/pinax api routes --vault /tmp/pinax-notes --json
 ./dist/pinax api schema export --format openapi --vault /tmp/pinax-notes --json
+./dist/pinax plugin validate ./plugins/project-dashboard --vault /tmp/pinax-notes --json
+./dist/pinax plugin doctor --vault /tmp/pinax-notes --json
 ./dist/pinax api serve --readonly --no-auth --port 8787 --vault /tmp/pinax-notes
 curl -s http://127.0.0.1:8787/
 curl -s http://127.0.0.1:8787/v1/capabilities
@@ -131,6 +136,8 @@ ls temp/integration-test-runs
 
 `task test:integration` runs project board e2e and REST/RPC component tests, and writes command/stdout/stderr/env evidence to `temp/integration-test-runs/<run-id>/`.
 
+Plugin runtime tests are included in `task test:integration`. They validate CLI-authored registry/lock/audit assets and redaction for plugin manifests, permission grants, dry-run execution, and uninstall flows.
+
 
 ## Template Workflow
 
@@ -160,11 +167,12 @@ The main path for built-in templates is to first choose a template with `templat
 
 `--var key=value` can be used repeatedly. Legacy simple templates continue to use `{{title}}`; v2 templates use Go `text/template` after declaring `pinax.template.v2` and `engine: go-template`. Rendering fails and returns `template_variable_missing` when variables are missing, preventing half-finished notes from being generated.
 
-Query-backed templates only reuse the Pinax SQL query service; they do not execute raw SQLite or dynamic template query functions. `template inspect` only explains; `template preview/render` executes bounded queries and exposes them to the `table`/`list` helpers through `.Queries`. Example queries can first be validated with real commands:
+Query-backed templates only reuse the Pinax SQL query service; they do not execute raw SQLite or dynamic template query functions. `template inspect` only explains; `template preview/render` executes bounded queries and exposes them to the `table`/`list` helpers through `.Queries`. Note rendered views also support safe `pinax-dataview` fenced blocks. Example queries can first be validated with real commands:
 
 ```bash
 pinax query explain 'SELECT title, status FROM notes WHERE status = "active" LIMIT 5' --vault ./my-notes --json
 pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 5' --lazy-index --vault ./my-notes --json
+pinax dataview run 'TABLE title, status FROM #pinax LIMIT 5' --lazy-index --vault ./my-notes --json
 pinax template preview project-dashboard --vault ./my-notes --json
 ```
 
@@ -180,7 +188,7 @@ pinax note show projects/dashboard.md --view rendered --snapshot latest --vault 
 pinax note show projects/dashboard.md --runs --vault ./my-notes --json
 ```
 
-`note show --view rendered` is read-only and does not write Markdown, `.pinax/`, Git, providers, or remotes. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->`; source `pinax-sql` blocks, regular body text, and unknown markers remain unchanged. Note-scoped render runs mirror note paths and are placed under `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
+`note show --view rendered` is read-only and does not write Markdown, `.pinax/`, Git, providers, or remotes. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->` or `<!-- pinax:managed name=<name> -->` to `<!-- /pinax:managed -->`; source `pinax-sql` and `pinax-dataview` blocks, regular body text, and unknown markers remain unchanged. Note-scoped render runs mirror note paths and are placed under `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
 
 
 ## Configuration Layer Smoke

@@ -47,10 +47,30 @@ func TestDatabaseSchemaAndViewRegistryV2CLI(t *testing.T) {
 		t.Fatalf("database query view save output = %s", viewOut)
 	}
 	views := readCLIFile(t, filepath.Join(root, ".pinax", "views.json"))
-	for _, want := range []string{"pinax.views.v2", "sql-active", "SELECT title FROM notes LIMIT 20", "columns"} {
+	for _, want := range []string{"pinax.views.v3", "sql-active", "SELECT title FROM notes LIMIT 20", "columns", "language"} {
 		if !strings.Contains(views, want) {
 			t.Fatalf("views registry missing %q:\n%s", want, views)
 		}
+	}
+}
+
+func TestDatabaseViewV3DataviewRenderCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--vault", root, "--json")
+	out := runCLI(t, "database", "view", "save", "dv-active", "--language", "dataview", "--query", `TABLE title, status FROM #pinax LIMIT 5`, "--kind", "table", "--group-by", "status", "--calendar-field", "due", "--board-column", "status", "--vault", root, "--json")
+	if !strings.Contains(out, "database.view.save") || !strings.Contains(out, "dataview") {
+		t.Fatalf("database view save dataview output = %s", out)
+	}
+	views := readCLIFile(t, filepath.Join(root, ".pinax", "views.json"))
+	for _, want := range []string{"pinax.views.v3", "dv-active", "dataview", "group_by", "calendar_field", "board_column"} {
+		if !strings.Contains(views, want) {
+			t.Fatalf("v3 views registry missing %q:\n%s", want, views)
+		}
+	}
+	renderOut := runCLI(t, "database", "view", "render", "dv-active", "--vault", root, "--json")
+	if !strings.Contains(renderOut, "database.view.render") || !strings.Contains(renderOut, "Active") {
+		t.Fatalf("database view render output = %s", renderOut)
 	}
 }
 
@@ -73,6 +93,35 @@ func TestQueryRunOutputContract(t *testing.T) {
 	facts := envelope["facts"].(map[string]any)
 	if envelope["command"] != "query.run" || facts["rows"] != "1" || facts["columns"] != "title,status" || facts["index_loaded"] != "lazy_rebuild" {
 		t.Fatalf("query run envelope = %#v", envelope)
+	}
+}
+
+func TestDataviewRunOutputContract(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--vault", root, "--json")
+	if err := os.Remove(filepath.Join(root, ".pinax", "index.sqlite")); err != nil {
+		t.Fatalf("remove index: %v", err)
+	}
+	out := runCLI(t, "dataview", "run", `TABLE title, status FROM #pinax WHERE status = "active" LIMIT 5`, "--lazy-index", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("dataview run json invalid: %v\n%s", err, out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if envelope["command"] != "dataview.run" || facts["rows"] != "1" || facts["columns"] != "title,status" || facts["index_loaded"] != "lazy_rebuild" {
+		t.Fatalf("dataview run envelope = %#v", envelope)
+	}
+}
+
+func TestDataviewExplainOutputContract(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	out := runCLI(t, "dataview", "explain", `LIST FROM #pinax LIMIT 5`, "--vault", root, "--agent")
+	for _, want := range []string{"command=dataview.explain", "fact.source=notes", "fact.columns=title", "fact.limit=5"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("dataview explain agent missing %q:\n%s", want, out)
+		}
 	}
 }
 

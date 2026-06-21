@@ -34,6 +34,7 @@ var (
 	PropertyValueRecord        *propertyValueRecord
 	SearchTokenRecord          *searchTokenRecord
 	TagRecord                  *tagRecord
+	TaskRecord                 *taskRecord
 	VaultFileRecord            *vaultFileRecord
 )
 
@@ -56,6 +57,7 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	PropertyValueRecord = &Q.PropertyValueRecord
 	SearchTokenRecord = &Q.SearchTokenRecord
 	TagRecord = &Q.TagRecord
+	TaskRecord = &Q.TaskRecord
 	VaultFileRecord = &Q.VaultFileRecord
 }
 
@@ -79,6 +81,7 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		PropertyValueRecord:        newPropertyValueRecord(db, opts...),
 		SearchTokenRecord:          newSearchTokenRecord(db, opts...),
 		TagRecord:                  newTagRecord(db, opts...),
+		TaskRecord:                 newTaskRecord(db, opts...),
 		VaultFileRecord:            newVaultFileRecord(db, opts...),
 	}
 }
@@ -103,6 +106,7 @@ type Query struct {
 	PropertyValueRecord        propertyValueRecord
 	SearchTokenRecord          searchTokenRecord
 	TagRecord                  tagRecord
+	TaskRecord                 taskRecord
 	VaultFileRecord            vaultFileRecord
 }
 
@@ -130,6 +134,7 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		PropertyValueRecord:        q.PropertyValueRecord.clone(db),
 		SearchTokenRecord:          q.SearchTokenRecord.clone(db),
 		TagRecord:                  q.TagRecord.clone(db),
+		TaskRecord:                 q.TaskRecord.clone(db),
 		VaultFileRecord:            q.VaultFileRecord.clone(db),
 	}
 }
@@ -162,6 +167,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		PropertyValueRecord:        q.PropertyValueRecord.replaceDB(db),
 		SearchTokenRecord:          q.SearchTokenRecord.replaceDB(db),
 		TagRecord:                  q.TagRecord.replaceDB(db),
+		TaskRecord:                 q.TaskRecord.replaceDB(db),
 		VaultFileRecord:            q.VaultFileRecord.replaceDB(db),
 	}
 }
@@ -184,6 +190,7 @@ type queryCtx struct {
 	PropertyValueRecord        IPropertyValueRecordDo
 	SearchTokenRecord          ISearchTokenRecordDo
 	TagRecord                  ITagRecordDo
+	TaskRecord                 ITaskRecordDo
 	VaultFileRecord            IVaultFileRecordDo
 }
 
@@ -206,6 +213,7 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		PropertyValueRecord:        q.PropertyValueRecord.WithContext(ctx),
 		SearchTokenRecord:          q.SearchTokenRecord.WithContext(ctx),
 		TagRecord:                  q.TagRecord.WithContext(ctx),
+		TaskRecord:                 q.TaskRecord.WithContext(ctx),
 		VaultFileRecord:            q.VaultFileRecord.WithContext(ctx),
 	}
 }

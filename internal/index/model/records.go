@@ -177,6 +177,23 @@ type PropertyValueRecord struct {
 	Source   string `gorm:"index"`
 }
 
+// TaskRecord 记录 Markdown task list item 的可重建查询投影。
+type TaskRecord struct {
+	ID        uint   `gorm:"primaryKey"`
+	NotePath  string `gorm:"index"`
+	NoteID    string `gorm:"index"`
+	Title     string
+	Folder    string `gorm:"index"`
+	Line      int    `gorm:"index"`
+	Text      string
+	Completed bool   `gorm:"index"`
+	Due       string `gorm:"index"`
+	Scheduled string `gorm:"index"`
+	Priority  string `gorm:"index"`
+	Tags      string `gorm:"index"`
+	BlockID   string `gorm:"index"`
+}
+
 // PromptAssetRecord stores the stable searchable projection for a reusable prompt asset.
 type PromptAssetRecord struct {
 	PromptAssetID      string `gorm:"primaryKey"`
@@ -245,6 +262,7 @@ func AllModels() []any {
 		&DimensionCountRecord{},
 		&PropertyDefinitionRecord{},
 		&PropertyValueRecord{},
+		&TaskRecord{},
 		&PromptAssetRecord{},
 		&PromptAssetVersionRecord{},
 		&PromptAssetSourceRefRecord{},

@@ -91,7 +91,8 @@ testdata/
 - defaults 必须同时服务于 Viper 和纯 struct 测试，避免默认值散落在命令层。
 - config path 使用 XDG 优先，兼容旧路径时要有迁移或 fallback 说明。
 - 写配置时只写用户请求的目标文件；不要在普通只读命令中隐式创建或改写配置。
-- secrets、tokens、cookies 和 auth headers 不进示例配置、日志、trace、测试 fixture 或错误详情。
+- 用户级本地 config 或用户级 secret store 可以保存用户显式提交的本地 CLI 凭据；project/repo config、示例配置、日志、trace、测试 fixture、运行证据和错误详情不得包含真实 secrets、tokens、cookies 或 auth headers。
+- env 继续用于 CI、部署和临时 shell 覆盖，但不要创建、推荐或兼容新的 shell credential script 作为本地持久化层。
 - 文件监听、热加载和 profile 合并只有在产品真的需要时才加入。
 
 ## 输出和错误

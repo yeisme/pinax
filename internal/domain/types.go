@@ -377,8 +377,12 @@ type SavedView struct {
 	Status        string            `json:"status,omitempty"`
 	Sort          string            `json:"sort,omitempty"`
 	Sorts         []string          `json:"sorts,omitempty"`
+	Language      string            `json:"language,omitempty"`
 	Query         string            `json:"query,omitempty"`
 	Columns       []string          `json:"columns,omitempty"`
+	GroupBy       string            `json:"group_by,omitempty"`
+	CalendarField string            `json:"calendar_field,omitempty"`
+	BoardColumn   string            `json:"board_column,omitempty"`
 	Filters       map[string]string `json:"filters,omitempty"`
 	Display       map[string]string `json:"display,omitempty"`
 	Limit         int               `json:"limit,omitempty"`

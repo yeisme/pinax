@@ -23,6 +23,13 @@ Pinax SHALL 在全局配置目录存储命名后端连接配置。
 - **AND** SHALL NOT 存储实际 secret 值
 - **AND** stdout SHALL NOT 显示 secret 实际值
 
+#### Scenario: 本地凭据只进入用户级 secret store
+
+- **GIVEN** Pinax 增加本地明文凭据写入能力
+- **WHEN** 用户提交 provider secret
+- **THEN** secret SHALL 写入用户级本地配置或用户级 secret store
+- **AND** `.pinax/` 项目资产、profiles.yaml、stdout、stderr、事件、fixture、运行证据和 Git SHALL NOT 包含实际 secret 值
+
 #### Scenario: 列出 profile
 
 - **WHEN** 用户运行 `pinax profile list`
@@ -76,4 +83,3 @@ Pinax SHALL 在全局配置目录存储命名后端连接配置。
 - **GIVEN** 默认 profile 为 `my-s3`
 - **WHEN** 用户运行 `pinax sync pull --target local`
 - **THEN** SHALL 使用 `local` profile，忽略默认值
-

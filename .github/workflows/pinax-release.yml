@@ -38,6 +38,13 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Set up Python (for LanceDB sidecar)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: tools/pinax-lancedb-sidecar/pyproject.toml
+
       - name: Install OpenSpec CLI
         run: npm install -g @fission-ai/openspec
 
@@ -61,6 +68,9 @@ jobs:
 
       - name: task check
         run: task check
+
+      - name: real LanceDB sidecar test
+        run: task kb:sidecar:test
 
   snapshot:
     name: snapshot build (no release)

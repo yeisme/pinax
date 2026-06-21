@@ -15,7 +15,7 @@ Pinax is built around one agent-safe proof loop. Each path maps to a small set o
 | Path | Commands | Description |
 | --- | --- | --- |
 | **Capture** | [`pinax init`](./init.md), [`pinax note add`](./note.md), [`pinax inbox capture`](./inbox.md), [`pinax journal daily append`](./journal.md) | Add notes, inbox items and journal entries. |
-| **Retrieve** | [`pinax index sync`](./index.md), [`pinax search`](./search.md), [`pinax memory`](./memory.md), [`pinax note links`](./note.md), [`pinax note backlinks`](./note.md), [`pinax note orphans`](./note.md) | Build the index and read bounded context. |
+| **Retrieve** | [`pinax index refresh`](./index.md), [`pinax search`](./search.md), [`pinax memory`](./memory.md), [`pinax note links`](./note.md), [`pinax note backlinks`](./note.md), [`pinax note orphans`](./note.md) | Build the index and read bounded context. |
 | **Diagnose** | [`pinax vault doctor`](./vault.md), [`pinax vault stats`](./vault.md) | Check vault health and surface issues. |
 | **Plan** | [`pinax repair plan --save`](./repair.md), [`pinax organize plan --save`](./organize.md) | Turn issues into reviewable saved plans. |
 | **Apply safely** | [`pinax version snapshot`](./version.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Snapshot first, then apply with explicit confirmation. |
@@ -45,7 +45,9 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target. |
 | Organization and retrieval | [`pinax kb`](./kb.md) | Import text/Markdown, rebuild the local LanceDB semantic projection, and return bounded agent context. |
 | Organization and retrieval | [`pinax memory`](./memory.md) | Capture cited facts, decisions, events, and tasks for deterministic agent memory. |
+| Organization and retrieval | [`pinax graph`](./graph.md) | Rebuild and query local knowledge graph projections for prompt/content assets. |
 | Organization and retrieval | [`pinax query`](./query.md) | Run controlled Pinax SQL queries against the local note database. |
+| Organization and retrieval | [`pinax dataview`](./dataview.md) | Run safe Dataview-compatible table, list, and task queries. |
 | Organization and retrieval | [`pinax database`](./database.md) | Manage database views and property schemas. |
 | Organization and retrieval | [`pinax metadata`](./metadata.md) | Plan and apply frontmatter metadata completion. |
 | Organization and retrieval | [`pinax repair`](./repair.md) | Generate maintenance plans from doctor issues and apply only low-risk fixes. |
@@ -55,7 +57,9 @@ Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and 
 | Automation and integration | [`pinax sync`](./sync.md) | Generate and execute sync plans. |
 | Automation and integration | [`pinax plan`](./plan.md) | Manage personal daily, weekly, and monthly planning workflows. |
 | Automation and integration | [`pinax prompt`](./prompt.md) | Manage reusable prompt assets, lifecycle decisions, URI resolution, and prompt usage feedback. |
+| Automation and integration | [`pinax collection`](./collection.md) | Import, inspect, and export content bundle production pipelines. |
 | Automation and integration | [`pinax publish`](./publish.md) | Build safe GitHub Pages or GitHub Wiki publishing surfaces from the local vault. |
+| Automation and integration | [`pinax plugin`](./plugin.md) | Validate, install, grant, run, diagnose, disable, and uninstall dynamic plugins through audited services. |
 | Automation and integration | [`pinax backend`](./backend.md) | Manage vault backend providers. |
 | Automation and integration | [`pinax mcp`](./mcp.md) | Start a read-only MCP surface. |
 | Configuration and maintenance | [`pinax config`](./config.md) | View, set, and diagnose Pinax configuration. |
@@ -98,7 +102,7 @@ By default, Pinax commands can be divided into three categories:
 | Save plan | `repair plan --save`, `organize plan --save` | Writes only `.pinax/*-plans/<plan_id>.json`. |
 | Apply changes | `metadata apply --yes`, `repair apply --yes`, `organize apply --yes` | Writes to the local vault; high-risk commands also require a snapshot. |
 
-`--json`, `--agent`, `--events`, and `--explain` are output modes and do not change business semantics. Machine protocol fields remain in English, and the default human output is Chinese.
+`--json`, `--agent`, `--events`, and `--explain` are output modes and do not change business semantics. Machine protocol fields, CLI output, automation output, logs, errors, and examples remain in English or existing stable names.
 
 ## Remote API Mode
 

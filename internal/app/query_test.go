@@ -27,6 +27,55 @@ func TestPinaxSQLParserBuildsQueryAST(t *testing.T) {
 	}
 }
 
+func TestPinaxSQLV2ParserBuildsAggregateGroupedAST(t *testing.T) {
+	ast, err := searchops.ParseSQL(`SELECT status, COUNT(*) AS total, MIN(priority) AS min_priority, MAX(updated_at) AS newest FROM notes WHERE status IN ("active", "done") AND priority >= 2 AND due IS NOT EMPTY GROUP BY status ORDER BY total DESC LIMIT 10`)
+	if err != nil {
+		t.Fatalf("parse sql v2 aggregate: %v", err)
+	}
+	if ast.Source != domain.QuerySourceNotes || ast.Limit != 10 || len(ast.Groups) != 1 || ast.Groups[0] != "status" {
+		t.Fatalf("ast = %#v", ast)
+	}
+	if len(ast.Select) != 4 || ast.Select[1].Aggregate != domain.QueryAggregateCount || ast.Select[1].Property != "*" || ast.Select[1].Alias != "total" {
+		t.Fatalf("selects = %#v", ast.Select)
+	}
+	if ast.Select[2].Aggregate != domain.QueryAggregateMin || ast.Select[2].Property != "priority" || ast.Select[3].Aggregate != domain.QueryAggregateMax || ast.Select[3].Property != "updated_at" {
+		t.Fatalf("aggregate selects = %#v", ast.Select)
+	}
+	if len(ast.Filters) != 3 {
+		t.Fatalf("filters = %#v", ast.Filters)
+	}
+	if ast.Filters[0].Property != "status" || ast.Filters[0].Operator != domain.QueryOperatorIn {
+		t.Fatalf("IN filter = %#v", ast.Filters[0])
+	}
+	values, ok := ast.Filters[0].Value.([]string)
+	if !ok || len(values) != 2 || values[0] != "active" || values[1] != "done" {
+		t.Fatalf("IN values = %#v", ast.Filters[0].Value)
+	}
+	if ast.Filters[1].Property != "priority" || ast.Filters[1].Operator != domain.QueryOperatorGTE || ast.Filters[1].Value != "2" {
+		t.Fatalf("comparison filter = %#v", ast.Filters[1])
+	}
+	if ast.Filters[2].Property != "due" || ast.Filters[2].Operator != domain.QueryOperatorIsNotEmpty {
+		t.Fatalf("empty filter = %#v", ast.Filters[2])
+	}
+	if len(ast.Sorts) != 1 || ast.Sorts[0].Property != "total" || ast.Sorts[0].Direction != domain.SortDesc {
+		t.Fatalf("sorts = %#v", ast.Sorts)
+	}
+}
+
+func TestPinaxSQLV2ParserSourcesAndExists(t *testing.T) {
+	for _, source := range []domain.QuerySource{domain.QuerySourceTasks, domain.QuerySourceLinks, domain.QuerySourceBacklinks, domain.QuerySourceAssets} {
+		t.Run(string(source), func(t *testing.T) {
+			ast, err := searchops.ParseSQL(`SELECT title FROM ` + string(source) + ` WHERE EXISTS target LIMIT 5`)
+			if err != nil {
+				t.Fatalf("parse source %s: %v", source, err)
+			}
+			if ast.Source != source || len(ast.Filters) != 1 || ast.Filters[0].Operator != domain.QueryOperatorExists || ast.Filters[0].Property != "target" {
+				t.Fatalf("ast = %#v", ast)
+			}
+		})
+	}
+}
+
 func TestDatabaseSchemaSetRejectsUnsafeValues(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -161,7 +210,7 @@ func TestQueryPaginationCursorAndSelectedProperty(t *testing.T) {
 		t.Fatalf("second page facts = %#v", second.Facts)
 	}
 }
-func TestQueryRunProjectsSelectedColumnsAndRejectsUnsupportedComparisons(t *testing.T) {
+func TestQueryRunProjectsSelectedColumnsAndParsesComparisons(t *testing.T) {
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -182,8 +231,12 @@ func TestQueryRunProjectsSelectedColumnsAndRejectsUnsupportedComparisons(t *test
 	if _, ok := result.Rows[0].Values["secret"]; ok {
 		t.Fatalf("unselected property leaked into row values: %#v", result.Rows[0].Values)
 	}
-	if _, err := searchops.ParseSQL(`SELECT title FROM notes WHERE priority > 1`); !hasCommandCode(err, "sql_unsupported_operator") {
-		t.Fatalf("comparison operator should be rejected, got %v", err)
+	ast, err := searchops.ParseSQL(`SELECT title FROM notes WHERE priority > 1`)
+	if err != nil {
+		t.Fatalf("comparison operator should parse: %v", err)
+	}
+	if len(ast.Filters) != 1 || ast.Filters[0].Operator != domain.QueryOperatorGT || ast.Filters[0].Value != "1" {
+		t.Fatalf("comparison filter = %#v", ast.Filters)
 	}
 }
 

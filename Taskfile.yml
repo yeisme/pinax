@@ -37,14 +37,20 @@ tasks:
 
   kb:sidecar:test:
     desc: Run Python LanceDB KB sidecar tests.
+    deps: [kb:sidecar:protocol]
     cmds:
-      - python3 -m compileall tools/pinax-lancedb-sidecar
       - |
         venv_dir="$(mktemp -d)"
         trap 'rm -rf "$venv_dir"' EXIT
         python3 -m venv "$venv_dir/venv"
         "$venv_dir/venv/bin/python" -m pip install -e tools/pinax-lancedb-sidecar
         PYTHONPATH=tools/pinax-lancedb-sidecar/src "$venv_dir/venv/bin/python" -m unittest discover tools/pinax-lancedb-sidecar/tests
+
+  kb:sidecar:protocol:
+    desc: Run offline Python sidecar protocol tests without installing LanceDB.
+    cmds:
+      - python3 -m compileall tools/pinax-lancedb-sidecar
+      - PYTHONPATH=tools/pinax-lancedb-sidecar/src python3 -m unittest tools/pinax-lancedb-sidecar/tests/test_protocol_offline.py
 
   build:
     desc: Build the Pinax CLI.
@@ -266,7 +272,7 @@ tasks:
 
   check:
     desc: Run the local Pinax quality gate.
-    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:test]
+    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:protocol]
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.

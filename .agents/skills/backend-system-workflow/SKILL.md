@@ -345,7 +345,7 @@ Differentiate at least:
 - internal error
 - retryable vs non-retryable failure
 
-Do not leak secrets, tokens, authorization headers, private request bodies, or internal stack traces into user-facing errors.
+Do not leak secrets, tokens, authorization headers, private request bodies, or internal stack traces into user-facing errors. Backend and deployment surfaces should use their secret manager, platform credentials, or environment injection; local CLI helpers may use user-level config or a user-level secret store, but project/repo config, fixtures, docs, logs, traces, and evidence must not contain real credentials. Do not introduce shell credential scripts as a persistence mechanism.
 
 ## Permission And Audit Rules
 

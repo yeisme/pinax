@@ -139,20 +139,16 @@ Pinax SHALL render human, agent, JSON, events, and explain outputs from one comm
 - **AND** stdout SHALL NOT include raw provider credentials, shell-expanded secrets, or unredacted trace payloads.
 
 ### Requirement: Pinax prioritizes local notebook core before external extensions
-Pinax SHALL provide a complete local-first notebook core before relying on external provider, cloud sync, or AI automation capabilities.
+Pinax SHALL provide a complete local-first notebook core before relying on external provider, cloud sync, AI automation, or dynamic plugin capabilities.
 
-#### Scenario: Notebook core commands require no external credentials
-- **WHEN** a user runs daily, inbox, organization view, link, backlink, attachment, saved view, import, or export commands against a valid local vault
-- **THEN** Pinax SHALL NOT require firecrawl, agent-browser, Lark, Notion, Pinax Cloud, provider tokens, cookies, or external network access.
+#### Scenario: Notebook core commands require no plugins
+- **WHEN** a user runs daily, inbox, organization view, link, backlink, attachment, saved view, import, export, query, Dataview-compatible query, or publish preview commands against a valid local vault
+- **THEN** Pinax SHALL NOT require dynamic plugins, JavaScript, Python, WASM, firecrawl, agent-browser, Lark, Notion, Pinax Cloud, provider tokens, cookies, or external network access.
 
-#### Scenario: Notebook core writes stay inside CLI-owned boundaries
-- **WHEN** a notebook core command writes notes, attachments, saved views, import receipts, export receipts, or index projections
-- **THEN** the write SHALL happen through Cobra command dispatch into `internal/app` services
-- **AND** the command layer SHALL NOT hand-write `.pinax` JSON/YAML/JSONL assets.
-
-#### Scenario: Notebook core keeps Markdown portable
-- **WHEN** a user opens the vault in a normal Markdown editor
-- **THEN** created notes, daily notes, inbox notes, wiki links, Markdown links, and attachment references SHALL remain readable without Pinax running.
+#### Scenario: Plugin hooks cannot replace core semantics
+- **WHEN** a plugin contributes a hook for query, template, export, publish, diagnostic, or action planning
+- **THEN** Pinax SHALL preserve built-in command behavior and use plugin output only through documented capability extension points
+- **AND** plugin failure SHALL NOT corrupt or replace built-in notebook core behavior.
 
 ### Requirement: Pinax note command is ergonomic and backwards compatible
 Pinax SHALL expose an ergonomic note command surface while preserving existing `note new`, `note list`, and `note show` behavior.
@@ -998,4 +994,36 @@ Pinax SHALL 提供一个标准 synthetic demo vault fixture，用于 proof loop 
 - **WHEN** 扫描全部文件
 - **THEN** 不包含真实人名、项目名、credentials、tokens、webhook URL
 - **AND** `.pinax/config.yaml` 只包含最小配置
+
+### Requirement: Pinax remains a CLI-first local vault tool
+Pinax SHALL treat the local Markdown vault as the source of truth and SHALL expose cloud, publish and provider integrations as controlled CLI surfaces around that vault.
+
+#### Scenario: Sharing surfaces do not become note sources of truth
+- **WHEN** Pinax publishes to GitHub Pages, GitHub Wiki, GitHub Gist, an HTTP endpoint, or a local preview server
+- **THEN** the generated artifact SHALL be a delivery surface derived from selected vault content
+- **AND** Pinax SHALL NOT treat the delivery surface as authoritative note storage or bypass the vault proof loop for later writes.
+
+#### Scenario: Cloud server is a sync transport boundary
+- **WHEN** Pinax syncs through a cloud server transport
+- **THEN** the CLI SHALL own local vault selection, local file writes, approval gates, conflict handling, receipts and redacted projections
+- **AND** the server SHALL be treated as an optional transport/coordinator for encrypted sync artifacts, not as a plaintext hosted notebook or local tool executor.
+
+#### Scenario: Production server implementation stays out of CLI scope by default
+- **GIVEN** a change is scoped to the Pinax CLI repository
+- **WHEN** it references Cloud Server support
+- **THEN** it SHALL limit implementation to client protocol, transport adapter, fake/local server tests, redaction, and sync-state behavior unless a separate server-owned change explicitly expands scope
+- **AND** it SHALL NOT add a long-running hosted note backend inside ordinary CLI app services.
+
+### Requirement: Theme design follows the CLI and publish boundaries
+Pinax SHALL keep CLI chrome and publish-site theme design consistent with local-first, work-focused usage.
+
+#### Scenario: CLI theme is concise and operational
+- **WHEN** Pinax renders default human output
+- **THEN** the output SHALL be concise, Chinese, scannable, and oriented around status, facts, evidence and next action
+- **AND** it SHALL avoid marketing copy, decorative noise, or localized text inside machine modes.
+
+#### Scenario: Publish site theme is inspectable and local
+- **WHEN** Pinax builds a publish site with the built-in theme
+- **THEN** the theme SHALL use local CSS/JS assets and publish-safe data files
+- **AND** it SHALL NOT require external fonts, CDN assets, analytics, remote images, the source vault, `.pinax/**`, SQLite, provider credentials, or network access by default.
 

@@ -145,6 +145,44 @@ func TestNoteShowRenderedAndRefreshCLI(t *testing.T) {
 	}
 }
 
+func TestDataviewManagedBlockPreviewAndRefreshCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--slug", "active", "--vault", root, "--json")
+	writeCLIFixture(t, filepath.Join(root, "dashboard.md"), strings.Join([]string{
+		"---",
+		"schema_version: pinax.note.v1",
+		"note_id: note_dashboard",
+		"title: Dashboard",
+		"status: active",
+		"---",
+		"",
+		"# Dashboard",
+		"",
+		"```pinax-dataview active",
+		"TABLE title, status FROM #pinax LIMIT 5",
+		"```",
+		"",
+		"<!-- pinax:managed name=active -->",
+		"stale content",
+		"<!-- /pinax:managed -->",
+		"",
+		"user text",
+	}, "\n"))
+	preview := runCLI(t, "note", "preview", "Dashboard", "--vault", root, "--json")
+	if !strings.Contains(preview, "| Active | active |") || strings.Contains(readCLIFile(t, filepath.Join(root, "dashboard.md")), "| Active | active |") {
+		t.Fatalf("preview should render read-only:\n%s", preview)
+	}
+	refresh := runCLI(t, "note", "refresh", "Dashboard", "--rendered", "--yes", "--vault", root, "--json")
+	if !strings.Contains(refresh, "note.refresh") || !strings.Contains(refresh, `"changed_blocks":"1"`) {
+		t.Fatalf("refresh output = %s", refresh)
+	}
+	updated := readCLIFile(t, filepath.Join(root, "dashboard.md"))
+	if !strings.Contains(updated, "| Active | active |") || strings.Contains(updated, "stale content") || !strings.Contains(updated, "user text") {
+		t.Fatalf("managed refresh body =\n%s", updated)
+	}
+}
+
 func TestNoteDimensionPrimaryPaths(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

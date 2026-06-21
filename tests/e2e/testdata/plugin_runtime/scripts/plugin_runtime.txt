@@ -1,0 +1,59 @@
+# Dynamic plugin runtime CLI contracts stay CLI-authored and redacted.
+exec mkdir -p vault plugins/project-dashboard/dist plugins/unsafe
+exec sh -c 'printf "%s\n" "fake wasm bytes" > plugins/project-dashboard/dist/plugin.wasm'
+exec sh -c 'printf "%s\n" "schema_version: pinax.plugin.v1" "id: project-dashboard" "name: Project Dashboard" "version: 0.1.0" "runtime:" "  kind: wasm" "  entrypoint: dist/plugin.wasm" "capabilities:" "  - id: render_dashboard" "    kind: view.render" "permissions:" "  vault:" "    read: projection" "  network: false" "budgets:" "  timeout_ms: 3000" "  max_input_bytes: 262144" "  max_output_bytes: 262144" "  max_memory_mb: 64" > plugins/project-dashboard/pinax-plugin.yaml'
+
+exec sh -c 'pinax plugin validate plugins/project-dashboard --vault vault --json > validate.json'
+validate-json-envelope validate.json
+validate-clean-stdout validate.json
+exec grep -q '"command":"plugin.validate"' validate.json
+exec grep -q '"write_status":"false"' validate.json
+! exists vault/.pinax/plugins/registry.json
+
+exec sh -c 'pinax plugin install plugins/project-dashboard --scope vault --vault vault --json > install.json'
+validate-json-envelope install.json
+validate-clean-stdout install.json
+exec grep -q '"command":"plugin.install"' install.json
+exec grep -q '"enabled":"false"' install.json
+exists vault/.pinax/plugins/registry.json
+exists vault/.pinax/plugins/plugin-lock.json
+exists vault/.pinax/events/plugin-audit.jsonl
+
+exec sh -c 'pinax plugin list --vault vault --agent > list.agent'
+validate-agent-format list.agent
+validate-clean-stdout list.agent
+exec grep -q 'command=plugin.list' list.agent
+exec grep -q 'fact.plugins=1' list.agent
+
+! exec sh -c 'pinax plugin run project-dashboard render_dashboard --vault vault --dry-run --json > run-disabled.json'
+validate-json-envelope run-disabled.json
+exec grep -q 'plugin_disabled' run-disabled.json
+
+exec sh -c 'pinax plugin enable project-dashboard --yes --vault vault --json > enable.json'
+validate-json-envelope enable.json
+exec sh -c 'pinax plugin permissions grant project-dashboard projection.read --capability render_dashboard --yes --vault vault --json > grant.json'
+validate-json-envelope grant.json
+exec grep -q '"command":"plugin.permissions.grant"' grant.json
+exec grep -q '"grants":"1"' grant.json
+
+! exec sh -c 'pinax plugin run project-dashboard render_dashboard --vault vault --dry-run --json > run-missing-runner.json'
+validate-json-envelope run-missing-runner.json
+exec grep -q 'plugin_runner_unavailable' run-missing-runner.json
+
+exec sh -c 'pinax plugin doctor --vault vault --events > doctor.events'
+validate-clean-stdout doctor.events
+exec grep -q '"type":"start"' doctor.events
+exec grep -q '"type":"end"' doctor.events
+exec grep -q 'registry_readable' doctor.events
+
+exec sh -c 'pinax plugin uninstall project-dashboard --yes --vault vault --json > uninstall.json'
+validate-json-envelope uninstall.json
+exec grep -q '"command":"plugin.uninstall"' uninstall.json
+exec grep -q '"plugins":"0"' uninstall.json
+
+exec sh -c 'printf "%s\n" "schema_version: pinax.plugin.v1" "id: unsafe-plugin" "name: Unsafe" "version: 0.1.0" "runtime:" "  kind: python" "  entrypoint: plugin.py" "capabilities:" "  - id: import_notes" "    kind: import.transform" "permissions:" "  env:" "    VALUE: token=PLUGIN_RUNTIME_SECRET_SENTINEL" "budgets:" "  timeout_ms: 3000" "  max_input_bytes: 262144" "  max_output_bytes: 262144" "  max_memory_mb: 64" > plugins/unsafe/pinax-plugin.yaml'
+! exec sh -c 'pinax plugin validate plugins/unsafe --vault vault --json > unsafe.json'
+validate-json-envelope unsafe.json
+exec grep -q 'plugin_manifest_secret_rejected' unsafe.json
+! exec grep -R 'PLUGIN_RUNTIME_SECRET_SENTINEL' validate.json install.json list.agent run-disabled.json enable.json grant.json run-missing-runner.json doctor.events uninstall.json unsafe.json vault/.pinax
+! exec grep -R 'fake wasm bytes' validate.json install.json list.agent run-disabled.json enable.json grant.json run-missing-runner.json doctor.events uninstall.json unsafe.json vault/.pinax

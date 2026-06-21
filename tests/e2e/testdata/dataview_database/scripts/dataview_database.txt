@@ -1,0 +1,51 @@
+# Dataview/database query contracts cover safe sources and managed rendered blocks.
+exec mkdir -p vault/assets
+exec sh -c 'pinax init vault --title Vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+exec sh -c 'pinax note new Active --body "priority:: 2" --status active --tags pinax --slug active --vault vault --json > active.json'
+validate-json-envelope active.json
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_project" "title: Project" "status: active" "tags: [pinax]" "---" "" "# Project" "" "- [ ] Draft plan #pinax due:: 2026-06-20 priority:: high ^task-a" "" "See [[Active]] and ![Diagram](assets/diagram.png)." > vault/project.md'
+exec sh -c 'printf "png" > vault/assets/diagram.png'
+
+exec sh -c 'pinax dataview run "TABLE title, status FROM #pinax LIMIT 5" --lazy-index --vault vault --json > dataview.json'
+validate-json-envelope dataview.json
+validate-clean-stdout dataview.json
+exec grep -q '"command":"dataview.run"' dataview.json
+exec grep -q '"rows":"2"' dataview.json
+
+exec sh -c 'pinax query run "SELECT text, completed, due, priority, block_id FROM tasks WHERE completed = false LIMIT 5" --lazy-index --vault vault --json > tasks.json'
+validate-json-envelope tasks.json
+exec grep -q 'Draft plan' tasks.json
+exec grep -q 'task-a' tasks.json
+
+exec sh -c 'pinax query run "SELECT source_path, target, status, kind FROM links WHERE target = \"Active\" LIMIT 5" --lazy-index --vault vault --json > links.json'
+validate-json-envelope links.json
+exec grep -q '"source_path"' links.json
+exec grep -q 'resolved' links.json
+
+exec sh -c 'pinax query run "SELECT path, media_type, linked_notes, status FROM assets WHERE media_type = \"image\" LIMIT 5" --lazy-index --vault vault --json > assets.json'
+validate-json-envelope assets.json
+exec grep -q 'assets/diagram.png' assets.json
+
+exec sh -c 'pinax database view save dv-active --language dataview --query "TABLE title, status FROM #pinax LIMIT 5" --group-by status --vault vault --json > view-save.json'
+validate-json-envelope view-save.json
+exec grep -q 'pinax.views.v3' vault/.pinax/views.json
+exec grep -q 'dataview' vault/.pinax/views.json
+exec sh -c 'pinax database view render dv-active --vault vault --json > view-render.json'
+validate-json-envelope view-render.json
+exec grep -q '"command":"database.view.render"' view-render.json
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_dashboard" "title: Dashboard" "status: active" "---" "" "# Dashboard" "" "\`\`\`pinax-dataview active" "TABLE title, status FROM #pinax LIMIT 5" "\`\`\`" "" "<!-- pinax:managed name=active -->" "DATAVIEW_DATABASE_BODY_SENTINEL" "<!-- /pinax:managed -->" "" "user text" > vault/dashboard.md'
+exec sh -c 'pinax note preview Dashboard --vault vault --json > preview.json'
+validate-json-envelope preview.json
+exec grep -q '| Active | active |' preview.json
+exec grep -q 'DATAVIEW_DATABASE_BODY_SENTINEL' vault/dashboard.md
+exec sh -c 'pinax note refresh Dashboard --rendered --yes --vault vault --json > refresh.json'
+validate-json-envelope refresh.json
+exec grep -q '"changed_blocks":"1"' refresh.json
+! exec grep -q 'DATAVIEW_DATABASE_BODY_SENTINEL' vault/dashboard.md
+exec grep -q '| Active | active |' vault/dashboard.md
+exec grep -q 'user text' vault/dashboard.md
+
+! exec grep -R 'Authorization: Bearer\|raw prompt\|provider payload\|full chain-of-thought' *.json vault/.pinax

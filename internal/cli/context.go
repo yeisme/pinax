@@ -86,6 +86,10 @@ type commandBuildContext struct {
 	queryCursor              *string
 	databaseViewQuery        *string
 	databaseViewColumns      *[]string
+	databaseViewLanguage     *string
+	databaseViewGroupBy      *string
+	databaseViewCalendar     *string
+	databaseViewBoardColumn  *string
 	databaseSchemaType       *string
 	databaseSchemaValues     *string
 	syncTarget               *string
