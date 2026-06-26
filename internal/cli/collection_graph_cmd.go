@@ -66,6 +66,7 @@ func addCollectionCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	exportCmd.Flags().StringVar(&toPath, "to", "", "Output file to write")
 	exportCmd.Flags().StringVar(&format, "format", "eikona.prompt_bundle.v1", "Export format")
+	_ = exportCmd.RegisterFlagCompletionFunc("format", staticCompletion("format", "eikona.prompt_bundle.v1"))
 	collectionCmd.AddCommand(exportCmd)
 
 	root.AddCommand(collectionCmd)
@@ -102,6 +103,7 @@ func addGraphCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	queryCmd.Flags().StringVar(&kind, "kind", "", "Graph node kind filter, such as category, technique, style, subject, source, or prompt")
 	queryCmd.Flags().StringVar(&match, "match", "", "Case-insensitive label match")
+	_ = queryCmd.RegisterFlagCompletionFunc("kind", staticCompletion("graph node kind", "category", "technique", "style", "subject", "source", "prompt"))
 	graphCmd.AddCommand(queryCmd)
 
 	root.AddCommand(graphCmd)

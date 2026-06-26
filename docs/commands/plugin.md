@@ -88,3 +88,5 @@ pinax plugin inspect project-dashboard --vault ./my-notes --explain
 ```
 
 Machine stdout must not include raw note bodies, provider payloads, Authorization headers, cookies, token values, hidden prompts, private tool arguments, local absolute paths, or plugin entrypoint bytes.
+
+See also [`api`](./api.md), [`token`](./token.md), [`profile`](./profile.md), and [`publish`](./publish.md) for adjacent integration surfaces.

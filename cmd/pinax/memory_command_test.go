@@ -38,18 +38,50 @@ func TestMemoryCaptureListRecallAndContext(t *testing.T) {
 
 	recallOut := runCLI(t, "memory", "recall", "release workflow", "--entity", "pinax", "--vault", root, "--json")
 	assertJSONCommandStatus(t, recallOut, "memory.recall", "success")
-	if !strings.Contains(recallOut, "recall_reason") || !strings.Contains(recallOut, "entity_match:pinax") {
+	if !strings.Contains(recallOut, "recall_reason") || !strings.Contains(recallOut, "entity_match:pinax") || !strings.Contains(recallOut, `"signals"`) || !strings.Contains(recallOut, `"source_kind":"docs"`) {
 		t.Fatalf("memory recall missing explainable reason:\n%s", recallOut)
 	}
 
 	contextOut := runCLI(t, "memory", "context", "prepare next release", "--entity", "pinax", "--limit", "12", "--vault", root, "--agent")
-	for _, want := range []string{"command=memory.context", "status=success", "fact.memory.matches=1", "fact.memory.types=fact", "fact.memory.scope="} {
+	for _, want := range []string{"command=memory.context", "status=success", "fact.memory.matches=1", "fact.memory.types=fact", "fact.memory.scope=", "fact.memory.top_score=", "fact.memory.reason.1="} {
 		if !strings.Contains(contextOut, want) {
 			t.Fatalf("memory context agent missing %q:\n%s", want, contextOut)
 		}
 	}
 	if strings.Contains(contextOut, "Tag pushes trigger") || strings.Contains(contextOut, "raw prompt") || strings.Contains(contextOut, "Authorization") {
 		t.Fatalf("memory context agent leaked body or sensitive text:\n%s", contextOut)
+	}
+}
+
+func TestMemoryRecallRankingSignalsAndRedaction(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "memory", "capture", "--type", "fact", "--subject", "pinax", "--predicate", "release_workflow", "--object", "release uses checks", "--body", "Authorization: Bearer raw-prompt provider-payload SECRET_SENTINEL", "--source", "openspec/changes/release/design.md", "--vault", root, "--json")
+	runCLI(t, "memory", "capture", "--type", "fact", "--subject", "pinax", "--predicate", "release_workflow", "--object", "older duplicate", "--source", "docs/release.md", "--vault", root, "--json")
+
+	recallOut := runCLI(t, "memory", "recall", "release checks", "--entity", "pinax", "--vault", root, "--json")
+	assertJSONCommandStatus(t, recallOut, "memory.recall", "success")
+	for _, want := range []string{`"signals"`, `"source_kind":"openspec"`, `"keyword_field"`, `"recall_reason"`, `"score"`} {
+		if !strings.Contains(recallOut, want) {
+			t.Fatalf("memory recall json missing %q:\n%s", want, recallOut)
+		}
+	}
+	for _, forbidden := range []string{"Authorization", "Bearer", "raw-prompt", "provider-payload", "SECRET_SENTINEL"} {
+		if strings.Contains(recallOut, forbidden) {
+			t.Fatalf("memory recall leaked sensitive sentinel %q:\n%s", forbidden, recallOut)
+		}
+	}
+
+	agentOut := runCLI(t, "memory", "context", "release checks", "--entity", "pinax", "--vault", root, "--agent")
+	for _, want := range []string{"fact.memory.top_score=", "fact.memory.reason.1="} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("memory context agent missing %q:\n%s", want, agentOut)
+		}
+	}
+	for _, forbidden := range []string{"Authorization", "Bearer", "raw-prompt", "provider-payload", "SECRET_SENTINEL", "\x1b["} {
+		if strings.Contains(agentOut, forbidden) {
+			t.Fatalf("memory context agent leaked %q:\n%s", forbidden, agentOut)
+		}
 	}
 }
 

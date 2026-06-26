@@ -62,27 +62,32 @@ func addPromptCommands(root *cobra.Command, ctx commandBuildContext) {
 	searchCmd.Flags().StringVar(&tag, "tag", "", "Filter prompt assets by tag")
 	searchCmd.Flags().StringVar(&lifecycle, "lifecycle", "", "Filter prompt assets by lifecycle")
 	searchCmd.Flags().IntVar(&limit, "limit", 20, "Maximum prompt assets to return; 0 returns all")
+	_ = searchCmd.RegisterFlagCompletionFunc("lifecycle", staticCompletion("lifecycle", "draft", "tested", "accepted", "promoted", "retired"))
 	promptCmd.AddCommand(searchCmd)
 
-	promptCmd.AddCommand(&cobra.Command{
-		Use:   "show <id>",
-		Short: "Show prompt asset details",
-		Args:  cobra.ExactArgs(1),
+	showCmd := &cobra.Command{
+		Use:               "show <id>",
+		Short:             "Show prompt asset details",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: promptAssetCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PromptShow(cmd.Context(), app.PromptAssetRequest{VaultPath: *ctx.vaultPath, Ref: args[0]})
 			return ctx.renderProjection(cmd, projection, err)
 		},
-	})
+	}
+	promptCmd.AddCommand(showCmd)
 
-	promptCmd.AddCommand(&cobra.Command{
-		Use:   "resolve <uri-or-id>",
-		Short: "Resolve a prompt asset URI for agent use",
-		Args:  cobra.ExactArgs(1),
+	resolveCmd := &cobra.Command{
+		Use:               "resolve <uri-or-id>",
+		Short:             "Resolve a prompt asset URI for agent use",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: promptAssetCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PromptResolve(cmd.Context(), app.PromptAssetRequest{VaultPath: *ctx.vaultPath, Ref: args[0]})
 			return ctx.renderProjection(cmd, projection, err)
 		},
-	})
+	}
+	promptCmd.AddCommand(resolveCmd)
 
 	lifecycleCmd := &cobra.Command{
 		Use:   "lifecycle <id>",
@@ -95,6 +100,8 @@ func addPromptCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	lifecycleCmd.Flags().StringVar(&lifecycleTo, "to", "", "Target lifecycle: draft, tested, accepted, promoted, or retired")
 	lifecycleCmd.Flags().StringVar(&lifecycleReason, "reason", "", "Reason for the lifecycle update")
+	lifecycleCmd.ValidArgsFunction = promptAssetCompletion(func() string { return *ctx.vaultPath })
+	_ = lifecycleCmd.RegisterFlagCompletionFunc("to", staticCompletion("lifecycle", "draft", "tested", "accepted", "promoted", "retired"))
 	promptCmd.AddCommand(lifecycleCmd)
 
 	feedbackCmd := &cobra.Command{

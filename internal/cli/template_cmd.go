@@ -11,7 +11,11 @@ func addTemplateCommands(root *cobra.Command, ctx commandBuildContext) {
 	var templatePack string
 	var templateUseCase string
 	var templateIntent string
-	templateCmd := &cobra.Command{Use: "template", Short: "Manage Markdown templates"}
+	templateCmd := &cobra.Command{
+		Use:   "template",
+		Short: "Manage Markdown templates",
+		Long:  "Manage local Markdown templates. Preview and inspect commands are read-only; template-backed note creation writes only the target note metadata/body through the Pinax service.",
+	}
 	templateCreateCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a Markdown template",

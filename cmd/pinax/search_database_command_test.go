@@ -42,6 +42,18 @@ func TestDatabaseSchemaAndViewRegistryV2CLI(t *testing.T) {
 	if !strings.Contains(setOut, "database.schema.set") || !strings.Contains(readCLIFile(t, filepath.Join(root, ".pinax", "schema-overrides.json")), "status") {
 		t.Fatalf("schema set failed:\n%s", setOut)
 	}
+	checkOut := runCLI(t, "database", "schema", "set", "published", "--type", "checkbox", "--vault", root, "--json")
+	if !strings.Contains(checkOut, `"type":"checkbox"`) {
+		t.Fatalf("schema set checkbox failed:\n%s", checkOut)
+	}
+	listOut := runCLI(t, "database", "schema", "list", "--vault", root, "--json")
+	if !strings.Contains(listOut, "database.schema.list") || !strings.Contains(listOut, "published") || !strings.Contains(listOut, "checkbox") {
+		t.Fatalf("schema list output invalid:\n%s", listOut)
+	}
+	showOut := runCLI(t, "database", "schema", "show", "published", "--vault", root, "--json")
+	if !strings.Contains(showOut, "database.schema.show") || !strings.Contains(showOut, `"property":"published"`) || !strings.Contains(showOut, `"type":"checkbox"`) {
+		t.Fatalf("schema show output invalid:\n%s", showOut)
+	}
 	viewOut := runCLI(t, "database", "view", "save", "sql-active", "--query", "SELECT title FROM notes LIMIT 20", "--kind", "table", "--column", "title", "--vault", root, "--json")
 	if !strings.Contains(viewOut, "database.view.save") {
 		t.Fatalf("database query view save output = %s", viewOut)
@@ -71,6 +83,52 @@ func TestDatabaseViewV3DataviewRenderCLI(t *testing.T) {
 	renderOut := runCLI(t, "database", "view", "render", "dv-active", "--vault", root, "--json")
 	if !strings.Contains(renderOut, "database.view.render") || !strings.Contains(renderOut, "Active") {
 		t.Fatalf("database view render output = %s", renderOut)
+	}
+}
+
+func TestDatabaseViewDisplayRenderCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "note", "new", "Active", "--body", "due:: 2026-06-21", "--status", "active", "--vault", root, "--json")
+	runCLI(t, "note", "new", "Done", "--body", "due:: 2026-06-22", "--status", "done", "--vault", root, "--json")
+	boardOut := runCLI(t, "database", "view", "save", "board-status", "--display", "board", "--query", "SELECT title, status FROM notes LIMIT 10", "--board-column", "status", "--vault", root, "--json")
+	if !strings.Contains(boardOut, "database.view.save") || !strings.Contains(boardOut, `"display":"board"`) {
+		t.Fatalf("board view save output invalid:\n%s", boardOut)
+	}
+	views := readCLIFile(t, filepath.Join(root, ".pinax", "views.json"))
+	if !strings.Contains(views, `"kind": "board"`) || strings.Contains(views, `"rows"`) {
+		t.Fatalf("view registry should save config only:\n%s", views)
+	}
+	boardRender := runCLI(t, "database", "view", "render", "board-status", "--vault", root, "--json")
+	for _, want := range []string{`"command":"database.view.render"`, `"display":"board"`, `"board_columns":"2"`, "Active", "Done"} {
+		if !strings.Contains(boardRender, want) {
+			t.Fatalf("board render missing %s:\n%s", want, boardRender)
+		}
+	}
+	boardAgent := runCLI(t, "database", "view", "render", "board-status", "--vault", root, "--agent")
+	for _, want := range []string{"command=database.view.render", "fact.database.view=board-status", "fact.database.display=board", "fact.database_tab.name=board-status"} {
+		if !strings.Contains(boardAgent, want) {
+			t.Fatalf("board render agent missing %s:\n%s", want, boardAgent)
+		}
+	}
+
+	calendarOut := runCLI(t, "database", "view", "save", "calendar-due", "--display", "calendar", "--query", "SELECT title, due FROM notes LIMIT 10", "--calendar-field", "due", "--vault", root, "--json")
+	if !strings.Contains(calendarOut, `"display":"calendar"`) {
+		t.Fatalf("calendar view save output invalid:\n%s", calendarOut)
+	}
+	calendarRender := runCLI(t, "database", "view", "render", "calendar-due", "--vault", root, "--json")
+	for _, want := range []string{`"display":"calendar"`, `"calendar_events":"2"`, "2026-06-21", "2026-06-22"} {
+		if !strings.Contains(calendarRender, want) {
+			t.Fatalf("calendar render missing %s:\n%s", want, calendarRender)
+		}
+	}
+	badOut := runCLI(t, "database", "view", "save", "bad-calendar", "--display", "calendar", "--query", "SELECT title FROM notes LIMIT 10", "--vault", root, "--json")
+	if !strings.Contains(badOut, `"display":"calendar"`) {
+		t.Fatalf("bad calendar save output invalid:\n%s", badOut)
+	}
+	failed, err := runCLIExpectError("database", "view", "render", "bad-calendar", "--vault", root, "--json")
+	if err == nil || !strings.Contains(failed, `"code":"calendar_field_required"`) {
+		t.Fatalf("bad calendar should fail with calendar_field_required err=%v out=%s", err, failed)
 	}
 }
 
@@ -184,7 +242,7 @@ func TestDatabaseViewQueryCompletionAndHelp(t *testing.T) {
 	}
 
 	schemaTypeCompletion := runCLI(t, "__complete", "database", "schema", "set", "status", "--vault", root, "--type", "")
-	if !strings.Contains(schemaTypeCompletion, "select\ttype") || !strings.Contains(schemaTypeCompletion, "date\ttype") {
+	if !strings.Contains(schemaTypeCompletion, "select\ttype") || !strings.Contains(schemaTypeCompletion, "date\ttype") || !strings.Contains(schemaTypeCompletion, "checkbox\ttype") || !strings.Contains(schemaTypeCompletion, "relation\ttype") || !strings.Contains(schemaTypeCompletion, "formula\ttype") {
 		t.Fatalf("database schema type completion = %s", schemaTypeCompletion)
 	}
 

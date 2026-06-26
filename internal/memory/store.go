@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -112,9 +111,10 @@ type RecallFilter struct {
 }
 
 type RecallHit struct {
-	Record       Record `json:"record"`
-	RecallReason string `json:"recall_reason"`
-	Score        int    `json:"score"`
+	Record       Record          `json:"record"`
+	RecallReason string          `json:"recall_reason"`
+	Score        int             `json:"score"`
+	Signals      SignalBreakdown `json:"signals,omitempty"`
 }
 
 type Stats struct {
@@ -262,44 +262,11 @@ func (s *Store) Recall(ctx context.Context, filter RecallFilter) ([]RecallHit, e
 			}
 		}
 	}
-	hits := make([]RecallHit, 0, len(records))
-	terms := tokenize(filter.Query)
+	candidates := make([]Candidate, 0, len(records))
 	for _, record := range records {
-		score := 0
-		reasons := []string{"status:" + record.Status}
-		if strings.TrimSpace(filter.Entity) != "" {
-			score += 30
-			reasons = append(reasons, "entity_match:"+strings.ToLower(strings.TrimSpace(filter.Entity)))
-		}
-		if strings.TrimSpace(filter.Type) != "" {
-			score += 10
-			reasons = append(reasons, "type:"+record.Type)
-		}
-		if rank := ftsRank[record.ID]; rank > 0 {
-			score += 40 + rank
-			reasons = append(reasons, "keyword_match:fts")
-		} else if len(terms) > 0 && matchesTerms(record, terms) {
-			score += 20
-			reasons = append(reasons, "keyword_match:scan")
-		} else if len(terms) > 0 {
-			continue
-		}
-		if record.SourceURI != "" {
-			score += 5
-			reasons = append(reasons, "source:"+sourceKind(record.SourceURI))
-		}
-		hits = append(hits, RecallHit{Record: record, RecallReason: strings.Join(reasons, " + "), Score: score})
+		candidates = append(candidates, Candidate{Record: record, FTSRank: ftsRank[record.ID]})
 	}
-	sort.SliceStable(hits, func(i, j int) bool {
-		if hits[i].Score == hits[j].Score {
-			return hits[i].Record.CreatedAt.After(hits[j].Record.CreatedAt)
-		}
-		return hits[i].Score > hits[j].Score
-	})
-	if len(hits) > limit {
-		hits = hits[:limit]
-	}
-	return hits, nil
+	return Scorer{}.Score(filter, candidates, ftsRank, limit), nil
 }
 
 func (s *Store) Stats(ctx context.Context) (Stats, error) {
@@ -468,16 +435,6 @@ func tokenize(value string) []string {
 		terms = append(terms, part)
 	}
 	return terms
-}
-
-func matchesTerms(record Record, terms []string) bool {
-	haystack := strings.ToLower(strings.Join([]string{record.Type, record.Subject, record.Predicate, record.Object, record.Body, record.SourceURI}, " "))
-	for _, term := range terms {
-		if strings.Contains(haystack, term) {
-			return true
-		}
-	}
-	return false
 }
 
 func defaultString(value, fallback string) string {

@@ -68,3 +68,5 @@ Profiles may use `local:<path>` theme sources. The path must stay inside the vau
 ## CI Recommendation
 
 A conservative CI job should run `publish plan`, `publish build`, inspect the receipt, and only then `publish deploy --yes` against a clean/orphan publishing repository. GitHub private Pages availability and permissions are controlled by GitHub settings, not by Pinax.
+
+See also [`plugin`](./plugin.md), [`api`](./api.md), [`token`](./token.md), [`profile`](./profile.md), and [`sync`](./sync.md) for adjacent integration and distribution boundaries.

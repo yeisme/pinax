@@ -1,0 +1,39 @@
+# Sync daemon one-cycle workflow through the real CLI and fake cloud server.
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+
+exec pinax cloud login --endpoint $PINAX_FAKE_CLOUD_URL --workspace ws_123 --device dev_laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault vault --json
+stdout '"command":"cloud.login"'
+! stdout 'PINAX_CLOUD_TOKEN'
+! stdout 'Authorization'
+
+exec pinax sync daemon status --vault vault --json
+stdout '"command":"sync.daemon.status"'
+stdout '"daemon_status":"stopped"'
+
+exec pinax sync daemon run --once --target cloud --poll-interval 10ms --sync-timeout 5s --vault vault --yes --json
+stdout '"command":"sync.daemon.run"'
+stdout '"status":"success"'
+! stdout 'Authorization'
+! stdout 'PINAX_CLOUD_TOKEN'
+
+exec pinax sync daemon status --vault vault --json
+stdout '"command":"sync.daemon.status"'
+stdout '"daemon_status":"stopped"'
+
+exec pinax sync daemon logs --vault vault --json
+stdout '"command":"sync.daemon.logs"'
+stdout 'started'
+! stdout 'Authorization'
+! stdout 'PINAX_CLOUD_TOKEN'
+-- vault/notes/daemon.md --
+---
+schema_version: pinax.note.v1
+note_id: note_daemon
+title: Daemon
+kind: reference
+---
+
+# Daemon
+
+daemon body must stay local

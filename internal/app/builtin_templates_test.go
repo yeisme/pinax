@@ -32,7 +32,7 @@ func TestBuiltInTemplateLegacyAndRecommendedInspect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect journal daily: %v", err)
 	}
-	if journal.Facts["kind"] != "journal_template" || journal.Facts["path_pattern"] != "daily/{{ .Date }}.md" || journal.Facts["managed_blocks"] != "1" {
+	if journal.Facts["kind"] != "journal_template" || journal.Facts["path_pattern"] != "daily/{{ .Date }}.md" || journal.Facts["managed_blocks"] != "3" {
 		t.Fatalf("journal daily inspect facts = %#v", journal.Facts)
 	}
 
@@ -43,10 +43,32 @@ func TestBuiltInTemplateLegacyAndRecommendedInspect(t *testing.T) {
 	if index.Facts["kind"] != "index_template" || index.Facts["path_pattern"] != "index/home.md" || index.Facts["managed_blocks"] != "1" {
 		t.Fatalf("index home inspect facts = %#v", index.Facts)
 	}
+
+	ideas, err := svc.InspectTemplate(ctx, TemplateRequest{VaultPath: root, Name: "index.ideas"})
+	if err != nil {
+		t.Fatalf("inspect index ideas: %v", err)
+	}
+	if ideas.Facts["kind"] != "index_template" || ideas.Facts["path_pattern"] != "index/ideas.md" || ideas.Facts["queries"] != "1" {
+		t.Fatalf("index ideas inspect facts = %#v", ideas.Facts)
+	}
+}
+
+func TestBuiltInDailyTemplateObsidianCompatibilityBlocks(t *testing.T) {
+	body := builtInTemplates()["journal.daily"]
+	for _, want := range []string{
+		"output:\n  path_pattern: daily/{{ .Date }}.md",
+		"<!-- pinax:managed name=planning-daily -->",
+		"<!-- pinax:managed name=daily-task-review -->",
+		"<!-- pinax:managed name=daily-captures -->",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("journal.daily compatibility block missing %q:\n%s", want, body)
+		}
+	}
 }
 
 func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
-	required := []string{"note.quick", "inbox.capture", "meeting.notes", "decision.record", "project.brief", "learning.video", "learning.book", "research.topic", "source.github", "person.profile"}
+	required := []string{"note.quick", "inbox.capture", "meeting.notes", "decision.record", "project.brief", "learning.video", "learning.book", "learning.term", "learning.source", "learning.practice_log", "learning.weekly_review", "learning.case_review", "learning.stock.term", "learning.stock.indicator", "learning.stock.case_review", "learning.stock.trade_journal", "learning.stock.risk_rule", "learning.stock.weekly_review", "research.topic", "source.github", "person.profile", "idea.research_seed", "idea.drama_watch", "idea.anime_watch", "idea.game_explore", "idea.paper_read", "idea.novel_read", "idea.novel_write", "idea.video_note", "media.drama", "media.anime", "game.playlog", "reading.paper", "reading.novel", "writing.novel", "sticky.capture", "sticky.quote", "sticky.link", "sticky.question", "sticky.term", "sticky.person_signal", "sticky.project_signal"}
 	for _, name := range required {
 		body, ok := builtInTemplates()[name]
 		if !ok {
@@ -61,6 +83,24 @@ func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
 		}
 		if len(doc.Metadata.UseCases) == 0 || len(doc.Metadata.Aliases) == 0 || doc.Metadata.Difficulty == "" || doc.Metadata.Starter == nil || len(doc.Metadata.Defaults) == 0 {
 			t.Fatalf("catalog metadata for %s = %#v", name, doc.Metadata)
+		}
+		if strings.HasPrefix(name, "idea.") {
+			if doc.Metadata.Defaults["kind"] != "idea" || doc.Metadata.Defaults["status"] != "parked" {
+				t.Fatalf("idea metadata for %s = %#v", name, doc.Metadata.Defaults)
+			}
+			if strings.Contains(body, "Next Steps") || strings.Contains(body, "行动项") || strings.Contains(body, "- [ ]") {
+				t.Fatalf("idea template %s should not force todo-style capture:\n%s", name, body)
+			}
+		}
+		if strings.HasPrefix(name, "sticky.") {
+			if doc.Metadata.Defaults["kind"] != "sticky" || doc.Metadata.Defaults["status"] != "inbox" {
+				t.Fatalf("sticky metadata for %s = %#v", name, doc.Metadata.Defaults)
+			}
+			for _, forbidden := range []string{"board_column:", "kind: task", "- [ ]"} {
+				if strings.Contains(body, forbidden) {
+					t.Fatalf("sticky template %s must remain a capture note, found %q:\n%s", name, forbidden, body)
+				}
+			}
 		}
 	}
 }
@@ -86,6 +126,14 @@ func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
 		{template: "meeting.notes", title: "客户同步", pathPrefix: "meetings/", kind: "meeting", status: "active"},
 		{template: "decision.record", title: "选择同步策略", pathPrefix: "decisions/", kind: "decision", status: "active"},
 		{template: "source.github", title: "iptv-org/iptv", vars: map[string]string{"url": "https://github.com/iptv-org/iptv"}, pathPrefix: "sources/github/", kind: "source", status: "active", tags: []string{"source/github", "reference/source"}},
+		{template: "idea.research_seed", title: "某篇小说是怎么写成的", pathPrefix: "ideas/research/", kind: "idea", status: "parked", tags: []string{"idea", "research-seed"}},
+		{template: "reading.paper", title: "Transformer 论文", pathPrefix: "reading/papers/", kind: "research", status: "active", tags: []string{"research", "paper"}},
+		{template: "writing.novel", title: "赛博江湖", pathPrefix: "writing/novels/", kind: "writing", status: "active", tags: []string{"writing", "novel"}},
+		{template: "sticky.capture", title: "临时想法", pathPrefix: "inbox/sticky/", kind: "sticky", status: "inbox", tags: []string{"sticky", "capture"}},
+		{template: "sticky.link", title: "Pinax 看板资料", vars: map[string]string{"url": "https://example.test/board"}, pathPrefix: "inbox/sticky/links/", kind: "sticky", status: "inbox", tags: []string{"sticky", "link"}},
+		{template: "learning.term", title: "复利", pathPrefix: "learning/terms/", kind: "learning", status: "active", tags: []string{"learning", "term"}},
+		{template: "learning.stock.indicator", title: "K线基础", pathPrefix: "learning/stock/indicators/", kind: "learning", status: "active", tags: []string{"learning", "stock", "indicator"}},
+		{template: "learning.stock.risk_rule", title: "仓位风险", pathPrefix: "learning/stock/risk/", kind: "rule", status: "active", tags: []string{"learning", "stock", "risk-rule"}},
 	}
 	for _, check := range checks {
 		projection, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: check.title, Template: check.template, Vars: check.vars})
@@ -106,6 +154,25 @@ func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
 	}
 	if !strings.HasPrefix(override.Facts["path"], "notes/custom/") || override.Facts["kind"] != "reference" || override.Facts["status"] != "active" || override.Facts["template.defaults_source"] != "inbox.capture" || override.Facts["template.overrides"] == "" {
 		t.Fatalf("override facts = %#v", override.Facts)
+	}
+
+	if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "research", Name: "Research"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	projectSticky, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "子项目看板线索", Template: "sticky.project_signal", Project: "research", Folder: "inbox"})
+	if err != nil {
+		t.Fatalf("create project sticky: %v", err)
+	}
+	if !strings.HasPrefix(projectSticky.Facts["path"], "notes/research/inbox/") || projectSticky.Facts["project"] != "research" || projectSticky.Facts["kind"] != "sticky" || projectSticky.Facts["status"] != "inbox" {
+		t.Fatalf("project sticky facts = %#v", projectSticky.Facts)
+	}
+	payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(projectSticky.Facts["path"])))
+	if err != nil {
+		t.Fatalf("read project sticky: %v", err)
+	}
+	content := string(payload)
+	if strings.Contains(content, "board_column:") || strings.Contains(content, "kind: task") {
+		t.Fatalf("project sticky must not become a managed board item:\n%s", content)
 	}
 }
 
@@ -344,7 +411,8 @@ func TestTemplatePreviewJournal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview journal: %v", err)
 	}
-	if projection.Facts["template"] != "journal.daily" || projection.Facts["query_count"] != "0" || !strings.Contains(fmt.Sprint(projection.Data), "daily-captures") {
+	data := fmt.Sprint(projection.Data)
+	if projection.Facts["template"] != "journal.daily" || projection.Facts["query_count"] != "0" || !strings.Contains(data, "planning-daily") || !strings.Contains(data, "daily-captures") {
 		t.Fatalf("journal preview projection = %#v", projection)
 	}
 }
@@ -442,6 +510,13 @@ func TestTemplateListPackTemplateListUseCaseTemplateRecommendTemplateRecommendFa
 	}
 	if meeting.Facts["primary"] != "meeting.notes" {
 		t.Fatalf("meeting recommendation = %#v", meeting)
+	}
+	sticky, err := svc.RecommendTemplate(ctx, TemplateRequest{VaultPath: root, Intent: "便签"})
+	if err != nil {
+		t.Fatalf("recommend sticky: %v", err)
+	}
+	if sticky.Facts["primary"] != "sticky.capture" {
+		t.Fatalf("sticky recommendation = %#v", sticky)
 	}
 	fallback, err := svc.RecommendTemplate(ctx, TemplateRequest{VaultPath: root, Intent: "unknown-intent"})
 	if err != nil {

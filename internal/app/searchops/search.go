@@ -39,6 +39,7 @@ type Result struct {
 	Returned             int                        `json:"returned"`
 	Notes                []domain.Note              `json:"notes,omitempty"`
 	Results              []noteindex.ResultItem     `json:"results,omitempty"`
+	AgentContexts        []domain.AgentContext      `json:"agent_contexts,omitempty"`
 	LinkTargetStatus     string                     `json:"link_target_status,omitempty"`
 	LinkTargetMatches    int                        `json:"link_target_matches,omitempty"`
 	LinkTargetCandidates []domain.NoteLinkCandidate `json:"link_target_candidates,omitempty"`
@@ -161,9 +162,39 @@ func Projection(req Request, result Result, shellQuote func(string) string) doma
 		projection.Status = "partial"
 		projection.Actions = []domain.Action{{Name: "index_rebuild", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(req.VaultPath))}}
 	}
+	result.AgentContexts = searchAgentContexts(result.Results, req.VaultPath, shellQuote)
 	AddFilterFacts(projection.Facts, req)
 	projection.Data = result
 	return projection
+}
+
+func searchAgentContexts(results []noteindex.ResultItem, vaultPath string, shellQuote func(string) string) []domain.AgentContext {
+	contexts := make([]domain.AgentContext, 0, len(results))
+	for _, item := range results {
+		note := item.Note
+		title := strings.TrimSpace(note.Title)
+		if title == "" {
+			title = note.Path
+		}
+		contextID := note.ID
+		if contextID == "" {
+			contextID = note.Path
+		}
+		snippets := []domain.AgentContextSnippet{}
+		if strings.TrimSpace(item.Snippet) != "" {
+			snippets = append(snippets, domain.AgentContextSnippet{Kind: "match", Text: item.Snippet, Source: note.Path})
+		}
+		evidence := []string{}
+		if note.ID != "" {
+			evidence = append(evidence, "note_id:"+note.ID)
+		}
+		if note.Path != "" {
+			evidence = append(evidence, note.Path)
+		}
+		evidence = append(evidence, item.MatchedFields...)
+		contexts = append(contexts, domain.AgentContext{SchemaVersion: domain.AgentContextSchemaVersion, ContextID: "search_result:" + contextID, SourceKind: "search_result", DisplayTitle: title, Refs: []domain.AgentContextRef{{Kind: "note", ID: note.ID, Path: note.Path, Title: title}}, Snippets: snippets, Evidence: evidence, BodyExposure: "snippet", Actions: []domain.Action{{Name: "read", Command: fmt.Sprintf("pinax note read %s --display card --vault %s --json", shellQuote(title), shellQuote(vaultPath))}}})
+	}
+	return contexts
 }
 
 func NormalizedSort(sortMode string) string {

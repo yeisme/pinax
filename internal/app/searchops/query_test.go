@@ -179,3 +179,49 @@ func TestExecuteLinkBacklinkAndAssetSources(t *testing.T) {
 		t.Fatalf("assets result = %#v", assets)
 	}
 }
+
+func TestExecuteRelationSourceAndRollupLiteAggregates(t *testing.T) {
+	notes := []domain.Note{
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Status: "active", UpdatedAt: "2026-06-21", Body: "See [[Target]], [[Missing]], and [[Dup]]. SECRET_BODY"},
+		{ID: "note_target", Title: "Target", Path: "notes/target.md", Status: "active", UpdatedAt: "2026-06-22", Body: "Target body."},
+		{ID: "note_dup_a", Title: "Dup", Path: "notes/dup-a.md", Status: "done", UpdatedAt: "2026-06-20", Body: "Duplicate A."},
+		{ID: "note_dup_b", Title: "Dup", Path: "notes/dup-b.md", Status: "done", UpdatedAt: "2026-06-19", Body: "Duplicate B."},
+	}
+
+	relationAST, err := ParseSQL(`SELECT source_path, target, status, target_path FROM relations WHERE source_path = "notes/alpha.md" ORDER BY target ASC LIMIT 10`)
+	if err != nil {
+		t.Fatalf("parse relations sql: %v", err)
+	}
+	relations := ExecuteQuery(notes, relationAST, QueryRequest{})
+	if relations.RowCount() != 3 || relations.Rows[0].Source != string(domain.QuerySourceRelations) || relations.Rows[0].Note.Body != "" {
+		t.Fatalf("relations result = %#v", relations)
+	}
+	statuses := map[string]string{}
+	for _, row := range relations.Rows {
+		statuses[row.Values["target"].String()] = row.Values["status"].String()
+	}
+	if statuses["Target"] != "resolved" || statuses["Missing"] != "broken" || statuses["Dup"] != "ambiguous" {
+		t.Fatalf("relation statuses = %#v", statuses)
+	}
+
+	rollupAST, err := ParseSQL(`SELECT status, COUNT(*) AS total, LATEST(updated_at) AS latest_updated FROM notes GROUP BY status ORDER BY status ASC LIMIT 10`)
+	if err != nil {
+		t.Fatalf("parse rollup sql: %v", err)
+	}
+	rollup := ExecuteQuery(notes, rollupAST, QueryRequest{})
+	if rollup.RowCount() != 2 || rollup.Columns[2] != "latest_updated" || rollup.Rows[0].Note.Body != "" {
+		t.Fatalf("rollup result = %#v", rollup)
+	}
+	if rollup.Rows[0].Values["status"].String() != "active" || rollup.Rows[0].Values["total"].String() != "2" || rollup.Rows[0].Values["latest_updated"].String() != "2026-06-22" {
+		t.Fatalf("active rollup row = %#v", rollup.Rows[0].Values)
+	}
+
+	summaryAST, err := ParseSQL(`SELECT STATUS_SUMMARY(status) AS status_summary FROM notes LIMIT 10`)
+	if err != nil {
+		t.Fatalf("parse status summary sql: %v", err)
+	}
+	summary := ExecuteQuery(notes, summaryAST, QueryRequest{})
+	if summary.RowCount() != 1 || summary.Rows[0].Values["status_summary"].String() != "active:2,done:2" {
+		t.Fatalf("status summary = %#v", summary)
+	}
+}

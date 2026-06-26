@@ -26,6 +26,31 @@ func TestParseNoteLinksWikiBasic(t *testing.T) {
 	}
 }
 
+func TestParseNoteLinksKeepsDistinctWikiAliasesAndHeadings(t *testing.T) {
+	body := "[[Alpha|Short]] [[Alpha#Details]] [[Alpha|Short]]\n"
+	links := parseRawLinksFromBody(body)
+	if len(links) != 2 {
+		t.Fatalf("expected exact duplicate to collapse but alias and heading variants to remain, got %d: %+v", len(links), links)
+	}
+	if links[0].Raw != "Alpha|Short" || links[0].Alias != "Short" || links[0].Heading != "" {
+		t.Fatalf("first link = %+v", links[0])
+	}
+	if links[1].Raw != "Alpha#Details" || links[1].Alias != "" || links[1].Heading != "Details" {
+		t.Fatalf("second link = %+v", links[1])
+	}
+}
+
+func TestParseNoteLinksIgnoresWikiMediaEmbeds(t *testing.T) {
+	body := "![[diagram.png]] [[Alpha]] ![[clips/demo.mp4|Demo]]\n"
+	links := parseRawLinksFromBody(body)
+	if len(links) != 1 {
+		t.Fatalf("expected only note wiki link, got %d: %+v", len(links), links)
+	}
+	if links[0].Target != "Alpha" {
+		t.Fatalf("target = %q", links[0].Target)
+	}
+}
+
 func TestParseNoteLinksMarkdownRelative(t *testing.T) {
 	body := "# Title\n\n[link](../other.md) and [another](notes/sub/deep.md)\n"
 	links := parseRawLinksFromBody(body)
@@ -135,6 +160,22 @@ func TestResolverSnapshotAmbiguousTitle(t *testing.T) {
 	}
 }
 
+func TestResolverSnapshotResolveByFrontmatterAlias(t *testing.T) {
+	notes := []domain.Note{
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Frontmatter: map[string]string{"aliases": "[One, First Alpha]"}},
+		{ID: "note_source", Title: "Source", Path: "notes/source.md"},
+	}
+	snap := BuildResolverSnapshot(notes)
+	raw := ParseRawLink{Kind: "wiki", Target: "First Alpha", Raw: "First Alpha", Line: 1}
+	result := ResolveLinkTarget(notes[1], raw, snap)
+	if result.Link.Status != string(domain.LinkStatusResolved) {
+		t.Fatalf("expected resolved by frontmatter alias, got %q: %+v", result.Link.Status, result.Link)
+	}
+	if result.Link.TargetPath != "notes/alpha.md" || result.Link.Evidence != "resolved by alias/stem" {
+		t.Fatalf("unexpected result: %+v", result.Link)
+	}
+}
+
 func TestResolverSnapshotBrokenLink(t *testing.T) {
 	notes := []domain.Note{
 		{ID: "note_a", Title: "Alpha", Path: "notes/alpha.md"},
@@ -214,6 +255,45 @@ func TestGraphSummary(t *testing.T) {
 	}
 	if summary.Broken == 0 {
 		t.Fatalf("expected at least 1 broken link")
+	}
+}
+
+func TestLinkGraphCompatibilityMatrixAndRepairPlanFacts(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_source\ntitle: Source\n---\n\n# Source\n\nSee [[Target|Alias]], [[Target#Details]], [[Missing]], and [[Duplicate]].\n")
+	writeFile(t, filepath.Join(root, "notes", "target.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_target\ntitle: Target\naliases: [T]\n---\n\n# Target\n")
+	writeFile(t, filepath.Join(root, "notes", "dup-a.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_dup_a\ntitle: Duplicate\n---\n\n# Duplicate\n")
+	writeFile(t, filepath.Join(root, "notes", "dup-b.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_dup_b\ntitle: Duplicate\n---\n\n# Duplicate\n")
+
+	links, err := svc.NoteLinks(ctx, NoteLinkRequest{VaultPath: root, NoteRef: "Source"})
+	if err != nil {
+		t.Fatalf("note links: %v", err)
+	}
+	if links.Status != "partial" || links.Facts["ambiguous"] != "1" || links.Facts["broken"] != "1" || links.Facts["compat.wikilink"] != "supported" || links.Facts["compat.alias"] != "supported" || links.Facts["repair_mode"] != "plan_only" {
+		t.Fatalf("link compatibility facts = %#v status=%s", links.Facts, links.Status)
+	}
+	if len(links.Actions) == 0 || !strings.Contains(links.Actions[0].Command, "pinax repair plan") {
+		t.Fatalf("links should point to repair plan: %#v", links.Actions)
+	}
+
+	backlinks, err := svc.NoteBacklinks(ctx, NoteLinkRequest{VaultPath: root, NoteRef: "Target"})
+	if err != nil {
+		t.Fatalf("note backlinks: %v", err)
+	}
+	if backlinks.Facts["compat.backlink"] != "supported" || backlinks.Facts["backlinks"] == "0" {
+		t.Fatalf("backlink compatibility facts = %#v", backlinks.Facts)
+	}
+	summary, err := svc.GraphSummary(ctx, root)
+	if err != nil {
+		t.Fatalf("graph summary: %v", err)
+	}
+	if summary.Facts["compat.graph"] != "supported" || summary.Facts["compat.ambiguous_repair"] != "manual_review" {
+		t.Fatalf("graph summary facts = %#v", summary.Facts)
 	}
 }
 

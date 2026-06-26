@@ -20,6 +20,7 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/index/model"
 	"github.com/yeisme/pinax/internal/index/query"
+	"github.com/yeisme/pinax/internal/notelinks"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -237,9 +238,7 @@ type ResultItem struct {
 	AttachmentCount int         `json:"attachment_count"`
 }
 
-var wikiLinkPattern = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 var inlineTagPattern = regexp.MustCompile(`(^|\s)#([\pL\pN_/-]+)`)
-var markdownLinkPattern = regexp.MustCompile(`!?\[[^\]]*\]\(([^)]+)\)`)
 
 func Init(root string) (Status, error) {
 	db, err := open(root)
@@ -481,7 +480,7 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 		if err := upsertMeta(tx, "rebuilt_at", now, now); err != nil {
 			return err
 		}
-		pathByTitle := notePathByTitle(notes)
+		linkResolver := notelinks.BuildResolverSnapshot(notes)
 		for _, note := range notes {
 			record := noteRecordFromDomain(note, 0, 0)
 			if err := q.NoteRecord.WithContext(ctx).Create(&record); err != nil {
@@ -503,7 +502,7 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 				}
 				counts.Tokens++
 			}
-			for _, link := range noteLinks(note, pathByTitle) {
+			for _, link := range noteLinks(note, linkResolver) {
 				if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
 					return err
 				}
@@ -1436,7 +1435,7 @@ func replaceNoteProjection(tx *gorm.DB, root string, note domain.Note) error {
 	for _, record := range linkRecords {
 		records = append(records, *record)
 	}
-	for _, link := range noteLinks(note, notePathByTitleRecords(records)) {
+	for _, link := range noteLinks(note, resolverSnapshotFromRecords(records)) {
 		if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
 			return err
 		}
@@ -1530,7 +1529,7 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 	for _, record := range noteRows {
 		records = append(records, *record)
 	}
-	resolver := notePathByTitleRecords(records)
+	resolver := resolverSnapshotFromRecords(records)
 	paths := make([]string, 0, len(affected))
 	for path := range affected {
 		paths = append(paths, path)
@@ -1690,47 +1689,41 @@ func uniqueTags(note domain.Note) []string {
 	return tags
 }
 
-func wikiLinks(body string) []string {
-	seen := map[string]bool{}
-	for _, match := range wikiLinkPattern.FindAllStringSubmatch(body, -1) {
-		if len(match) > 1 {
-			target := strings.TrimSpace(match[1])
-			if target != "" {
-				seen[target] = true
-			}
-		}
-	}
-	links := make([]string, 0, len(seen))
-	for link := range seen {
-		links = append(links, link)
+func noteLinks(note domain.Note, resolver notelinks.ResolverSnapshot) []LinkRecord {
+	rawLinks := notelinks.ParseNoteLinks(note.Body)
+	links := make([]LinkRecord, 0, len(rawLinks))
+	for _, raw := range rawLinks {
+		resolved := notelinks.ResolveLinkTarget(note, raw, resolver).Link
+		links = append(links, linkRecordFromDomainLink(note, resolved))
 	}
 	return links
 }
 
-func noteLinks(note domain.Note, pathByTitle map[string]string) []LinkRecord {
-	links := make([]LinkRecord, 0)
-	for _, target := range wikiLinks(note.Body) {
-		resolved := pathByTitle[strings.ToLower(target)]
-		status := "broken"
-		evidence := "target not found"
-		if resolved != "" {
-			status = "resolved"
-			evidence = "resolved by title"
-		}
-		links = append(links, LinkRecord{NotePath: note.Path, SourceNoteID: note.ID, Target: target, TargetRaw: target, TargetPath: resolved, Kind: "wiki", Broken: resolved == "", Status: status, Evidence: evidence})
+func linkRecordFromDomainLink(note domain.Note, link domain.NoteLink) LinkRecord {
+	return LinkRecord{
+		NotePath:      note.Path,
+		SourceNoteID:  link.SourceNoteID,
+		Target:        link.Target,
+		TargetPath:    link.TargetPath,
+		Kind:          link.Kind,
+		Broken:        link.Broken,
+		TargetNoteID:  link.TargetNoteID,
+		TargetTitle:   link.TargetTitle,
+		TargetRaw:     link.TargetRaw,
+		TargetAlias:   link.TargetAlias,
+		TargetHeading: link.TargetHeading,
+		Status:        link.Status,
+		Line:          link.Line,
+		Evidence:      link.Evidence,
 	}
-	for _, match := range markdownLinkPattern.FindAllStringSubmatch(note.Body, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		target := strings.TrimSpace(match[1])
-		if target == "" || strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-			continue
-		}
-		cleanPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(note.Path), target)))
-		links = append(links, LinkRecord{NotePath: note.Path, SourceNoteID: note.ID, Target: target, TargetRaw: target, TargetPath: cleanPath, Kind: "markdown", Broken: false, Status: "resolved", Evidence: "resolved by relative path"})
+}
+
+func resolverSnapshotFromRecords(records []NoteRecord) notelinks.ResolverSnapshot {
+	notes := make([]domain.Note, 0, len(records))
+	for _, record := range records {
+		notes = append(notes, domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt})
 	}
-	return links
+	return notelinks.BuildResolverSnapshot(notes)
 }
 
 func noteAttachments(root string, note domain.Note) []AttachmentRecord {
@@ -1798,26 +1791,6 @@ func mediaType(path string) string {
 	default:
 		return "file"
 	}
-}
-
-func notePathByTitle(notes []domain.Note) map[string]string {
-	paths := map[string]string{}
-	for _, note := range notes {
-		paths[strings.ToLower(note.Title)] = note.Path
-		paths[strings.ToLower(note.ID)] = note.Path
-		paths[strings.ToLower(note.Path)] = note.Path
-	}
-	return paths
-}
-
-func notePathByTitleRecords(records []NoteRecord) map[string]string {
-	paths := map[string]string{}
-	for _, record := range records {
-		paths[strings.ToLower(record.Title)] = record.Path
-		paths[strings.ToLower(record.NoteID)] = record.Path
-		paths[strings.ToLower(record.Path)] = record.Path
-	}
-	return paths
 }
 
 func noteProject(note domain.Note) string {

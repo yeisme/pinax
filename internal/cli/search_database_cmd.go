@@ -104,7 +104,7 @@ func addDatabaseCommands(root *cobra.Command, ctx commandBuildContext) {
 		var projection domain.Projection
 		var err error
 		if strings.TrimSpace(*ctx.databaseViewQuery) != "" {
-			projection, err = ctx.svc.SaveDatabaseView(cmd.Context(), app.ViewRequest{VaultPath: *ctx.vaultPath, Name: args[0], Kind: *ctx.noteKind, Language: *ctx.databaseViewLanguage, Query: *ctx.databaseViewQuery, Columns: *ctx.databaseViewColumns, GroupBy: *ctx.databaseViewGroupBy, CalendarField: *ctx.databaseViewCalendar, BoardColumn: *ctx.databaseViewBoardColumn, Limit: *ctx.noteLimit})
+			projection, err = ctx.svc.SaveDatabaseView(cmd.Context(), app.ViewRequest{VaultPath: *ctx.vaultPath, Name: args[0], Kind: *ctx.noteKind, Display: *ctx.databaseViewDisplay, Language: *ctx.databaseViewLanguage, Query: *ctx.databaseViewQuery, Columns: *ctx.databaseViewColumns, GroupBy: *ctx.databaseViewGroupBy, CalendarField: *ctx.databaseViewCalendar, BoardColumn: *ctx.databaseViewBoardColumn, Limit: *ctx.noteLimit})
 		} else {
 			projection, err = ctx.svc.SaveView(cmd.Context(), app.ViewRequest{VaultPath: *ctx.vaultPath, Name: args[0], Tags: splitCSV(*ctx.noteListTag), Group: *ctx.noteGroup, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteListStatus, Sort: *ctx.noteListSort, Limit: *ctx.noteLimit, CreatedAfter: *ctx.noteListCreatedAfter, UpdatedBefore: *ctx.noteListUpdatedBefore})
 			projection.Command = "database.view.save"
@@ -121,12 +121,14 @@ func addDatabaseCommands(root *cobra.Command, ctx commandBuildContext) {
 	databaseViewSaveCmd.Flags().StringVar(ctx.noteListSort, "sort", "", "Sort: updated, path, or title")
 	databaseViewSaveCmd.Flags().StringVar(ctx.databaseViewQuery, "query", "", "Pinax SQL query")
 	databaseViewSaveCmd.Flags().StringVar(ctx.databaseViewLanguage, "language", "sql", "Query language: sql or dataview")
+	databaseViewSaveCmd.Flags().StringVar(ctx.databaseViewDisplay, "display", "", "Display mode: table, board, list, or calendar")
 	databaseViewSaveCmd.Flags().StringArrayVar(ctx.databaseViewColumns, "column", nil, "Display columns; repeatable")
 	databaseViewSaveCmd.Flags().StringVar(ctx.databaseViewGroupBy, "group-by", "", "Group rows by property")
 	databaseViewSaveCmd.Flags().StringVar(ctx.databaseViewCalendar, "calendar-field", "", "Calendar date property")
 	databaseViewSaveCmd.Flags().StringVar(ctx.databaseViewBoardColumn, "board-column", "", "Board column property")
 	databaseViewSaveCmd.Flags().IntVar(ctx.noteLimit, "limit", 0, "Limit the number of results")
 	_ = databaseViewSaveCmd.RegisterFlagCompletionFunc("language", staticCompletion("language", "sql", "dataview"))
+	_ = databaseViewSaveCmd.RegisterFlagCompletionFunc("display", staticCompletion("display", "table", "board", "list", "calendar"))
 	databaseViewCmd.AddCommand(databaseViewSaveCmd)
 	databaseViewCmd.AddCommand(&cobra.Command{Use: "list", Short: "List database views", RunE: func(cmd *cobra.Command, args []string) error {
 		projection, err := ctx.svc.ListViews(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
@@ -145,9 +147,7 @@ func addDatabaseCommands(root *cobra.Command, ctx commandBuildContext) {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "database.view.render", "argument_required", "database view render requires a name", "pinax database view render <name> --vault <vault>")
 		}
-		projection, err := ctx.svc.ShowDatabaseView(cmd.Context(), app.ViewRequest{VaultPath: *ctx.vaultPath, Name: args[0]})
-		projection.Command = "database.view.render"
-		projection.Summary = "Database view rendered."
+		projection, err := ctx.svc.RenderDatabaseView(cmd.Context(), app.ViewRequest{VaultPath: *ctx.vaultPath, Name: args[0]})
 		return ctx.renderProjection(cmd, projection, err)
 	}})
 	databaseViewDeleteCmd := &cobra.Command{Use: "delete <name>", Short: "Delete a database view", RunE: func(cmd *cobra.Command, args []string) error {
@@ -166,6 +166,17 @@ func addDatabaseCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.DatabaseSchemaInfer(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
 		return ctx.renderProjection(cmd, projection, err)
 	}})
+	databaseSchemaCmd.AddCommand(&cobra.Command{Use: "list", Short: "List property schema overrides", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.DatabaseSchemaList(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}})
+	databaseSchemaCmd.AddCommand(&cobra.Command{Use: "show <property>", Short: "Show a property schema override", RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return renderCommandError(cmd, ctx.outputMode(), "database.schema.show", "argument_required", "database schema show requires a property name", "pinax database schema show <property> --vault <vault>")
+		}
+		projection, err := ctx.svc.DatabaseSchemaShow(cmd.Context(), app.DatabaseSchemaRequest{VaultPath: *ctx.vaultPath, Name: args[0]})
+		return ctx.renderProjection(cmd, projection, err)
+	}})
 	databaseSchemaSetCmd := &cobra.Command{Use: "set <property>", Short: "Set a property type", RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "database.schema.set", "argument_required", "database schema set requires a property name", "pinax database schema set status --type select --vault <vault>")
@@ -175,7 +186,7 @@ func addDatabaseCommands(root *cobra.Command, ctx commandBuildContext) {
 	}}
 	databaseSchemaSetCmd.Flags().StringVar(ctx.databaseSchemaType, "type", "", "Property type")
 	databaseSchemaSetCmd.Flags().StringVar(ctx.databaseSchemaValues, "values", "", "Allowed select/list values, comma-separated")
-	_ = databaseSchemaSetCmd.RegisterFlagCompletionFunc("type", staticCompletion("type", "string", "number", "boolean", "date", "select", "list", "link"))
+	_ = databaseSchemaSetCmd.RegisterFlagCompletionFunc("type", staticCompletion("type", "text", "string", "number", "checkbox", "boolean", "date", "select", "multi_select", "list", "url", "email", "person_text", "relation", "link", "rollup", "formula"))
 	databaseSchemaCmd.AddCommand(databaseSchemaSetCmd)
 	databaseCmd.AddCommand(databaseSchemaCmd)
 	root.AddCommand(databaseCmd)

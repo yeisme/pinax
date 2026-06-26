@@ -31,6 +31,27 @@ Pinax SHALL distinguish centralized Local API access from distributed Cloud Sync
 - **THEN** Pinax SHALL 使用已配置 Cloud Sync transport 交换加密 revision、manifest 和 blob
 - **AND** 每台设备 SHALL 保留可离线使用的本地 Markdown vault
 
+#### Scenario: 未忽略普通文件纳入 manifest
+
+- **GIVEN** a vault contains `notes/a.md`, `scripts/build.sh`, and `assets/logo.png`
+- **AND** `.pinaxignore` does not exclude those paths
+- **WHEN** the user runs `pinax sync push --target cloud --dry-run --vault <vault> --json`
+- **THEN** the sync plan SHALL include those files in the local content manifest
+- **AND** protected output SHALL report counts and hashes, not file payload bytes.
+
+#### Scenario: `.pinaxignore` 排除内容文件
+
+- **GIVEN** `.pinaxignore` excludes `.env*` and `dist/`
+- **WHEN** Pinax builds a Cloud Sync manifest
+- **THEN** matching files SHALL NOT be uploaded, pulled, or recorded as content entries
+- **AND** `.gitignore` SHALL NOT be used as an implicit Pinax content rule source.
+
+#### Scenario: hard deny 路径永不同步
+
+- **GIVEN** a vault contains `.git/`, `.pinax/index.sqlite`, `.pinax/cloud/blob-cache/`, or symlinks
+- **WHEN** Pinax builds a Cloud Sync manifest
+- **THEN** those paths SHALL be skipped even if `.pinaxignore` tries to re-include them.
+
 ### Requirement: Cloud Sync transport 抽象
 
 Cloud Sync SHALL expose a transport-independent protocol so server, S3 direct, rclone direct, and embedded/local API paths share one push/pull/conflict engine.
@@ -239,4 +260,130 @@ Pinax server sync client implementation SHALL not become the first writer that l
 - **WHEN** implementation begins
 - **THEN** `pinax-proof-loop-operational-hardening` SHALL be complete or explicitly waived with reviewed evidence
 - **AND** server sync output SHALL use the same projection redaction gate as local proof-loop commands.
+
+### Requirement: 本地后台实时同步进程
+
+Pinax SHALL provide an explicitly managed local sync daemon for a configured vault. The daemon SHALL reuse the existing Cloud Sync push/pull/conflict engine and SHALL NOT introduce a separate synchronization protocol or bypass existing approval, receipt, redaction, and `remote_write=true` rules.
+
+#### Scenario: 前台运行 daemon 启动后立即同步
+
+- **GIVEN** a vault has a configured Cloud Sync backend
+- **WHEN** the user runs `pinax sync daemon run --target cloud --vault <vault> --yes`
+- **THEN** Pinax SHALL start a local daemon runner for that vault
+- **AND** it SHALL immediately execute one startup sync cycle before waiting for the next poll interval
+- **AND** that cycle SHALL pull a newer remote revision before pushing local dirty content
+- **AND** it SHALL persist redacted daemon events under `.pinax/sync-daemon/events.jsonl`.
+
+#### Scenario: 机器输出保持稳定
+
+- **WHEN** the user runs `pinax sync daemon run --target cloud --vault <vault> --yes --json`
+- **THEN** stdout SHALL remain one final JSON envelope for `sync.daemon.run`
+- **AND** intermediate progress SHALL NOT be mixed into JSON stdout.
+
+### Requirement: 本地变更触发同步
+
+The sync daemon SHALL detect local content changes in Pinax-managed vault paths and schedule a debounced sync attempt. Runtime paths, ignored paths, and hard-denied paths SHALL NOT trigger content sync.
+
+#### Scenario: 本地 Markdown 修改触发 push
+
+- **GIVEN** the daemon is running for a vault with Cloud Sync configured
+- **AND** `notes/alpha.md` is selected by `.pinaxignore`
+- **WHEN** the user modifies `notes/alpha.md`
+- **THEN** Pinax SHALL coalesce local file events using the configured debounce window
+- **AND** it SHALL schedule a sync attempt that can push the changed encrypted manifest and blobs through the configured Cloud Sync transport
+- **AND** any `remote_write=true` output SHALL still require a durable revision commit and local sync-state receipt.
+
+#### Scenario: 运行态路径不触发内容同步
+
+- **GIVEN** the daemon writes `.pinax/sync-daemon/daemon.json` or `.pinax/sync-daemon/events.jsonl`
+- **WHEN** the watcher observes those writes
+- **THEN** Pinax SHALL ignore the events for content sync purposes
+- **AND** `.pinax/**` SHALL remain excluded from Cloud Sync content manifests.
+
+#### Scenario: watcher 降级到扫描
+
+- **GIVEN** filesystem watching is unavailable, over limit, or returns an unrecoverable error
+- **WHEN** the daemon continues running
+- **THEN** Pinax SHALL switch to periodic manifest scan fallback or report `watch_degraded`
+- **AND** `pinax sync daemon status --vault <vault> --json` SHALL expose the detection mode and a next action.
+
+### Requirement: 远端变化轮询同步
+
+The sync daemon SHALL poll the configured Cloud Sync transport for remote head changes. First release remote detection SHALL be polling-based unless a future transport-specific change adds push notification semantics.
+
+#### Scenario: 远端 revision 更新触发 pull
+
+- **GIVEN** the daemon last observed remote revision `rev_a`
+- **AND** the configured transport reports current head `rev_b`
+- **WHEN** the daemon poll loop detects `rev_b` is newer than the local base revision
+- **THEN** Pinax SHALL schedule a pull before any local push attempt
+- **AND** the pull SHALL preserve conflicting local edits as conflict copies using existing Cloud Sync conflict rules.
+
+#### Scenario: transport 暂不可用进入 backoff
+
+- **GIVEN** the configured Cloud Sync transport returns `transport_unavailable`, provider throttling, network timeout, or another retryable error
+- **WHEN** the daemon polls or attempts sync
+- **THEN** Pinax SHALL enter retry backoff with a bounded next retry time
+- **AND** daemon status SHALL report the stable error code and next action
+- **AND** it SHALL NOT claim local or remote convergence while the error persists.
+
+### Requirement: daemon 冲突和写入安全
+
+The sync daemon SHALL keep all automatic writes behind the same safety boundaries as explicit `pinax sync pull` and `pinax sync push`. It SHALL pause automatic write attempts when manual conflict resolution is required.
+
+#### Scenario: pull 产生冲突后暂停自动写入
+
+- **GIVEN** a local file and the remote committed revision both changed the same path
+- **WHEN** the daemon pull detects the conflict
+- **THEN** Pinax SHALL preserve the local edit as a conflict copy
+- **AND** daemon state SHALL become `conflict_required`
+- **AND** subsequent daemon sync attempts SHALL NOT auto-resolve, delete, or overwrite the conflict copy
+- **AND** status/actions SHALL point to `pinax sync conflicts list --vault <vault> --json` and explicit conflict resolution commands.
+
+#### Scenario: revision conflict 走 pull/retry
+
+- **GIVEN** a daemon push receives `revision_conflict`
+- **WHEN** the error is retryable
+- **THEN** Pinax SHALL attempt the configured pull/rebase/retry path within the retry budget
+- **AND** if the retry budget is exhausted, it SHALL report `degraded` with `last_error_code=revision_conflict`
+- **AND** it SHALL NOT emit `remote_write=true` for the failed push.
+
+### Requirement: daemon 输出和事件脱敏
+
+Daemon command output, daemon events, daemon logs, sync receipts, integration evidence, and test fixtures SHALL remain redacted and machine-consumable.
+
+#### Scenario: realtime human output and events stream
+
+- **WHEN** the user runs `pinax sync daemon run --target cloud --vault <vault> --yes`
+- **THEN** Pinax SHALL emit concise human-readable progress lines for daemon lifecycle and sync attempts
+- **AND** `pinax sync daemon run --target cloud --vault <vault> --yes --events` SHALL emit NDJSON events with stable additive event types
+- **AND** neither mode SHALL expose plaintext note bodies, raw secret refs, Authorization headers, cookies, provider payloads, raw prompts, hidden system prompts, or private tool arguments.
+
+#### Scenario: daemon logs expose persisted events
+
+- **WHEN** the user runs `pinax sync daemon logs --vault <vault> --json`
+- **THEN** Pinax SHALL return recent redacted daemon events from `.pinax/sync-daemon/events.jsonl`
+- **AND** events MAY include optional fields such as `seq`, `cycle_id`, `trigger`, `direction`, `duration_ms`, `local_dirty`, `remote_revision`, `revision_id`, `sync_run_id`, `remote_write`, and `local_write`.
+
+### Requirement: Remote API Mode 与实时 Cloud Sync 边界清晰
+
+Pinax SHALL document and preserve the distinction between Remote API Mode and Cloud Sync daemon behavior.
+
+#### Scenario: Remote API client operates one server-side vault
+
+- **WHEN** a client runs `pinax --api-url http://127.0.0.1:8787 note list --json`
+- **THEN** the command SHALL operate through the API server's configured vault
+- **AND** it SHALL NOT imply multi-device synchronization.
+
+#### Scenario: sync daemon owns realtime multi-device convergence
+
+- **WHEN** a user wants realtime multi-device sync
+- **THEN** the documented command SHALL be `pinax sync daemon run --target cloud --vault <vault> --yes`
+- **AND** each device SHALL keep its own local vault while the Cloud Sync transport coordinates only encrypted revisions, encrypted manifests, encrypted blobs, and conflict metadata.
+
+#### Scenario: explicit remote sync RPC does not replace daemon lifecycle
+
+- **WHEN** a client calls a registered `sync.push` or `sync.pull` RPC method
+- **THEN** Pinax SHALL treat it as an explicit sync operation
+- **AND** realtime watch/poll behavior SHALL remain owned by `pinax sync daemon` rather than the Remote API server.
 

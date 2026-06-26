@@ -34,6 +34,7 @@ type RegistryPlugin struct {
 	Scope             string            `json:"scope"`
 	ManifestSHA256    string            `json:"manifest_sha256"`
 	CapabilityCount   int               `json:"capability_count"`
+	Capabilities      []Capability      `json:"capabilities,omitempty"`
 	PermissionSummary string            `json:"permission_summary"`
 	PermissionGrants  []PermissionGrant `json:"permission_grants,omitempty"`
 	Budgets           Budgets           `json:"budgets,omitempty"`
@@ -99,7 +100,7 @@ func (s Store) Install(path, scope string) (RegistryPlugin, error) {
 	if err != nil {
 		return RegistryPlugin{}, err
 	}
-	plugin := RegistryPlugin{ID: result.Manifest.ID, Name: result.Manifest.Name, Version: result.Manifest.Version, Runtime: result.Manifest.Runtime.Kind, RuntimeEntrypoint: filepath.ToSlash(filepath.Clean(result.Manifest.Runtime.Entrypoint)), Enabled: false, Scope: scope, ManifestSHA256: result.Digest, CapabilityCount: result.CapabilityCount, PermissionSummary: result.PermissionSummary, Budgets: result.Manifest.Budgets, InstalledAt: now, UpdatedAt: now}
+	plugin := RegistryPlugin{ID: result.Manifest.ID, Name: result.Manifest.Name, Version: result.Manifest.Version, Runtime: result.Manifest.Runtime.Kind, RuntimeEntrypoint: filepath.ToSlash(filepath.Clean(result.Manifest.Runtime.Entrypoint)), Enabled: false, Scope: scope, ManifestSHA256: result.Digest, CapabilityCount: result.CapabilityCount, Capabilities: result.Manifest.Capabilities, PermissionSummary: result.PermissionSummary, Budgets: result.Manifest.Budgets, InstalledAt: now, UpdatedAt: now}
 	if runtimeNeedsPackagedRoot(plugin.Runtime) {
 		root, err := s.packageExternalRuntime(result, plugin.ID)
 		if err != nil {

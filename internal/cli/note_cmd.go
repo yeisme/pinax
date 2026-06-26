@@ -81,12 +81,14 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	addCreateFlags(noteCreateCmd)
 	noteCmd.AddCommand(noteNewCmd, noteAddCmd, noteCreateCmd)
 
+	var noteListPeriod string
+	var noteListUpdatedAfter string
 	noteListCmd := &cobra.Command{Use: "list", Short: "List local notes", RunE: func(cmd *cobra.Command, args []string) error {
 		group := *ctx.noteGroup
 		if group == "" {
 			group = *ctx.noteListProject
 		}
-		projection, err := ctx.svc.ListNotesQuery(cmd.Context(), app.NoteListRequest{VaultPath: *ctx.vaultPath, Tags: splitCSV(*ctx.noteListTag), Project: *ctx.noteListProject, Group: group, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteListStatus, CreatedAfter: *ctx.noteListCreatedAfter, UpdatedBefore: *ctx.noteListUpdatedBefore, Recent: *ctx.noteRecent, Limit: *ctx.noteLimit, Sort: *ctx.noteListSort, PathPrefix: *ctx.noteListPathPrefix, Properties: *ctx.noteListProperties, StrictProperties: *ctx.noteStrictProperties})
+		projection, err := ctx.svc.ListNotesQuery(cmd.Context(), app.NoteListRequest{VaultPath: *ctx.vaultPath, Tags: splitCSV(*ctx.noteListTag), Project: *ctx.noteListProject, Group: group, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteListStatus, CreatedAfter: *ctx.noteListCreatedAfter, UpdatedAfter: noteListUpdatedAfter, UpdatedBefore: *ctx.noteListUpdatedBefore, Period: noteListPeriod, Recent: *ctx.noteRecent, Limit: *ctx.noteLimit, Sort: *ctx.noteListSort, PathPrefix: *ctx.noteListPathPrefix, Properties: *ctx.noteListProperties, StrictProperties: *ctx.noteStrictProperties})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	noteListCmd.Flags().StringVar(ctx.noteListTag, "tag", "", "Filter by tag")
@@ -96,7 +98,9 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	noteListCmd.Flags().StringVar(ctx.noteKind, "kind", "", "Filter by kind")
 	noteListCmd.Flags().StringVar(ctx.noteListStatus, "status", "", "Filter by status")
 	noteListCmd.Flags().StringVar(ctx.noteListCreatedAfter, "created-after", "", "Filter by minimum creation date; format YYYY-MM-DD or RFC3339")
+	noteListCmd.Flags().StringVar(&noteListUpdatedAfter, "updated-after", "", "Filter by minimum update date; format YYYY-MM-DD or RFC3339")
 	noteListCmd.Flags().StringVar(ctx.noteListUpdatedBefore, "updated-before", "", "Filter by maximum update date; format YYYY-MM-DD or RFC3339")
+	noteListCmd.Flags().StringVar(&noteListPeriod, "period", "", "Filter by recent period: 5h, daily, weekly, or monthly")
 	noteListCmd.Flags().BoolVar(ctx.noteRecent, "recent", false, "Sort by recent updates")
 	noteListCmd.Flags().IntVar(ctx.noteLimit, "limit", 0, "Limit the number of results")
 	noteListCmd.Flags().StringVar(ctx.noteListSort, "sort", "", "Sort: updated, path, or title")
@@ -105,6 +109,8 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	noteListCmd.Flags().BoolVar(ctx.noteStrictProperties, "strict-properties", false, "Error on unknown properties")
 	_ = noteListCmd.RegisterFlagCompletionFunc("status", staticCompletion("status", "active", "done", "inbox", "archived", "paused"))
 	_ = noteListCmd.RegisterFlagCompletionFunc("sort", staticCompletion("sort", "updated", "path", "title"))
+	_ = noteListCmd.RegisterFlagCompletionFunc("period", staticCompletion("period", "5h", "daily", "weekly", "monthly"))
+	_ = noteListCmd.RegisterFlagCompletionFunc("limit", staticCompletion("limit", "10", "25", "50", "100"))
 	noteCmd.AddCommand(noteListCmd)
 	for _, dimension := range []struct{ name, dim string }{{"tags", "tag"}, {"folders", "folder"}, {"kinds", "kind"}, {"groups", "group"}} {
 		dimension := dimension

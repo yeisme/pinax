@@ -34,8 +34,31 @@ func NewRPCDispatcherWithOptions(service *app.Service, vault string, options Dis
 
 func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projection, error) {
 	switch req.Method {
+	case "Pinax.Workbench.Status":
+		writeMode := "remote_readonly"
+		if d.allowWrite {
+			writeMode = "remote_allow_write"
+		}
+		projection, err := d.service.WorkbenchStatus(ctx, app.APIRequest{VaultPath: d.vault, WriteMode: writeMode})
+		projection.Mode = "json"
+		return projection, err
 	case "Pinax.ProjectBoard.Show":
-		projection, err := d.service.ProjectBoardShow(ctx, app.ProjectBoardRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), NoteDisplay: stringParam(req.Params, "note_display")})
+		projection, err := d.service.ProjectBoardShow(ctx, app.ProjectBoardRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), Subproject: stringParam(req.Params, "subproject"), NoteDisplay: stringParam(req.Params, "note_display")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Project.Subproject.List":
+		projection, err := d.service.ProjectSubprojectList(ctx, app.ProjectWorkspaceRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Project.Subproject.Show":
+		projection, err := d.service.ProjectSubprojectShow(ctx, app.ProjectWorkspaceRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), Subproject: stringParam(req.Params, "subproject")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Project.Subproject.Create":
+		if projection, err := d.ensureWriteAllowed("project.subproject.create", req.Params); err != nil {
+			return projection, err
+		}
+		projection, err := d.service.ProjectSubprojectCreate(ctx, app.ProjectWorkspaceRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), Subproject: stringParam(req.Params, "subproject"), Title: stringParam(req.Params, "title"), Template: stringParam(req.Params, "template"), DryRun: boolParam(req.Params, "dry_run")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Note.List":
@@ -50,12 +73,24 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		projection, err := d.service.ShowNoteProjection(ctx, app.ShowNoteRequest{VaultPath: d.vault, NoteRef: stringParam(req.Params, "ref"), Display: display})
 		projection.Mode = "json"
 		return projection, err
+	case "Pinax.DatabaseView.Render":
+		projection, err := d.service.RenderDatabaseView(ctx, app.ViewRequest{VaultPath: d.vault, Name: stringParam(req.Params, "name")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Task.AdoptPlan":
+		projection, err := d.service.TaskAdopt(ctx, app.TaskAdoptRequest{VaultPath: d.vault, ItemID: stringParam(req.Params, "item_id"), Yes: false})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Graph.Summary":
+		projection, err := d.service.GraphSummaryProjection(ctx, d.vault)
+		projection.Mode = "json"
+		return projection, err
 	case "Pinax.ProjectItem.Plan":
 		projection, err := d.service.ProjectItemPlan(ctx, app.ProjectItemRequest{VaultPath: d.vault, ItemID: stringParam(req.Params, "item_id"), Action: stringParam(req.Params, "action"), Column: stringParam(req.Params, "column"), Yes: boolParam(req.Params, "yes")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Folder.List":
-		projection, err := d.service.ListFolders(ctx, app.FolderListRequest{VaultPath: d.vault, Purpose: stringParam(req.Params, "purpose"), IncludeEmpty: boolParam(req.Params, "include_empty"), Depth: intParam(req.Params, "depth")})
+		projection, err := d.service.ListFolders(ctx, app.FolderListRequest{VaultPath: d.vault, Purpose: stringParam(req.Params, "purpose"), Under: stringParam(req.Params, "under"), IncludeEmpty: boolParam(req.Params, "include_empty"), Depth: intParam(req.Params, "depth")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Folder.Show":

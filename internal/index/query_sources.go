@@ -8,17 +8,26 @@ import (
 
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/notelinks"
 )
 
 func ExtractLinkRows(notes []domain.Note) []domain.DatabaseRow {
-	pathByTitle := map[string]string{}
-	for _, note := range notes {
-		pathByTitle[strings.ToLower(note.Title)] = note.Path
-	}
+	resolver := notelinks.BuildResolverSnapshot(notes)
 	rows := []domain.DatabaseRow{}
 	for _, note := range notes {
-		for _, link := range noteLinks(note, pathByTitle) {
+		for _, link := range noteLinks(note, resolver) {
 			rows = append(rows, linkRecordRow(link, domain.QuerySourceLinks))
+		}
+	}
+	return rows
+}
+
+func ExtractRelationRows(notes []domain.Note) []domain.DatabaseRow {
+	resolver := notelinks.BuildResolverSnapshot(notes)
+	rows := []domain.DatabaseRow{}
+	for _, note := range notes {
+		for _, link := range noteLinks(note, resolver) {
+			rows = append(rows, linkRecordRow(link, domain.QuerySourceRelations))
 		}
 	}
 	return rows
@@ -71,9 +80,14 @@ func linkRecordRow(link LinkRecord, source domain.QuerySource) domain.DatabaseRo
 	putRowValue(values, "target", domain.PropertyTypeString, link.Target, link.Target, "link")
 	putRowValue(values, "target_raw", domain.PropertyTypeString, link.TargetRaw, link.TargetRaw, "link")
 	putRowValue(values, "target_path", domain.PropertyTypeString, link.TargetPath, link.TargetPath, "link")
+	putRowValue(values, "target_note_id", domain.PropertyTypeString, link.TargetNoteID, link.TargetNoteID, "link")
+	putRowValue(values, "target_title", domain.PropertyTypeString, link.TargetTitle, link.TargetTitle, "link")
+	putRowValue(values, "target_alias", domain.PropertyTypeString, link.TargetAlias, link.TargetAlias, "link")
+	putRowValue(values, "target_heading", domain.PropertyTypeString, link.TargetHeading, link.TargetHeading, "link")
 	putRowValue(values, "status", domain.PropertyTypeSelect, link.Status, link.Status, "link")
 	putRowValue(values, "kind", domain.PropertyTypeSelect, link.Kind, link.Kind, "link")
 	putRowValue(values, "line", domain.PropertyTypeNumber, strconv.Itoa(link.Line), link.Line, "link")
+	putRowValue(values, "evidence", domain.PropertyTypeString, link.Evidence, link.Evidence, "link")
 	return domain.DatabaseRow{Source: string(source), Values: values}
 }
 

@@ -44,6 +44,9 @@ var routeGroupMap = map[string]RouteInfo{
 	"/v1/drafts/":             {Group: "drafts", Method: "GET", Readonly: false},
 	"/v1/notes/":              {Group: "notes", Method: "GET", Readonly: true},
 	"/v1/project-items/":      {Group: "projects", Method: "POST", Readonly: true},
+	"/v1/tasks/":              {Group: "tasks", Method: "POST", Action: "task.adopt", Readonly: true},
+	"/v1/database/views/":     {Group: "database", Method: "GET", Action: "database.view.render", Readonly: true},
+	"/v1/graph/summary":       {Group: "graph", Method: "GET", Action: "graph.summary", Readonly: true},
 	"/v1/projects/":           {Group: "projects", Method: "GET", Readonly: true},
 }
 
@@ -116,6 +119,12 @@ func lookupRouteInfo(path string, method string) (RouteInfo, bool) {
 	}
 	if strings.HasPrefix(path, "/v1/project-items/") {
 		return routeGroupMap["/v1/project-items/"], true
+	}
+	if strings.HasPrefix(path, "/v1/tasks/") {
+		return routeGroupMap["/v1/tasks/"], true
+	}
+	if strings.HasPrefix(path, "/v1/database/views/") {
+		return routeGroupMap["/v1/database/views/"], true
 	}
 	if strings.HasPrefix(path, "/v1/projects/") {
 		return routeGroupMap["/v1/projects/"], true

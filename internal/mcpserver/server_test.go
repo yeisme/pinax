@@ -241,12 +241,15 @@ func TestReadonlyMCPQueryAndDatabaseView(t *testing.T) {
 	if _, err := svc.SaveView(ctx, app.ViewRequest{VaultPath: root, Name: "active", Status: "active"}); err != nil {
 		t.Fatalf("save view: %v", err)
 	}
+	if _, err := svc.SaveDatabaseView(ctx, app.ViewRequest{VaultPath: root, Name: "active-tab", Display: "list", Query: `SELECT title, status FROM notes WHERE status = "active" LIMIT 10`}); err != nil {
+		t.Fatalf("save database view: %v", err)
+	}
 	server := NewServer(svc, root)
 	tools, err := server.Handle(ctx, Request{ID: 20, Method: "tools/list"})
 	if err != nil {
 		t.Fatalf("tools/list: %v", err)
 	}
-	if !containsTool(tools.Tools, "pinax.query.run") || !containsTool(tools.Tools, "pinax.database.view.show") {
+	if !containsTool(tools.Tools, "pinax.query.run") || !containsTool(tools.Tools, "pinax.database.view.show") || !containsTool(tools.Tools, "pinax.database.view.render") {
 		t.Fatalf("tools missing query/view: %#v", tools.Tools)
 	}
 	query, err := server.Handle(ctx, Request{ID: 21, Method: "tools/call", Params: map[string]any{"name": "pinax.query.run", "arguments": map[string]any{"sql": "SELECT title FROM notes WHERE status = \"active\" LIMIT 5"}}})
@@ -262,5 +265,12 @@ func TestReadonlyMCPQueryAndDatabaseView(t *testing.T) {
 	}
 	if view.Result["status"] != "success" || !strings.Contains(fmt.Sprint(view.Result), "Active") {
 		t.Fatalf("view result = %#v", view.Result)
+	}
+	rendered, err := server.Handle(ctx, Request{ID: 23, Method: "tools/call", Params: map[string]any{"name": "pinax.database.view.render", "arguments": map[string]any{"name": "active-tab"}}})
+	if err != nil {
+		t.Fatalf("database view render: %v", err)
+	}
+	if rendered.Result["status"] != "success" || !strings.Contains(fmt.Sprint(rendered.Result), "database_tab") || !strings.Contains(fmt.Sprint(rendered.Result), "database.display:list") {
+		t.Fatalf("database view render result = %#v", rendered.Result)
 	}
 }

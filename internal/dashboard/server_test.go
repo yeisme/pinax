@@ -213,6 +213,42 @@ func TestReadonlyDashboardServesBoundedNoteDisplay(t *testing.T) {
 	}
 }
 
+func TestReadonlyDashboardServesDatabaseTabProjection(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeDashboardFixture(t, filepath.Join(root, "notes", "active.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_active\ntitle: Active\nstatus: active\nkind: reference\n---\n\nbody\n")
+	if _, err := svc.RebuildIndex(ctx, app.VaultRequest{VaultPath: root}); err != nil {
+		t.Fatalf("rebuild index: %v", err)
+	}
+	if _, err := svc.SaveDatabaseView(ctx, app.ViewRequest{VaultPath: root, Name: "active-tab", Display: "list", Query: `SELECT title, status FROM notes WHERE status = "active" LIMIT 10`}); err != nil {
+		t.Fatalf("save database view: %v", err)
+	}
+	server := NewServer(svc, root)
+
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/database-tabs/active-tab", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("database tab status = %d body=%s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("database tab json invalid: %v\n%s", err, res.Body.String())
+	}
+	if payload["command"] != "dashboard.database_tab" || !strings.Contains(res.Body.String(), `"database_tab"`) || !strings.Contains(res.Body.String(), `"database_view"`) || !strings.Contains(res.Body.String(), `"database.display":"list"`) {
+		t.Fatalf("database tab payload = %s", res.Body.String())
+	}
+
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/database-tabs/active-tab", nil))
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("database tab write-like method status = %d", res.Code)
+	}
+}
+
 func writeDashboardFixture(t *testing.T, path, content string) {
 	t.Helper()
 	if strings.EqualFold(filepath.Ext(path), ".md") && !strings.HasPrefix(content, "---\n") {

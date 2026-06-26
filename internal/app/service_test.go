@@ -83,6 +83,18 @@ func TestVaultInitValidateSearchAndShow(t *testing.T) {
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "我的知识库"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
+	pinaxIgnore := readFile(t, filepath.Join(root, ".pinaxignore"))
+	for _, want := range []string{".pinax/", ".git/", ".env*", "dist/"} {
+		if !strings.Contains(pinaxIgnore, want) {
+			t.Fatalf(".pinaxignore missing %q:\n%s", want, pinaxIgnore)
+		}
+	}
+	gitIgnore := readFile(t, filepath.Join(root, ".gitignore"))
+	for _, want := range []string{"# BEGIN PINAX METADATA-ONLY", "*", "!.pinax/config.yaml", "!.pinaxignore"} {
+		if !strings.Contains(gitIgnore, want) {
+			t.Fatalf(".gitignore missing %q:\n%s", want, gitIgnore)
+		}
+	}
 	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "Pinax 推进", Slug: "project", Body: "整理本地知识库。"}); err != nil {
 		t.Fatalf("create note: %v", err)
 	}
@@ -142,6 +154,115 @@ func TestInitVaultRejectsAlreadyInitializedVault(t *testing.T) {
 	config := readFile(t, filepath.Join(root, ".pinax", "config.yaml"))
 	if !strings.Contains(config, `title: "Vault"`) || strings.Contains(config, "Other") {
 		t.Fatalf("config was rewritten:\n%s", config)
+	}
+}
+
+func TestVaultIgnoreStatusPlanApplyMaintainsPinaxBlocks(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".pinaxignore")); err != nil {
+		t.Fatalf("remove pinaxignore: %v", err)
+	}
+	writeFile(t, filepath.Join(root, ".gitignore"), "# user rule\nlocal.tmp\n")
+
+	status, err := svc.VaultIgnoreStatus(ctx, VaultIgnoreRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("ignore status: %v", err)
+	}
+	if status.Facts["pinaxignore"] != "missing" || status.Facts["git_metadata_only"] != "missing" {
+		t.Fatalf("status facts = %#v", status.Facts)
+	}
+
+	plan, err := svc.VaultIgnorePlan(ctx, VaultIgnoreRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("ignore plan: %v", err)
+	}
+	if plan.Facts["operations"] != "2" || fileExistsApp(filepath.Join(root, ".pinaxignore")) {
+		t.Fatalf("plan facts/files = %#v", plan.Facts)
+	}
+
+	if _, err := svc.VaultIgnoreApply(ctx, VaultIgnoreRequest{VaultPath: root}); !hasCommandCode(err, "approval_required") {
+		t.Fatalf("apply without yes err = %v", err)
+	}
+	apply, err := svc.VaultIgnoreApply(ctx, VaultIgnoreRequest{VaultPath: root, Yes: true})
+	if err != nil {
+		t.Fatalf("ignore apply: %v", err)
+	}
+	if apply.Facts["local_write"] != "true" || apply.Facts["operations"] != "2" {
+		t.Fatalf("apply facts = %#v", apply.Facts)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(root, ".pinaxignore")), ".pinax/") {
+		t.Fatalf("pinaxignore not written")
+	}
+	gitIgnore := readFile(t, filepath.Join(root, ".gitignore"))
+	if !strings.Contains(gitIgnore, "# user rule") || !strings.Contains(gitIgnore, "# BEGIN PINAX METADATA-ONLY") {
+		t.Fatalf("gitignore did not preserve user content and block:\n%s", gitIgnore)
+	}
+}
+
+func TestSyncDiffReportsManagedContentKinds(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\n")
+	writeFile(t, filepath.Join(root, "scripts", "build.sh"), "#!/bin/sh\necho build\n")
+	if err := os.Chmod(filepath.Join(root, "scripts", "build.sh"), 0o755); err != nil {
+		t.Fatalf("chmod script: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "assets", "logo.bin"), "\x00binary\n")
+
+	projection, err := svc.SyncDiff(ctx, SyncRequest{VaultPath: root, Target: "cloud", Endpoint: "file://" + filepath.Join(root, "remote"), WorkspaceID: "ws", DeviceID: "dev", DryRun: true})
+	if err != nil {
+		t.Fatalf("sync diff: %v", err)
+	}
+	if projection.Facts["content_files"] != "5" || projection.Facts["script_files"] != "1" || projection.Facts["binary_files"] != "1" {
+		t.Fatalf("sync content facts = %#v", projection.Facts)
+	}
+}
+
+func TestCloudSyncPullPreservesScriptMode(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: deviceA, Title: "A"}); err != nil {
+		t.Fatalf("init a: %v", err)
+	}
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: deviceB, Title: "B"}); err != nil {
+		t.Fatalf("init b: %v", err)
+	}
+	writeFile(t, filepath.Join(deviceA, "scripts", "build.sh"), "#!/bin/sh\necho build\n")
+	if err := os.Chmod(filepath.Join(deviceA, "scripts", "build.sh"), 0o755); err != nil {
+		t.Fatalf("chmod source script: %v", err)
+	}
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync pull: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(deviceB, "scripts", "build.sh"))
+	if err != nil {
+		t.Fatalf("stat pulled script: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("pulled script is not executable: %v", info.Mode().Perm())
 	}
 }
 
@@ -443,19 +564,29 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 		t.Fatalf("cloud login: %v", err)
 	}
 	manifest, err := pinaxcloud.BuildManifest(root)
-	if err != nil || len(manifest.Entries) != 1 {
+	if err != nil {
 		t.Fatalf("build manifest entries=%#v err=%v", manifest.Entries, err)
+	}
+	var alphaEntry pinaxcloud.ManifestEntry
+	for _, entry := range manifest.Entries {
+		if entry.Path == "notes/alpha.md" {
+			alphaEntry = entry
+			break
+		}
+	}
+	if alphaEntry.BlobID == "" {
+		t.Fatalf("build manifest missing notes/alpha.md: %#v", manifest.Entries)
 	}
 	client, err := cloudclient.New(cloudclient.Config{Endpoint: server.Endpoint(), VaultID: "personal", DeviceID: "dev_laptop", Token: server.Token()})
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
 	transport := cloudclient.NewTransport(client)
-	envelope, err := pinaxcloud.EncryptBlob(mustCloudKey(t), []byte(body), []byte(manifest.Entries[0].BlobID))
+	envelope, err := pinaxcloud.EncryptBlob(mustCloudKey(t), []byte(body), []byte(alphaEntry.BlobID))
 	if err != nil {
 		t.Fatalf("encrypt blob: %v", err)
 	}
-	if _, _, err := transport.PutBlobWithEnvelopeMetadata(ctx, manifest.Entries[0].BlobID, cloudEnvelope(envelope)); err != nil {
+	if _, _, err := transport.PutBlobWithEnvelopeMetadata(ctx, alphaEntry.BlobID, cloudEnvelope(envelope)); err != nil {
 		t.Fatalf("seed existing blob metadata: %v", err)
 	}
 	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})

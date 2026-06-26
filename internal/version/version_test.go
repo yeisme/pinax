@@ -30,7 +30,7 @@ func TestLocalBackendImplementsVersionBackendContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if status.Backend != "local" || !status.Capabilities.SnapshotSupported || status.Capabilities.ChangedPathsSupported || status.Capabilities.ReadAtRevision || status.Capabilities.DiffSupported {
+	if status.Backend != "local" || !status.Capabilities.SnapshotSupported || status.Capabilities.ChangedPathsSupported || !status.Capabilities.ReadAtRevision || status.Capabilities.DiffSupported {
 		t.Fatalf("status = %#v", status)
 	}
 
@@ -115,6 +115,43 @@ func TestLocalBackendSnapshotRecordsLedgerIndexAndFileFacts(t *testing.T) {
 	}
 }
 
+func TestLocalBackendSnapshotStoresReadableContentObjects(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
+		t.Fatalf("mkdir notes: %v", err)
+	}
+	notePath := filepath.Join(root, "notes", "a.md")
+	if err := os.WriteFile(notePath, []byte("# A\n\noriginal local snapshot content\n"), 0o644); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+
+	backend := NewLocalBackend()
+	snapshot, err := backend.Snapshot(context.Background(), SnapshotRequest{Root: root, Message: "checkpoint"})
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if err := os.WriteFile(notePath, []byte("# A\n\ncorrupted after snapshot\n"), 0o644); err != nil {
+		t.Fatalf("overwrite note: %v", err)
+	}
+
+	file, err := backend.ReadFile(context.Background(), ReadFileRequest{Root: root, Path: "notes/a.md", Revision: snapshot.SnapshotID})
+	if err != nil {
+		t.Fatalf("read file at snapshot: %v", err)
+	}
+	if file.Backend != "local" || file.Revision != snapshot.SnapshotID || file.Path != "notes/a.md" {
+		t.Fatalf("versioned file identity = %#v", file)
+	}
+	if !strings.Contains(file.Content, "original local snapshot content") || strings.Contains(file.Content, "corrupted after snapshot") {
+		t.Fatalf("versioned file content = %q", file.Content)
+	}
+	if file.ContentHash == "" || file.SizeBytes == 0 || len(file.Evidence) == 0 {
+		t.Fatalf("versioned file evidence = %#v", file)
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(file.Evidence[0]))); err != nil {
+		t.Fatalf("content object evidence missing: %v", err)
+	}
+}
+
 func TestVersionBackendCapabilityGuardsReturnStableErrors(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -125,7 +162,7 @@ func TestVersionBackendCapabilityGuardsReturnStableErrors(t *testing.T) {
 	}
 	file, err := NewLocalBackend().ReadFile(ctx, ReadFileRequest{Root: root, Path: "notes/a.md", Revision: "local-0"})
 	if err == nil || commandErrorCode(err) != "version_read_unavailable" {
-		t.Fatalf("local read-file error = %v, file = %#v", err, file)
+		t.Fatalf("local read-file unknown revision error = %v, file = %#v", err, file)
 	}
 	diff, err := NewLocalBackend().DiffSummary(ctx, DiffSummaryRequest{Root: root, BaseRevision: "local-0", TargetRevision: "local-1"})
 	if err == nil || commandErrorCode(err) != "version_read_unavailable" {

@@ -87,8 +87,8 @@ func TestAffectedLinkEdges(t *testing.T) {
 	}
 
 	links := linksForNote(t, root, "notes/a.md")
-	if len(links) != 1 || links[0].Status != "broken" || !links[0].Broken || links[0].TargetPath != "" {
-		t.Fatalf("affected source link not reclassified: %#v", links)
+	if len(links) != 1 || links[0].Status != "resolved" || links[0].Broken || links[0].TargetPath != "notes/b.md" || links[0].TargetTitle != "C" {
+		t.Fatalf("affected source link not reclassified by stable file stem: %#v", links)
 	}
 }
 

@@ -150,6 +150,15 @@ func (s *Service) memoryRecallProjection(ctx context.Context, command, summary s
 	projection := memoryProjection(command, summary, records)
 	projection.Facts["memory.matches"] = fmt.Sprint(len(hits))
 	projection.Facts["memory.scope"] = root
+	if len(hits) > 0 {
+		projection.Facts["memory.top_score"] = fmt.Sprint(hits[0].Score)
+	}
+	for i, hit := range hits {
+		if i >= 3 {
+			break
+		}
+		projection.Facts[fmt.Sprintf("memory.reason.%d", i+1)] = hit.RecallReason
+	}
 	if strings.TrimSpace(req.Entity) != "" {
 		projection.Facts["memory.entity"] = strings.ToLower(strings.TrimSpace(req.Entity))
 	}
@@ -187,8 +196,10 @@ func memoryHitsData(hits []memory.RecallHit) []map[string]any {
 	out := make([]map[string]any, 0, len(hits))
 	for _, hit := range hits {
 		item := memoryRecordData(hit.Record)
+		delete(item, "body")
 		item["recall_reason"] = hit.RecallReason
 		item["score"] = hit.Score
+		item["signals"] = hit.Signals
 		out = append(out, item)
 	}
 	return out

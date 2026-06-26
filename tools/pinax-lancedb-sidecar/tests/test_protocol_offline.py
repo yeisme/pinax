@@ -101,6 +101,21 @@ class OfflineProtocolTest(unittest.TestCase):
             self.assertEqual(search["hits"][0]["path"], "notes/alpha.md")
             self.assertNotIn("chunk_text", str(search))
 
+            metadata_request = {
+                **base,
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "embedding_dim": 3,
+                "distance_metric": "cosine",
+                "collection": "chunks_metadata",
+            }
+            metadata_chunk = dict(chunk, chunk_id="chunk_beta", provider="openai", embedding_model="text-embedding-3-small")
+            metadata_rebuild = sidecar.rebuild({**metadata_request, "documents": 1, "chunks": [metadata_chunk]})
+            self.assertEqual(metadata_rebuild["status"], "success")
+            metadata_search = sidecar.search({**metadata_request, "query_vector": [1.0, 0.0, 0.0], "limit": 1})
+            self.assertEqual(metadata_search["hits"][0]["provider"], "openai")
+            self.assertEqual(metadata_search["hits"][0]["model"], "text-embedding-3-small")
+
     def test_rebuild_rejects_full_chunk_text_without_real_lancedb(self) -> None:
         sidecar = load_sidecar_with_fake_lancedb()
         with tempfile.TemporaryDirectory() as tmp:

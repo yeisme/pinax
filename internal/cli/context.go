@@ -87,6 +87,7 @@ type commandBuildContext struct {
 	databaseViewQuery        *string
 	databaseViewColumns      *[]string
 	databaseViewLanguage     *string
+	databaseViewDisplay      *string
 	databaseViewGroupBy      *string
 	databaseViewCalendar     *string
 	databaseViewBoardColumn  *string
@@ -123,6 +124,7 @@ type commandBuildContext struct {
 	backendDryRun            *bool
 	planFromPeriod           *string
 	planWithTaskBridge       *bool
+	planTaskReview           *bool
 	planDryRun               *bool
 	planSave                 *bool
 	briefingTopic            *string

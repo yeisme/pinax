@@ -58,6 +58,22 @@ All transports must expose the same logical operations:
 
 Unsupported schemes, unavailable backends, and failed commit paths must return stable partial/error codes such as `unsupported_scheme`, `transport_unavailable`, `unauthorized`, `backend_unavailable`, or `revision_conflict`. They must not silently no-op, write dummy revisions, or emit `remote_write=true`.
 
+### Local daemon layer
+
+`pinax sync daemon` is a client-side process that reuses the same Cloud Sync transport operations. It does not add a new remote service role.
+
+```text
+local watcher + remote head poller
+  -> serial daemon queue
+  -> sync pull when remote head is newer
+  -> sync push when local manifest is dirty
+  -> local state/events under .pinax/sync-daemon/
+```
+
+The daemon runs one startup pull-before-push cycle before waiting for the next timer or file event. Remote changes are detected by polling `CurrentHead` in the first release. Local changes are detected by a vault watcher with scan fallback. `.git/`, `.pinax/`, LanceDB projections, provider caches, and daemon runtime files are ignored so generated state does not trigger sync loops.
+
+The daemon must acquire a per-vault runner lock and the shared sync operation lock. It must pause with `conflict_required` when pull creates conflict copies, and it must not emit `remote_write=true` unless the underlying push path completed the durable revision commit and local sync-state receipt.
+
 ## Object-store layout for direct transports
 
 Direct S3/rclone transports store Cloud Sync objects under a configured prefix:

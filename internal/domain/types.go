@@ -5,6 +5,33 @@ type Action struct {
 	Command string `json:"command"`
 }
 
+const AgentContextSchemaVersion = "pinax.agent_context.v1"
+
+type AgentContext struct {
+	SchemaVersion string                `json:"schema_version"`
+	ContextID     string                `json:"context_id"`
+	SourceKind    string                `json:"source_kind"`
+	DisplayTitle  string                `json:"display_title"`
+	Refs          []AgentContextRef     `json:"refs"`
+	Snippets      []AgentContextSnippet `json:"snippets"`
+	Evidence      []string              `json:"evidence"`
+	BodyExposure  string                `json:"body_exposure"`
+	Actions       []Action              `json:"actions"`
+}
+
+type AgentContextRef struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Title string `json:"title,omitempty"`
+}
+
+type AgentContextSnippet struct {
+	Kind   string `json:"kind"`
+	Text   string `json:"text"`
+	Source string `json:"source,omitempty"`
+}
+
 type StableErrorCode = string
 
 const (
@@ -239,17 +266,52 @@ type Note struct {
 	Title       string            `json:"title"`
 	Path        string            `json:"path"`
 	Tags        []string          `json:"tags,omitempty"`
+	Labels      []string          `json:"labels,omitempty"`
 	Body        string            `json:"body,omitempty"`
 	Frontmatter map[string]string `json:"-"`
 	Project     string            `json:"project,omitempty"`
+	Subproject  string            `json:"subproject,omitempty"`
 	Folder      string            `json:"folder,omitempty"`
 	Kind        string            `json:"kind,omitempty"`
 	Status      string            `json:"status,omitempty"`
 	BoardColumn string            `json:"board_column,omitempty"`
+	Milestone   string            `json:"milestone,omitempty"`
 	Priority    string            `json:"priority,omitempty"`
 	Due         string            `json:"due,omitempty"`
+	DueAt       string            `json:"due_at,omitempty"`
+	BlockedBy   []string          `json:"blocked_by,omitempty"`
 	CreatedAt   string            `json:"created_at,omitempty"`
 	UpdatedAt   string            `json:"updated_at,omitempty"`
+}
+
+const ProjectWorkspaceSchemaVersion = "pinax.project_workspace.v1"
+const CurrentWorkspaceSchemaVersion = "pinax.current_workspace.v1"
+
+type ProjectWorkspaceDirectory struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Status string `json:"status"`
+}
+
+type ProjectWorkspace struct {
+	SchemaVersion string                      `json:"schema_version"`
+	Project       string                      `json:"project"`
+	Subproject    string                      `json:"subproject"`
+	Title         string                      `json:"title"`
+	Template      string                      `json:"template"`
+	WorkspacePath string                      `json:"workspace_path"`
+	Directories   []ProjectWorkspaceDirectory `json:"directories"`
+	Status        string                      `json:"status"`
+	CreatedAt     string                      `json:"created_at"`
+	UpdatedAt     string                      `json:"updated_at"`
+}
+
+type CurrentWorkspace struct {
+	SchemaVersion string `json:"schema_version"`
+	Project       string `json:"project"`
+	Subproject    string `json:"subproject"`
+	WorkspacePath string `json:"workspace_path"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 type Issue struct {
@@ -761,7 +823,41 @@ type PlanningSnapshot struct {
 	CapturedAt    string            `json:"captured_at"`
 	Facts         map[string]string `json:"facts"`
 	Risks         []PlanningRisk    `json:"risks,omitempty"`
+	TaskBridge    *TaskBridgePlan   `json:"taskbridge,omitempty"`
 	SavedPath     string            `json:"saved_path,omitempty"`
+}
+
+// TaskBridgePlan records normalized daily task facts captured from TaskBridge.
+type TaskBridgePlan struct {
+	SchemaVersion string                 `json:"schema_version"`
+	CapturedAt    string                 `json:"captured_at"`
+	Date          string                 `json:"date"`
+	Status        string                 `json:"status"`
+	Summary       map[string]int         `json:"summary,omitempty"`
+	Tasks         []TaskBridgePlanTask   `json:"tasks,omitempty"`
+	Actions       []TaskBridgePlanAction `json:"actions,omitempty"`
+	Warnings      []string               `json:"warnings,omitempty"`
+}
+
+// TaskBridgePlanTask is the bounded task fact shape Pinax stores in planning snapshots.
+type TaskBridgePlanTask struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Status       string `json:"status,omitempty"`
+	Source       string `json:"source,omitempty"`
+	Priority     string `json:"priority,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	SectionID    string `json:"section_id,omitempty"`
+	SectionTitle string `json:"section_title,omitempty"`
+}
+
+// TaskBridgePlanAction records suggested TaskBridge actions without executing them.
+type TaskBridgePlanAction struct {
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
+	TaskID               string `json:"task_id"`
+	Reason               string `json:"reason,omitempty"`
+	RequiresConfirmation bool   `json:"requires_confirmation"`
 }
 
 // PlanningRisk 记录计划风险项。

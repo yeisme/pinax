@@ -101,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 	}{
 		{"/", s.handleRoot, "capabilities"},
 		{"/v1/capabilities", s.handleCapabilities, "capabilities"},
+		{"/v1/workbench/status", s.handleWorkbenchStatus, "capabilities"},
 		{"/v1/folders:repair-plan", s.handleFolderRepairPlan, "folders"},
 		{"/v1/folders", s.handleFolders, "folders"},
 		{"/v1/folders/", s.handleFolders, "folders"},
@@ -111,6 +112,10 @@ func (s *Server) Handler() http.Handler {
 		{"/v1/drafts/", s.handleDraftItem, "drafts"},
 		{"/v1/notes/", s.handleNotes, "notes"},
 		{"/v1/project-items/", s.handleProjectItems, "projects"},
+		{"/v1/tasks/", s.handleTasks, "tasks"},
+		{"/v1/database/views/", s.handleDatabaseViews, "database"},
+		{"/v1/graph/summary", s.handleGraphSummary, "graph"},
+		{"/v1/projects", s.handleProjects, "projects"},
 		{"/v1/projects/", s.handleProjects, "projects"},
 	}
 	mux.HandleFunc("/v1/rpc", s.handleRPC)
@@ -263,7 +268,7 @@ func (s *Server) handleFolderCollection(w http.ResponseWriter, r *http.Request) 
 	query := r.URL.Query()
 	switch r.Method {
 	case http.MethodGet:
-		projection, err := s.service.ListFolders(r.Context(), app.FolderListRequest{VaultPath: s.vault, Purpose: query.Get("purpose"), IncludeEmpty: boolQuery(query, "include_empty"), Depth: intQuery(query, "depth")})
+		projection, err := s.service.ListFolders(r.Context(), app.FolderListRequest{VaultPath: s.vault, Purpose: query.Get("purpose"), Under: query.Get("under"), IncludeEmpty: boolQuery(query, "include_empty"), Depth: intQuery(query, "depth")})
 		writeProjection(w, projection, err)
 	case http.MethodPost:
 		if !s.ensureFolderWriteAllowed(w, r, "folder.create") {
@@ -300,6 +305,19 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeProjection(w, projection, err)
 }
 
+func (s *Server) handleWorkbenchStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+		return
+	}
+	writeMode := "remote_readonly"
+	if s.allowWrite {
+		writeMode = "remote_allow_write"
+	}
+	projection, err := s.service.WorkbenchStatus(r.Context(), app.APIRequest{VaultPath: s.vault, WriteMode: writeMode})
+	writeProjection(w, projection, err)
+}
+
 func (s *Server) handleNotes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
@@ -315,11 +333,20 @@ func (s *Server) handleNotes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProjectItems(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
 		return
 	}
 	target := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/project-items/"), "/")
+	if r.Method == http.MethodGet {
+		if strings.Contains(target, ":") {
+			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+			return
+		}
+		projection, err := s.service.ProjectItemShow(r.Context(), app.ProjectItemRequest{VaultPath: s.vault, ItemID: target})
+		writeProjection(w, projection, err)
+		return
+	}
 	action := ""
 	ref := target
 	if before, after, ok := strings.Cut(target, ":"); ok {
@@ -333,23 +360,140 @@ func (s *Server) handleProjectItems(w http.ResponseWriter, r *http.Request) {
 	writeProjection(w, projection, err)
 }
 
-func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+		return
+	}
+	target := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/")
+	itemID, action, ok := strings.Cut(target, ":")
+	if !ok || action != "adopt-plan" || itemID == "" {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "route_not_found", Message: "API route not found"}), http.StatusNotFound)
+		return
+	}
+	itemID, err := url.PathUnescape(itemID)
+	if err != nil {
+		writeProjectionStatus(w, domain.NewErrorProjection("task.adopt", &domain.CommandError{Code: "argument_invalid", Message: "task id cannot be resolved"}), http.StatusBadRequest)
+		return
+	}
+	projection, err := s.service.TaskAdopt(r.Context(), app.TaskAdoptRequest{VaultPath: s.vault, ItemID: itemID, Yes: false})
+	writeProjection(w, projection, err)
+}
+
+func (s *Server) handleDatabaseViews(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
 		return
 	}
-	path := strings.TrimPrefix(r.URL.Path, "/v1/projects/")
-	if !strings.HasSuffix(path, "/board") {
+	target := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/database/views/"), "/")
+	name, action, ok := strings.Cut(target, ":")
+	if !ok || action != "render" || name == "" {
 		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "route_not_found", Message: "API route not found"}), http.StatusNotFound)
 		return
 	}
-	slug := strings.Trim(strings.TrimSuffix(path, "/board"), "/")
-	display := r.URL.Query().Get("note_display")
-	if display == "" {
-		display = "card"
+	name, err := url.PathUnescape(name)
+	if err != nil {
+		writeProjectionStatus(w, domain.NewErrorProjection("database.view.render", &domain.CommandError{Code: "invalid_view_name", Message: "database view name cannot be resolved"}), http.StatusBadRequest)
+		return
 	}
-	projection, err := s.service.ProjectBoardShow(r.Context(), app.ProjectBoardRequest{VaultPath: s.vault, Project: slug, NoteDisplay: display})
+	projection, err := s.service.RenderDatabaseView(r.Context(), app.ViewRequest{VaultPath: s.vault, Name: name})
 	writeProjection(w, projection, err)
+}
+
+func (s *Server) handleGraphSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+		return
+	}
+	projection, err := s.service.GraphSummaryProjection(r.Context(), s.vault)
+	writeProjection(w, projection, err)
+}
+
+func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/projects" || r.URL.Path == "/v1/projects/" {
+		if r.Method != http.MethodGet {
+			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+			return
+		}
+		projection, err := s.service.ListProjects(r.Context(), app.VaultRequest{VaultPath: s.vault})
+		writeProjection(w, projection, err)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/v1/projects/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "route_not_found", Message: "API route not found"}), http.StatusNotFound)
+		return
+	}
+	project := parts[0]
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+			return
+		}
+		projection, err := s.service.ProjectShow(r.Context(), app.ProjectRequest{VaultPath: s.vault, Slug: project})
+		writeProjection(w, projection, err)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "board" {
+		if r.Method != http.MethodGet {
+			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+			return
+		}
+		display := r.URL.Query().Get("note_display")
+		if display == "" {
+			display = "card"
+		}
+		projection, err := s.service.ProjectBoardShow(r.Context(), app.ProjectBoardRequest{VaultPath: s.vault, Project: project, Subproject: r.URL.Query().Get("subproject"), NoteDisplay: display})
+		writeProjection(w, projection, err)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "subprojects" {
+		s.handleProjectSubprojects(w, r, project, parts[2:])
+		return
+	}
+	writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "route_not_found", Message: "API route not found"}), http.StatusNotFound)
+}
+
+func (s *Server) handleProjectSubprojects(w http.ResponseWriter, r *http.Request, project string, rest []string) {
+	query := r.URL.Query()
+	if len(rest) == 0 {
+		switch r.Method {
+		case http.MethodGet:
+			projection, err := s.service.ProjectSubprojectList(r.Context(), app.ProjectWorkspaceRequest{VaultPath: s.vault, Project: project})
+			writeProjection(w, projection, err)
+		case http.MethodPost:
+			if !s.ensureProjectWriteAllowed(w, r, "project.subproject.create") {
+				return
+			}
+			projection, err := s.service.ProjectSubprojectCreate(r.Context(), app.ProjectWorkspaceRequest{VaultPath: s.vault, Project: project, Subproject: query.Get("subproject"), Title: query.Get("title"), Template: query.Get("template"), DryRun: boolQuery(query, "dry_run")})
+			writeProjection(w, projection, err)
+		default:
+			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+		}
+		return
+	}
+	if len(rest) == 1 && r.Method == http.MethodGet {
+		projection, err := s.service.ProjectSubprojectShow(r.Context(), app.ProjectWorkspaceRequest{VaultPath: s.vault, Project: project, Subproject: rest[0]})
+		writeProjection(w, projection, err)
+		return
+	}
+	writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+}
+
+func (s *Server) ensureProjectWriteAllowed(w http.ResponseWriter, r *http.Request, command string) bool {
+	if !s.allowWrite {
+		err := &domain.CommandError{Code: "write_disabled", Message: "API server is currently read-only", Hint: "Start with pinax api serve --allow-write and retry"}
+		writeProjectionStatus(w, domain.NewErrorProjection(command, err), http.StatusForbidden)
+		return false
+	}
+	query := r.URL.Query()
+	if !boolQuery(query, "dry_run") && !boolQuery(query, "yes") {
+		err := &domain.CommandError{Code: "approval_required", Message: "Remote project writes require yes=true", Hint: "Preview with dry_run=true first, then append yes=true to confirm"}
+		writeProjectionStatus(w, domain.NewErrorProjection(command, err), http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {

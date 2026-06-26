@@ -26,6 +26,34 @@ MCP tools are read-only and reuse the CLI relationship and note projections. The
 
 When a tool call omits the display mode or requests `body`, the MCP server downgrades it to `card` automatically. MCP tools do not return full note bodies and do not write Markdown, `.pinax/`, Git, providers, or remote state.
 
+## Answer synthesis boundary: answers need citations, not raw dumps
+
+Pinax can serve as an agent brain layer, but the answer layer must stay bounded. A query such as “what should I know before meeting Alice?” should not stream private note bodies into the model. It should compose bounded projections from memory, search, KB, graph, database views, and proof receipts, then return a cited summary with open questions and next actions.
+
+Current safe building blocks are real commands:
+
+```bash
+pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent
+pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json
+pinax search "Alice" --vault ./my-notes --json
+pinax note backlinks "Alice" --vault ./my-notes --json
+pinax graph query --kind technique --match storyboard --vault ./my-notes --json
+pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json
+```
+
+Any future `answer` or `synthesis` projection must obey these rules:
+
+| Rule | Boundary |
+| --- | --- |
+| Evidence first | Every claim must point to note path, memory id, graph edge, query row, receipt id, or provider-safe citation. |
+| Freshness visible | Stale index, old meeting notes, superseded memory records, and unknown provider state must be explicit. |
+| Body exposure preserved | Synthesis may quote only bounded snippets; full body access requires explicit local body mode and must not be sent through MCP by default. |
+| Cost and provider visible | Embedding, rerank, and LLM calls must expose provider/model/source type and never hide paid or network-backed work. |
+| No silent maintenance | Entity merge, contradiction resolution, memory pruning, and note rewrites generate plans or receipts; they do not run as invisible background edits. |
+| Agent command preview | Next steps are real commands a user can run directly, such as `pinax proof loop run --vault ./my-notes --json`. |
+
+This is the main difference between Pinax and a generic hosted brain: Pinax may synthesize answers for agents, but the authority remains local evidence plus reviewable service actions.
+
 ## Cloud no-exec / no-plaintext invariant
 
 Pinax Cloud Sync is a distributed sync coordinator, not a hosted vault. Two invariants hold:

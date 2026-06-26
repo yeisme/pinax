@@ -21,9 +21,10 @@ func addSyncConflictsCommands(syncCmd *cobra.Command, ctx commandBuildContext) {
 	}
 
 	conflictsShowCmd := &cobra.Command{
-		Use:   "show <file>",
-		Short: "Show conflict file details",
-		Args:  cobra.ExactArgs(1),
+		Use:               "show <file>",
+		Short:             "Show conflict file details",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: syncConflictCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.SyncConflictsShow(cmd.Context(), app.SyncConflictFileRequest{VaultPath: *ctx.vaultPath, File: args[0]})
 			return ctx.renderProjection(cmd, projection, err)
@@ -31,9 +32,10 @@ func addSyncConflictsCommands(syncCmd *cobra.Command, ctx commandBuildContext) {
 	}
 
 	conflictsDiffCmd := &cobra.Command{
-		Use:   "diff <file>",
-		Short: "Show the diff between the main file and a conflict file",
-		Args:  cobra.ExactArgs(1),
+		Use:               "diff <file>",
+		Short:             "Show the diff between the main file and a conflict file",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: syncConflictCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.SyncConflictsDiff(cmd.Context(), app.SyncConflictFileRequest{VaultPath: *ctx.vaultPath, File: args[0]})
 			return ctx.renderProjection(cmd, projection, err)
@@ -43,9 +45,10 @@ func addSyncConflictsCommands(syncCmd *cobra.Command, ctx commandBuildContext) {
 	var keepLocal, keepRemote bool
 	var mergedPath string
 	conflictsResolveCmd := &cobra.Command{
-		Use:   "resolve <file>",
-		Short: "Resolve a conflict file; writes require --yes",
-		Args:  cobra.ExactArgs(1),
+		Use:               "resolve <file>",
+		Short:             "Resolve a conflict file; writes require --yes",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: syncConflictCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.SyncConflictsResolve(cmd.Context(), app.SyncConflictResolveRequest{VaultPath: *ctx.vaultPath, File: args[0], KeepLocal: keepLocal, KeepRemote: keepRemote, MergedPath: mergedPath, Yes: *ctx.yes})
 			return ctx.renderProjection(cmd, projection, err)

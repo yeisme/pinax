@@ -9,6 +9,7 @@ import (
 
 func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 	var listPurpose string
+	var listUnder string
 	var listIncludeEmpty bool
 	var listDepth int
 	var createPurpose string
@@ -28,13 +29,15 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	folderCmd := &cobra.Command{Use: "folder", Short: "Manage vault folders"}
 	folderListCmd := &cobra.Command{Use: "list", Short: "List vault folders", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := ctx.svc.ListFolders(cmd.Context(), app.FolderListRequest{VaultPath: *ctx.vaultPath, Purpose: listPurpose, IncludeEmpty: listIncludeEmpty, Depth: listDepth})
+		projection, err := ctx.svc.ListFolders(cmd.Context(), app.FolderListRequest{VaultPath: *ctx.vaultPath, Purpose: listPurpose, Under: listUnder, IncludeEmpty: listIncludeEmpty, Depth: listDepth})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	folderListCmd.Flags().StringVar(&listPurpose, "purpose", "all", "Folder purpose: notes, assets, generic, or all")
+	folderListCmd.Flags().StringVar(&listUnder, "under", "", "Only list this folder and its descendants")
 	folderListCmd.Flags().BoolVar(&listIncludeEmpty, "include-empty", false, "Include empty folders and registry-only folders")
 	folderListCmd.Flags().IntVar(&listDepth, "depth", 0, "Maximum folder depth; 0 means unlimited")
 	_ = folderListCmd.RegisterFlagCompletionFunc("purpose", staticCompletion("purpose", "notes", "assets", "generic", "all"))
+	_ = folderListCmd.RegisterFlagCompletionFunc("under", folderPathCompletion(func() string { return *ctx.vaultPath }))
 	_ = folderListCmd.RegisterFlagCompletionFunc("depth", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return []string{strconv.Itoa(1), strconv.Itoa(2), strconv.Itoa(3)}, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -46,6 +49,7 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.ShowFolder(cmd.Context(), app.FolderRequest{VaultPath: *ctx.vaultPath, Path: args[0]})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	folderShowCmd.ValidArgsFunction = folderPathCompletion(func() string { return *ctx.vaultPath })
 
 	folderCreateCmd := &cobra.Command{Use: "create <path>", Short: "Create and register a vault folder", RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
@@ -66,6 +70,7 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.RenameFolder(cmd.Context(), app.FolderOperationRequest{VaultPath: *ctx.vaultPath, Path: args[0], TargetPath: args[1], DryRun: renameDryRun, Yes: renameYes})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	folderRenameCmd.ValidArgsFunction = folderPathCompletion(func() string { return *ctx.vaultPath })
 	folderRenameCmd.Flags().BoolVar(&renameDryRun, "dry-run", false, "Preview the plan only; do not write folders or the registry")
 	folderRenameCmd.Flags().BoolVar(&renameYes, "yes", false, "Confirm folder rename")
 
@@ -76,6 +81,7 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.MoveFolder(cmd.Context(), app.FolderOperationRequest{VaultPath: *ctx.vaultPath, Path: args[0], TargetParent: args[1], DryRun: moveDryRun, Yes: moveYes})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	folderMoveCmd.ValidArgsFunction = folderPathCompletion(func() string { return *ctx.vaultPath })
 	folderMoveCmd.Flags().BoolVar(&moveDryRun, "dry-run", false, "Preview the plan only; do not write folders or the registry")
 	folderMoveCmd.Flags().BoolVar(&moveYes, "yes", false, "Confirm folder move")
 
@@ -86,6 +92,7 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.DeleteFolder(cmd.Context(), app.FolderOperationRequest{VaultPath: *ctx.vaultPath, Path: args[0], EmptyOnly: deleteEmptyOnly, DryRun: deleteDryRun, Yes: deleteYes})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	folderDeleteCmd.ValidArgsFunction = folderPathCompletion(func() string { return *ctx.vaultPath })
 	folderDeleteCmd.Flags().BoolVar(&deleteEmptyOnly, "empty-only", false, "Allow deleting only empty folders")
 	folderDeleteCmd.Flags().BoolVar(&deleteDryRun, "dry-run", false, "Preview the plan only; do not delete folders or the registry")
 	folderDeleteCmd.Flags().BoolVar(&deleteYes, "yes", false, "Confirm empty folder deletion")

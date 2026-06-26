@@ -64,6 +64,8 @@ func queryRowsForSource(notes []domain.Note, source domain.QuerySource) []domain
 	switch source {
 	case domain.QuerySourceTasks:
 		return noteindex.ExtractTaskRows(notes)
+	case domain.QuerySourceRelations:
+		return noteindex.ExtractRelationRows(notes)
 	case domain.QuerySourceLinks:
 		return noteindex.ExtractLinkRows(notes)
 	case domain.QuerySourceBacklinks:
@@ -111,7 +113,7 @@ func QuerySelectColumns(selects []domain.QuerySelect) string {
 
 func querySourceSupported(source domain.QuerySource) bool {
 	switch source {
-	case domain.QuerySourceNotes, domain.QuerySourceTasks, domain.QuerySourceLinks, domain.QuerySourceBacklinks, domain.QuerySourceAssets:
+	case domain.QuerySourceNotes, domain.QuerySourceTasks, domain.QuerySourceRelations, domain.QuerySourceLinks, domain.QuerySourceBacklinks, domain.QuerySourceAssets:
 		return true
 	default:
 		return false
@@ -345,7 +347,7 @@ func applyAggregateSelects(groupValues, rowValues map[string]domain.PropertyValu
 		case domain.QueryAggregateCount:
 			current := queryIntValue(groupValues[name])
 			groupValues[name] = domain.PropertyValue{Name: name, Type: domain.PropertyTypeNumber, Raw: strconv.Itoa(current + 1), Value: current + 1, Source: "aggregate"}
-		case domain.QueryAggregateMin, domain.QueryAggregateMax:
+		case domain.QueryAggregateMin, domain.QueryAggregateMax, domain.QueryAggregateLatest:
 			value, ok := rowValues[selected.Property]
 			if !ok || value.String() == "" {
 				continue
@@ -355,16 +357,51 @@ func applyAggregateSelects(groupValues, rowValues map[string]domain.PropertyValu
 				groupValues[name] = renameQueryValue(value, name)
 				groupValues[name] = domain.PropertyValue{Name: name, Type: value.Type, Raw: value.String(), Value: value.Value, Source: "aggregate"}
 			}
+		case domain.QueryAggregateStatusSummary:
+			value, ok := rowValues[selected.Property]
+			if !ok || value.String() == "" {
+				continue
+			}
+			counts := parseStatusSummary(groupValues[name].String())
+			counts[value.String()]++
+			summary := formatStatusSummary(counts)
+			groupValues[name] = domain.PropertyValue{Name: name, Type: domain.PropertyTypeString, Raw: summary, Value: summary, Source: "aggregate"}
 		}
 	}
 }
 
 func aggregateValueWins(candidate, current domain.PropertyValue, aggregate domain.QueryAggregate) bool {
 	operator := domain.QueryOperatorLT
-	if aggregate == domain.QueryAggregateMax {
+	if aggregate == domain.QueryAggregateMax || aggregate == domain.QueryAggregateLatest {
 		operator = domain.QueryOperatorGT
 	}
 	return compareQueryValues(candidate.String(), current.String(), operator)
+}
+
+func parseStatusSummary(raw string) map[string]int {
+	counts := map[string]int{}
+	for _, part := range strings.Split(raw, ",") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), ":")
+		if !ok || strings.TrimSpace(key) == "" {
+			continue
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(value))
+		counts[strings.TrimSpace(key)] = n
+	}
+	return counts
+}
+
+func formatStatusSummary(counts map[string]int) string {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+":"+strconv.Itoa(counts[key]))
+	}
+	return strings.Join(parts, ",")
 }
 
 func queryIntValue(value domain.PropertyValue) int {
@@ -403,7 +440,7 @@ func parseSelectList(part string) []domain.QuerySelect {
 func parseSelectItem(raw string) domain.QuerySelect {
 	raw = strings.TrimSpace(raw)
 	upper := strings.ToUpper(raw)
-	for _, aggregate := range []domain.QueryAggregate{domain.QueryAggregateCount, domain.QueryAggregateMin, domain.QueryAggregateMax} {
+	for _, aggregate := range []domain.QueryAggregate{domain.QueryAggregateStatusSummary, domain.QueryAggregateCount, domain.QueryAggregateLatest, domain.QueryAggregateMin, domain.QueryAggregateMax} {
 		prefix := string(aggregate) + "("
 		if strings.HasPrefix(upper, prefix) && strings.HasSuffix(raw, ")") {
 			property := strings.TrimSpace(raw[len(prefix) : len(raw)-1])

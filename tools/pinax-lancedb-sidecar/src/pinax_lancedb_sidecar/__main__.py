@@ -57,27 +57,29 @@ def doctor(request: dict[str, Any]) -> dict[str, Any]:
 def rebuild(request: dict[str, Any]) -> dict[str, Any]:
     store = store_path(request)
     store.mkdir(parents=True, exist_ok=True)
+    table_name = collection_name(request)
     chunks = [normalize_chunk(chunk) for chunk in request.get("chunks", [])]
     with silence_native_stderr():
         db = lancedb.connect(str(store))
         if chunks:
-            db.create_table(TABLE_NAME, data=chunks, mode="overwrite")
-        elif TABLE_NAME in table_names(db):
-            db.drop_table(TABLE_NAME)
+            db.create_table(table_name, data=chunks, mode="overwrite")
+        elif table_name in table_names(db):
+            db.drop_table(table_name)
     return success({"backend": "lancedb", "documents": int(request.get("documents") or 0), "chunks": len(chunks)})
 
 
 def search(request: dict[str, Any]) -> dict[str, Any]:
     store = store_path(request)
+    table_name = collection_name(request)
     vector = request.get("query_vector") or []
     if not vector:
         raise SidecarError("query_vector_required", "query vector is required")
     limit = int(request.get("limit") or 8)
     with silence_native_stderr():
         db = lancedb.connect(str(store))
-        if TABLE_NAME not in table_names(db):
+        if table_name not in table_names(db):
             raise SidecarError("kb_index_missing", "KB semantic index is missing")
-        table = db.open_table(TABLE_NAME)
+        table = db.open_table(table_name)
         rows = table.search(vector, vector_column_name="vector").limit(limit).to_list()
     hits = [row_to_hit(row) for row in rows]
     return success({"backend": "lancedb", "total": len(hits), "hits": hits})
@@ -88,6 +90,11 @@ def store_path(request: dict[str, Any]) -> Path:
     if not raw:
         raise SidecarError("store_uri_required", "store_uri is required")
     return Path(raw)
+
+
+def collection_name(request: dict[str, Any]) -> str:
+    name = str(request.get("collection") or TABLE_NAME).strip()
+    return name or TABLE_NAME
 
 
 def table_names(db: Any) -> list[str]:

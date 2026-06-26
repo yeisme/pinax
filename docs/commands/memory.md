@@ -25,6 +25,26 @@ pinax memory context "prepare next release" --entity pinax --limit 12 --vault ./
 pinax memory stats --vault ./my-notes --json
 ```
 
+## Recall Ranking
+
+`memory recall` and `memory context` use deterministic non-vector ranking. The scorer combines keyword matches, source authority, confidence, freshness, and task fitness, then orders ties by score, source authority, creation time, and record id. Default recall includes only confirmed records, hides records superseded by newer entries, and collapses duplicate confirmed records with the same `subject` + `predicate` to the highest-ranked hit.
+
+JSON output includes bounded ranking evidence for each hit:
+
+| Field | Meaning |
+| --- | --- |
+| `score` | Final deterministic ranking score. |
+| `recall_reason` | Compact textual explanation such as `status:confirmed + keyword:fts + source:docs`. |
+| `signals.keyword_fts` | Whether SQLite FTS matched the query. |
+| `signals.keyword_field` | Best matching structured field: `predicate`, `object`, `subject`, or `body`. |
+| `signals.source_kind` | Source class such as `openspec`, `docs`, `github_actions`, or `file`. |
+| `signals.source_authority` | Numeric source-authority contribution. |
+| `signals.confidence` | Numeric confidence contribution. |
+| `signals.freshness` | Recent `event` or `task` contribution. |
+| `signals.task_fitness` | Topic-fit contribution for tasks such as release, test, provider, cloud, KB, or memory work. |
+
+Agent output stays compact and low-token. `memory context --agent` emits facts such as `fact.memory.top_score` and `fact.memory.reason.1`, `fact.memory.reason.2`, `fact.memory.reason.3` instead of full memory bodies.
+
 ## Record Types
 
 | Type | Use for |
@@ -54,5 +74,5 @@ pinax memory stats --vault ./my-notes --json
 
 - `.pinax/memory/` is a CLI-authored structured asset. Do not edit the SQLite files directly.
 - `capture --dry-run` is read-only and does not create the ledger database.
-- `memory context --agent` emits stable key=value facts and does not include full private note bodies, raw prompts, provider payloads, Authorization headers, cookies, or secrets.
+- `memory recall --json` and `memory context --agent` omit full private memory bodies. They may include bounded `object`, ranking `signals`, `score`, and `recall_reason`, but must not include raw prompts, provider payloads, Authorization headers, cookies, or secrets.
 - Cloud Sync should treat the memory ledger as a local rebuildable projection, not as authoritative cross-device state.

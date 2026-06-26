@@ -126,10 +126,25 @@ func TestPreviewSummaryShowsBodyAndTags(t *testing.T) {
 
 	runCLI(t, "note", "new", "Tagged Preview", "--tags", "research,client", "--body", "preview body", "--vault", root, "--json")
 	noteSummary := runCLI(t, "note", "preview", "Tagged Preview", "--vault", root)
-	for _, want := range []string{"Local note read", "Tags", "research,client", "Tagged Preview", "preview body"} {
+	for _, want := range []string{"preview body"} {
 		if !strings.Contains(noteSummary, want) {
 			t.Fatalf("note preview summary missing %q:\n%s", want, noteSummary)
 		}
+	}
+	for _, forbidden := range []string{"Highlights", "Local note read", "Tags", "research,client"} {
+		if strings.Contains(noteSummary, forbidden) {
+			t.Fatalf("note preview should render body only, found %q:\n%s", forbidden, noteSummary)
+		}
+	}
+
+	writeCLIFixture(t, filepath.Join(root, "notes", "empty-preview.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_empty_preview\ntitle: Empty Preview\ntags: []\n---\n")
+	emptySummary := runCLI(t, "note", "preview", "Empty Preview", "--vault", root)
+	if strings.TrimSpace(emptySummary) != "" {
+		t.Fatalf("empty note preview should be silent on success:\n%s", emptySummary)
+	}
+	emptyJSON := runCLI(t, "note", "preview", "Empty Preview", "--vault", root, "--json")
+	if !strings.Contains(emptyJSON, `"command":"note.preview"`) || !strings.Contains(emptyJSON, `"status":"success"`) {
+		t.Fatalf("empty note preview json should keep machine envelope:\n%s", emptyJSON)
 	}
 }
 
@@ -277,6 +292,34 @@ func TestTemplateListPackTemplateListUseCaseTemplateRecommendTemplateRecommendFa
 	recommended := runCLI(t, "template", "recommend", "--intent", "meeting", "--vault", root, "--json")
 	if !strings.Contains(recommended, `"command":"template.recommend"`) || !strings.Contains(recommended, `"primary":"meeting.notes"`) {
 		t.Fatalf("template recommend meeting output = %s", recommended)
+	}
+	anime := runCLI(t, "template", "recommend", "--intent", "动漫", "--vault", root, "--json")
+	if !strings.Contains(anime, `"primary":"idea.anime_watch"`) && !strings.Contains(anime, `"primary":"media.anime"`) {
+		t.Fatalf("template recommend anime output = %s", anime)
+	}
+	paper := runCLI(t, "template", "recommend", "--intent", "论文", "--vault", root, "--json")
+	if !strings.Contains(paper, `"primary":"idea.paper_read"`) && !strings.Contains(paper, `"primary":"reading.paper"`) {
+		t.Fatalf("template recommend paper output = %s", paper)
+	}
+	novel := runCLI(t, "template", "recommend", "--intent", "写小说", "--vault", root, "--json")
+	if !strings.Contains(novel, `"primary":"idea.novel_write"`) && !strings.Contains(novel, `"primary":"writing.novel"`) {
+		t.Fatalf("template recommend novel writing output = %s", novel)
+	}
+	sticky := runCLI(t, "template", "recommend", "--intent", "便签", "--vault", root, "--json")
+	if !strings.Contains(sticky, `"command":"template.recommend"`) || !strings.Contains(sticky, `"primary":"sticky.capture"`) {
+		t.Fatalf("template recommend sticky output = %s", sticky)
+	}
+	projectSignal := runCLI(t, "template", "recommend", "--intent", "子项目看板线索", "--vault", root, "--json")
+	if !strings.Contains(projectSignal, `"primary":"sticky.project_signal"`) {
+		t.Fatalf("template recommend project signal output = %s", projectSignal)
+	}
+	stockIndicator := runCLI(t, "template", "recommend", "--intent", "K线", "--vault", root, "--json")
+	if !strings.Contains(stockIndicator, `"primary":"learning.stock.indicator"`) {
+		t.Fatalf("template recommend stock indicator output = %s", stockIndicator)
+	}
+	stockRisk := runCLI(t, "template", "recommend", "--intent", "风险规则", "--vault", root, "--json")
+	if !strings.Contains(stockRisk, `"primary":"learning.stock.risk_rule"`) {
+		t.Fatalf("template recommend stock risk output = %s", stockRisk)
 	}
 	fallback := runCLI(t, "template", "recommend", "--intent", "unknown-intent", "--vault", root, "--json")
 	if !strings.Contains(fallback, `"primary":"note.quick"`) && !strings.Contains(fallback, `"primary":"inbox.capture"`) {

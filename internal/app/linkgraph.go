@@ -9,6 +9,7 @@ import (
 
 	"github.com/yeisme/pinax/internal/domain"
 	noteindex "github.com/yeisme/pinax/internal/index"
+	"github.com/yeisme/pinax/internal/notelinks"
 )
 
 // NoteLinkGraphService 提供统一的双联关系图查询。
@@ -41,266 +42,42 @@ type NoteOrphansRequest struct {
 }
 
 // ParseRawLink 描述从 Markdown body 解析出的一条原始链接。
-type ParseRawLink struct {
-	Kind    string // wiki|markdown
-	Raw     string // 原始目标文本（含 heading/alias）
-	Target  string // 归一化目标（去掉 alias 和 heading）
-	Alias   string // wiki alias 或 markdown label
-	Heading string // #heading 片段
-	Line    int    // 1-based 行号
-}
+type ParseRawLink = notelinks.RawLink
 
 // ResolveResult 描述单条链接的解析结果。
-type ResolveResult struct {
-	Link       domain.NoteLink
-	Candidates []domain.NoteLinkCandidate
-}
+type ResolveResult = notelinks.ResolveResult
+
+// ResolverSnapshot 存储 note 的查找索引，用于确定性解析。
+type ResolverSnapshot = notelinks.ResolverSnapshot
 
 // ParseNoteLinks 从 note body 解析所有 wiki link 和 markdown relative link。
-// 忽略外部 URL、mailto、纯 heading 和非 Markdown 附件。
 func ParseNoteLinks(body string) []ParseRawLink {
-	return parseNoteLinks(body)
+	return notelinks.ParseNoteLinks(body)
 }
 
-// parseNoteLinks 实际解析逻辑。使用行号跟踪和详细 alias/heading 提取。
+// parseNoteLinks 实际解析逻辑。保留未导出入口以兼容包内测试。
 func parseNoteLinks(body string) []ParseRawLink {
-	links := make([]ParseRawLink, 0)
-	seen := map[string]bool{}
-	line := 0
-
-	for _, bodyLine := range strings.Split(body, "\n") {
-		line++
-		// 解析 wiki links: [[Target]], [[Target|Alias]], [[Target#Heading]]
-		for _, match := range vaultWikiLinkPattern.FindAllStringSubmatch(bodyLine, -1) {
-			if len(match) < 2 {
-				continue
-			}
-			raw := strings.TrimSpace(match[1])
-			if raw == "" {
-				continue
-			}
-			target, alias, heading := splitWikiLinkParts(raw)
-			key := "wiki\x00" + target
-			if !seen[key] {
-				links = append(links, ParseRawLink{Kind: "wiki", Raw: raw, Target: target, Alias: alias, Heading: heading, Line: line})
-				seen[key] = true
-			}
-		}
-		// 解析 markdown links: [label](relative-note.md)
-		for _, match := range vaultMarkdownLinkPattern.FindAllStringSubmatch(bodyLine, -1) {
-			if len(match) < 2 {
-				continue
-			}
-			rawTarget := strings.TrimSpace(match[1])
-			if rawTarget == "" || isExternalOrHeadingLink(rawTarget) {
-				continue
-			}
-			target := normalizeMarkdownLinkTarget(rawTarget)
-			if target == "" || !strings.EqualFold(filepath.Ext(target), ".md") {
-				continue
-			}
-			key := "markdown\x00" + target
-			if !seen[key] {
-				links = append(links, ParseRawLink{Kind: "markdown", Raw: rawTarget, Target: target, Line: line})
-				seen[key] = true
-			}
-		}
-	}
-	return links
+	return notelinks.ParseNoteLinks(body)
 }
 
 // splitWikiLinkParts 将 wiki link target 拆分为 target、alias、heading。
-// 输入 "Title|Alias" -> ("Title", "Alias", "")
-// 输入 "Title#Heading" -> ("Title", "", "Heading")
-// 输入 "Title|Alias#Heading" -> ("Title", "Alias", "Heading")
 func splitWikiLinkParts(raw string) (target, alias, heading string) {
-	raw = strings.TrimSpace(raw)
-	// 先分离 alias（| 前面的部分是 target）
-	if before, after, ok := strings.Cut(raw, "|"); ok {
-		target = strings.TrimSpace(before)
-		alias = strings.TrimSpace(after)
-	} else {
-		target = raw
-	}
-	// 从 target 中分离 heading
-	if before, after, ok := strings.Cut(target, "#"); ok {
-		target = strings.TrimSpace(before)
-		heading = strings.TrimSpace(after)
-	}
-	// alias 里也可能有 heading，但 wiki link 语法中 alias 是纯展示文本
-	return target, alias, heading
+	return notelinks.SplitWikiLinkParts(raw)
 }
 
 // isExternalOrHeadingLink 判断是否为外部 URL、mailto、纯 heading 链接。
 func isExternalOrHeadingLink(target string) bool {
-	t := strings.TrimSpace(target)
-	return strings.HasPrefix(t, "http://") ||
-		strings.HasPrefix(t, "https://") ||
-		strings.HasPrefix(t, "mailto:") ||
-		strings.HasPrefix(t, "#") ||
-		strings.HasPrefix(t, "ftp://")
-}
-
-// ResolverSnapshot 存储 note 的查找索引，用于确定性解析。
-// 解析优先级：note_id > vault-relative path > exact title > case-insensitive unique title > alias。
-type ResolverSnapshot struct {
-	byNoteID      map[string]domain.Note
-	byPath        map[string]domain.Note
-	byTitle       map[string]domain.Note // case-insensitive exact
-	byTitleCounts map[string]int         // case-insensitive title occurrence count
-	byAlias       map[string][]domain.Note
-	notes         []domain.Note
+	return notelinks.IsExternalOrHeadingLink(target)
 }
 
 // BuildResolverSnapshot 从 notes 列表构建解析索引。
 func BuildResolverSnapshot(notes []domain.Note) ResolverSnapshot {
-	s := ResolverSnapshot{
-		byNoteID:      map[string]domain.Note{},
-		byPath:        map[string]domain.Note{},
-		byTitle:       map[string]domain.Note{},
-		byTitleCounts: map[string]int{},
-		byAlias:       map[string][]domain.Note{},
-		notes:         notes,
-	}
-	for _, note := range notes {
-		s.byNoteID[strings.ToLower(note.ID)] = note
-		s.byPath[note.Path] = note
-		s.byPath[strings.TrimPrefix(note.Path, "notes/")] = note
-		lowerTitle := strings.ToLower(note.Title)
-		s.byTitleCounts[lowerTitle]++
-		s.byTitle[lowerTitle] = note
-		// 未来可读取 frontmatter aliases，当前使用 slug 和 file stem 作为 fallback。
-		stem := strings.TrimSuffix(filepath.Base(note.Path), filepath.Ext(note.Path))
-		s.byAlias[strings.ToLower(stem)] = append(s.byAlias[strings.ToLower(stem)], note)
-	}
-	return s
+	return notelinks.BuildResolverSnapshot(notes)
 }
 
 // ResolveLinkTarget 按确定性优先级解析链接目标。
-// 返回解析结果，包含 status、候选列表和 evidence。
 func ResolveLinkTarget(source domain.Note, rawLink ParseRawLink, snap ResolverSnapshot) ResolveResult {
-	result := ResolveResult{}
-	link := domain.NoteLink{
-		SourcePath:    source.Path,
-		SourceTitle:   source.Title,
-		SourceNoteID:  source.ID,
-		Target:        rawLink.Target,
-		TargetRaw:     rawLink.Raw,
-		TargetAlias:   rawLink.Alias,
-		TargetHeading: rawLink.Heading,
-		Kind:          rawLink.Kind,
-		Line:          rawLink.Line,
-	}
-	target := rawLink.Target
-
-	// 1. note_id 精确匹配
-	if note, ok := snap.byNoteID[strings.ToLower(target)]; ok {
-		link.TargetPath = note.Path
-		link.TargetTitle = note.Title
-		link.TargetNoteID = note.ID
-		link.Status = string(domain.LinkStatusResolved)
-		link.Broken = false
-		link.Evidence = "resolved by note_id"
-		result.Link = link
-		return result
-	}
-
-	// 2. vault-relative path 精确匹配
-	if note, ok := snap.byPath[target]; ok {
-		link.TargetPath = note.Path
-		link.TargetTitle = note.Title
-		link.TargetNoteID = note.ID
-		link.Status = string(domain.LinkStatusResolved)
-		link.Broken = false
-		link.Evidence = "resolved by path"
-		result.Link = link
-		return result
-	}
-	// 也尝试 notes/ 前缀
-	if note, ok := snap.byPath[filepath.ToSlash(filepath.Join("notes", target))]; ok {
-		link.TargetPath = note.Path
-		link.TargetTitle = note.Title
-		link.TargetNoteID = note.ID
-		link.Status = string(domain.LinkStatusResolved)
-		link.Broken = false
-		link.Evidence = "resolved by path (notes/ prefix)"
-		result.Link = link
-		return result
-	}
-
-	// 对于 markdown 链接，尝试相对于 source path 的路径解析
-	if rawLink.Kind == "markdown" {
-		cleanTarget := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(source.Path), target)))
-		if note, ok := snap.byPath[cleanTarget]; ok {
-			link.TargetPath = note.Path
-			link.TargetTitle = note.Title
-			link.TargetNoteID = note.ID
-			link.Status = string(domain.LinkStatusResolved)
-			link.Broken = false
-			link.Evidence = "resolved by relative path"
-			result.Link = link
-			return result
-		}
-	}
-
-	// 3. exact title 匹配
-	lowerTarget := strings.ToLower(target)
-	if note, ok := snap.byTitle[lowerTarget]; ok {
-		count := snap.byTitleCounts[lowerTarget]
-		if count == 1 {
-			link.TargetPath = note.Path
-			link.TargetTitle = note.Title
-			link.TargetNoteID = note.ID
-			link.Status = string(domain.LinkStatusResolved)
-			link.Broken = false
-			link.Evidence = "resolved by exact title"
-			result.Link = link
-			return result
-		}
-		// 多个同名 -> ambiguous
-		link.Status = string(domain.LinkStatusAmbiguous)
-		link.Broken = false
-		link.Evidence = fmt.Sprintf("ambiguous: %d notes with same title", count)
-		for _, n := range snap.notes {
-			if strings.ToLower(n.Title) == lowerTarget {
-				result.Candidates = append(result.Candidates, domain.NoteLinkCandidate{Path: n.Path, Title: n.Title, NoteID: n.ID})
-			}
-		}
-		link.Candidates = result.Candidates
-		result.Link = link
-		return result
-	}
-
-	// 4. alias/fallback 匹配
-	if candidates, ok := snap.byAlias[lowerTarget]; ok && len(candidates) > 0 {
-		if len(candidates) == 1 {
-			note := candidates[0]
-			link.TargetPath = note.Path
-			link.TargetTitle = note.Title
-			link.TargetNoteID = note.ID
-			link.Status = string(domain.LinkStatusResolved)
-			link.Broken = false
-			link.Evidence = "resolved by alias/stem"
-			result.Link = link
-			return result
-		}
-		link.Status = string(domain.LinkStatusAmbiguous)
-		link.Broken = false
-		link.Evidence = fmt.Sprintf("ambiguous: %d candidates by alias", len(candidates))
-		for _, n := range candidates {
-			result.Candidates = append(result.Candidates, domain.NoteLinkCandidate{Path: n.Path, Title: n.Title, NoteID: n.ID})
-		}
-		link.Candidates = result.Candidates
-		result.Link = link
-		return result
-	}
-
-	// 5. 未找到 -> broken
-	link.Status = string(domain.LinkStatusBroken)
-	link.Broken = true
-	link.Evidence = "target not found"
-	result.Link = link
-	return result
+	return notelinks.ResolveLinkTarget(source, rawLink, snap)
 }
 
 // BuildEnhancedLinkGraph 构建增强的双联关系图。
@@ -309,27 +86,7 @@ func BuildEnhancedLinkGraph(notes []domain.Note) (
 	enhancedLinks map[string][]domain.NoteLink,
 	incoming map[string][]domain.NoteLink,
 ) {
-	snap := BuildResolverSnapshot(notes)
-	enhancedLinks = map[string][]domain.NoteLink{}
-	incoming = map[string][]domain.NoteLink{}
-
-	for _, note := range notes {
-		rawLinks := parseNoteLinks(note.Body)
-		for _, raw := range rawLinks {
-			result := ResolveLinkTarget(note, raw, snap)
-			link := result.Link
-			enhancedLinks[note.Path] = append(enhancedLinks[note.Path], link)
-			// 只有 resolved 的链接才记录 incoming
-			if link.Status == string(domain.LinkStatusResolved) && link.TargetPath != "" {
-				incoming[link.TargetPath] = append(incoming[link.TargetPath], link)
-			}
-		}
-		sortNoteLinks(enhancedLinks[note.Path])
-	}
-	for path := range incoming {
-		sortNoteLinks(incoming[path])
-	}
-	return enhancedLinks, incoming
+	return notelinks.BuildGraph(notes)
 }
 
 // --- Service methods for NoteLinkGraphService ---
@@ -362,6 +119,7 @@ func (s *Service) QueryOutgoingLinks(ctx context.Context, req NoteLinkGraphReque
 	projection.Facts["broken"] = fmt.Sprint(countLinksWithStatus(links, "broken"))
 	projection.Facts["ambiguous"] = fmt.Sprint(countLinksWithStatus(links, "ambiguous"))
 	projection.Facts["engine"] = engine
+	addLinkCompatibilityFacts(projection.Facts)
 	if indexStatus != "" {
 		projection.Facts["index_status"] = indexStatus
 	}
@@ -369,7 +127,8 @@ func (s *Service) QueryOutgoingLinks(ctx context.Context, req NoteLinkGraphReque
 		projection.Status = "partial"
 		projection.Actions = []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}
 	}
-	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "links": links}
+	agentCtx := graphAgentContext(note, links)
+	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "links": links, "agent_contexts": []domain.AgentContext{agentCtx}}
 	return projection, nil
 }
 
@@ -403,10 +162,12 @@ func (s *Service) QueryBacklinks(ctx context.Context, req NoteBacklinkGraphReque
 	projection.Facts["backlinks"] = fmt.Sprint(len(backlinks))
 	projection.Facts["unresolved"] = fmt.Sprint(countLinksWithStatus(backlinks, "broken"))
 	projection.Facts["engine"] = engine
+	addLinkCompatibilityFacts(projection.Facts)
 	if indexStatus != "" {
 		projection.Facts["index_status"] = indexStatus
 	}
-	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "backlinks": backlinks}
+	agentCtx := graphAgentContext(note, backlinks)
+	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "backlinks": backlinks, "agent_contexts": []domain.AgentContext{agentCtx}}
 	return projection, nil
 }
 
@@ -523,13 +284,25 @@ func (s *Service) GraphSummary(_ context.Context, vaultPath string) (domain.Note
 		Ignored:     ignored,
 		Orphans:     orphanCount,
 	}
+	summary.Facts = map[string]string{"vault": root}
+	addLinkCompatibilityFacts(summary.Facts)
 	if broken > 0 || ambiguous > 0 {
-		summary.Facts = map[string]string{"vault": root}
 		summary.NextActions = []domain.Action{
 			{Name: "rebuild_index", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(root))},
 		}
 	}
 	return summary, nil
+}
+
+func addLinkCompatibilityFacts(facts map[string]string) {
+	facts["compat.wikilink"] = "supported"
+	facts["compat.alias"] = "supported"
+	facts["compat.heading"] = "supported"
+	facts["compat.markdown_relative"] = "supported"
+	facts["compat.backlink"] = "supported"
+	facts["compat.graph"] = "supported"
+	facts["compat.ambiguous_repair"] = "manual_review"
+	facts["repair_mode"] = "plan_only"
 }
 
 // --- helpers ---

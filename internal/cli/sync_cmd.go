@@ -1,11 +1,17 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
+	"github.com/yeisme/pinax/internal/output"
 	"github.com/yeisme/pinax/internal/profile"
 )
 
@@ -57,11 +63,64 @@ func syncTargetCompletion(cmd *cobra.Command, args []string, toComplete string) 
 	return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
 }
 
+func syncDaemonLiveSink(w io.Writer, mode output.Mode, seq *int) syncdaemon.EventSink {
+	switch mode {
+	case output.ModeSummary:
+		return func(event syncdaemon.SyncDaemonEvent) {
+			status := event.Status
+			if status == "" {
+				status = "running"
+			}
+			if event.Direction != "" {
+				_, _ = fmt.Fprintf(w, "%s %s %s\n", event.Type, event.Direction, status)
+				return
+			}
+			_, _ = fmt.Fprintf(w, "%s %s\n", event.Type, status)
+		}
+	case output.ModeEvents:
+		return func(event syncdaemon.SyncDaemonEvent) {
+			*seq = *seq + 1
+			payload := map[string]any{
+				"type":            event.Type,
+				"seq":             *seq,
+				"status":          event.Status,
+				"schema_version":  event.SchemaVersion,
+				"trigger":         event.Trigger,
+				"cycle_id":        event.CycleID,
+				"direction":       event.Direction,
+				"error_code":      event.ErrorCode,
+				"duration_ms":     event.DurationMS,
+				"local_dirty":     event.LocalDirty,
+				"remote_revision": event.RemoteRevision,
+				"revision_id":     event.RevisionID,
+				"remote_write":    event.RemoteWrite,
+				"local_write":     event.LocalWrite,
+				"created_at":      event.CreatedAt,
+			}
+			_ = writeSyncDaemonStreamEvent(w, payload)
+		}
+	default:
+		return nil
+	}
+}
+
+func writeSyncDaemonStreamEvent(w io.Writer, payload map[string]any) error {
+	payload["spec_version"] = "1.0"
+	payload["mode"] = "events"
+	payload["command"] = "sync.daemon.run"
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(payload)
+}
+
 func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	var syncPathPolicy string
 	var syncLogLimit int
 	var syncPruneKeep int
 	var syncPruneMaxAgeDays int
+	var daemonPollInterval time.Duration
+	var daemonSyncTimeout time.Duration
+	var daemonOnce bool
 	addPathPolicyFlag := func(c *cobra.Command) {
 		c.Flags().StringVar(&syncPathPolicy, "path-policy", "default", "Path redaction policy for sync receipts: default, hash, or omitted")
 		_ = c.RegisterFlagCompletionFunc("path-policy", staticCompletion("path-policy", "default", "hash", "omitted"))
@@ -177,6 +236,56 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	logsPruneCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm deleting sync run receipts")
 	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsTailCmd, logsPruneCmd)
 	syncCmd.AddCommand(logsCmd)
+
+	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Cloud Sync daemon"}
+	daemonRunCmd := &cobra.Command{Use: "run", Short: "Run the sync daemon in the foreground", RunE: func(cmd *cobra.Command, args []string) error {
+		mode := ctx.outputMode()
+		streamSeq := 1
+		live := syncDaemonLiveSink(cmd.OutOrStdout(), mode, &streamSeq)
+		if mode == output.ModeEvents {
+			if err := writeSyncDaemonStreamEvent(cmd.OutOrStdout(), map[string]any{"type": "start", "seq": streamSeq, "status": "running"}); err != nil {
+				return err
+			}
+		}
+		projection, err := ctx.svc.SyncDaemonRun(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, Once: daemonOnce, PollInterval: daemonPollInterval, SyncTimeout: daemonSyncTimeout, LiveEvents: live})
+		if mode == output.ModeEvents {
+			endType := "end"
+			if err != nil || projection.Status == "failed" {
+				endType = "error"
+			}
+			streamSeq++
+			_ = writeSyncDaemonStreamEvent(cmd.OutOrStdout(), map[string]any{"type": endType, "seq": streamSeq, "status": projection.Status, "summary": projection.Summary})
+			return err
+		}
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonStartCmd := &cobra.Command{Use: "start", Short: "Start the sync daemon in the background", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncDaemonStart(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, PollInterval: daemonPollInterval, SyncTimeout: daemonSyncTimeout})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonStatusCmd := &cobra.Command{Use: "status", Short: "Show sync daemon status", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncDaemonStatus(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonStopCmd := &cobra.Command{Use: "stop", Short: "Request sync daemon shutdown", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncDaemonStop(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonLogsCmd := &cobra.Command{Use: "logs", Short: "Read sync daemon event logs", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncDaemonLogs(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, LogLimit: syncLogLimit})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	for _, c := range []*cobra.Command{daemonRunCmd, daemonStartCmd} {
+		c.Flags().StringVar(ctx.syncTarget, "target", "cloud", "Sync target: cloud")
+		c.Flags().BoolVar(ctx.yes, "yes", false, "Confirm automatic sync writes")
+		c.Flags().DurationVar(&daemonPollInterval, "poll-interval", time.Second, "Remote head poll interval")
+		c.Flags().DurationVar(&daemonSyncTimeout, "sync-timeout", 30*time.Second, "Per-sync operation timeout")
+		_ = c.RegisterFlagCompletionFunc("target", syncTargetCompletion)
+	}
+	daemonRunCmd.Flags().BoolVar(&daemonOnce, "once", false, "Run one daemon sync cycle and exit")
+	daemonLogsCmd.Flags().IntVar(&syncLogLimit, "limit", 20, "Maximum daemon events to read")
+	daemonCmd.AddCommand(daemonRunCmd, daemonStartCmd, daemonStatusCmd, daemonStopCmd, daemonLogsCmd)
+	syncCmd.AddCommand(daemonCmd)
 
 	addSyncConflictsCommands(syncCmd, ctx)
 

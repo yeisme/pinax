@@ -15,7 +15,7 @@ import (
 
 func main() {
 	runID := time.Now().UTC().Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid())
-	command := []string{"go", "test", "./internal/api", "./tests/e2e", "./internal/cloudclient", "./cmd/pinax", "-run", "TestLocalAPIProjectBoardMatchesProjectionEnvelope|TestLocalAPINoteReadAndProjectItemWritePlan|TestLocalRPCProjectBoardNoteAndProjectItemPlan|TestProjectBoardWorkspace|TestCloud|TestPluginRuntime|TestDataviewDatabase|BidirectionalLinks|JournalIndexTemplate|StarterTemplates|IndexPageRefresh|TemplateRecommend|TemplateCompletion|TemplateNextAction|TestProofLoop|TestServerTransportTwoDeviceConvergence|TestServerTransportConflictPreservesBothSides|TestServerTransportNeverRemoteWriteBeforeCommit|TestClientBootstrapPrincipalAndVaultLifecycle|TestVersionRestoreApplyRevertsBadLocalApply|TestProofLoopRunPreviewEmitsRunIDAndStageFacts|TestProofLoopRunContractAcrossModes|TestPromptImportSearchShowResolveCommands|TestPromptLifecycleAndFeedbackCommands", "-count=1"}
+	command := []string{"go", "test", "./internal/api", "./internal/dashboard", "./internal/mcpserver", "./tests/e2e", "./internal/cloudclient", "./cmd/pinax", "-run", "TestLocalAPIProjectBoardMatchesProjectionEnvelope|TestLocalAPINoteReadAndProjectItemWritePlan|TestLocalRPCProjectBoardNoteAndProjectItemPlan|TestLocalAPIDatabaseTaskAndGraphCapabilities|TestLocalRPCDatabaseTaskAndGraphCapabilities|TestReadonlyDashboardServesDatabaseTabProjection|TestReadonlyMCPQueryAndDatabaseView|TestProjectBoardWorkspace|TestUnifiedWorkspace|TestObsidianCompat|TestCloud|TestSyncDaemon|TestPluginRuntime|TestDataviewDatabase|BidirectionalLinks|JournalIndexTemplate|StarterTemplates|IndexPageRefresh|TemplateRecommend|TemplateCompletion|TemplateNextAction|TestProofLoop|TestServerTransportTwoDeviceConvergence|TestServerTransportConflictPreservesBothSides|TestServerTransportNeverRemoteWriteBeforeCommit|TestClientBootstrapPrincipalAndVaultLifecycle|TestVersionRestoreApplyRevertsBadLocalApply|TestProofLoopRunPreviewEmitsRunIDAndStageFacts|TestProofLoopRunContractAcrossModes|TestPromptImportSearchShowResolveCommands|TestPromptLifecycleAndFeedbackCommands|TestMemoryCaptureListRecallAndContext|TestMemoryRecallRankingSignalsAndRedaction|TestKBProviderListAndDoctorContracts", "-count=1"}
 	result, err := evidence.Run(evidence.Config{
 		RunID:             runID,
 		ParentDir:         filepath.Join("temp", "integration-test-runs"),
@@ -23,13 +23,21 @@ func main() {
 		PassThroughStdout: os.Stdout,
 		PassThroughStderr: os.Stderr,
 		ExtraChecks: map[string]any{
-			"project_board_remote": true,
-			"cloud_sync_cli":       true,
-			"dataview_database":    true,
-			"prompt_asset_vault":   true,
-			"proof_loop":           true,
-			"server_sync":          true,
-			"restore_apply":        true,
+			"api_readonly_capabilities": true,
+			"project_board_remote":      true,
+			"dashboard_database_tab":    true,
+			"mcp_database_view":         true,
+			"unified_workspace":         true,
+			"obsidian_compat":           true,
+			"cloud_sync_cli":            true,
+			"dataview_database":         true,
+			"kb_provider_expansion":     true,
+			"memory_recall_ranking":     true,
+			"prompt_asset_vault":        true,
+			"proof_loop":                true,
+			"server_sync":               true,
+			"sync_daemon":               true,
+			"restore_apply":             true,
 		},
 	})
 	if err != nil {

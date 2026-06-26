@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/vaultignore"
 )
 
 type Capabilities = domain.VersionCapabilities
@@ -143,7 +144,35 @@ func (LocalBackend) ChangedSince(_ context.Context, req ChangedSinceRequest) ([]
 }
 
 func (LocalBackend) ReadFile(_ context.Context, req ReadFileRequest) (VersionedFile, error) {
-	return VersionedFile{}, readUnavailableError("local", req.Path, req.Revision)
+	path, err := cleanVaultPath(req.Path)
+	if err != nil {
+		return VersionedFile{}, err
+	}
+	snapshot, err := loadSnapshot(req.Root, req.Revision)
+	if err != nil {
+		return VersionedFile{}, err
+	}
+	for _, fact := range snapshot.FileFacts {
+		if fact.Path != path {
+			continue
+		}
+		objectRel := ""
+		if len(fact.Evidence) > 0 {
+			objectRel = fact.Evidence[0]
+		}
+		if objectRel == "" && fact.ContentHash != "" {
+			objectRel = contentObjectRel(fact.ContentHash)
+		}
+		if objectRel == "" {
+			return VersionedFile{}, readUnavailableError("local", path, req.Revision)
+		}
+		payload, err := os.ReadFile(filepath.Join(req.Root, filepath.FromSlash(objectRel)))
+		if err != nil {
+			return VersionedFile{}, readUnavailableError("local", path, req.Revision)
+		}
+		return VersionedFile{Path: path, Revision: snapshot.SnapshotID, Backend: "local", ContentHash: fact.ContentHash, SizeBytes: fact.SizeBytes, Content: string(payload), Evidence: []string{objectRel}}, nil
+	}
+	return VersionedFile{}, readUnavailableError("local", path, req.Revision)
 }
 
 func (LocalBackend) DiffSummary(_ context.Context, req DiffSummaryRequest) (DiffSummary, error) {
@@ -235,8 +264,26 @@ func noneCapabilities() Capabilities {
 }
 
 func localCapabilities() Capabilities {
-	return Capabilities{SnapshotSupported: true, ChangedPathsSupported: false, ReadAtRevision: false, DiffSupported: false}
+	return Capabilities{SnapshotSupported: true, ChangedPathsSupported: false, ReadAtRevision: true, DiffSupported: false}
 }
+
+func loadSnapshot(root, revision string) (*Snapshot, error) {
+	revision = strings.TrimSpace(revision)
+	if revision == "" {
+		return nil, readUnavailableError("local", "snapshot", revision)
+	}
+	path := filepath.Join(root, ".pinax", "version", "snapshots", revision+".json")
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return nil, readUnavailableError("local", "snapshot", revision)
+	}
+	var snapshot Snapshot
+	if err := json.Unmarshal(payload, &snapshot); err != nil {
+		return nil, err
+	}
+	return &snapshot, nil
+}
+
 func latestSnapshot(root string) (*Snapshot, error) {
 	dir := filepath.Join(root, ".pinax", "version", "snapshots")
 	entries, err := os.ReadDir(dir)
@@ -306,8 +353,13 @@ func hashVault(ctx context.Context, root string) (int, int64, string, []ChangedP
 		sum      string
 		size     int64
 		modified int64
+		object   string
 	}
 	files := []fileHash{}
+	matcher, err := vaultignore.Load(root)
+	if err != nil {
+		return 0, 0, "", nil, err
+	}
 	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -321,23 +373,26 @@ func hashVault(ctx context.Context, root string) (int, int64, string, []ChangedP
 		}
 		rel = filepath.ToSlash(rel)
 		if entry.IsDir() {
-			if rel == ".git" || rel == filepath.ToSlash(filepath.Join(".pinax", "version", "snapshots")) {
+			if matcher.Ignored(rel, true) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasPrefix(rel, ".git/") || strings.HasPrefix(rel, ".pinax/version/snapshots/") || rel == ".pinax/last_snapshot" {
+		if matcher.Ignored(rel, false) {
 			return nil
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
-		sum, size, err := hashFile(path)
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		sum, size, objectRel, err := storeContentObject(root, path)
 		if err != nil {
 			return err
 		}
-		files = append(files, fileHash{path: rel, sum: sum, size: size, modified: info.ModTime().Unix()})
+		files = append(files, fileHash{path: rel, sum: sum, size: size, modified: info.ModTime().Unix(), object: objectRel})
 		return nil
 	}); err != nil {
 		return 0, 0, "", nil, err
@@ -352,7 +407,7 @@ func hashVault(ctx context.Context, root string) (int, int64, string, []ChangedP
 		_, _ = io.WriteString(h, file.sum)
 		_, _ = io.WriteString(h, "\n")
 		total += file.size
-		facts = append(facts, ChangedPath{Path: file.path, ObjectKind: versionObjectKind(file.path), ContentHash: file.sum, SizeBytes: file.size, ModifiedUnix: file.modified})
+		facts = append(facts, ChangedPath{Path: file.path, ObjectKind: versionObjectKind(file.path), ContentHash: file.sum, SizeBytes: file.size, ModifiedUnix: file.modified, Evidence: []string{file.object}})
 	}
 	return len(files), total, hex.EncodeToString(h.Sum(nil)), facts, nil
 }
@@ -368,13 +423,61 @@ func versionObjectKind(rel string) domain.VaultObjectKind {
 	return domain.VaultObjectKindFile
 }
 
-func hashFile(path string) (string, int64, error) {
+func storeContentObject(root, path string) (string, int64, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	defer func() { _ = f.Close() }()
-	return hashReader(f)
+	tmpDir := filepath.Join(root, ".pinax", "version", "objects", "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		return "", 0, "", err
+	}
+	tmp, err := os.CreateTemp(tmpDir, "object-*")
+	if err != nil {
+		return "", 0, "", err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	h := sha256.New()
+	n, copyErr := io.Copy(io.MultiWriter(h, tmp), f)
+	closeErr := tmp.Close()
+	if copyErr != nil {
+		return "", 0, "", copyErr
+	}
+	if closeErr != nil {
+		return "", 0, "", closeErr
+	}
+	sum := hex.EncodeToString(h.Sum(nil))
+	objectRel := contentObjectRel(sum)
+	objectPath := filepath.Join(root, filepath.FromSlash(objectRel))
+	if _, err := os.Stat(objectPath); err == nil {
+		return sum, n, objectRel, nil
+	} else if !os.IsNotExist(err) {
+		return "", 0, "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(objectPath), 0o755); err != nil {
+		return "", 0, "", err
+	}
+	if err := os.Rename(tmpPath, objectPath); err != nil {
+		return "", 0, "", err
+	}
+	return sum, n, objectRel, nil
+}
+
+func contentObjectRel(sum string) string {
+	if len(sum) < 2 {
+		return filepath.ToSlash(filepath.Join(".pinax", "version", "objects", sum))
+	}
+	return filepath.ToSlash(filepath.Join(".pinax", "version", "objects", sum[:2], sum))
+}
+
+func cleanVaultPath(path string) (string, error) {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	if clean == "" || clean == "." || clean == ".." || filepath.IsAbs(path) || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, ".pinax/") || strings.HasPrefix(clean, ".git/") {
+		return "", &domain.CommandError{Code: "invalid_version_path", Message: "version path must be vault-relative", Hint: "Provide a vault-relative file path"}
+	}
+	return clean, nil
 }
 
 func hashReader(r io.Reader) (string, int64, error) {

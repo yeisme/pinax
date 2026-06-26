@@ -74,12 +74,14 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			{Name: "pinax.search", Description: "Search local notes"},
 			{Name: "pinax.query.run", Description: "Run bounded readonly Pinax SQL query"},
 			{Name: "pinax.database.view.show", Description: "Show saved readonly database view"},
+			{Name: "pinax.database.view.render", Description: "Render saved readonly database view as a bounded tab projection"},
 			{Name: "pinax.note.read", Description: "Read one local note"},
 			{Name: "pinax.note.links", Description: "Read outgoing links for a note"},
 			{Name: "pinax.note.backlinks", Description: "Read backlinks for a note"},
 			{Name: "pinax.note.context", Description: "Read bounded graph context around a note"},
 			{Name: "pinax.vault.graph_summary", Description: "Read vault link graph health summary"},
 			{Name: "pinax.project.board", Description: "Read bounded project board facts"},
+			{Name: "pinax.task.adopt_plan", Description: "Preview inferred task adoption without writing"},
 			{Name: "pinax.organize.plan", Description: "Preview organize operations"},
 			{Name: "pinax.git.snapshot_plan", Description: "Show snapshot command"},
 		}
@@ -113,6 +115,16 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		}
 		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
 		resp.Result["facts"] = projection.Facts
+		return resp, nil
+	case "pinax.database.view.render":
+		name, _ := args["name"].(string)
+		projection, err := s.service.RenderDatabaseView(ctx, app.ViewRequest{VaultPath: s.vault, Name: name})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = projection.Command
 		return resp, nil
 	case "pinax.search":
 		query, _ := args["query"].(string)
@@ -199,6 +211,19 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		}
 		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
 		resp.Result["facts"] = projection.Facts
+		return resp, nil
+	case "pinax.task.adopt_plan":
+		itemID, _ := args["item_id"].(string)
+		if itemID == "" {
+			itemID, _ = args["item"].(string)
+		}
+		projection, err := s.service.TaskAdopt(ctx, app.TaskAdoptRequest{VaultPath: s.vault, ItemID: itemID, Yes: false})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = projection.Command
 		return resp, nil
 	case "pinax.organize.plan":
 		projection, err := s.service.PlanOrganize(ctx, app.VaultRequest{VaultPath: s.vault})

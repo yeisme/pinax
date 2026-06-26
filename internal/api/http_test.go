@@ -31,6 +31,12 @@ func TestLocalAPIProjectBoardMatchesProjectionEnvelope(t *testing.T) {
 	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "Research", NotesPrefix: "research"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	if _, err := svc.ProjectSubprojectCreate(ctx, app.ProjectWorkspaceRequest{VaultPath: root, Project: "research", Subproject: "stock-learning", Title: "Stock Learning", Template: "scenario"}); err != nil {
+		t.Fatalf("create subproject: %v", err)
+	}
+	if _, err := svc.ProjectItemAdd(ctx, app.ProjectItemRequest{VaultPath: root, Project: "research", Subproject: "stock-learning", Title: "Workspace API Item", Column: "next"}); err != nil {
+		t.Fatalf("add workspace item: %v", err)
+	}
 	writeAPIFixture(t, filepath.Join(root, "research", "task.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_task\ntitle: Board Task\nproject: research\nkind: task\nstatus: active\n---\n\nsecret body should not appear as body field\n")
 	server := NewServer(svc, root)
 
@@ -38,6 +44,16 @@ func TestLocalAPIProjectBoardMatchesProjectionEnvelope(t *testing.T) {
 	server.Handler().ServeHTTP(capRes, httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil))
 	if capRes.Code != http.StatusOK || !strings.Contains(capRes.Body.String(), "project.board.show") {
 		t.Fatalf("capabilities response: status=%d body=%s", capRes.Code, capRes.Body.String())
+	}
+	projectsRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(projectsRes, httptest.NewRequest(http.MethodGet, "/v1/projects", nil))
+	if projectsRes.Code != http.StatusOK || !strings.Contains(projectsRes.Body.String(), `"command":"project.list"`) || !strings.Contains(projectsRes.Body.String(), `"research"`) {
+		t.Fatalf("projects list response: status=%d body=%s", projectsRes.Code, projectsRes.Body.String())
+	}
+	projectRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(projectRes, httptest.NewRequest(http.MethodGet, "/v1/projects/research", nil))
+	if projectRes.Code != http.StatusOK || !strings.Contains(projectRes.Body.String(), `"command":"project.show"`) || !strings.Contains(projectRes.Body.String(), `"project":"research"`) {
+		t.Fatalf("project show response: status=%d body=%s", projectRes.Code, projectRes.Body.String())
 	}
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/projects/research/board?note_display=card", nil))
@@ -50,6 +66,21 @@ func TestLocalAPIProjectBoardMatchesProjectionEnvelope(t *testing.T) {
 	}
 	if payload["command"] != "project.board.show" || !strings.Contains(res.Body.String(), `"project":"research"`) || strings.Contains(res.Body.String(), `"body"`) {
 		t.Fatalf("board payload = %s", res.Body.String())
+	}
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/projects/research/subprojects", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"command":"project.subproject.list"`) || !strings.Contains(res.Body.String(), `"stock-learning"`) {
+		t.Fatalf("subproject list status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/projects/research/subprojects/stock-learning", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"command":"project.subproject.show"`) || !strings.Contains(res.Body.String(), `"workspace_path":"notes/projects/research/stock-learning"`) {
+		t.Fatalf("subproject show status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/projects/research/board?subproject=stock-learning&note_display=card", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"subproject":"stock-learning"`) || !strings.Contains(res.Body.String(), `"next":"1"`) {
+		t.Fatalf("subproject board status=%d body=%s", res.Code, res.Body.String())
 	}
 	res = httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/v1/projects/research/board", nil))
@@ -68,6 +99,9 @@ func TestLocalAPINoteReadAndProjectItemWritePlan(t *testing.T) {
 	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "Research", NotesPrefix: "research"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	if _, err := svc.ProjectSubprojectCreate(ctx, app.ProjectWorkspaceRequest{VaultPath: root, Project: "research", Subproject: "stock-learning", Title: "Stock Learning", Template: "scenario"}); err != nil {
+		t.Fatalf("create subproject: %v", err)
+	}
 	created, err := svc.ProjectItemAdd(ctx, app.ProjectItemRequest{VaultPath: root, Project: "research", Title: "API Item", Column: "next", Body: "secret body"})
 	if err != nil {
 		t.Fatalf("add item: %v", err)
@@ -80,6 +114,12 @@ func TestLocalAPINoteReadAndProjectItemWritePlan(t *testing.T) {
 	server.Handler().ServeHTTP(noteRes, httptest.NewRequest(http.MethodGet, "/v1/notes/"+noteRef+"?display=card", nil))
 	if noteRes.Code != http.StatusOK || !strings.Contains(noteRes.Body.String(), `"command":"note.show"`) || strings.Contains(noteRes.Body.String(), `"body"`) {
 		t.Fatalf("note read response: status=%d body=%s", noteRes.Code, noteRes.Body.String())
+	}
+
+	itemRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(itemRes, httptest.NewRequest(http.MethodGet, "/v1/project-items/"+itemID, nil))
+	if itemRes.Code != http.StatusOK || !strings.Contains(itemRes.Body.String(), `"command":"project.item.show"`) || !strings.Contains(itemRes.Body.String(), itemID) || strings.Contains(itemRes.Body.String(), "secret body") {
+		t.Fatalf("project item read response: status=%d body=%s", itemRes.Code, itemRes.Body.String())
 	}
 
 	planRes := httptest.NewRecorder()
@@ -103,6 +143,50 @@ func TestLocalAPINoteReadAndProjectItemWritePlan(t *testing.T) {
 	server.Handler().ServeHTTP(planRes, httptest.NewRequest(http.MethodPost, "/v1/project-items/"+itemID+":move?column=done&yes=true", nil))
 	if planRes.Code != http.StatusBadRequest || !strings.Contains(planRes.Body.String(), `"code":"snapshot_required"`) || !strings.Contains(planRes.Body.String(), "pinax version snapshot") {
 		t.Fatalf("move done plan snapshot response: status=%d body=%s", planRes.Code, planRes.Body.String())
+	}
+}
+
+func TestLocalAPIDatabaseTaskAndGraphCapabilities(t *testing.T) {
+	ctx := context.Background()
+	root, svc, _, _ := newAPITestVault(t, ctx)
+	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
+	taskID := addAPITaskAdoptFixture(t, ctx, root, svc)
+	server := NewServer(svc, root)
+
+	capRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(capRes, httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil))
+	if capRes.Code != http.StatusOK {
+		t.Fatalf("capabilities status=%d body=%s", capRes.Code, capRes.Body.String())
+	}
+	for _, want := range []string{"database.view.render", "task.adopt.plan", "graph.summary", "/v1/database/views/{name}:render", "/v1/tasks/{item}:adopt-plan", "/v1/graph/summary"} {
+		if !strings.Contains(capRes.Body.String(), want) {
+			t.Fatalf("capabilities missing %q:\n%s", want, capRes.Body.String())
+		}
+	}
+
+	viewRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(viewRes, httptest.NewRequest(http.MethodGet, "/v1/database/views/"+viewName+":render", nil))
+	if viewRes.Code != http.StatusOK || !strings.Contains(viewRes.Body.String(), `"command":"database.view.render"`) || !strings.Contains(viewRes.Body.String(), `"database_tab"`) || !strings.Contains(viewRes.Body.String(), `"database.display":"list"`) {
+		t.Fatalf("database view render response: status=%d body=%s", viewRes.Code, viewRes.Body.String())
+	}
+
+	methodRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(methodRes, httptest.NewRequest(http.MethodPost, "/v1/database/views/"+viewName+":render", nil))
+	assertRESTErrorProjection(t, methodRes, http.StatusMethodNotAllowed, "method_not_allowed")
+
+	taskRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(taskRes, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+taskID+":adopt-plan", nil))
+	if taskRes.Code != http.StatusOK || !strings.Contains(taskRes.Body.String(), `"command":"task.adopt"`) || !strings.Contains(taskRes.Body.String(), `"writes":"false"`) {
+		t.Fatalf("task adopt plan response: status=%d body=%s", taskRes.Code, taskRes.Body.String())
+	}
+	if fileExistsForAPITest(filepath.Join(root, ".pinax", "task-adoptions")) {
+		t.Fatalf("task adopt plan REST route wrote ledger")
+	}
+
+	graphRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(graphRes, httptest.NewRequest(http.MethodGet, "/v1/graph/summary", nil))
+	if graphRes.Code != http.StatusOK || !strings.Contains(graphRes.Body.String(), `"command":"graph.summary"`) || !strings.Contains(graphRes.Body.String(), `"total_links"`) {
+		t.Fatalf("graph summary response: status=%d body=%s", graphRes.Code, graphRes.Body.String())
 	}
 }
 
@@ -158,6 +242,33 @@ func TestLocalAPIFolderRoutesAndWriteGate(t *testing.T) {
 	writer.Handler().ServeHTTP(renameRes, httptest.NewRequest(http.MethodPost, "/v1/folders/spaces/api:rename?target_path=spaces/api-renamed&yes=true", nil))
 	if renameRes.Code != http.StatusOK || !strings.Contains(renameRes.Body.String(), `"command":"folder.rename"`) || !fileExistsForAPITest(filepath.Join(root, "spaces", "api-renamed")) {
 		t.Fatalf("folder rename response: status=%d body=%s", renameRes.Code, renameRes.Body.String())
+	}
+}
+
+func TestLocalAPIProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "Research", NotesPrefix: "research"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	server := NewServerWithOptions(svc, root, ServerOptions{AllowWrite: true})
+
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/v1/projects/research/subprojects?subproject=preview&title=Preview&dry_run=true", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"command":"project.subproject.create"`) || !strings.Contains(res.Body.String(), `"dry_run":"true"`) {
+		t.Fatalf("subproject dry-run response: status=%d body=%s", res.Code, res.Body.String())
+	}
+	for _, path := range []string{
+		filepath.Join(root, ".pinax", "project-workspaces", "research", "preview.json"),
+		filepath.Join(root, "notes", "projects", "research", "preview"),
+	} {
+		if fileExistsForAPITest(path) {
+			t.Fatalf("subproject dry-run wrote %s", path)
+		}
 	}
 }
 
@@ -289,6 +400,8 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 	if _, err := svc.RebuildIndex(ctx, app.VaultRequest{VaultPath: root}); err != nil {
 		t.Fatalf("rebuild index: %v", err)
 	}
+	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
+	taskID := addAPITaskAdoptFixture(t, ctx, root, svc)
 	server := NewServer(svc, root)
 
 	fixtures := map[string]struct {
@@ -297,17 +410,27 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 		wantStatus  int
 		wantCommand string
 	}{
-		"rest.project.board.show": {method: http.MethodGet, path: "/v1/projects/research/board?note_display=card", wantStatus: http.StatusOK, wantCommand: "project.board.show"},
-		"rest.note.read":          {method: http.MethodGet, path: "/v1/notes/" + noteRef + "?display=card", wantStatus: http.StatusOK, wantCommand: "note.show"},
-		"rest.project.item.plan":  {method: http.MethodPost, path: "/v1/project-items/" + itemID + ":archive", wantStatus: http.StatusBadRequest, wantCommand: "project.item.plan"},
-		"rest.folder.list":        {method: http.MethodGet, path: "/v1/folders", wantStatus: http.StatusOK, wantCommand: "folder.list"},
-		"rest.folder.show":        {method: http.MethodGet, path: "/v1/folders/research", wantStatus: http.StatusOK, wantCommand: "folder.show"},
-		"rest.folder.create":      {method: http.MethodPost, path: "/v1/folders?path=api-created&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.create"},
-		"rest.folder.rename":      {method: http.MethodPost, path: "/v1/folders/research:rename?target_path=research-renamed&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.rename"},
-		"rest.folder.move":        {method: http.MethodPost, path: "/v1/folders/research:move?target_parent=api-target&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.move"},
-		"rest.folder.delete":      {method: http.MethodPost, path: "/v1/folders/research:delete?empty_only=true&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.delete"},
-		"rest.folder.adopt":       {method: http.MethodPost, path: "/v1/folders/research:adopt?purpose=notes&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.adopt"},
-		"rest.folder.repair":      {method: http.MethodPost, path: "/v1/folders:repair-plan", wantStatus: http.StatusOK, wantCommand: "folder.repair"},
+		"rest.workbench.status":          {method: http.MethodGet, path: "/v1/workbench/status", wantStatus: http.StatusOK, wantCommand: "workbench.status"},
+		"rest.project.list":              {method: http.MethodGet, path: "/v1/projects", wantStatus: http.StatusOK, wantCommand: "project.list"},
+		"rest.project.show":              {method: http.MethodGet, path: "/v1/projects/research", wantStatus: http.StatusOK, wantCommand: "project.show"},
+		"rest.project.board.show":        {method: http.MethodGet, path: "/v1/projects/research/board?note_display=card", wantStatus: http.StatusOK, wantCommand: "project.board.show"},
+		"rest.project.subproject.list":   {method: http.MethodGet, path: "/v1/projects/research/subprojects", wantStatus: http.StatusOK, wantCommand: "project.subproject.list"},
+		"rest.project.subproject.show":   {method: http.MethodGet, path: "/v1/projects/research/subprojects/stock-learning", wantStatus: http.StatusOK, wantCommand: "project.subproject.show"},
+		"rest.project.subproject.create": {method: http.MethodPost, path: "/v1/projects/research/subprojects?subproject=api-workspace&yes=true", wantStatus: http.StatusForbidden, wantCommand: "project.subproject.create"},
+		"rest.note.read":                 {method: http.MethodGet, path: "/v1/notes/" + noteRef + "?display=card", wantStatus: http.StatusOK, wantCommand: "note.show"},
+		"rest.project.item.show":         {method: http.MethodGet, path: "/v1/project-items/" + itemID, wantStatus: http.StatusOK, wantCommand: "project.item.show"},
+		"rest.project.item.plan":         {method: http.MethodPost, path: "/v1/project-items/" + itemID + ":archive", wantStatus: http.StatusBadRequest, wantCommand: "project.item.plan"},
+		"rest.task.adopt.plan":           {method: http.MethodPost, path: "/v1/tasks/" + taskID + ":adopt-plan", wantStatus: http.StatusOK, wantCommand: "task.adopt"},
+		"rest.database.view.render":      {method: http.MethodGet, path: "/v1/database/views/" + viewName + ":render", wantStatus: http.StatusOK, wantCommand: "database.view.render"},
+		"rest.graph.summary":             {method: http.MethodGet, path: "/v1/graph/summary", wantStatus: http.StatusOK, wantCommand: "graph.summary"},
+		"rest.folder.list":               {method: http.MethodGet, path: "/v1/folders", wantStatus: http.StatusOK, wantCommand: "folder.list"},
+		"rest.folder.show":               {method: http.MethodGet, path: "/v1/folders/research", wantStatus: http.StatusOK, wantCommand: "folder.show"},
+		"rest.folder.create":             {method: http.MethodPost, path: "/v1/folders?path=api-created&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.create"},
+		"rest.folder.rename":             {method: http.MethodPost, path: "/v1/folders/research:rename?target_path=research-renamed&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.rename"},
+		"rest.folder.move":               {method: http.MethodPost, path: "/v1/folders/research:move?target_parent=api-target&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.move"},
+		"rest.folder.delete":             {method: http.MethodPost, path: "/v1/folders/research:delete?empty_only=true&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.delete"},
+		"rest.folder.adopt":              {method: http.MethodPost, path: "/v1/folders/research:adopt?purpose=notes&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.adopt"},
+		"rest.folder.repair":             {method: http.MethodPost, path: "/v1/folders:repair-plan", wantStatus: http.StatusOK, wantCommand: "folder.repair"},
 		// Inbox REST fixtures
 		"rest.inbox.list":    {method: http.MethodGet, path: "/v1/inbox", wantStatus: http.StatusOK, wantCommand: "inbox.list"},
 		"rest.inbox.show":    {method: http.MethodGet, path: "/v1/inbox/note_inbox_api_1", wantStatus: http.StatusOK, wantCommand: "inbox.show"},
@@ -515,6 +638,9 @@ func newAPITestVault(t *testing.T, ctx context.Context) (string, *app.Service, s
 	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "Research", NotesPrefix: "research"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	if _, err := svc.ProjectSubprojectCreate(ctx, app.ProjectWorkspaceRequest{VaultPath: root, Project: "research", Subproject: "stock-learning", Title: "Stock Learning", Template: "scenario"}); err != nil {
+		t.Fatalf("create subproject: %v", err)
+	}
 	created, err := svc.ProjectItemAdd(ctx, app.ProjectItemRequest{VaultPath: root, Project: "research", Title: "API Item", Column: "next", Body: "secret body"})
 	if err != nil {
 		t.Fatalf("add item: %v", err)
@@ -522,6 +648,36 @@ func newAPITestVault(t *testing.T, ctx context.Context) (string, *app.Service, s
 	itemID := created.Facts["item_id"]
 	noteRef := "note" + strings.TrimPrefix(itemID, "item")
 	return root, svc, itemID, noteRef
+}
+
+func addAPIDatabaseViewFixture(t *testing.T, ctx context.Context, root string, svc *app.Service) string {
+	t.Helper()
+	writeAPIFixture(t, filepath.Join(root, "notes", "database-active.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_database_active\ntitle: Database Active\nstatus: active\nkind: reference\n---\n\nbody\n")
+	if _, err := svc.RebuildIndex(ctx, app.VaultRequest{VaultPath: root}); err != nil {
+		t.Fatalf("rebuild index: %v", err)
+	}
+	const viewName = "active-tab"
+	if _, err := svc.SaveDatabaseView(ctx, app.ViewRequest{VaultPath: root, Name: viewName, Display: "list", Query: `SELECT title, status FROM notes WHERE status = "active" LIMIT 10`}); err != nil {
+		t.Fatalf("save database view: %v", err)
+	}
+	return viewName
+}
+
+func addAPITaskAdoptFixture(t *testing.T, ctx context.Context, root string, svc *app.Service) string {
+	t.Helper()
+	writeAPIFixture(t, filepath.Join(root, "checklist.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_checklist\ntitle: Checklist Source\nproject: research\nkind: reference\nstatus: active\n---\n\n## Tasks\n\n- [ ] Review source material\n")
+	projection, err := svc.ProjectBoardShow(ctx, app.ProjectBoardRequest{VaultPath: root, Project: "research"})
+	if err != nil {
+		t.Fatalf("project board show: %v", err)
+	}
+	board := projection.Data.(map[string]any)["board"].(domain.ProjectBoard)
+	for _, item := range board.Items {
+		if item.Title == "Review source material" {
+			return item.ItemID
+		}
+	}
+	t.Fatalf("inferred checklist task not found in board: %#v", board.Items)
+	return ""
 }
 
 func assertRESTErrorProjection(t *testing.T, res *httptest.ResponseRecorder, wantStatus int, wantCode string) {

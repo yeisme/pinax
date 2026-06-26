@@ -4,6 +4,8 @@ Pinax's REST/RPC is a local projection adapter: it exposes existing application 
 
 This centralized local API mode is intentionally separate from Pinax Cloud distributed sync. Remote API clients call into one server-side vault; Cloud Sync keeps a local vault on every device and uses a backend service only to coordinate encrypted revisions, blobs, and conflicts.
 
+The long-term client target is CLI capability parity through registered routes and RPC methods. This must evolve additively: new client-visible commands are added to the capability registry, unsupported commands keep returning `remote_command_unsupported`, and local runtime-control commands remain local-only unless a dedicated safe capability is designed. See [Client CLI Parity and Realtime Sync](./client-cli-parity-and-sync.md).
+
 - `pinax api serve --port 0 --vault ./my-notes` binds to `127.0.0.1` by default, and the authentication mode defaults to a temp token (generated in process memory and printed once to stderr); it supports long-lived tokens with `--token-file` and unauthenticated mode with `--no-auth`.
 - Explicitly use `--allow-write` when folder mutation is needed.
 - REST handlers and the RPC dispatcher only perform parameter parsing, status code mapping, and projection JSON serialization; they must not directly read or write Markdown, `.pinax/`, SQLite/GORM repositories, Git, or providers.
@@ -48,15 +50,24 @@ Current stable discovery and read paths:
 ```text
 GET /
 GET /v1/capabilities
+GET /v1/projects
+GET /v1/projects/{project}
 GET /v1/projects/{slug}/board?note_display=card
+GET /v1/projects/{slug}/board?subproject=stock-learning&note_display=card
+GET /v1/projects/{slug}/subprojects
+GET /v1/projects/{slug}/subprojects/{subproject}
+GET /v1/project-items/{item_id}
 GET /v1/notes/{ref}?display=card
 GET /v1/folders?purpose=all&include_empty=true
+GET /v1/folders?under=notes/projects/research&purpose=all
 GET /v1/folders/{path}
 GET /v1/inbox
 GET /v1/inbox/{ref}
 GET /v1/drafts
 GET /v1/drafts/{ref}
 RPC Pinax.ProjectBoard.Show
+RPC Pinax.Project.Subproject.List
+RPC Pinax.Project.Subproject.Show
 RPC Pinax.Note.Read
 RPC Pinax.Folder.List
 RPC Pinax.Folder.Show
@@ -65,9 +76,11 @@ RPC Pinax.Inbox.List
 RPC Pinax.Inbox.Show
 RPC Pinax.Draft.List
 RPC Pinax.Draft.Show
+RPC Pinax.Sync.Push
+RPC Pinax.Sync.Pull
 ```
 
-`project board` and `note read` return bounded `NoteDisplay` by default. `card/detail/context` does not output complete bodies; returning the local note body is allowed only with explicit `display=body`.
+`project board` and `note read` return bounded `NoteDisplay` by default. `card/detail/context` does not output complete bodies; returning the local note body is allowed only with explicit `display=body`. `project board show` accepts optional `subproject`; when present, the adapter must return the same scoped projection as `pinax project board show <project> --subproject <slug> --json`.
 
 ## Write Plans
 
@@ -91,6 +104,15 @@ POST /v1/folders/{path}:adopt?purpose=assets&yes=true
 POST /v1/folders:repair-plan
 RPC Pinax.Folder.Create/Rename/Move/Delete/Adopt/RepairPlan
 ```
+
+Project workspace mutation routes also reuse the CLI service and stay behind the same write gates:
+
+```text
+POST /v1/projects/{project}/subprojects?subproject={slug}&title={title}&template=scenario&yes=true
+RPC Pinax.Project.Subproject.Create
+```
+
+The default readonly server returns `write_disabled` for project workspace creates even if `yes=true` is present. When `--allow-write` is enabled, missing confirmation returns `approval_required`; successful writes create only the standard workspace directories and CLI-authored registry through the application service.
 
 Inbox/Draft mutation routes reuse the lifecycle transition service:
 
@@ -129,7 +151,8 @@ pinax note list --status active --limit 20 --json
 - An explicit `--vault` is rejected in remote mode with `remote_vault_conflict`; this prevents accidental fallback to a local vault.
 - Unsupported commands are rejected with `remote_command_unsupported`; remote mode must not silently execute unsupported commands locally.
 - When remote mode comes only from `remote.api_url`, local control/configuration commands (`config`, `api`, `token`, `profile`, `vault`, `cloud`, and `sync`) remain local so users can inspect/update endpoints and manage local-first Cloud Sync state without being hijacked by Remote API Mode.
-- Supported first-phase commands are the registered RPC capabilities for project board show, note list/read/show/preview, project item move/archive plan, folder list/show/create/rename/move/delete/adopt/repair, inbox list/show/capture/promote/discard, and draft list/show/create/promote/archive/discard.
+- Supported first-phase commands are the registered RPC capabilities for project board show, project subproject list/show/create, note list/read/show/preview, project item read and move/archive plan, folder list/show/create/rename/move/delete/adopt/repair, inbox list/show/capture/promote/discard, draft list/show/create/promote/archive/discard, and explicit `sync push` / `sync pull`.
+- Full CLI parity is tracked as a capability-by-capability expansion, not a fallback to arbitrary local execution. Read/status/plan commands should be added before write/apply/deploy commands; risky writes must keep the same approval, snapshot, dry-run, receipt, and redaction gates as the CLI path.
 - `--json` renders the returned Projection envelope directly as JSON-only stdout; `--agent` renders the same Projection as key=value lines.
 
 ## Transport Status

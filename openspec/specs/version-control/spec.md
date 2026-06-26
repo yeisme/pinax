@@ -32,6 +32,13 @@ VersionBackend SHALL provide version evidence only and SHALL NOT become the trut
 - **THEN** Pinax SHALL record content hashes, file sizes, modified times, index epoch when available, and record ledger sequence when available
 - **AND** it SHALL NOT require Git, network access, provider credentials, or external binaries.
 
+#### Scenario: Restore from local snapshot without Git-tracked note content
+- **GIVEN** a vault has metadata-only Git ignore rules and a note file not tracked by Git
+- **AND** the user runs `pinax version snapshot --vault <vault> --message <msg> --json`
+- **WHEN** the note is corrupted and the user generates a restore plan using the returned `snapshot_id`
+- **THEN** Pinax SHALL restore the historical content from `.pinax/version/objects/`
+- **AND** the restore apply projection SHALL report `local_write=true`, `remote_write=false`, `version_backend=local`, and a content hash.
+
 #### Scenario: Unsupported historical read fails clearly
 - **WHEN** a user runs `pinax version show notes/a.md --revision abc123 --vault ./my-notes --json`
 - **AND** the active backend does not support read-at-revision
@@ -56,4 +63,3 @@ Pinax SHALL make version restore a planned workflow before it writes Markdown, a
 - **WHEN** `pinax version restore yeisme --revision abc123 --plan --vault ./my-notes --json` matches multiple notes or assets
 - **THEN** Pinax SHALL fail with stable error code `vault_object_ref_ambiguous`
 - **AND** stdout SHALL include candidate paths, object kinds, managed statuses, and match fields.
-

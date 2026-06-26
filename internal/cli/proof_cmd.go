@@ -19,6 +19,8 @@ func addProofCommands(root *cobra.Command, ctx commandBuildContext) {
 	loopCmd := &cobra.Command{
 		Use:   "loop run",
 		Short: "Run the full proof loop and emit one projection with a proof_loop_run_id",
+		Example: "  pinax proof loop run --vault ./my-notes --json\n" +
+			"  pinax proof loop run --vault ./my-notes --apply --yes --json",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projection, err := ctx.svc.ProofLoopRun(cmd.Context(), app.ProofLoopRunRequest{VaultPath: *ctx.vaultPath, Apply: proofApply, Yes: proofYes})
 			return ctx.renderProjection(cmd, projection, err)

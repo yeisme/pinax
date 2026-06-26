@@ -60,6 +60,23 @@ func addKBCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 
+	providerCmd := &cobra.Command{Use: "provider", Short: "Inspect semantic embedding providers"}
+	providerListCmd := &cobra.Command{Use: "list", Short: "List semantic embedding providers", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.KBProviderList(cmd.Context(), kbIndexRequest(ctx, semantic.DefaultBackend, "", "", 0, ""))
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	var doctorProvider string
+	var doctorModel string
+	providerDoctorCmd := &cobra.Command{Use: "doctor <provider>", Short: "Check a semantic embedding provider", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		doctorProvider = args[0]
+		projection, err := ctx.svc.KBProviderDoctor(cmd.Context(), kbIndexRequest(ctx, semantic.DefaultBackend, doctorProvider, doctorModel, 0, ""))
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	providerDoctorCmd.ValidArgsFunction = staticCompletion("provider", "gemini", "openai", "ollama", "fake")
+	providerDoctorCmd.Flags().StringVar(&doctorModel, "model", "", "Embedding model to check")
+	_ = providerDoctorCmd.RegisterFlagCompletionFunc("model", staticCompletion("model", semantic.DefaultModel, semantic.OpenAIDefaultModel, semantic.OllamaDefaultModel, semantic.FakeProviderModel))
+	providerCmd.AddCommand(providerListCmd, providerDoctorCmd)
+
 	searchCmd := &cobra.Command{Use: "search <query>", Short: "Search the local semantic knowledge base", RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "kb.search", "argument_required", "kb search requires a query", "pinax kb search <query> --vault <vault>")
@@ -80,7 +97,7 @@ func addKBCommands(root *cobra.Command, ctx commandBuildContext) {
 	addKBSearchFlags(contextCmd, &contextBackend, &contextProvider, &contextModel)
 	contextCmd.Flags().IntVar(&contextLimit, "limit", 8, "Limit bounded context chunks")
 
-	kbCmd.AddCommand(importCmd, rebuildCmd, refreshCmd, doctorCmd, searchCmd, contextCmd)
+	kbCmd.AddCommand(importCmd, rebuildCmd, refreshCmd, doctorCmd, providerCmd, searchCmd, contextCmd)
 	root.AddCommand(kbCmd)
 }
 
@@ -91,10 +108,10 @@ func kbIndexRequest(ctx commandBuildContext, backend, provider, model string, li
 
 func addKBIndexFlags(cmd *cobra.Command, backend, provider, model *string) {
 	cmd.Flags().StringVar(backend, "backend", semantic.DefaultBackend, "Semantic vector backend")
-	cmd.Flags().StringVar(provider, "provider", semantic.DefaultProvider, "Embedding provider: gemini or fake")
+	cmd.Flags().StringVar(provider, "provider", semantic.DefaultProvider, "Embedding provider: gemini, openai, ollama, or fake")
 	cmd.Flags().StringVar(model, "model", semantic.DefaultModel, "Embedding model")
 	_ = cmd.RegisterFlagCompletionFunc("backend", staticCompletion("backend", semantic.DefaultBackend))
-	_ = cmd.RegisterFlagCompletionFunc("provider", staticCompletion("provider", "gemini", "fake"))
+	_ = cmd.RegisterFlagCompletionFunc("provider", staticCompletion("provider", "gemini", "openai", "ollama", "fake"))
 }
 
 func addKBSearchFlags(cmd *cobra.Command, backend, provider, model *string) {
@@ -102,5 +119,5 @@ func addKBSearchFlags(cmd *cobra.Command, backend, provider, model *string) {
 	cmd.Flags().StringVar(provider, "provider", "", "Override embedding provider; defaults to the indexed provider")
 	cmd.Flags().StringVar(model, "model", "", "Override embedding model; defaults to the indexed model")
 	_ = cmd.RegisterFlagCompletionFunc("backend", staticCompletion("backend", semantic.DefaultBackend))
-	_ = cmd.RegisterFlagCompletionFunc("provider", staticCompletion("provider", "gemini", "fake"))
+	_ = cmd.RegisterFlagCompletionFunc("provider", staticCompletion("provider", "gemini", "openai", "ollama", "fake"))
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/domain"
 )
 
 func TestRemoteCapabilitiesExposeProjectionCommandsAndGates(t *testing.T) {
@@ -11,12 +13,50 @@ func TestRemoteCapabilitiesExposeProjectionCommandsAndGates(t *testing.T) {
 	byID := map[string]string{}
 	for _, cap := range caps {
 		byID[cap.ID] = cap.Command
+		if cap.UIGroup == "" || cap.BodyExposureDefault == "" || cap.WriteGate == "" || cap.CopyCommand == "" {
+			t.Fatalf("capability %s missing web-facing metadata: %#v", cap.ID, cap)
+		}
 		if cap.ID == "project.item.plan" && (!cap.ApprovalRequired || !cap.SnapshotRequired) {
 			t.Fatalf("project.item.plan gates missing: %#v", cap)
 		}
 	}
 	if byID["note.read"] != "note.show" || byID["project.board.show"] != "project.board.show" {
 		t.Fatalf("capability commands = %#v", byID)
+	}
+}
+
+func TestRemoteCapabilitiesExposeWebFacingMetadata(t *testing.T) {
+	caps := RemoteCapabilities()
+	byID := map[string]any{}
+	for _, cap := range caps {
+		byID[cap.ID] = cap
+	}
+	noteRead := byID["note.read"].(domain.RemoteCapability)
+	if noteRead.UIGroup != "editor.note" || noteRead.BodyExposureDefault != "explicit" || noteRead.WriteGate != "readonly" {
+		t.Fatalf("note.read web metadata = %#v", noteRead)
+	}
+	projectPlan := byID["project.item.plan"].(domain.RemoteCapability)
+	if projectPlan.UIGroup != "proof.gate" || projectPlan.WriteGate != "approval_and_snapshot" {
+		t.Fatalf("project.item.plan web metadata = %#v", projectPlan)
+	}
+	databaseView := byID["database.view.render"].(domain.RemoteCapability)
+	if databaseView.UIGroup != "search.view" || databaseView.BodyExposureDefault != "none" {
+		t.Fatalf("database.view.render web metadata = %#v", databaseView)
+	}
+	configDoctor := byID["config.doctor"].(domain.RemoteCapability)
+	if configDoctor.UIGroup != "settings.control" || configDoctor.WriteGate != "readonly" || configDoctor.CopyCommand != "pinax config doctor --vault <vault> --json" {
+		t.Fatalf("config.doctor web metadata = %#v", configDoctor)
+	}
+	configSet := byID["config.set"].(domain.RemoteCapability)
+	if configSet.UIGroup != "settings.control" || configSet.WriteGate != "explicit_scope" || configSet.Readonly {
+		t.Fatalf("config.set web metadata = %#v", configSet)
+	}
+	canvasLayout := byID["canvas.layout.metadata"].(domain.RemoteCapability)
+	if canvasLayout.UIGroup != "canvas.view" || !canvasLayout.Readonly || canvasLayout.BodyAllowed || canvasLayout.BodyExposureDefault != "none" {
+		t.Fatalf("canvas.layout.metadata web metadata = %#v", canvasLayout)
+	}
+	if canvasLayout.LocalOnlyReason != "future-client-only" || canvasLayout.CopyCommand != "pinax api routes --vault <vault> --json" {
+		t.Fatalf("canvas.layout.metadata future-client boundary = %#v", canvasLayout)
 	}
 }
 
@@ -84,6 +124,9 @@ func TestAPISchemaExportMatchesRemoteRouteRegistry(t *testing.T) {
 			"x-pinax-body-allowed":      route.BodyAllowed,
 			"x-pinax-approval-required": route.ApprovalRequired,
 			"x-pinax-snapshot-required": route.SnapshotRequired,
+			"x-pinax-ui-group":          route.UIGroup,
+			"x-pinax-body-exposure":     route.BodyExposureDefault,
+			"x-pinax-write-gate":        route.WriteGate,
 		}
 		for key, want := range wantExtensions {
 			if got := operation[key]; got != want {

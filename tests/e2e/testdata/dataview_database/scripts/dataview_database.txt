@@ -36,6 +36,24 @@ exec sh -c 'pinax database view render dv-active --vault vault --json > view-ren
 validate-json-envelope view-render.json
 exec grep -q '"command":"database.view.render"' view-render.json
 
+exec sh -c 'pinax database view save board-active --display board --query "SELECT title, status FROM notes LIMIT 5" --board-column status --vault vault --json > board-save.json'
+validate-json-envelope board-save.json
+exec grep -q '"display":"board"' board-save.json
+exec grep -q '"kind": "board"' vault/.pinax/views.json
+! exec grep -q '"rows"' vault/.pinax/views.json
+exec sh -c 'pinax database view render board-active --vault vault --json > board-render.json'
+validate-json-envelope board-render.json
+exec grep -q '"display":"board"' board-render.json
+exec grep -q '"board_columns":"' board-render.json
+
+exec sh -c 'pinax database view save calendar-active --display calendar --query "SELECT title, due FROM notes LIMIT 5" --calendar-field due --vault vault --json > calendar-save.json'
+validate-json-envelope calendar-save.json
+exec grep -q '"display":"calendar"' calendar-save.json
+exec sh -c 'pinax database view render calendar-active --vault vault --json > calendar-render.json'
+validate-json-envelope calendar-render.json
+exec grep -q '"display":"calendar"' calendar-render.json
+exec grep -q '"calendar_events":"' calendar-render.json
+
 exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_dashboard" "title: Dashboard" "status: active" "---" "" "# Dashboard" "" "\`\`\`pinax-dataview active" "TABLE title, status FROM #pinax LIMIT 5" "\`\`\`" "" "<!-- pinax:managed name=active -->" "DATAVIEW_DATABASE_BODY_SENTINEL" "<!-- /pinax:managed -->" "" "user text" > vault/dashboard.md'
 exec sh -c 'pinax note preview Dashboard --vault vault --json > preview.json'
 validate-json-envelope preview.json
@@ -47,5 +65,16 @@ exec grep -q '"changed_blocks":"1"' refresh.json
 ! exec grep -q 'DATAVIEW_DATABASE_BODY_SENTINEL' vault/dashboard.md
 exec grep -q '| Active | active |' vault/dashboard.md
 exec grep -q 'user text' vault/dashboard.md
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_tabs" "title: Database Tabs" "status: active" "---" "" "# Database Tabs" "" "\`\`\`pinax-database-view dv-active" "\`\`\`" "" "\`\`\`pinax-database-view calendar-active" "\`\`\`" "" "tab user text" > vault/database-tabs.md'
+exec sh -c 'pinax note show "Database Tabs" --view rendered --vault vault --json > database-tabs.json'
+validate-json-envelope database-tabs.json
+exec grep -q '"database_tabs":"2"' database-tabs.json
+exec grep -q '"name":"dv-active"' database-tabs.json
+exec grep -q '"name":"calendar-active"' database-tabs.json
+exec grep -q '"display":"calendar"' database-tabs.json
+exec grep -F -q '```pinax-database-view dv-active' vault/database-tabs.md
+! exec grep -q '"display":"calendar"' vault/database-tabs.md
+! exec grep -q '"rows"' vault/.pinax/views.json
 
 ! exec grep -R 'Authorization: Bearer\|raw prompt\|provider payload\|full chain-of-thought' *.json vault/.pinax

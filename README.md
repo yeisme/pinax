@@ -33,9 +33,10 @@ Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer fo
 
 | Area | Status |
 | --- | --- |
-| Local Markdown vault, notes, journals, inbox/drafts, templates, search, links/backlinks, assets, project boards, repair/organize plans | Supported |
+| Local Markdown vault, notes, journals, inbox/drafts, templates, search, links/backlinks, assets, project workspaces/boards, database saved views, repair/organize plans | Supported |
 | CLI output modes: default summary, `--agent`, `--json`, `--events`, `--explain` | Supported |
-| Local dashboard, read-only MCP, localhost REST/RPC adapter | Supported |
+| Local dashboard, read-only MCP, localhost REST/RPC adapter, and workspace/task/database/graph read projections | Supported |
+| Obsidian-style vault compatibility: wikilinks/backlinks, properties, daily managed blocks, templates, attachments, dataview blocks, `.obsidian/` ignore | Preview |
 | Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
 | Provider automation and briefing delivery | Experimental |
 | Dynamic plugin manifest, registry, permission, and runner contracts | Experimental |
@@ -53,12 +54,12 @@ Install from source:
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.0`):
+Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.2`):
 
 ```bash
 # linux x86_64 (adjust os/arch for your platform: darwin, windows; x86_64, aarch64)
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.0/pinax_0.1.0_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.0/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.2/pinax_0.1.2_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.2/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
@@ -189,6 +190,22 @@ pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
 
 Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync, daily briefing, provider expansion and hosted platform capabilities are separate advanced workflows, not part of this local proof loop.
 
+## Workspace And Database Views
+
+Project workspaces, task adoption, and database saved views are local-first projections over the Markdown vault:
+
+```bash
+pinax project create research --name "Research" --notes-prefix notes/research --vault ./my-notes --json
+pinax project subproject create research stock-learning --title "Stock Learning" --template scenario --vault ./my-notes --json
+pinax project item add research "Read annual report" --subproject stock-learning --column next --vault ./my-notes --json
+pinax task adopt task_abc123 --plan --vault ./my-notes --json
+
+pinax database view save active-table --display table --query 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --vault ./my-notes --json
+pinax database view render active-table --vault ./my-notes --json
+```
+
+`pinax-database-view <name>` Markdown fences render as bounded tabs in `pinax note show --view rendered`; saved view registries store configuration only, not result rows. Dashboard, MCP, REST/RPC, and remote CLI mode consume the same application service projections.
+
 ## Local vault workflow
 
 Initialize a Markdown vault:
@@ -253,17 +270,21 @@ Manage multiple projects inside one vault:
 pinax project create research --name "Research" --notes-prefix notes/research --vault ./my-notes
 pinax project list --vault ./my-notes --json
 pinax project switch research --vault ./my-notes
+pinax project subproject create research stock-learning --title "Stock Learning" --template scenario --vault ./my-notes --json
+pinax project subproject show research stock-learning --vault ./my-notes --json
 ```
 
 View and maintain the local project board workspace. The board comes from local Markdown, project metadata, SQLite/GORM projections, and saved planning snapshots; it is not a remote Todo provider, and it does not treat TaskBridge as the source of truth:
 
 ```bash
 pinax project board show research --vault ./my-notes --json
+pinax project board show research --subproject stock-learning --compact --vault ./my-notes
 pinax project board show research --note-display card --vault ./my-notes
 pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault ./my-notes --json
+pinax project board configure research --subproject stock-learning --columns inbox,next,doing,blocked,review,done --vault ./my-notes --json
 pinax project board plan research --save --vault ./my-notes --json
 pinax project board export research --format markdown --vault ./my-notes --json
-pinax project item add research "Implement local board" --column next --body "Controlled work item" --vault ./my-notes --json
+pinax project item add research "Implement local board" --subproject stock-learning --column next --labels local,planning --milestone q3 --priority high --body "Controlled work item" --vault ./my-notes --json
 pinax project item move research/Implement local board.md doing --vault ./my-notes --json
 pinax version snapshot --vault ./my-notes --message "snapshot before project item archive"
 pinax project item archive research/Implement local board.md --yes --vault ./my-notes --json
@@ -280,6 +301,7 @@ pinax note list --tag research --status active --recent --limit 20 --vault ./my-
 pinax note read "Research Log" --vault ./my-notes --json
 pinax note read "Research Log" --display card --vault ./my-notes --json
 pinax note read "Research Log" --display body --vault ./my-notes --json
+pinax note preview "Research Log" --vault ./my-notes
 pinax note edit "Research Log" --editor "$EDITOR" --vault ./my-notes
 pinax note rename "Research Log" "Pinax Research Log" --vault ./my-notes
 pinax note move "Pinax Research Log" archive --vault ./my-notes
@@ -295,6 +317,8 @@ User-visible note paths use vault-relative canonical paths: by default, ordinary
 `note show/read/edit/rename/move/archive/delete/tag` all support note IDs, paths inside the vault, or unique titles; when a title has multiple candidates, `note_ref_ambiguous` is returned to avoid accidental edits. `note edit/open/new --open` supports editors with arguments, such as `--editor "code --wait"`; `note list --recent` means sorting by update time, not implicitly filtering old notes; `note delete` moves to `.pinax/trash/YYYYMMDD/` by default and generates a unique target on same-name conflicts. Real deletion requires passing both `--hard --yes`.
 
 `note read/show --display card|detail|context|body` uses the shared `NoteDisplay` projection. `card/detail/context` do not output the full body and are suitable for agents, dashboards, MCP, and project boards; only `--display body` puts the body into the local JSON projection.
+
+`note preview` is for direct local reading: default human output renders only the preview body and does not print a standalone success table. Empty successful previews are silent; automation should use `--json` or `--agent` when it needs the success envelope and resolver facts.
 
 Use notebook core workflows to capture, index, browse, and search:
 
@@ -354,9 +378,16 @@ Manage Markdown templates and generate notes from templates:
 pinax template init --vault ./my-notes
 pinax template list --pack starter --vault ./my-notes --json
 pinax template recommend --intent "meeting sync" --vault ./my-notes --json
+pinax template recommend --intent "写小说" --vault ./my-notes --json
+pinax template recommend --intent "便签" --vault ./my-notes --json
 pinax journal daily show --date 2026-06-08 --template journal.daily --vault ./my-notes --json
 pinax index page create home --template index.home --vault ./my-notes --json
+pinax index page create ideas --template index.ideas --vault ./my-notes --json
 pinax note add "Client Meeting" --template meeting.notes --tags meeting,client --vault ./my-notes --json
+pinax note add "某篇小说是怎么写成的" --template idea.research_seed --vault ./my-notes --json
+pinax note add "临时线索" --template sticky.capture --vault ./my-notes --json
+pinax note add "子项目看板线索" --template sticky.project_signal --project research --folder inbox --vault ./my-notes --json
+pinax note add "Transformer Paper" --template reading.paper --vault ./my-notes --json
 pinax template create "Video Learning" --vault ./my-notes
 pinax template create meeting --body "# {{title}} - {{client}}" --vault ./my-notes
 pinax template create weekly --engine go-template --body "# {{ .Title }}
@@ -374,7 +405,7 @@ pinax template delete weekly --vault ./my-notes --yes
 
 Templates are stored in `.pinax/templates/*.md` and are ordinary Markdown text. Legacy templates continue to support simple tokens such as `{{title}}` and `{{client}}`; after declaring `schema_version: pinax.template.v2` and `engine: go-template`, they use Go `text/template` syntax. Use `template inspect` to view variable schemas, query facts, and render runs. Template functions are allowlisted: they do not execute scripts, read environment variables, or access the network.
 
-Built-in templates are divided into journal, index, and note starter packs: `journal.daily|weekly|monthly` create root-level journals, `index.home` and topic index pages only refresh `pinax:managed` managed blocks, and starter templates such as `note.quick`, `inbox.capture`, and `learning.video` are suitable for quick capture. `template list --pack starter` and `template recommend --intent <intent>` are the recommended entry points for choosing templates; JSON/agent output from `template inspect <name>` gives next-step actions, and template names, `--template`, `--var`, and render runs support shell Tab completion.
+Built-in templates are divided into journal, index, idea seed, sticky capture, and note starter packs: `journal.daily|weekly|monthly` create root-level journals, `index.home` and topic index pages only refresh `pinax:managed` managed blocks, `idea.*` templates park Chinese idea seeds with `kind: idea` and `status: parked`, `sticky.*` templates create short inbox notes with `kind: sticky` and `status: inbox` without writing managed board metadata, and detailed Chinese templates such as `reading.paper`, `reading.novel`, `writing.novel`, `media.anime`, `media.drama`, `game.playlog`, `learning.video`, and `learning.book` are suitable for deeper notes. `template list --pack starter` and `template recommend --intent <intent>` are the recommended entry points for choosing templates; JSON/agent output from `template inspect <name>` gives next-step actions, and template names, `--template`, `--var`, and render runs support shell Tab completion.
 
 Query-backed templates use Pinax SQL, not raw SQLite. Templates can declare `language: sql` in `queries` in v2 frontmatter, or use `pinax-sql` fenced blocks in the body; `template inspect` only explains, while `template preview/render` executes bounded queries and puts results into `.Queries`, such as `{{ table .Queries.active }}` or `{{ list .Queries.active "title" }}`. Note rendered views also support safe `pinax-dataview` fenced blocks.
 
@@ -466,6 +497,17 @@ pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace person
 pinax sync push --target cloud --vault ./device-a --yes --json
 pinax sync pull --target cloud --vault ./device-b --yes --json
 ```
+
+Run local automatic sync on a configured device:
+
+```bash
+pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon status --vault ./device-a --json
+pinax sync daemon logs --vault ./device-a --limit 20 --json
+pinax sync daemon stop --vault ./device-a
+```
+
+The daemon is a local process. On startup it immediately runs one pull-before-push sync cycle, then watches local vault changes and polls the remote Cloud Sync head. Default human output shows live progress lines; `--events` emits an NDJSON stream; redacted daemon state and events are persisted under `.pinax/sync-daemon/`.
 
 S3-compatible storage uses the same Cloud Sync protocol without a Pinax Cloud Server:
 

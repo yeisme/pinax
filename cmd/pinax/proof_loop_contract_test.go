@@ -1,13 +1,10 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	gitstore "github.com/yeisme/pinax/internal/git"
 )
 
 // proofLoopCommand is a proof loop command shape exercised by the contract
@@ -304,14 +301,13 @@ func TestVersionRestoreApplyContractAcrossModes(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	noteRel := "notes/contract.md"
 	writeCLIFixture(t, filepath.Join(root, noteRel), "# Contract\n\nbaseline\n")
-	if err := gitstore.Snapshot(context.Background(), root, "baseline"); err != nil {
-		t.Fatalf("baseline git snapshot: %v", err)
-	}
+	snapshotOut := runCLI(t, "version", "snapshot", "--vault", root, "--message", "baseline", "--json")
+	snapshotID := jsonParseFacts(t, snapshotOut)["snapshot_id"].(string)
 
 	// 每个 apply 前：损坏文件 → 生成 fresh plan → apply。apply 会恢复内容，下一轮再损坏。
 	setupAndApply := func(mode string) string {
 		writeCLIFixture(t, filepath.Join(root, noteRel), "# Contract\n\ncorrupted "+mode+"\n")
-		planOut := runCLI(t, "version", "restore", noteRel, "--revision", "HEAD", "--plan", "--vault", root, "--json")
+		planOut := runCLI(t, "version", "restore", noteRel, "--revision", snapshotID, "--plan", "--vault", root, "--json")
 		planID := jsonParseFacts(t, planOut)["plan_id"].(string)
 		args := []string{"version", "restore", "apply", "--vault", root, "--plan", planID, "--yes"}
 		if mode != "" {

@@ -36,6 +36,7 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 		},
 	}
 	installCmd.Flags().StringVar(&scope, "scope", "vault", "Plugin install scope: vault")
+	_ = installCmd.RegisterFlagCompletionFunc("scope", staticCompletion("scope", "vault"))
 	pluginCmd.AddCommand(installCmd)
 
 	listCmd := &cobra.Command{
@@ -49,9 +50,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	pluginCmd.AddCommand(listCmd)
 
 	inspectCmd := &cobra.Command{
-		Use:   "inspect <plugin-id>",
-		Short: "Inspect an installed plugin",
-		Args:  cobra.ExactArgs(1),
+		Use:               "inspect <plugin-id>",
+		Short:             "Inspect an installed plugin",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginInspect(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0]})
 			return ctx.renderProjection(cmd, projection, err)
@@ -60,9 +62,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	pluginCmd.AddCommand(inspectCmd)
 
 	enableCmd := &cobra.Command{
-		Use:   "enable <plugin-id>",
-		Short: "Enable an installed plugin after explicit approval",
-		Args:  cobra.ExactArgs(1),
+		Use:               "enable <plugin-id>",
+		Short:             "Enable an installed plugin after explicit approval",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginEnable(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0], Yes: yes})
 			return ctx.renderProjection(cmd, projection, err)
@@ -72,9 +75,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	pluginCmd.AddCommand(enableCmd)
 
 	disableCmd := &cobra.Command{
-		Use:   "disable <plugin-id>",
-		Short: "Disable an installed plugin after explicit approval",
-		Args:  cobra.ExactArgs(1),
+		Use:               "disable <plugin-id>",
+		Short:             "Disable an installed plugin after explicit approval",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginDisable(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0], Yes: yes})
 			return ctx.renderProjection(cmd, projection, err)
@@ -85,9 +89,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	permissionsCmd := &cobra.Command{Use: "permissions", Short: "Manage plugin permission grants"}
 	permissionsListCmd := &cobra.Command{
-		Use:   "list <plugin-id>",
-		Short: "List permission grants for an installed plugin",
-		Args:  cobra.ExactArgs(1),
+		Use:               "list <plugin-id>",
+		Short:             "List permission grants for an installed plugin",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginPermissionsList(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0]})
 			return ctx.renderProjection(cmd, projection, err)
@@ -95,9 +100,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	permissionsCmd.AddCommand(permissionsListCmd)
 	permissionsGrantCmd := &cobra.Command{
-		Use:   "grant <plugin-id> <permission>",
-		Short: "Grant a permission to a plugin capability after approval",
-		Args:  cobra.ExactArgs(2),
+		Use:               "grant <plugin-id> <permission>",
+		Short:             "Grant a permission to a plugin capability after approval",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginPermissionsGrant(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0], Permission: args[1], Capability: capability, Yes: yes})
 			return ctx.renderProjection(cmd, projection, err)
@@ -105,11 +111,13 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	permissionsGrantCmd.Flags().StringVar(&capability, "capability", "", "Capability id the permission applies to")
 	permissionsGrantCmd.Flags().BoolVar(&yes, "yes", false, "Approve permission grant")
+	_ = permissionsGrantCmd.RegisterFlagCompletionFunc("capability", pluginRunCompletion(func() string { return *ctx.vaultPath }))
 	permissionsCmd.AddCommand(permissionsGrantCmd)
 	permissionsRevokeCmd := &cobra.Command{
-		Use:   "revoke <plugin-id> <permission>",
-		Short: "Revoke a plugin permission grant after approval",
-		Args:  cobra.ExactArgs(2),
+		Use:               "revoke <plugin-id> <permission>",
+		Short:             "Revoke a plugin permission grant after approval",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginPermissionsRevoke(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0], Permission: args[1], Capability: capability, Yes: yes})
 			return ctx.renderProjection(cmd, projection, err)
@@ -117,6 +125,7 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	permissionsRevokeCmd.Flags().StringVar(&capability, "capability", "", "Capability id the permission applies to")
 	permissionsRevokeCmd.Flags().BoolVar(&yes, "yes", false, "Approve permission revoke")
+	_ = permissionsRevokeCmd.RegisterFlagCompletionFunc("capability", pluginRunCompletion(func() string { return *ctx.vaultPath }))
 	permissionsCmd.AddCommand(permissionsRevokeCmd)
 	pluginCmd.AddCommand(permissionsCmd)
 
@@ -131,9 +140,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	pluginCmd.AddCommand(doctorCmd)
 
 	uninstallCmd := &cobra.Command{
-		Use:   "uninstall <plugin-id>",
-		Short: "Remove an installed plugin after explicit approval",
-		Args:  cobra.ExactArgs(1),
+		Use:               "uninstall <plugin-id>",
+		Short:             "Remove an installed plugin after explicit approval",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: pluginIDCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginUninstall(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0], Yes: yes})
 			return ctx.renderProjection(cmd, projection, err)
@@ -143,9 +153,10 @@ func addPluginCommands(root *cobra.Command, ctx commandBuildContext) {
 	pluginCmd.AddCommand(uninstallCmd)
 
 	runCmd := &cobra.Command{
-		Use:   "run <plugin-id> <capability-id>",
-		Short: "Run an enabled plugin capability through the plugin runtime",
-		Args:  cobra.ExactArgs(2),
+		Use:               "run <plugin-id> <capability-id>",
+		Short:             "Run an enabled plugin capability through the plugin runtime",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: pluginRunCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.PluginRun(cmd.Context(), app.PluginRequest{VaultPath: *ctx.vaultPath, PluginID: args[0], Capability: args[1], DryRun: dryRun})
 			return ctx.renderProjection(cmd, projection, err)

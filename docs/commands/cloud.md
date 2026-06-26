@@ -28,6 +28,8 @@ The word `cloud` names the sync protocol, not necessarily a hosted Pinax Cloud s
 
 The distributed design is similar to Obsidian Sync: laptop, phone, and desktop all keep local vaults. The transport stores encrypted sync artifacts and revision order; it does not become the plaintext note source of truth.
 
+`pinax sync daemon` is the local automation layer on top of this protocol. It runs on each device, watches local vault changes, polls the remote Cloud Sync head for remote changes, and then invokes the same pull/push engine as explicit CLI commands. It is not a hosted Pinax Cloud service, and it does not give the transport plaintext note access.
+
 ## User-runnable setup examples
 
 Server transport configuration:
@@ -132,6 +134,16 @@ pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace person
 pinax sync push --target cloud --vault ./device-a --yes --json
 pinax sync pull --target cloud --vault ./device-b --yes --json
 ```
+
+Local daemon preview:
+
+```bash
+pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon status --vault ./device-a --json
+pinax sync daemon stop --vault ./device-a
+```
+
+The first daemon release runs an immediate startup sync cycle, then uses remote-head polling for remote changes and a local watcher for vault file changes. Local runtime state and redacted daemon events are stored under `.pinax/sync-daemon/` and must not be synced as vault content.
 
 The push may report `"remote_write":true` only after the direct transport commits the head revision. The pull reports `"remote_write":false` because it writes the local vault from the committed remote revision.
 

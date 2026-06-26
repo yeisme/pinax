@@ -74,6 +74,50 @@ func TestKBRejectsUnknownProvider(t *testing.T) {
 	assertJSONErrorCode(t, out, "provider_invalid")
 }
 
+func TestKBProviderListAndDoctorContracts(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	listOut := runCLI(t, "kb", "provider", "list", "--vault", root, "--json")
+	assertJSONCommandStatus(t, listOut, "kb.provider.list", "success")
+	for _, want := range []string{`"name":"gemini"`, `"name":"openai"`, `"name":"ollama"`, `"name":"fake"`, `"credential_source":"env:OPENAI_API_KEY"`, `"local_only":true`} {
+		if !strings.Contains(listOut, want) {
+			t.Fatalf("provider list missing %q:\n%s", want, listOut)
+		}
+	}
+	for _, forbidden := range []string{"sk-", "Authorization", "Bearer"} {
+		if strings.Contains(listOut, forbidden) {
+			t.Fatalf("provider list leaked %q:\n%s", forbidden, listOut)
+		}
+	}
+
+	agentOut := runCLI(t, "kb", "provider", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=kb.provider.list", "fact.providers=4", "fact.default_provider=gemini"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("provider list agent missing %q:\n%s", want, agentOut)
+		}
+	}
+
+	fakeDoctor := runCLI(t, "kb", "provider", "doctor", "fake", "--vault", root, "--json")
+	assertJSONCommandStatus(t, fakeDoctor, "kb.provider.doctor", "success")
+	if !strings.Contains(fakeDoctor, `"available":true`) || !strings.Contains(fakeDoctor, `"provider":"fake"`) {
+		t.Fatalf("fake doctor output invalid:\n%s", fakeDoctor)
+	}
+
+	missingOpenAI, err := runCLIExpectError("kb", "provider", "doctor", "openai", "--vault", root, "--json")
+	if err == nil {
+		t.Fatalf("openai doctor without key should fail:\n%s", missingOpenAI)
+	}
+	assertJSONErrorCode(t, missingOpenAI, "provider_not_configured")
+	for _, forbidden := range []string{"Authorization", "Bearer", "raw_provider_payload", "provider_payload"} {
+		if strings.Contains(missingOpenAI, forbidden) {
+			t.Fatalf("provider doctor leaked %q:\n%s", forbidden, missingOpenAI)
+		}
+	}
+}
+
 func TestKBImportTextCopiesIntoVaultAndKeepsDryRunReadOnly(t *testing.T) {
 	root := t.TempDir()
 	source := t.TempDir()

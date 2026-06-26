@@ -88,6 +88,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 
 func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
 	theme := newSummaryThemeWithOptions(w, opts)
+	if p.Command == "note.preview" && p.Status == "success" && p.Error == nil {
+		return renderSummaryDataWithOptions(w, theme, p, opts)
+	}
 	if p.Status == "success" && p.Error == nil {
 		if err := renderSummaryTable(w, theme, []string{"Highlights"}, [][]string{{defaultString(p.Summary, "-")}}); err != nil {
 			return err
@@ -329,7 +332,7 @@ func summaryTableStyle(theme summaryTheme, header []string) charmtable.StyleFunc
 
 func isNumericSummaryColumn(header string) bool {
 	switch header {
-	case "Count", "Share", "Lines", "Code", "Comments", "Blank":
+	case "Count", "Share", "Lines", "Code", "Comments", "Blank", "Notes", "Assets", "Depth":
 		return true
 	default:
 		return false
@@ -405,6 +408,7 @@ func summaryFactLabel(key string) string {
 		"capabilities":             "Capabilities",
 		"changed":                  "Changed",
 		"changed_blocks":           "Changed blocks",
+		"child_folders":            "Child folders",
 		"columns":                  "Columns",
 		"configured":               "Configured",
 		"conflicts":                "Conflicts",
@@ -420,6 +424,7 @@ func summaryFactLabel(key string) string {
 		"delete_candidates":        "Delete candidates",
 		"deleted":                  "Deleted",
 		"device_id":                "Device ID",
+		"descendant_folders":       "Descendant folders",
 		"dimension":                "Dimension",
 		"dimensions":               "Dimensions",
 		"direction":                "Direction",
@@ -438,9 +443,11 @@ func summaryFactLabel(key string) string {
 		"filter.project":           "Filter: project",
 		"filter.status":            "Filter: status",
 		"filter.tag":               "Filter: tag",
+		"filter.under":             "Filter: under",
 		"filter.updated_before":    "Filter: updated before",
 		"filters":                  "Filters",
 		"folder":                   "Folder",
+		"folder_path":              "Folder path",
 		"frontmatter_coverage":     "Frontmatter coverage",
 		"group":                    "Group",
 		"groups":                   "Groups",
@@ -581,6 +588,12 @@ func summaryFactLabel(key string) string {
 		"views":                    "Views",
 		"workspace_id":             "Workspace ID",
 		"worktree_state":           "Worktree state",
+		"vault_root":               "Vault root",
+		"workspace.full_path":      "Full path preview",
+		"workspace.path":           "Workspace path",
+		"workspace.project":        "Workspace project",
+		"workspace.subproject":     "Workspace subproject",
+		"workspace_path":           "Workspace path",
 		"writes":                   "Writes",
 		"written":                  "Written",
 	}
@@ -592,7 +605,7 @@ func summaryFactLabel(key string) string {
 
 func summaryFactValue(key, value string) string {
 	switch key {
-	case "schema_version", "version", "path", "saved_path", "planned_path", "source_path", "output_dir", "trash_path", "records_path", "receipt_path", "endpoint", "bucket", "region", "prefix", "root", "vault", "command", "query":
+	case "schema_version", "version", "path", "saved_path", "planned_path", "source_path", "output_dir", "trash_path", "records_path", "receipt_path", "endpoint", "bucket", "region", "prefix", "root", "vault", "vault_root", "workspace_path", "workspace.path", "workspace.full_path", "command", "query":
 		return value
 	default:
 		return summaryHumanValue(key, value)
@@ -712,7 +725,13 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryLinkList(w, theme, p.Data, "links")
 	case "note.backlinks":
 		return renderSummaryLinkList(w, theme, p.Data, "backlinks")
-	case "tag.list", "folder.list", "kind.list", "group.list":
+	case "folder.list":
+		return renderSummaryFolderList(w, theme, p.Data)
+	case "folder.show":
+		return renderSummaryFolderShow(w, theme, p.Data)
+	case "project.board.show":
+		return renderSummaryProjectBoard(w, p)
+	case "tag.list", "kind.list", "group.list":
 		return renderSummaryDimensionList(w, theme, p.Data)
 	case "organize.suggest":
 		return renderSummaryOrganizePlan(w, theme, p.Data)
@@ -894,6 +913,252 @@ func renderSummaryDimensionList(w io.Writer, theme summaryTheme, data any) error
 		rows = append(rows, []string{labels[i], fmt.Sprint(item.Count), summaryPercent(item.Count, total), summaryBar(item.Count, maxCount, 10)})
 	}
 	return renderSummaryTable(w, theme, []string{summaryDimensionHeader(dimension), "Count", "Share", "Heat"}, rows)
+}
+
+func renderSummaryFolderList(w io.Writer, theme summaryTheme, data any) error {
+	folders := summaryFoldersFromData(data, "folders")
+	if len(folders) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(folders))
+	for _, folder := range folders {
+		rows = append(rows, folderSummaryRow(folder))
+	}
+	return renderSummaryTable(w, theme, []string{"Path", "Purpose", "Managed", "Exists", "Empty", "Notes", "Assets", "Depth"}, rows)
+}
+
+func renderSummaryFolderShow(w io.Writer, theme summaryTheme, data any) error {
+	children := summaryFoldersFromData(data, "children")
+	if len(children) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(children))
+	for _, child := range children {
+		rows = append(rows, folderSummaryRow(child))
+	}
+	return renderSummaryTable(w, theme, []string{"Children", "Purpose", "Managed", "Exists", "Empty", "Notes", "Assets", "Depth"}, rows)
+}
+
+func folderSummaryRow(folder domain.FolderInfo) []string {
+	return []string{
+		summaryCell(folder.Path, 56),
+		summaryCell(string(folder.Purpose), 12),
+		summaryCell(string(folder.ManagedStatus), 14),
+		summaryBool(folder.Exists),
+		summaryBool(folder.Empty),
+		fmt.Sprint(folder.NoteCount),
+		fmt.Sprint(folder.AssetCount),
+		fmt.Sprint(folder.Depth),
+	}
+}
+
+func summaryFoldersFromData(data any, key string) []domain.FolderInfo {
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	value, ok := dataMap[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []domain.FolderInfo:
+		return typed
+	case []any:
+		folders := make([]domain.FolderInfo, 0, len(typed))
+		for _, item := range typed {
+			b, err := json.Marshal(item)
+			if err != nil {
+				continue
+			}
+			var folder domain.FolderInfo
+			if err := json.Unmarshal(b, &folder); err == nil && folder.Path != "" {
+				folders = append(folders, folder)
+			}
+		}
+		return folders
+	default:
+		b, err := json.Marshal(value)
+		if err != nil {
+			return nil
+		}
+		var folders []domain.FolderInfo
+		if err := json.Unmarshal(b, &folders); err != nil {
+			return nil
+		}
+		return folders
+	}
+}
+
+func summaryBool(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+
+func renderSummaryProjectBoard(w io.Writer, p domain.Projection) error {
+	board, ok := summaryProjectBoardFromData(p.Data)
+	if !ok {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	projectLine := "Project: " + board.ProjectSlug
+	if board.Subproject != "" {
+		projectLine += " / " + board.Subproject
+	}
+	if _, err := fmt.Fprintln(w, projectLine); err != nil {
+		return err
+	}
+	if board.WorkspacePath != "" {
+		if _, err := fmt.Fprintln(w, "Path: "+board.WorkspacePath); err != nil {
+			return err
+		}
+	}
+	if board.Workspace != nil && len(board.Workspace.Directories) > 0 {
+		parts := make([]string, 0, len(board.Workspace.Directories))
+		for _, dir := range board.Workspace.Directories {
+			parts = append(parts, dir.Name+" "+dir.Status)
+		}
+		if _, err := fmt.Fprintln(w, "Structure: "+strings.Join(parts, " | ")); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(w, "Board: inbox %d | next %d | doing %d | blocked %d | review %d | done %d\n", board.Facts.Inbox, board.Facts.Next, board.Facts.Doing, board.Facts.Blocked, board.Facts.Review, board.Facts.Done); err != nil {
+		return err
+	}
+	for _, column := range []string{"inbox", "next", "doing", "blocked", "review"} {
+		items := boardItemsForColumn(board.Items, column)
+		if len(items) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintln(w, "\n"+boardColumnSummaryName(column)); err != nil {
+			return err
+		}
+		limit := len(items)
+		if limit > 5 {
+			limit = 5
+		}
+		for _, item := range items[:limit] {
+			if _, err := fmt.Fprintln(w, "- "+summaryBoardItemLine(item)); err != nil {
+				return err
+			}
+		}
+		if len(items) > limit {
+			if _, err := fmt.Fprintf(w, "... %d more, use --json for full list\n", len(items)-limit); err != nil {
+				return err
+			}
+		}
+	}
+	if len(board.Items) == 0 {
+		if _, err := fmt.Fprintln(w, "\nNo project items yet."); err != nil {
+			return err
+		}
+	}
+	if board.Facts.Blocked > 0 || board.Facts.Review > 0 || len(board.Warnings) > 0 {
+		if _, err := fmt.Fprintln(w, "\nRisks"); err != nil {
+			return err
+		}
+		if board.Facts.Blocked > 0 {
+			if _, err := fmt.Fprintf(w, "- %d blocked item needs owner review.\n", board.Facts.Blocked); err != nil {
+				return err
+			}
+		}
+		if board.Facts.Review > 0 {
+			if _, err := fmt.Fprintf(w, "- %d review item may become reusable output.\n", board.Facts.Review); err != nil {
+				return err
+			}
+		}
+		if len(board.Warnings) > 0 {
+			if _, err := fmt.Fprintf(w, "- %d board warning needs cleanup.\n", len(board.Warnings)); err != nil {
+				return err
+			}
+		}
+	}
+	if len(p.Actions) > 0 {
+		_, err := fmt.Fprintln(w, "\nRecommended next step:\n"+p.Actions[0].Command)
+		return err
+	}
+	return nil
+}
+
+func summaryProjectBoardFromData(data any) (domain.ProjectBoard, bool) {
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return domain.ProjectBoard{}, false
+	}
+	value, ok := dataMap["board"]
+	if !ok {
+		return domain.ProjectBoard{}, false
+	}
+	if board, ok := value.(domain.ProjectBoard); ok {
+		return board, true
+	}
+	b, err := json.Marshal(value)
+	if err != nil {
+		return domain.ProjectBoard{}, false
+	}
+	var board domain.ProjectBoard
+	if err := json.Unmarshal(b, &board); err != nil {
+		return domain.ProjectBoard{}, false
+	}
+	return board, true
+}
+
+func boardItemsForColumn(items []domain.BoardItem, column string) []domain.BoardItem {
+	out := make([]domain.BoardItem, 0)
+	for _, item := range items {
+		if item.Column == column {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func boardColumnSummaryName(column string) string {
+	switch column {
+	case "inbox":
+		return "Inbox"
+	case "next":
+		return "Next"
+	case "doing":
+		return "Doing"
+	case "blocked":
+		return "Blocked"
+	case "review":
+		return "Review"
+	default:
+		return column
+	}
+}
+
+func summaryBoardItemLine(item domain.BoardItem) string {
+	parts := []string{}
+	if item.Priority != "" {
+		parts = append(parts, "["+item.Priority+"]")
+	}
+	parts = append(parts, item.Title, "id="+item.ItemID)
+	if due := defaultString(item.DueAt, item.Due); due != "" {
+		parts = append(parts, "due="+due)
+	}
+	if len(item.Labels) > 0 {
+		parts = append(parts, "labels="+strings.Join(item.Labels, ","))
+	}
+	if item.Milestone != "" {
+		parts = append(parts, "milestone="+item.Milestone)
+	}
+	if len(item.BlockedBy) > 0 {
+		parts = append(parts, "blocked_by="+strings.Join(item.BlockedBy, ","))
+	}
+	return strings.Join(parts, " ")
 }
 
 func summaryPercent(count, total int) string {

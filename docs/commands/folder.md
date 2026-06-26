@@ -6,6 +6,7 @@
 
 ```bash
 pinax folder list --purpose all --include-empty --vault ./my-notes
+pinax folder list --under spaces/research --vault ./my-notes
 pinax folder show spaces/research --vault ./my-notes
 pinax folder create spaces/research --purpose notes --vault ./my-notes
 pinax folder rename spaces/research spaces/archive --dry-run --vault ./my-notes --json
@@ -15,6 +16,24 @@ pinax folder delete containers/archive --empty-only --yes --vault ./my-notes
 pinax folder adopt manual/assets --purpose assets --yes --vault ./my-notes
 pinax folder repair --plan --vault ./my-notes --json
 ```
+
+## Read Views
+
+`folder list` now renders a detailed human summary by default. It shows each
+folder path, purpose, note count, asset count, child count, depth, and modified
+time, so agents and humans can inspect a subtree without switching to JSON.
+
+Use `--under <path>` to focus on a subdirectory tree:
+
+```bash
+pinax folder list --under notes/projects/research --vault ./my-notes
+pinax folder list --under notes/projects/research --purpose notes --json --vault ./my-notes
+```
+
+`folder show <path>` reports direct child folders, descendant folder count, note
+count, asset count, and managed metadata. Machine outputs keep the same
+projection envelope and add facts such as `filter.under`, `child_folders`, and
+`descendant_folders` when available.
 
 ## Write Rules
 

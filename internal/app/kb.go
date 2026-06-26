@@ -117,6 +117,9 @@ func (s *Service) KBRebuild(ctx context.Context, req KBIndexRequest) (domain.Pro
 	}
 	chunks, err := semantic.BuildChunks(ctx, notes, provider, req.Backend)
 	if err != nil {
+		if cmdErr, ok := err.(*domain.CommandError); ok {
+			return domain.NewErrorProjection("kb.rebuild", cmdErr), cmdErr
+		}
 		cmdErr := &domain.CommandError{Code: "embedding_provider_failed", Message: "Embedding provider failed", Hint: "Check provider credentials or use --provider fake for local validation"}
 		return domain.NewErrorProjection("kb.rebuild", cmdErr), cmdErr
 	}
@@ -185,6 +188,47 @@ func (s *Service) KBDoctor(ctx context.Context, req KBIndexRequest) (domain.Proj
 	}
 	projection.Data = result
 	return projection, nil
+}
+
+func (s *Service) KBProviderList(_ context.Context, _ KBIndexRequest) (domain.Projection, error) {
+	providers := semantic.ListProviders()
+	projection := domain.NewProjection("kb.provider.list", "KB embedding providers listed.")
+	projection.Facts["providers"] = fmt.Sprint(len(providers))
+	projection.Facts["default_provider"] = semantic.DefaultProvider
+	projection.Facts["default_model"] = semantic.DefaultModel
+	projection.Data = map[string]any{"providers": providers, "backends": semantic.ListBackends()}
+	return projection, nil
+}
+
+func (s *Service) KBProviderDoctor(ctx context.Context, req KBIndexRequest) (domain.Projection, error) {
+	providerName := strings.TrimSpace(req.Provider)
+	if providerName == "" {
+		providerName = semantic.DefaultProvider
+	}
+	result, err := semantic.DoctorProvider(ctx, providerName, req.Model)
+	if err != nil {
+		if cmdErr, ok := err.(*domain.CommandError); ok {
+			projection := domain.NewErrorProjection("kb.provider.doctor", cmdErr)
+			fillProviderDoctorProjection(&projection, result)
+			return projection, cmdErr
+		}
+		return errorProjection("kb.provider.doctor", err), err
+	}
+	projection := domain.NewProjection("kb.provider.doctor", "KB embedding provider check completed.")
+	fillProviderDoctorProjection(&projection, result)
+	return projection, nil
+}
+
+func fillProviderDoctorProjection(projection *domain.Projection, result map[string]any) {
+	if result == nil {
+		return
+	}
+	for _, key := range []string{"provider", "model", "configured", "available", "credential_source", "local_only"} {
+		if value, ok := result[key]; ok {
+			projection.Facts[key] = fmt.Sprint(value)
+		}
+	}
+	projection.Data = result
 }
 
 func (s *Service) kbSearchProjection(ctx context.Context, command, summary string, req KBIndexRequest) (domain.Projection, error) {

@@ -20,6 +20,18 @@ go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 openspec validate --all
 ```
 
+## Completion Smoke
+
+Use Cobra's hidden completion command to verify local candidates without installing shell hooks:
+
+```bash
+go run ./cmd/pinax __complete --color ""
+go run ./cmd/pinax __complete project board show research --vault ./my-notes --subproject ""
+go run ./cmd/pinax __complete sync conflicts show --vault ./my-notes ""
+```
+
+Object completion must stay local and read-only. Path-like flags such as `--from`, `--to`, and `--merged` should keep shell file completion enabled instead of returning `ShellCompDirectiveNoFileComp`.
+
 Build artifacts are only for local validation and are not committed:
 
 ```bash
@@ -146,9 +158,14 @@ Templates are stored in `.pinax/templates/*.md`. They can be created with the CL
 ```bash
 pinax template list --pack starter --vault ./my-notes --json
 pinax template recommend --intent "meeting sync" --vault ./my-notes --json
+pinax template recommend --intent "写小说" --vault ./my-notes --json
+pinax template recommend --intent "便签" --vault ./my-notes --json
 pinax journal daily show --date 2026-06-08 --template journal.daily --vault ./my-notes --json
 pinax index page create home --template index.home --vault ./my-notes --json
+pinax index page create ideas --template index.ideas --vault ./my-notes --json
 pinax note add "client sync" --template meeting.notes --vault ./my-notes --json
+pinax note add "某篇小说是怎么写成的" --template idea.research_seed --vault ./my-notes --json
+pinax note add "临时线索" --template sticky.capture --vault ./my-notes --json
 pinax template create "video learning" --vault ./my-notes
 pinax template create meeting --from ./meeting.md --vault ./my-notes
 pinax template create weekly --engine go-template --body "# {{ .Title }}" --vault ./my-notes
@@ -163,7 +180,7 @@ pinax template runs repair --vault ./my-notes --json
 pinax template delete weekly --vault ./my-notes --yes
 ```
 
-The main path for built-in templates is to first choose a template with `template list --pack starter` or `template recommend --intent <intent>`, then materialize it with `journal daily|weekly|monthly --template`, `index page create|refresh --template`, or `note add --template`. `template inspect <name>` returns the next action in the projection; `template inspect` arguments, each command's `--template` and `--var`, and render runs all support shell Tab completion. Completion only reads template metadata and does not execute queries or write the vault.
+The main path for built-in templates is to first choose a template with `template list --pack starter` or `template recommend --intent <intent>`, then materialize it with `journal daily|weekly|monthly --template`, `index page create|refresh --template`, or `note add --template`. Chinese `idea.*` templates park future research or viewing seeds as `kind=idea,status=parked`, `sticky.*` templates create short inbox notes as `kind=sticky,status=inbox` without writing managed board metadata, and detailed templates such as `reading.paper`, `reading.novel`, `writing.novel`, `media.anime`, `media.drama`, and `game.playlog` create active review notes. `template inspect <name>` returns the next action in the projection; `template inspect` arguments, each command's `--template` and `--var`, and render runs all support shell Tab completion. Completion only reads template metadata and does not execute queries or write the vault.
 
 `--var key=value` can be used repeatedly. Legacy simple templates continue to use `{{title}}`; v2 templates use Go `text/template` after declaring `pinax.template.v2` and `engine: go-template`. Rendering fails and returns `template_variable_missing` when variables are missing, preventing half-finished notes from being generated.
 

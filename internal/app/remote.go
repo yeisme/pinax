@@ -11,14 +11,31 @@ import (
 type APIRequest struct {
 	VaultPath string
 	Format    string
+	WriteMode string
 }
 
 func RemoteCapabilities() []domain.RemoteCapability {
-	return []domain.RemoteCapability{
+	caps := []domain.RemoteCapability{
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "workbench.status", Surfaces: []string{"cli", "rest", "rpc", "dashboard"}, Command: "workbench.status", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.workbench.status.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"index_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "config.path", Surfaces: []string{"cli", "dashboard"}, Command: "config.path", Readonly: true, BodyAllowed: false, UIGroup: "settings.control", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax config path --vault <vault> --json", RequestSchema: "pinax.config.path.request.v1", ResponseSchema: "pinax.projection.v1"},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "config.get", Surfaces: []string{"cli", "dashboard"}, Command: "config.get", Readonly: true, BodyAllowed: false, UIGroup: "settings.control", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax config get <key> --vault <vault> --json", RequestSchema: "pinax.config.get.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"config_key_unknown"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "config.doctor", Surfaces: []string{"cli", "dashboard"}, Command: "config.doctor", Readonly: true, BodyAllowed: false, UIGroup: "settings.control", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax config doctor --vault <vault> --json", RequestSchema: "pinax.config.doctor.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"config_error"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "config.set", Surfaces: []string{"cli", "dashboard"}, Command: "config.set", Readonly: false, BodyAllowed: false, UIGroup: "settings.control", BodyExposureDefault: "none", WriteGate: "explicit_scope", CopyCommand: "pinax config set <key> <value> --scope user --vault <vault> --json", RequestSchema: "pinax.config.set.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"config_scope_required", "config_secret_rejected", "config_invalid"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "config.unset", Surfaces: []string{"cli", "dashboard"}, Command: "config.unset", Readonly: false, BodyAllowed: false, UIGroup: "settings.control", BodyExposureDefault: "none", WriteGate: "explicit_scope", CopyCommand: "pinax config unset <key> --scope user --vault <vault> --json", RequestSchema: "pinax.config.unset.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"config_scope_required", "config_key_unknown"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.list", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "project.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.project.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"project_registry_invalid"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.show", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "project.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.project.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"project_not_found"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.board.show", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "project.board.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.project_board.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"project_not_found", "invalid_note_display", "index_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.subproject.list", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "project.subproject.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.project_subproject.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"project_not_found"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.subproject.show", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "project.subproject.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.project_subproject.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"project_not_found", "subproject_not_found"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.subproject.create", Surfaces: []string{"cli", "rest", "rpc"}, Command: "project.subproject.create", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.project_subproject.create.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "project_not_found", "invalid_subproject_slug", "reserved_subproject_slug"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "note.read", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "note.show", Readonly: true, BodyAllowed: true, RequestSchema: "pinax.note.read.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"note_not_found", "invalid_note_display"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "note.list", Surfaces: []string{"cli", "rpc", "mcp"}, Command: "note.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.note.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"property_not_found", "invalid_date"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.item.show", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "project.item.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.project_item.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"project_item_not_found", "project_item_unmanaged"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "project.item.plan", Surfaces: []string{"cli", "rest", "rpc"}, Command: "project.item.plan", Readonly: true, BodyAllowed: false, ApprovalRequired: true, SnapshotRequired: true, RequestSchema: "pinax.project_item.plan.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"approval_required", "snapshot_required"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "task.adopt.plan", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "task.adopt", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.task.adopt_plan.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"argument_required", "task_not_found", "task_adopt_unsupported"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "database.view.render", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "database.view.render", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.database_view.render.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"view_not_found", "database_view_result_unavailable", "calendar_field_required"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "graph.summary", Surfaces: []string{"cli", "rest", "rpc", "mcp", "dashboard"}, Command: "graph.summary", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.graph.summary.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"index_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "canvas.layout.metadata", Surfaces: []string{"dashboard"}, Command: "canvas.layout.metadata", Readonly: true, BodyAllowed: false, UIGroup: "canvas.view", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax api routes --vault <vault> --json", LocalOnlyReason: "future-client-only", RequestSchema: "pinax.canvas.layout_metadata.request.v1", ResponseSchema: "pinax.canvas.layout_metadata.v1"},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.list", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.folder.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"invalid_folder_purpose"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.show", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.folder.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"folder_not_found", "unsafe_folder_path"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.create", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.create", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.folder.create.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "unsafe_folder_path", "invalid_folder_purpose", "folder_path_conflict"}},
@@ -44,6 +61,74 @@ func RemoteCapabilities() []domain.RemoteCapability {
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.push", Surfaces: []string{"cli", "rpc"}, Command: "sync.push", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.sync.push.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "cloud_not_configured", "revision_conflict"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.pull", Surfaces: []string{"cli", "rpc"}, Command: "sync.pull", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.sync.pull.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "cloud_not_configured", "revision_conflict"}},
 	}
+	return decorateRemoteCapabilities(caps)
+}
+
+func decorateRemoteCapabilities(caps []domain.RemoteCapability) []domain.RemoteCapability {
+	for i := range caps {
+		cap := &caps[i]
+		if cap.UIGroup == "" {
+			cap.UIGroup = webUIGroupForCommand(cap.Command, cap.ID)
+		}
+		if cap.BodyExposureDefault == "" {
+			cap.BodyExposureDefault = bodyExposureDefault(*cap)
+		}
+		if cap.WriteGate == "" {
+			cap.WriteGate = writeGateForCapability(*cap)
+		}
+		if cap.CopyCommand == "" {
+			cap.CopyCommand = copyCommandForCapability(*cap)
+		}
+	}
+	return caps
+}
+
+func webUIGroupForCommand(command, id string) string {
+	switch {
+	case strings.HasPrefix(id, "database."):
+		return "search.view"
+	case strings.HasPrefix(id, "graph."):
+		return "graph.view"
+	case strings.HasPrefix(id, "project.item.plan"):
+		return "proof.gate"
+	case strings.HasPrefix(id, "project.board") || strings.HasPrefix(id, "project.item") || strings.HasPrefix(id, "task."):
+		return "board.view"
+	case strings.HasPrefix(id, "project."):
+		return "workbench.status"
+	case strings.HasPrefix(id, "sync."):
+		return "settings.control"
+	case strings.HasPrefix(id, "folder.") || strings.HasPrefix(id, "inbox.") || strings.HasPrefix(id, "draft.") || strings.HasPrefix(id, "note."):
+		return "editor.note"
+	case strings.Contains(command, "provider") || strings.HasPrefix(id, "kb."):
+		return "provider.status"
+	default:
+		return "workbench.status"
+	}
+}
+
+func bodyExposureDefault(cap domain.RemoteCapability) string {
+	if cap.BodyAllowed {
+		return "explicit"
+	}
+	return "none"
+}
+
+func writeGateForCapability(cap domain.RemoteCapability) string {
+	if cap.ApprovalRequired && cap.SnapshotRequired {
+		return "approval_and_snapshot"
+	}
+	if cap.ApprovalRequired {
+		return "approval"
+	}
+	if cap.Readonly {
+		return "readonly"
+	}
+	return "write"
+}
+
+func copyCommandForCapability(cap domain.RemoteCapability) string {
+	parts := strings.Split(cap.Command, ".")
+	return "pinax " + strings.Join(parts, " ") + " --vault <vault> --json"
 }
 
 func RemoteRoutes() []domain.RemoteRoute {
@@ -53,9 +138,19 @@ func RemoteRoutes() []domain.RemoteRoute {
 		byID[cap.ID] = cap
 	}
 	return []domain.RemoteRoute{
+		remoteRoute("rest.workbench.status", "rest", "GET", "/v1/workbench/status", "", byID["workbench.status"]),
+		remoteRoute("rest.project.list", "rest", "GET", "/v1/projects", "", byID["project.list"]),
+		remoteRoute("rest.project.show", "rest", "GET", "/v1/projects/{project}", "", byID["project.show"]),
 		remoteRoute("rest.project.board.show", "rest", "GET", "/v1/projects/{slug}/board", "", byID["project.board.show"]),
+		remoteRoute("rest.project.subproject.list", "rest", "GET", "/v1/projects/{project}/subprojects", "", byID["project.subproject.list"]),
+		remoteRoute("rest.project.subproject.show", "rest", "GET", "/v1/projects/{project}/subprojects/{subproject}", "", byID["project.subproject.show"]),
+		remoteRoute("rest.project.subproject.create", "rest", "POST", "/v1/projects/{project}/subprojects", "", byID["project.subproject.create"]),
 		remoteRoute("rest.note.read", "rest", "GET", "/v1/notes/{ref}", "", byID["note.read"]),
+		remoteRoute("rest.project.item.show", "rest", "GET", "/v1/project-items/{ref}", "", byID["project.item.show"]),
 		remoteRoute("rest.project.item.plan", "rest", "POST", "/v1/project-items/{ref}:{action}", "", byID["project.item.plan"]),
+		remoteRoute("rest.task.adopt.plan", "rest", "POST", "/v1/tasks/{item}:adopt-plan", "", byID["task.adopt.plan"]),
+		remoteRoute("rest.database.view.render", "rest", "GET", "/v1/database/views/{name}:render", "", byID["database.view.render"]),
+		remoteRoute("rest.graph.summary", "rest", "GET", "/v1/graph/summary", "", byID["graph.summary"]),
 		remoteRoute("rest.folder.list", "rest", "GET", "/v1/folders", "", byID["folder.list"]),
 		remoteRoute("rest.folder.show", "rest", "GET", "/v1/folders/{path}", "", byID["folder.show"]),
 		remoteRoute("rest.folder.create", "rest", "POST", "/v1/folders", "", byID["folder.create"]),
@@ -78,9 +173,16 @@ func RemoteRoutes() []domain.RemoteRoute {
 		remoteRoute("rest.draft.archive", "rest", "POST", "/v1/drafts/{ref}:archive", "", byID["draft.archive"]),
 		remoteRoute("rest.draft.discard", "rest", "POST", "/v1/drafts/{ref}:discard", "", byID["draft.discard"]),
 		// RPC routes
+		remoteRoute("rpc.workbench.status", "rpc", "CALL", "", "Pinax.Workbench.Status", byID["workbench.status"]),
 		remoteRoute("rpc.project.board.show", "rpc", "CALL", "", "Pinax.ProjectBoard.Show", byID["project.board.show"]),
+		remoteRoute("rpc.project.subproject.list", "rpc", "CALL", "", "Pinax.Project.Subproject.List", byID["project.subproject.list"]),
+		remoteRoute("rpc.project.subproject.show", "rpc", "CALL", "", "Pinax.Project.Subproject.Show", byID["project.subproject.show"]),
+		remoteRoute("rpc.project.subproject.create", "rpc", "CALL", "", "Pinax.Project.Subproject.Create", byID["project.subproject.create"]),
 		remoteRoute("rpc.note.read", "rpc", "CALL", "", "Pinax.Note.Read", byID["note.read"]),
 		remoteRoute("rpc.note.list", "rpc", "CALL", "", "Pinax.Note.List", byID["note.list"]),
+		remoteRoute("rpc.database.view.render", "rpc", "CALL", "", "Pinax.DatabaseView.Render", byID["database.view.render"]),
+		remoteRoute("rpc.task.adopt.plan", "rpc", "CALL", "", "Pinax.Task.AdoptPlan", byID["task.adopt.plan"]),
+		remoteRoute("rpc.graph.summary", "rpc", "CALL", "", "Pinax.Graph.Summary", byID["graph.summary"]),
 		remoteRoute("rpc.project.item.plan", "rpc", "CALL", "", "Pinax.ProjectItem.Plan", byID["project.item.plan"]),
 		remoteRoute("rpc.folder.list", "rpc", "CALL", "", "Pinax.Folder.List", byID["folder.list"]),
 		remoteRoute("rpc.folder.show", "rpc", "CALL", "", "Pinax.Folder.Show", byID["folder.show"]),
@@ -118,7 +220,37 @@ func FindRemoteRPCMethod(method string) (domain.RemoteRoute, bool) {
 }
 
 func remoteRoute(routeID, surface, method, path, rpcMethod string, cap domain.RemoteCapability) domain.RemoteRoute {
-	return domain.RemoteRoute{RouteID: routeID, Surface: surface, Method: method, Path: path, RPCMethod: rpcMethod, Command: cap.Command, CapabilityID: cap.ID, SchemaVersion: cap.SchemaVersion, Readonly: cap.Readonly, BodyAllowed: cap.BodyAllowed, ApprovalRequired: cap.ApprovalRequired, SnapshotRequired: cap.SnapshotRequired, Errors: cap.Errors}
+	return domain.RemoteRoute{RouteID: routeID, Surface: surface, Method: method, Path: path, RPCMethod: rpcMethod, Command: cap.Command, CapabilityID: cap.ID, SchemaVersion: cap.SchemaVersion, Readonly: cap.Readonly, BodyAllowed: cap.BodyAllowed, ApprovalRequired: cap.ApprovalRequired, SnapshotRequired: cap.SnapshotRequired, UIGroup: cap.UIGroup, BodyExposureDefault: cap.BodyExposureDefault, WriteGate: cap.WriteGate, CopyCommand: cap.CopyCommand, LocalOnlyReason: cap.LocalOnlyReason, Errors: cap.Errors}
+}
+
+func (s *Service) WorkbenchStatus(ctx context.Context, req APIRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("workbench.status", err), err
+	}
+	indexProjection, err := s.IndexStatus(ctx, VaultRequest{VaultPath: root})
+	if err != nil {
+		return errorProjection("workbench.status", err), err
+	}
+	writeMode := strings.TrimSpace(req.WriteMode)
+	if writeMode == "" {
+		writeMode = "local_cli"
+	}
+	projection := domain.NewProjection("workbench.status", "Workbench status read.")
+	projection.Facts["ui_group"] = "workbench.status"
+	projection.Facts["vault_root"] = root
+	projection.Facts["index_status"] = indexProjection.Facts["index_status"]
+	projection.Facts["write_mode"] = writeMode
+	projection.Facts["body_exposure_default"] = "none"
+	projection.Facts["profile_status"] = "not_inspected"
+	projection.Facts["token_status"] = "not_inspected"
+	projection.Data = map[string]any{"workbench": map[string]any{"vault_root": root, "index_status": indexProjection.Facts["index_status"], "write_mode": writeMode, "body_exposure_default": "none", "profile_status": "not_inspected", "token_status": "not_inspected"}}
+	if indexProjection.Status != "success" || indexProjection.Facts["index_status"] != "fresh" {
+		projection.Status = "partial"
+		projection.Actions = []domain.Action{{Name: "index_refresh", Command: fmt.Sprintf("pinax index refresh --vault %s --json", shellQuote(root))}}
+	}
+	projection.Evidence = indexProjection.Evidence
+	return projection, nil
 }
 
 func (s *Service) APIRoutes(_ context.Context, req APIRequest) (domain.Projection, error) {
@@ -165,6 +297,9 @@ func (s *Service) APISchemaExport(_ context.Context, req APIRequest) (domain.Pro
 				"x-pinax-body-allowed":      route.BodyAllowed,
 				"x-pinax-approval-required": route.ApprovalRequired,
 				"x-pinax-snapshot-required": route.SnapshotRequired,
+				"x-pinax-ui-group":          route.UIGroup,
+				"x-pinax-body-exposure":     route.BodyExposureDefault,
+				"x-pinax-write-gate":        route.WriteGate,
 			}
 		}
 	}
@@ -172,5 +307,27 @@ func (s *Service) APISchemaExport(_ context.Context, req APIRequest) (domain.Pro
 	projection.Facts["format"] = format
 	projection.Facts["routes"] = fmt.Sprint(len(routes))
 	projection.Data = map[string]any{"schema": schema, "routes": routes}
+	return projection, nil
+}
+
+func (s *Service) GraphSummaryProjection(ctx context.Context, vaultPath string) (domain.Projection, error) {
+	summary, err := s.GraphSummary(ctx, vaultPath)
+	if err != nil {
+		return errorProjection("graph.summary", err), err
+	}
+	projection := domain.NewProjection("graph.summary", "Vault link graph summary generated.")
+	projection.Facts["engine"] = summary.Engine
+	projection.Facts["index_status"] = summary.IndexStatus
+	projection.Facts["total_notes"] = fmt.Sprint(summary.TotalNotes)
+	projection.Facts["total_links"] = fmt.Sprint(summary.TotalLinks)
+	projection.Facts["resolved"] = fmt.Sprint(summary.Resolved)
+	projection.Facts["broken"] = fmt.Sprint(summary.Broken)
+	projection.Facts["ambiguous"] = fmt.Sprint(summary.Ambiguous)
+	projection.Facts["orphans"] = fmt.Sprint(summary.Orphans)
+	projection.Data = summary
+	projection.Actions = summary.NextActions
+	if summary.Broken > 0 || summary.Ambiguous > 0 || summary.Orphans > 0 {
+		projection.Status = "partial"
+	}
 	return projection, nil
 }

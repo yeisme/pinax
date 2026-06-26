@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
@@ -47,6 +48,62 @@ func TestIncrementalMatchesFullRebuild(t *testing.T) {
 		if got, want := searchPaths(t, incrementalRoot, query), searchPaths(t, fullRoot, query); !reflect.DeepEqual(got, want) {
 			t.Fatalf("search %q mismatch got=%v want=%v", query, got, want)
 		}
+	}
+}
+
+func TestRebuildProjectsEnhancedWikiLinkMetadata(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{
+		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alpha|Short]] [[Alpha#Details]] ![[diagram.png]] [[Meeting]]\n"},
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Body: "# Alpha\n"},
+		{ID: "note_meeting_a", Title: "Meeting", Path: "notes/work/meeting-a.md", Body: "# Meeting\n"},
+		{ID: "note_meeting_b", Title: "Meeting", Path: "notes/home/meeting-b.md", Body: "# Meeting\n"},
+	}
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	links := linksForNote(t, root, "notes/source.md")
+	if len(links) != 3 {
+		t.Fatalf("expected 3 note links, got %d: %#v", len(links), links)
+	}
+	byRaw := map[string]LinkRecord{}
+	for _, link := range links {
+		byRaw[link.TargetRaw] = link
+	}
+	alias := byRaw["Alpha|Short"]
+	if alias.Status != string(domain.LinkStatusResolved) || alias.TargetAlias != "Short" || alias.TargetHeading != "" || alias.TargetPath != "notes/alpha.md" || alias.TargetNoteID != "note_alpha" {
+		t.Fatalf("alias link not enhanced/resolved: %#v", alias)
+	}
+	heading := byRaw["Alpha#Details"]
+	if heading.Status != string(domain.LinkStatusResolved) || heading.TargetHeading != "Details" || heading.TargetAlias != "" || heading.TargetPath != "notes/alpha.md" {
+		t.Fatalf("heading link not enhanced/resolved: %#v", heading)
+	}
+	ambiguous := byRaw["Meeting"]
+	if ambiguous.Status != string(domain.LinkStatusAmbiguous) || ambiguous.Broken || ambiguous.TargetPath != "" || !strings.Contains(ambiguous.Evidence, "ambiguous") {
+		t.Fatalf("ambiguous link not preserved for review: %#v", ambiguous)
+	}
+	if _, ok := byRaw["diagram.png"]; ok {
+		t.Fatalf("media embed should not be projected as note link: %#v", links)
+	}
+}
+
+func TestExtractLinkRowsUsesEnhancedWikiParser(t *testing.T) {
+	notes := []domain.Note{
+		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alias Target]] [[Alpha|Short]]\n"},
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Frontmatter: map[string]string{"alias": "Alias Target"}},
+	}
+	rows := ExtractLinkRows(notes)
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 link rows, got %d: %#v", len(rows), rows)
+	}
+	for _, row := range rows {
+		if row.Values["status"].Raw != string(domain.LinkStatusResolved) || row.Values["target_path"].Raw != "notes/alpha.md" || row.Values["target_note_id"].Raw != "note_alpha" {
+			t.Fatalf("row should be resolved with shared parser: %#v", row.Values)
+		}
+	}
+	aliasRow := rows[1]
+	if aliasRow.Values["target_alias"].Raw != "Short" {
+		t.Fatalf("row should preserve target alias: %#v", aliasRow.Values)
 	}
 }
 

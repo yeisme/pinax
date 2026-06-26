@@ -28,7 +28,14 @@ pinax note add "Meeting Notes" --stdin --vault ./my-notes
 pinax note list --tag research --recent --limit 20 --vault ./my-notes
 pinax note show "Research Log" --view source --vault ./my-notes
 pinax note show "Research Log" --view rendered --vault ./my-notes
+pinax note read "Research Log" --display card --vault ./my-notes --json
+pinax note read "Research Log" --display body --vault ./my-notes --json
+pinax note preview "Research Log" --vault ./my-notes
 ```
+
+`note read|show --display card|detail|context` returns bounded note metadata, excerpts, and `agent_context` without exposing the full note body. `--display body` is the explicit body exposure mode for source editing and review. Agent output stays compact and should not include full body content unless the caller explicitly selected body mode through JSON/detail workflows.
+
+`note preview` is optimized for direct reading. In default human mode it renders the preview body only; it does not print a separate success table such as `Local note read.`. If the rendered body is empty, a successful preview is silent. Use `--json` or `--agent` when automation needs the success envelope, note path, resolver facts, or render metadata.
 
 ## Individual Note Maintenance
 
