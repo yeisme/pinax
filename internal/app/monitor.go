@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/yeisme/pinax/internal/app/syncops"
@@ -547,16 +546,7 @@ func captureMonitorResource(now time.Time) monitorResourceSnapshot {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	snap := monitorResourceSnapshot{time: now, heapAllocBytes: mem.HeapAlloc, totalAllocBytes: mem.TotalAlloc, sysBytes: mem.Sys, heapInuseBytes: mem.HeapInuse, stackInuseBytes: mem.StackInuse, numGC: mem.NumGC, goroutines: runtime.NumGoroutine()}
-	var usage syscall.Rusage
-	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &usage); err == nil {
-		snap.cpuSupported = true
-		snap.cpuUserMicros = timevalMicros(usage.Utime)
-		snap.cpuSystemMicros = timevalMicros(usage.Stime)
-		if usage.Maxrss > 0 {
-			snap.peakRSSBytes = uint64(usage.Maxrss) * 1024
-			snap.rssSupported = true
-		}
-	}
+	captureMonitorOSResource(&snap)
 	if rss, ok := readLinuxRSSBytes(); ok {
 		snap.rssBytes = rss
 		snap.rssSupported = true
@@ -565,10 +555,6 @@ func captureMonitorResource(now time.Time) monitorResourceSnapshot {
 		}
 	}
 	return snap
-}
-
-func timevalMicros(tv syscall.Timeval) int64 {
-	return int64(tv.Sec)*1_000_000 + int64(tv.Usec)
 }
 
 func readLinuxRSSBytes() (uint64, bool) {
