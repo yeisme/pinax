@@ -38,6 +38,11 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Set up Bun (for Pinax web renderer)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Set up Python (for LanceDB sidecar)
         uses: actions/setup-python@v5
         with:
