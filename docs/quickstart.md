@@ -21,16 +21,16 @@ go install github.com/yeisme/pinax/cmd/pinax@latest
 
 **方式 B：下载 GitHub Release archive（无需 Go）**
 
-从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.0-preview.1_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
+从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.2_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
 
 ```bash
 # 示例：Linux x86_64
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/pinax/v0.1.0-preview.1/pinax_0.1.0-preview.1_linux_x86_64.tar.gz
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.2/pinax_0.1.2_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.2/checksums.txt
+sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz pinax
 chmod +x pinax
 sudo mv pinax /usr/local/bin/
-# 校验完整性（与 Release 页 checksums.txt 比对）
-sha256sum pinax.tar.gz
 ```
 
 验证安装：
@@ -88,8 +88,9 @@ pinax repair apply --vault ./my-notes --plan <plan_id> --yes
 万一 apply 出错，可以通过 CLI 管理的 restore 路径把单个文件回滚到指定 revision（绝不直接做文件手术）：
 
 ```bash
-# 生成只读 restore plan（HEAD 即最近 snapshot）
-pinax version restore first-note.md --revision HEAD --plan --vault ./my-notes --json
+# 生成只读 restore plan（使用 version snapshot 输出的 snapshot_id）
+SNAPSHOT_ID=$(pinax version history --vault ./my-notes --json | jq -r '.data.snapshots[0].snapshot_id')
+pinax version restore first-note.md --revision "$SNAPSHOT_ID" --plan --vault ./my-notes --json
 
 # 应用 restore plan 写回本地 Markdown
 # <restore_id> 来自上一步 version restore --plan 的输出

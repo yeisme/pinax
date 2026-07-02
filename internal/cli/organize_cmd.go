@@ -47,6 +47,14 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 	}
 	repairPlanCmd.Flags().BoolVar(ctx.repairSave, "save", false, "Save the repair plan to .pinax/repair-plans")
 	repairCmd.AddCommand(repairPlanCmd)
+	repairCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List saved repair plans",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.ListRepairPlans(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	})
 	repairApplyCmd := &cobra.Command{
 		Use:     "apply",
 		Short:   "Apply a protected low-risk repair plan",

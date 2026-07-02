@@ -26,6 +26,44 @@ MCP tools are read-only and reuse the CLI relationship and note projections. The
 
 When a tool call omits the display mode or requests `body`, the MCP server downgrades it to `card` automatically. MCP tools do not return full note bodies and do not write Markdown, `.pinax/`, Git, providers, or remote state.
 
+## Answer synthesis boundary: answers need citations, not raw dumps
+
+Pinax can serve as an agent brain layer, but the answer layer must stay bounded. A query such as “what should I know before meeting Alice?” should not stream private note bodies into the model. It should compose bounded projections from memory, search, KB, graph, database views, and proof receipts, then return a cited summary with open questions and next actions.
+
+Current safe building blocks are real commands:
+
+```bash
+pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent
+pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json
+pinax search "Alice" --vault ./my-notes --json
+pinax note backlinks "Alice" --vault ./my-notes --json
+pinax graph query --kind technique --match storyboard --vault ./my-notes --json
+pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json
+```
+
+The bounded context bundle schema is `pinax.agent_brain.context_bundle.v1`. It carries `task`, `entities`, `memory_refs`, `semantic_refs`, `graph_refs`, `query_refs`, `receipts`, `freshness`, `body_exposure`, and `next_actions`. The bundle is assembled from existing projections and copies only bounded references plus real follow-up commands. It does not copy full note bodies, raw snippets, raw evidence text, provider payloads, prompts, credentials, or private tool arguments.
+
+Any future `answer` or `synthesis` projection must obey these rules:
+
+| Rule | Boundary |
+| --- | --- |
+| Evidence first | Every claim must point to note path, memory id, graph edge, query row, receipt id, or provider-safe citation. |
+| Freshness visible | Stale index, old meeting notes, superseded memory records, and unknown provider state must be explicit. |
+| Body exposure preserved | Synthesis may quote only bounded snippets; full body access requires explicit local body mode and must not be sent through MCP by default. |
+| Cost and provider visible | Embedding, rerank, and LLM calls must expose provider/model/source type and never hide paid or network-backed work. |
+| No silent maintenance | Entity merge, contradiction resolution, memory pruning, and note rewrites generate plans or receipts; they do not run as invisible background edits. |
+| Agent command preview | Next steps are real commands a user can run directly, such as `pinax proof loop run --vault ./my-notes --json`. |
+
+This is the main difference between Pinax and a generic hosted brain: Pinax may synthesize answers for agents, but the authority remains local evidence plus reviewable service actions.
+
+## Team/company KB permission boundary
+
+Current Pinax Agent Brain mode is single-user local. Team/company KB, HTTP MCP, OAuth, organization ACLs, and rate limit enforcement are planned future-owner surfaces, not current CLI backend features.
+
+Any future team/company projection must include explicit permission context before returning cross-user evidence: `principal`, `workspace`, `source_acl`, `visibility`, `redaction_policy`, and `audit_ref`. If ACL proof is missing or the future owner is not configured, Agent Brain should return `permission_unknown`, `scope_required`, `insufficient_scope`, or a local-only answer boundary rather than combining private notes into company knowledge.
+
+Local direct transports such as S3/rclone Cloud Sync do not provide server-side auth, organization policy, or rate limiting. They cannot be used as permission proof for team answer synthesis.
+
 ## Cloud no-exec / no-plaintext invariant
 
 Pinax Cloud Sync is a distributed sync coordinator, not a hosted vault. Two invariants hold:

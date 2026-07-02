@@ -19,6 +19,7 @@ type Config struct {
 	Output   OutputConfig   `mapstructure:"output" yaml:"output" json:"output"`
 	Editor   EditorConfig   `mapstructure:"editor" yaml:"editor" json:"editor"`
 	Note     NoteConfig     `mapstructure:"note" yaml:"note" json:"note"`
+	KB       KBConfig       `mapstructure:"kb" yaml:"kb" json:"kb"`
 	Search   SearchConfig   `mapstructure:"search" yaml:"search" json:"search"`
 	Storage  StorageConfig  `mapstructure:"storage" yaml:"storage" json:"storage"`
 	Themes   ThemeSet       `mapstructure:"themes" yaml:"themes" json:"themes"`
@@ -53,6 +54,15 @@ type EditorConfig struct {
 type NoteConfig struct {
 	Status string `mapstructure:"status" yaml:"status" json:"status,omitempty"`
 	Kind   string `mapstructure:"kind" yaml:"kind" json:"kind,omitempty"`
+}
+
+type KBConfig struct {
+	Sidecar KBSidecarConfig `mapstructure:"sidecar" yaml:"sidecar" json:"sidecar"`
+}
+
+type KBSidecarConfig struct {
+	Executable     string `mapstructure:"executable" yaml:"executable" json:"executable,omitempty"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds" yaml:"timeout_seconds" json:"timeout_seconds"`
 }
 
 type SearchConfig struct {
@@ -95,8 +105,20 @@ func (s SourceSet) Contains(value string) bool {
 }
 
 type LoadResult struct {
-	Config  Config    `json:"config"`
-	Sources SourceSet `json:"sources"`
+	Config   Config              `json:"config"`
+	Sources  SourceSet           `json:"sources"`
+	Settings []SettingProjection `json:"settings,omitempty"`
+}
+
+type SettingProjection struct {
+	Key               string   `json:"key"`
+	Value             string   `json:"value"`
+	Source            string   `json:"source"`
+	Writable          bool     `json:"writable"`
+	WriteScope        string   `json:"write_scope"`
+	WritableScopes    []string `json:"writable_scopes,omitempty"`
+	NextAction        string   `json:"next_action,omitempty"`
+	SecretRefBoundary string   `json:"secret_ref_boundary,omitempty"`
 }
 
 type fileConfig struct {
@@ -163,6 +185,7 @@ func DefaultConfig() Config {
 		Output:  OutputConfig{Color: "auto", Theme: "pinax", Width: 100, Markdown: MarkdownConfig{Enabled: true, Style: "auto"}},
 		Editor:  EditorConfig{},
 		Note:    NoteConfig{Status: "active"},
+		KB:      KBConfig{Sidecar: KBSidecarConfig{Executable: "pinax-lancedb-sidecar", TimeoutSeconds: 30}},
 		Search:  SearchConfig{Limit: 20},
 		Storage: StorageConfig{Backend: "local"},
 		Themes:  ThemeSet{Custom: map[string]string{}},
@@ -191,6 +214,7 @@ func Load(opts LoadOptions) (LoadResult, error) {
 		cfg.Vault = opts.VaultPath
 	}
 	result := LoadResult{Config: cfg}
+	settingSources := defaultSettingSources()
 	if opts.Env == nil {
 		opts.Env = os.LookupEnv
 	}
@@ -201,6 +225,7 @@ func Load(opts LoadOptions) (LoadResult, error) {
 		}
 		if ok {
 			mergeConfig(&cfg, loaded.Config, loaded.IsSet)
+			markFileSettingSources(settingSources, loaded, "user")
 			result.Sources.UserConfig = opts.UserConfigPath
 		}
 	}
@@ -214,15 +239,19 @@ func Load(opts LoadOptions) (LoadResult, error) {
 		}
 		if ok {
 			mergeConfig(&cfg, loaded.Config, loaded.IsSet)
+			markFileSettingSources(settingSources, loaded, "project")
 			result.Sources.ProjectConfig = opts.ProjectConfigPath
 		}
 	}
 	applyEnv(&cfg, &result.Sources, opts.Env)
+	markEnvSettingSources(settingSources, result.Sources.EnvKeys)
 	applyExplicitFlags(&cfg, &result.Sources, opts.ExplicitFlags)
+	markExplicitSettingSources(settingSources, result.Sources.FlagKeys)
 	if err := cfg.Validate(); err != nil {
 		return LoadResult{}, err
 	}
 	result.Config = cfg
+	result.Settings = buildSettingProjections(cfg, settingSources)
 	return result, nil
 }
 
@@ -304,6 +333,12 @@ func configFromViper(v *viper.Viper, set map[string]bool) Config {
 	if set["note.kind"] {
 		cfg.Note.Kind = v.GetString("note.kind")
 	}
+	if set["kb.sidecar.executable"] {
+		cfg.KB.Sidecar.Executable = v.GetString("kb.sidecar.executable")
+	}
+	if set["kb.sidecar.timeout_seconds"] {
+		cfg.KB.Sidecar.TimeoutSeconds = v.GetInt("kb.sidecar.timeout_seconds")
+	}
 	if set["search.limit"] {
 		cfg.Search.Limit = v.GetInt("search.limit")
 	}
@@ -350,6 +385,8 @@ func configKeys() []string {
 		"editor.command",
 		"note.status",
 		"note.kind",
+		"kb.sidecar.executable",
+		"kb.sidecar.timeout_seconds",
 		"search.limit",
 		"search.allow_stale",
 		"storage.backend",
@@ -361,6 +398,130 @@ func configKeys() []string {
 		"storage.token",
 		"themes.custom",
 	}
+}
+
+func settingsProjectionKeys() []string {
+	return []string{
+		"vault",
+		"remote.api_url",
+		"output.color",
+		"output.theme",
+		"output.width",
+		"output.markdown.enabled",
+		"output.markdown.style",
+		"output.markdown.pager",
+		"editor.command",
+		"note.status",
+		"note.kind",
+		"kb.sidecar.executable",
+		"kb.sidecar.timeout_seconds",
+		"search.limit",
+		"search.allow_stale",
+		"storage.backend",
+		"storage.bucket",
+		"storage.region",
+		"storage.prefix",
+		"storage.endpoint",
+		"storage.profile",
+		"themes.custom",
+	}
+}
+
+func defaultSettingSources() map[string]string {
+	sources := map[string]string{}
+	for _, key := range settingsProjectionKeys() {
+		sources[key] = "default"
+	}
+	return sources
+}
+
+func markFileSettingSources(sources map[string]string, loaded fileConfig, source string) {
+	for _, key := range settingsProjectionKeys() {
+		if loaded.IsSet(key) {
+			sources[key] = source
+		}
+	}
+}
+
+func markEnvSettingSources(sources map[string]string, envKeys []string) {
+	for _, envKey := range envKeys {
+		if key := envConfigKey(envKey); key != "" {
+			sources[key] = "env"
+		}
+	}
+}
+
+func markExplicitSettingSources(sources map[string]string, keys []string) {
+	for _, key := range keys {
+		if _, ok := sources[key]; ok {
+			sources[key] = "flag"
+		}
+	}
+}
+
+func envConfigKey(envKey string) string {
+	switch envKey {
+	case "PINAX_VAULT":
+		return "vault"
+	case "PINAX_API_URL":
+		return "remote.api_url"
+	case "PINAX_OUTPUT_COLOR", "NO_COLOR":
+		return "output.color"
+	case "PINAX_OUTPUT_THEME":
+		return "output.theme"
+	case "PINAX_OUTPUT_WIDTH":
+		return "output.width"
+	case "PINAX_OUTPUT_MARKDOWN_ENABLED":
+		return "output.markdown.enabled"
+	case "PINAX_OUTPUT_MARKDOWN_STYLE":
+		return "output.markdown.style"
+	case "PINAX_EDITOR_COMMAND", "EDITOR":
+		return "editor.command"
+	case "PINAX_KB_SIDECAR":
+		return "kb.sidecar.executable"
+	case "PINAX_KB_SIDECAR_TIMEOUT":
+		return "kb.sidecar.timeout_seconds"
+	case "PINAX_SEARCH_LIMIT":
+		return "search.limit"
+	case "PINAX_SEARCH_ALLOW_STALE":
+		return "search.allow_stale"
+	default:
+		return ""
+	}
+}
+
+func buildSettingProjections(cfg Config, sources map[string]string) []SettingProjection {
+	items := make([]SettingProjection, 0, len(settingsProjectionKeys()))
+	for _, key := range settingsProjectionKeys() {
+		value, ok := Value(cfg, key)
+		if !ok {
+			continue
+		}
+		source := sources[key]
+		if source == "" {
+			source = "default"
+		}
+		item := SettingProjection{Key: key, Value: value, Source: source, WriteScope: source, SecretRefBoundary: "no_plaintext_secret_values"}
+		if settingWritable(source) {
+			item.Writable = true
+			item.WritableScopes = []string{"user", "project"}
+			item.WriteScope = preferredWriteScope(source)
+			item.NextAction = "pinax config set " + key + " <value> --scope " + item.WriteScope
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func settingWritable(source string) bool {
+	return source == "default" || source == "user" || source == "project" || source == "flag"
+}
+
+func preferredWriteScope(source string) string {
+	if source == "project" {
+		return "project"
+	}
+	return "user"
 }
 
 func mergeConfig(dst *Config, src Config, isSet func(string) bool) {
@@ -379,6 +540,12 @@ func mergeConfig(dst *Config, src Config, isSet func(string) bool) {
 	}
 	if isSet("note.kind") {
 		dst.Note.Kind = src.Note.Kind
+	}
+	if isSet("kb.sidecar.executable") {
+		dst.KB.Sidecar.Executable = src.KB.Sidecar.Executable
+	}
+	if isSet("kb.sidecar.timeout_seconds") {
+		dst.KB.Sidecar.TimeoutSeconds = src.KB.Sidecar.TimeoutSeconds
 	}
 	if isSet("search.limit") {
 		dst.Search.Limit = src.Search.Limit
@@ -456,6 +623,12 @@ func applyEnv(cfg *Config, sources *SourceSet, env func(string) (string, bool)) 
 	apply("PINAX_OUTPUT_MARKDOWN_ENABLED", func(v string) { cfg.Output.Markdown.Enabled = parseBool(v) })
 	apply("PINAX_OUTPUT_MARKDOWN_STYLE", func(v string) { cfg.Output.Markdown.Style = v })
 	apply("PINAX_EDITOR_COMMAND", func(v string) { cfg.Editor.Command = v })
+	apply("PINAX_KB_SIDECAR", func(v string) { cfg.KB.Sidecar.Executable = v })
+	apply("PINAX_KB_SIDECAR_TIMEOUT", func(v string) {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.KB.Sidecar.TimeoutSeconds = n
+		}
+	})
 	apply("PINAX_SEARCH_LIMIT", func(v string) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Search.Limit = n
@@ -493,6 +666,12 @@ func applyExplicitFlags(cfg *Config, sources *SourceSet, flags map[string]string
 			cfg.Output.Markdown.Style = value
 		case "editor.command":
 			cfg.Editor.Command = value
+		case "kb.sidecar.executable":
+			cfg.KB.Sidecar.Executable = value
+		case "kb.sidecar.timeout_seconds":
+			if n, err := strconv.Atoi(value); err == nil {
+				cfg.KB.Sidecar.TimeoutSeconds = n
+			}
 		case "search.limit":
 			if n, err := strconv.Atoi(value); err == nil {
 				cfg.Search.Limit = n
@@ -527,6 +706,12 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.Search.Limit < 0 {
 		return configInvalid("search.limit", fmt.Sprint(cfg.Search.Limit))
+	}
+	if strings.TrimSpace(cfg.KB.Sidecar.Executable) == "" {
+		return configInvalid("kb.sidecar.executable", cfg.KB.Sidecar.Executable)
+	}
+	if cfg.KB.Sidecar.TimeoutSeconds < 1 || cfg.KB.Sidecar.TimeoutSeconds > 600 {
+		return configInvalid("kb.sidecar.timeout_seconds", fmt.Sprint(cfg.KB.Sidecar.TimeoutSeconds))
 	}
 	if !oneOf(cfg.Storage.Backend, "", "local", "s3", "rclone") {
 		return configInvalid("storage.backend", cfg.Storage.Backend)

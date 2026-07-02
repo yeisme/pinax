@@ -1,0 +1,29 @@
+# Share LAN readonly verifies published and vault-readonly share scopes with local fake LAN binding.
+exec mkdir -p vault/notes dist/site/pinax-data
+exec sh -c 'printf "%s\n" "<!doctype html><html><body>Published share</body></html>" > dist/site/index.html'
+exec sh -c 'printf "%s\n" "{\"entries\":[{\"id\":\"note_public\",\"title\":\"Public Note\",\"path\":\"notes/public/\",\"tags\":[\"share\"],\"kind\":\"concept\",\"status\":\"active\",\"body\":\"PUBLISHED_BODY_SENTINEL\"}]}" > dist/site/pinax-data/search-index.json'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_private" "title: Private Note" "kind: concept" "status: active" "tags: [share]" "---" "" "# Private" "VAULT_BODY_SENTINEL" > vault/notes/private.md'
+exec sh -c 'printf "%s\n" "share-token" > token.txt'
+
+exec sh -c 'pinax share start --scope published --host 0.0.0.0 --port 0 --allow-lan --readonly --once --out dist/site --vault vault --json > published.json'
+validate-json-envelope published.json
+validate-clean-stdout published.json
+exec grep -q '"command":"share.start"' published.json
+exec grep -q '"scope":"published"' published.json
+exec grep -q '"web_smoke":"true"' published.json
+exec grep -q '"api_smoke":"true"' published.json
+! exec grep -q 'PUBLISHED_BODY_SENTINEL\|VAULT_BODY_SENTINEL\|share-token' published.json
+
+! exec sh -c 'pinax share start --scope vault-readonly --host 0.0.0.0 --port 0 --allow-lan --readonly --once --vault vault --json > missing-auth.json'
+validate-json-envelope missing-auth.json
+exec grep -q 'share_auth_required' missing-auth.json
+
+exec sh -c 'pinax share start --scope vault-readonly --host 0.0.0.0 --port 0 --allow-lan --readonly --token-file token.txt --once --vault vault --json > vault-readonly.json'
+validate-json-envelope vault-readonly.json
+validate-clean-stdout vault-readonly.json
+exec grep -q '"command":"share.start"' vault-readonly.json
+exec grep -q '"scope":"vault-readonly"' vault-readonly.json
+exec grep -q '"auth":"token-file"' vault-readonly.json
+exec grep -q '"web_smoke":"true"' vault-readonly.json
+exec grep -q '"api_smoke":"true"' vault-readonly.json
+! exec grep -q 'VAULT_BODY_SENTINEL\|PUBLISHED_BODY_SENTINEL\|share-token\|token.txt' vault-readonly.json

@@ -7,7 +7,10 @@ task build
 task test
 task test:integration
 task check
+task kb:sidecar:test
 ```
+
+`task check` runs the offline LanceDB sidecar protocol gate. It validates the sidecar JSON protocol and redaction boundary without installing Python packages from PyPI. Use `task kb:sidecar:test` before release or when changing `tools/pinax-lancedb-sidecar`; that command installs the real `lancedb` dependency in a temporary venv and runs the real rebuild/search sidecar tests.
 
 If `task` is not installed, use Go and OpenSpec commands directly:
 
@@ -16,6 +19,18 @@ go test ./...
 go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 openspec validate --all
 ```
+
+## Completion Smoke
+
+Use Cobra's hidden completion command to verify local candidates without installing shell hooks:
+
+```bash
+go run ./cmd/pinax __complete --color ""
+go run ./cmd/pinax __complete project board show research --vault ./my-notes --subproject ""
+go run ./cmd/pinax __complete sync conflicts show --vault ./my-notes ""
+```
+
+Object completion must stay local and read-only. Path-like flags such as `--from`, `--to`, and `--merged` should keep shell file completion enabled instead of returning `ShellCompDirectiveNoFileComp`.
 
 Build artifacts are only for local validation and are not committed:
 
@@ -94,6 +109,8 @@ rm -rf /tmp/pinax-notes
 ./dist/pinax organize plan --vault /tmp/pinax-notes --json
 ./dist/pinax api routes --vault /tmp/pinax-notes --json
 ./dist/pinax api schema export --format openapi --vault /tmp/pinax-notes --json
+./dist/pinax plugin validate ./plugins/project-dashboard --vault /tmp/pinax-notes --json
+./dist/pinax plugin doctor --vault /tmp/pinax-notes --json
 ./dist/pinax api serve --readonly --no-auth --port 8787 --vault /tmp/pinax-notes
 curl -s http://127.0.0.1:8787/
 curl -s http://127.0.0.1:8787/v1/capabilities
@@ -131,6 +148,8 @@ ls temp/integration-test-runs
 
 `task test:integration` runs project board e2e and REST/RPC component tests, and writes command/stdout/stderr/env evidence to `temp/integration-test-runs/<run-id>/`.
 
+Plugin runtime tests are included in `task test:integration`. They validate CLI-authored registry/lock/audit assets and redaction for plugin manifests, permission grants, dry-run execution, and uninstall flows.
+
 
 ## Template Workflow
 
@@ -139,9 +158,14 @@ Templates are stored in `.pinax/templates/*.md`. They can be created with the CL
 ```bash
 pinax template list --pack starter --vault ./my-notes --json
 pinax template recommend --intent "meeting sync" --vault ./my-notes --json
+pinax template recommend --intent "写小说" --vault ./my-notes --json
+pinax template recommend --intent "便签" --vault ./my-notes --json
 pinax journal daily show --date 2026-06-08 --template journal.daily --vault ./my-notes --json
 pinax index page create home --template index.home --vault ./my-notes --json
+pinax index page create ideas --template index.ideas --vault ./my-notes --json
 pinax note add "client sync" --template meeting.notes --vault ./my-notes --json
+pinax note add "某篇小说是怎么写成的" --template idea.research_seed --vault ./my-notes --json
+pinax note add "临时线索" --template sticky.capture --vault ./my-notes --json
 pinax template create "video learning" --vault ./my-notes
 pinax template create meeting --from ./meeting.md --vault ./my-notes
 pinax template create weekly --engine go-template --body "# {{ .Title }}" --vault ./my-notes
@@ -156,15 +180,16 @@ pinax template runs repair --vault ./my-notes --json
 pinax template delete weekly --vault ./my-notes --yes
 ```
 
-The main path for built-in templates is to first choose a template with `template list --pack starter` or `template recommend --intent <intent>`, then materialize it with `journal daily|weekly|monthly --template`, `index page create|refresh --template`, or `note add --template`. `template inspect <name>` returns the next action in the projection; `template inspect` arguments, each command's `--template` and `--var`, and render runs all support shell Tab completion. Completion only reads template metadata and does not execute queries or write the vault.
+The main path for built-in templates is to first choose a template with `template list --pack starter` or `template recommend --intent <intent>`, then materialize it with `journal daily|weekly|monthly --template`, `index page create|refresh --template`, or `note add --template`. Chinese `idea.*` templates park future research or viewing seeds as `kind=idea,status=parked`, `sticky.*` templates create short inbox notes as `kind=sticky,status=inbox` without writing managed board metadata, and detailed templates such as `reading.paper`, `reading.novel`, `writing.novel`, `media.anime`, `media.drama`, and `game.playlog` create active review notes. `template inspect <name>` returns the next action in the projection; `template inspect` arguments, each command's `--template` and `--var`, and render runs all support shell Tab completion. Completion only reads template metadata and does not execute queries or write the vault.
 
 `--var key=value` can be used repeatedly. Legacy simple templates continue to use `{{title}}`; v2 templates use Go `text/template` after declaring `pinax.template.v2` and `engine: go-template`. Rendering fails and returns `template_variable_missing` when variables are missing, preventing half-finished notes from being generated.
 
-Query-backed templates only reuse the Pinax SQL query service; they do not execute raw SQLite or dynamic template query functions. `template inspect` only explains; `template preview/render` executes bounded queries and exposes them to the `table`/`list` helpers through `.Queries`. Example queries can first be validated with real commands:
+Query-backed templates only reuse the Pinax SQL query service; they do not execute raw SQLite or dynamic template query functions. `template inspect` only explains; `template preview/render` executes bounded queries and exposes them to the `table`/`list` helpers through `.Queries`. Note rendered views also support safe `pinax-dataview` fenced blocks. Example queries can first be validated with real commands:
 
 ```bash
 pinax query explain 'SELECT title, status FROM notes WHERE status = "active" LIMIT 5' --vault ./my-notes --json
 pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 5' --lazy-index --vault ./my-notes --json
+pinax dataview run 'TABLE title, status FROM #pinax LIMIT 5' --lazy-index --vault ./my-notes --json
 pinax template preview project-dashboard --vault ./my-notes --json
 ```
 
@@ -180,7 +205,7 @@ pinax note show projects/dashboard.md --view rendered --snapshot latest --vault 
 pinax note show projects/dashboard.md --runs --vault ./my-notes --json
 ```
 
-`note show --view rendered` is read-only and does not write Markdown, `.pinax/`, Git, providers, or remotes. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->`; source `pinax-sql` blocks, regular body text, and unknown markers remain unchanged. Note-scoped render runs mirror note paths and are placed under `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
+`note show --view rendered` is read-only and does not write Markdown, `.pinax/`, Git, providers, or remotes. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->` or `<!-- pinax:managed name=<name> -->` to `<!-- /pinax:managed -->`; source `pinax-sql` and `pinax-dataview` blocks, regular body text, and unknown markers remain unchanged. Note-scoped render runs mirror note paths and are placed under `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
 
 
 ## Configuration Layer Smoke

@@ -34,8 +34,51 @@ func NewRPCDispatcherWithOptions(service *app.Service, vault string, options Dis
 
 func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projection, error) {
 	switch req.Method {
+	case "Pinax.Workbench.Status":
+		writeMode := "remote_readonly"
+		if d.allowWrite {
+			writeMode = "remote_allow_write"
+		}
+		projection, err := d.service.WorkbenchStatus(ctx, app.APIRequest{VaultPath: d.vault, WriteMode: writeMode})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Workbench.Activity.List":
+		projection, err := d.service.ActivityList(ctx, app.ActivityRequest{VaultPath: d.vault, Source: stringParam(req.Params, "source"), Query: stringParam(req.Params, "query"), Status: stringParam(req.Params, "status"), Object: stringParam(req.Params, "object"), Since: stringParam(req.Params, "since"), Until: stringParam(req.Params, "until"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Workbench.Activity.Show":
+		projection, err := d.service.ActivityShow(ctx, app.ActivityRequest{VaultPath: d.vault, EventID: stringParam(req.Params, "event_id")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Monitor.List":
+		projection, err := d.service.MonitorList(ctx, app.MonitorRequest{VaultPath: d.vault, Command: stringParam(req.Params, "command"), Query: stringParam(req.Params, "query"), Status: stringParam(req.Params, "status"), Since: stringParam(req.Params, "since"), Until: stringParam(req.Params, "until"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Monitor.Show":
+		projection, err := d.service.MonitorShow(ctx, app.MonitorRequest{VaultPath: d.vault, RunID: stringParam(req.Params, "run_id")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Monitor.Summary":
+		projection, err := d.service.MonitorSummary(ctx, app.MonitorRequest{VaultPath: d.vault, Command: stringParam(req.Params, "command"), Query: stringParam(req.Params, "query"), Status: stringParam(req.Params, "status"), Since: stringParam(req.Params, "since"), Until: stringParam(req.Params, "until"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
 	case "Pinax.ProjectBoard.Show":
-		projection, err := d.service.ProjectBoardShow(ctx, app.ProjectBoardRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), NoteDisplay: stringParam(req.Params, "note_display")})
+		projection, err := d.service.ProjectBoardShow(ctx, app.ProjectBoardRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), Subproject: stringParam(req.Params, "subproject"), NoteDisplay: stringParam(req.Params, "note_display")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Project.Subproject.List":
+		projection, err := d.service.ProjectSubprojectList(ctx, app.ProjectWorkspaceRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Project.Subproject.Show":
+		projection, err := d.service.ProjectSubprojectShow(ctx, app.ProjectWorkspaceRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), Subproject: stringParam(req.Params, "subproject")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Project.Subproject.Create":
+		if projection, err := d.ensureWriteAllowed("project.subproject.create", req.Params); err != nil {
+			return projection, err
+		}
+		projection, err := d.service.ProjectSubprojectCreate(ctx, app.ProjectWorkspaceRequest{VaultPath: d.vault, Project: stringParam(req.Params, "project"), Subproject: stringParam(req.Params, "subproject"), Title: stringParam(req.Params, "title"), Template: stringParam(req.Params, "template"), DryRun: boolParam(req.Params, "dry_run")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Note.List":
@@ -50,12 +93,51 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		projection, err := d.service.ShowNoteProjection(ctx, app.ShowNoteRequest{VaultPath: d.vault, NoteRef: stringParam(req.Params, "ref"), Display: display})
 		projection.Mode = "json"
 		return projection, err
+	case "Pinax.DatabaseView.Render":
+		projection, err := d.service.RenderDatabaseView(ctx, app.ViewRequest{VaultPath: d.vault, Name: stringParam(req.Params, "name")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Task.AdoptPlan":
+		projection, err := d.service.TaskAdopt(ctx, app.TaskAdoptRequest{VaultPath: d.vault, ItemID: stringParam(req.Params, "item_id"), Yes: false})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Graph.Summary":
+		projection, err := d.service.GraphSummaryProjection(ctx, d.vault)
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.List":
+		projection, err := d.service.MemoryList(ctx, app.MemoryListRequest{VaultPath: d.vault, Type: stringParam(req.Params, "type"), Entity: stringParam(req.Params, "entity"), IncludeDraft: boolParam(req.Params, "include_draft"), IncludeSuperseded: boolParam(req.Params, "include_superseded"), IncludeExpired: boolParam(req.Params, "include_expired"), IncludeRejected: boolParam(req.Params, "include_rejected"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Capture":
+		if projection, err := d.ensureWriteAllowed("memory.capture", req.Params); err != nil {
+			return projection, err
+		}
+		projection, err := d.service.MemoryCapture(ctx, app.MemoryCaptureRequest{VaultPath: d.vault, Type: stringParam(req.Params, "type"), Subject: stringParam(req.Params, "subject"), Predicate: stringParam(req.Params, "predicate"), Object: stringParam(req.Params, "object"), Body: stringParam(req.Params, "body"), Status: stringParam(req.Params, "status"), Confidence: stringParam(req.Params, "confidence"), Source: stringParam(req.Params, "source"), SourceSpan: stringParam(req.Params, "source_span"), Entities: stringSliceParam(req.Params, "entities"), DryRun: boolParam(req.Params, "dry_run")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Recall":
+		projection, err := d.service.MemoryRecall(ctx, app.MemoryRecallRequest{VaultPath: d.vault, Query: stringParam(req.Params, "query"), Entity: stringParam(req.Params, "entity"), Type: stringParam(req.Params, "type"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Context":
+		query := stringParam(req.Params, "task")
+		if query == "" {
+			query = stringParam(req.Params, "query")
+		}
+		projection, err := d.service.MemoryContext(ctx, app.MemoryRecallRequest{VaultPath: d.vault, Query: query, Entity: stringParam(req.Params, "entity"), Type: stringParam(req.Params, "type"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Stats":
+		projection, err := d.service.MemoryStats(ctx, app.MemoryListRequest{VaultPath: d.vault})
+		projection.Mode = "json"
+		return projection, err
 	case "Pinax.ProjectItem.Plan":
 		projection, err := d.service.ProjectItemPlan(ctx, app.ProjectItemRequest{VaultPath: d.vault, ItemID: stringParam(req.Params, "item_id"), Action: stringParam(req.Params, "action"), Column: stringParam(req.Params, "column"), Yes: boolParam(req.Params, "yes")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Folder.List":
-		projection, err := d.service.ListFolders(ctx, app.FolderListRequest{VaultPath: d.vault, Purpose: stringParam(req.Params, "purpose"), IncludeEmpty: boolParam(req.Params, "include_empty"), Depth: intParam(req.Params, "depth")})
+		projection, err := d.service.ListFolders(ctx, app.FolderListRequest{VaultPath: d.vault, Purpose: stringParam(req.Params, "purpose"), Under: stringParam(req.Params, "under"), IncludeEmpty: boolParam(req.Params, "include_empty"), Depth: intParam(req.Params, "depth")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Folder.Show":
@@ -199,13 +281,16 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 }
 
 func (d *RPCDispatcher) ensureWriteAllowed(command string, params map[string]any) (domain.Projection, error) {
+	if boolParam(params, "dry_run") {
+		return domain.Projection{}, nil
+	}
 	if !d.allowWrite {
 		err := &domain.CommandError{Code: "write_disabled", Message: "RPC dispatcher is currently read-only", Hint: "Start the API server in allow-write mode and retry"}
 		projection := domain.NewErrorProjection(command, err)
 		projection.Mode = "json"
 		return projection, err
 	}
-	if !boolParam(params, "dry_run") && !boolParam(params, "yes") {
+	if !boolParam(params, "yes") {
 		err := &domain.CommandError{Code: "approval_required", Message: "Remote folder writes require yes=true", Hint: "Preview with dry_run=true first, then append yes=true to confirm"}
 		projection := domain.NewErrorProjection(command, err)
 		projection.Mode = "json"

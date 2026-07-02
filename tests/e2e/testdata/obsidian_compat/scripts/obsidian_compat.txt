@@ -1,0 +1,76 @@
+# Obsidian compatibility smoke flow: Pinax inspects and plans over an existing vault without owning plugin state.
+exec mkdir -p vault/.obsidian/plugins/dataview vault/notes vault/daily vault/attachments vault/templates
+exec sh -c 'printf "%s\n" "{\"theme\":\"obsidian\",\"sentinel\":\"OBSIDIAN_PLUGIN_SENTINEL\"}" > vault/.obsidian/app.json'
+exec sh -c 'printf "%s\n" "{\"cache\":\"OBSIDIAN_PLUGIN_SENTINEL\"}" > vault/.obsidian/plugins/dataview/data.json'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_obsidian_ignored" "title: Ignored Obsidian Plugin Note" "status: active" "---" "" "SHOULD_NOT_APPEAR_OBSIDIAN_PLUGIN_NOTE" > "vault/.obsidian/ignored.md"'
+exec sh -c 'printf "%s\n" "{\"type\":\"canvas\",\"sentinel\":\"CANVAS_SENTINEL\"}" > vault/board.canvas'
+exec sh -c 'printf "%s\n" "# Daily Template" "" "- {{date}}" > vault/templates/Daily.md'
+exec sh -c 'printf "%s" "png" > vault/attachments/diagram.png'
+exec sh -c 'printf "%s" "orphan" > vault/attachments/orphan.pdf'
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_alpha" "title: Alpha Note" "status: active" "tags: [obsidian, public]" "publish: public" "cssclasses:" "  - wide" "obsidian_plugin_state: keep-me" "aliases: [Alpha Alias]" "---" "" "# Alpha Note" "" "See [[Beta Note|Beta]] and [[Missing Target]]." "" "![[attachments/diagram.png]]" "![[attachments/missing.png]]" > vault/notes/alpha.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_beta" "title: Beta Note" "status: active" "tags: [obsidian]" "publish: public" "---" "" "# Beta Note" "" "Backlink target." > vault/notes/beta.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_daily" "title: 2026-06-25" "kind: daily" "status: active" "cssclasses:" "  - daily" "obsidian_plugin_state: daily-keep" "---" "" "# 2026-06-25" "" "User daily note." "" "## Daily Task Review" "<!-- pinax:managed name=daily-task-review -->" "stale task review" "<!-- /pinax:managed -->" "" "## User Notes" "Do not rewrite this." > vault/daily/2026-06-25.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_dashboard" "title: Dashboard" "status: active" "---" "" "# Dashboard" "" "\`\`\`pinax-dataview active" "TABLE title, status FROM #obsidian LIMIT 5" "\`\`\`" "" "<!-- pinax:managed name=active -->" "stale" "<!-- /pinax:managed -->" > vault/notes/dashboard.md'
+
+exec sh -c 'pinax init vault --title ObsidianCompat --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+exec grep -q '.obsidian/' vault/.pinaxignore
+
+exec sh -c 'pinax index refresh --vault vault --json > index.json'
+validate-json-envelope index.json
+validate-clean-stdout index.json
+! exec grep -q 'OBSIDIAN_PLUGIN_SENTINEL\|CANVAS_SENTINEL\|SHOULD_NOT_APPEAR_OBSIDIAN_PLUGIN_NOTE' index.json
+
+exec sh -c 'pinax vault doctor --vault vault --json > doctor.json'
+validate-json-envelope doctor.json
+validate-clean-stdout doctor.json
+exec grep -q 'broken_link' doctor.json
+! exec grep -q 'OBSIDIAN_PLUGIN_SENTINEL\|CANVAS_SENTINEL\|SHOULD_NOT_APPEAR_OBSIDIAN_PLUGIN_NOTE' doctor.json
+
+exec sh -c 'pinax note backlinks "Beta Note" --vault vault --json > backlinks.json'
+validate-json-envelope backlinks.json
+exec grep -q 'notes/alpha.md' backlinks.json
+
+exec sh -c 'pinax database view save obsidian-active --language dataview --query "TABLE title, status FROM #obsidian LIMIT 5" --display table --vault vault --json > view-save.json'
+validate-json-envelope view-save.json
+exec sh -c 'pinax database view render obsidian-active --vault vault --json > view-render.json'
+validate-json-envelope view-render.json
+exec grep -q 'Alpha Note' view-render.json
+
+exec sh -c 'pinax note show Dashboard --view rendered --vault vault --json > dashboard-rendered.json'
+validate-json-envelope dashboard-rendered.json
+exec grep -q '| Alpha Note | active |' dashboard-rendered.json
+exec grep -q 'stale' vault/notes/dashboard.md
+
+exec sh -c 'pinax asset missing --vault vault --json > asset-missing.json'
+validate-json-envelope asset-missing.json
+exec grep -q 'attachments/missing.png' asset-missing.json
+exec sh -c 'pinax asset orphans --vault vault --json > asset-orphans.json'
+validate-json-envelope asset-orphans.json
+exec grep -q 'attachments/orphan.pdf' asset-orphans.json
+exec sh -c 'pinax asset repair --plan --vault vault --json > asset-repair.json'
+validate-json-envelope asset-repair.json
+exec grep -q 'asset_missing' asset-repair.json
+exec grep -q 'asset_orphan' asset-repair.json
+
+exec sh -c 'pinax repair plan --vault vault --json > repair.json'
+validate-json-envelope repair.json
+exec grep -q 'Missing Target' repair.json
+exec grep -q 'Do not rewrite this.' vault/daily/2026-06-25.md
+
+exec sh -c 'pinax organize suggest --vault vault --json > organize.json'
+validate-json-envelope organize.json
+! exec grep -F -q '.obsidian' organize.json
+! exec grep -F -q 'board.canvas' organize.json
+! exec grep -F -q 'templates/Daily.md' organize.json
+
+exec sh -c 'pinax publish profile init public --target github-pages --renderer hugo --title ObsidianCompat --base-url https://example.invalid/ --theme builtin:pinax-encyclopedia --vault vault --json > publish-init.json'
+validate-json-envelope publish-init.json
+exec sh -c 'pinax publish plan --profile public --target github-pages --vault vault --json > publish-plan.json'
+validate-json-envelope publish-plan.json
+exec grep -q 'Alpha Note' publish-plan.json
+! exec grep -q 'OBSIDIAN_PLUGIN_SENTINEL\|CANVAS_SENTINEL\|SHOULD_NOT_APPEAR_OBSIDIAN_PLUGIN_NOTE' publish-plan.json
+
+! exec grep -R 'Authorization: Bearer\|raw prompt\|provider payload\|full chain-of-thought' *.json vault/.pinax

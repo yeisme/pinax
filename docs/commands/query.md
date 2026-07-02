@@ -15,8 +15,11 @@
 pinax index status --vault ./my-notes
 pinax query explain 'SELECT title FROM notes LIMIT 20' --vault ./my-notes
 pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --vault ./my-notes --json
+pinax query run 'SELECT status, COUNT(*) AS total FROM notes GROUP BY status LIMIT 20' --lazy-index --vault ./my-notes --json
 pinax query run 'SELECT title FROM notes LIMIT 20' --lazy-index --vault ./my-notes --json
 ```
+
+Supported sources include `notes`, `tasks`, `links`, `backlinks`, and `assets`. The query layer supports bounded comparison operators, `IN`, `EXISTS`, `IS EMPTY`, `COUNT`, `MIN`, `MAX`, `GROUP BY`, sorting, limits, and cursor pagination.
 
 ## Parameters
 

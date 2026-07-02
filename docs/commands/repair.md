@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `pinax repair plan` | Generate a plan from doctor issues. | Does not write by default. |
 | `pinax repair plan --save` | Save a repair plan. | Writes `.pinax/repair-plans/<plan_id>.json`. |
+| `pinax repair list` | List saved repair plans. | No. |
 | `pinax repair apply --plan <id> --yes` | Apply saved low-risk fixes. | Writes to the vault; requires snapshot protection. |
 
 ## Common Workflow
@@ -15,6 +16,7 @@
 ```bash
 pinax vault doctor --vault ./my-notes
 pinax repair plan --vault ./my-notes --save --json
+pinax repair list --vault ./my-notes --json
 pinax repair apply --vault ./my-notes --plan repair-abc123 --yes --snapshot-message "pre-repair snapshot"
 ```
 

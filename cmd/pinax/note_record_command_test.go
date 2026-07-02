@@ -145,6 +145,100 @@ func TestNoteShowRenderedAndRefreshCLI(t *testing.T) {
 	}
 }
 
+func TestDataviewManagedBlockPreviewAndRefreshCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--slug", "active", "--vault", root, "--json")
+	writeCLIFixture(t, filepath.Join(root, "dashboard.md"), strings.Join([]string{
+		"---",
+		"schema_version: pinax.note.v1",
+		"note_id: note_dashboard",
+		"title: Dashboard",
+		"status: active",
+		"---",
+		"",
+		"# Dashboard",
+		"",
+		"```pinax-dataview active",
+		"TABLE title, status FROM #pinax LIMIT 5",
+		"```",
+		"",
+		"<!-- pinax:managed name=active -->",
+		"stale content",
+		"<!-- /pinax:managed -->",
+		"",
+		"user text",
+	}, "\n"))
+	preview := runCLI(t, "note", "preview", "Dashboard", "--vault", root, "--json")
+	if !strings.Contains(preview, "| Active | active |") || strings.Contains(readCLIFile(t, filepath.Join(root, "dashboard.md")), "| Active | active |") {
+		t.Fatalf("preview should render read-only:\n%s", preview)
+	}
+	refresh := runCLI(t, "note", "refresh", "Dashboard", "--rendered", "--yes", "--vault", root, "--json")
+	if !strings.Contains(refresh, "note.refresh") || !strings.Contains(refresh, `"changed_blocks":"1"`) {
+		t.Fatalf("refresh output = %s", refresh)
+	}
+	updated := readCLIFile(t, filepath.Join(root, "dashboard.md"))
+	if !strings.Contains(updated, "| Active | active |") || strings.Contains(updated, "stale content") || !strings.Contains(updated, "user text") {
+		t.Fatalf("managed refresh body =\n%s", updated)
+	}
+}
+
+func TestNoteRenderedDatabaseViewTabsCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "note", "new", "Active", "--body", "due:: 2026-06-21", "--status", "active", "--vault", root, "--json")
+	runCLI(t, "note", "new", "Done", "--body", "due:: 2026-06-22", "--status", "done", "--vault", root, "--json")
+	runCLI(t, "database", "view", "save", "active-list", "--display", "list", "--query", "SELECT title, status FROM notes WHERE status = \"active\" LIMIT 10", "--vault", root, "--json")
+	runCLI(t, "database", "view", "save", "calendar-due", "--display", "calendar", "--query", "SELECT title, due FROM notes LIMIT 10", "--calendar-field", "due", "--vault", root, "--json")
+	dashboardPath := filepath.Join(root, "dashboard.md")
+	writeCLIFixture(t, dashboardPath, strings.Join([]string{
+		"---",
+		"schema_version: pinax.note.v1",
+		"note_id: note_dashboard",
+		"title: Dashboard",
+		"status: active",
+		"---",
+		"",
+		"# Dashboard",
+		"",
+		"```pinax-database-view active-list",
+		"```",
+		"",
+		"```pinax-database-view calendar-due",
+		"```",
+		"",
+		"user text",
+	}, "\n"))
+
+	rendered := runCLI(t, "note", "show", "Dashboard", "--view", "rendered", "--vault", root, "--json")
+	for _, want := range []string{"Active", "2026-06-21", `"database_tabs":`, `"name":"active-list"`, `"name":"calendar-due"`, `"query_count":"2"`} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered database tabs missing %q:\n%s", want, rendered)
+		}
+	}
+	if got := readCLIFile(t, dashboardPath); !strings.Contains(got, "```pinax-database-view active-list") || strings.Contains(got, "2026-06-21") {
+		t.Fatalf("note show rendered should not write dashboard:\n%s", got)
+	}
+
+	writeCLIFixture(t, filepath.Join(root, "missing-dashboard.md"), strings.Join([]string{
+		"---",
+		"schema_version: pinax.note.v1",
+		"note_id: note_missing_dashboard",
+		"title: Missing Dashboard",
+		"status: active",
+		"---",
+		"",
+		"# Missing Dashboard",
+		"",
+		"```pinax-database-view missing-view",
+		"```",
+	}, "\n"))
+	failed, err := runCLIExpectError("note", "show", "Missing Dashboard", "--view", "rendered", "--vault", root, "--json")
+	if err == nil || !strings.Contains(failed, "database_tab_view_not_found") || strings.Contains(readCLIFile(t, filepath.Join(root, "missing-dashboard.md")), "Database view") {
+		t.Fatalf("missing database tab err=%v output=%s", err, failed)
+	}
+}
+
 func TestNoteDimensionPrimaryPaths(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -280,6 +374,63 @@ func TestDailyInboxWorkflowCLI(t *testing.T) {
 	}
 }
 
+func TestDailyTaskReviewManagedBlockCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "research", "--vault", root, "--json")
+	runCLI(t, "project", "item", "add", "research", "Due today", "--column", "next", "--due-at", "2026-06-21", "--vault", root, "--json")
+	runCLI(t, "project", "item", "add", "research", "Overdue", "--column", "next", "--due-at", "2026-06-20", "--vault", root, "--json")
+	runCLI(t, "project", "item", "add", "research", "Blocked task", "--column", "blocked", "--blocked-by", "api", "--vault", root, "--json")
+	runCLI(t, "project", "item", "add", "research", "Review task", "--column", "review", "--vault", root, "--json")
+
+	dailyPath := filepath.Join(root, "daily", "2026-06-21.md")
+	writeCLIFixture(t, dailyPath, "# 2026-06-21\n\nmanual note\n")
+	missingBefore := readCLIFile(t, dailyPath)
+	missing, err := runCLIExpectError("plan", "daily", "--task-review", "--yes", "--vault", root, "--json")
+	if err == nil || !strings.Contains(missing, `"code":"managed_block_missing"`) {
+		t.Fatalf("missing marker should fail with managed_block_missing err=%v out=%s", err, missing)
+	}
+	if got := readCLIFile(t, dailyPath); got != missingBefore {
+		t.Fatalf("missing marker changed daily note:\n%s", got)
+	}
+
+	withBlock := strings.Join([]string{
+		"# 2026-06-21",
+		"",
+		"manual note",
+		"",
+		"<!-- pinax:managed name=daily-task-review -->",
+		"old review",
+		"<!-- /pinax:managed -->",
+		"",
+	}, "\n")
+	writeCLIFixture(t, dailyPath, withBlock)
+	preview := runCLI(t, "plan", "daily", "--task-review", "--vault", root, "--json")
+	if !strings.Contains(preview, `"managed_block":"daily-task-review"`) || !strings.Contains(preview, `"writes":"false"`) {
+		t.Fatalf("preview output invalid:\n%s", preview)
+	}
+	if got := readCLIFile(t, dailyPath); got != withBlock {
+		t.Fatalf("preview changed daily note:\n%s", got)
+	}
+
+	applyOut := runCLI(t, "plan", "daily", "--task-review", "--yes", "--vault", root, "--json")
+	for _, want := range []string{`"writes":"true"`, `"today":"1"`, `"overdue":"1"`, `"blocked":"1"`, `"review":"1"`} {
+		if !strings.Contains(applyOut, want) {
+			t.Fatalf("apply output missing %s:\n%s", want, applyOut)
+		}
+	}
+	daily := readCLIFile(t, dailyPath)
+	for _, want := range []string{"manual note", "## Daily Task Review", "Due today", "Overdue", "Blocked task", "Review task"} {
+		if !strings.Contains(daily, want) {
+			t.Fatalf("daily task review missing %q:\n%s", want, daily)
+		}
+	}
+	if strings.Contains(daily, "old review") {
+		t.Fatalf("daily task review did not replace managed content:\n%s", daily)
+	}
+}
+
 func TestNoteListPropertyOutputContract(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -295,6 +446,66 @@ func TestNoteListPropertyOutputContract(t *testing.T) {
 	failed, err := runCLIExpectError("note", "list", "--property", "missing", "--strict-properties", "--vault", root, "--json")
 	if err == nil || !strings.Contains(failed, "property_not_found") {
 		t.Fatalf("strict property err=%v out=%s", err, failed)
+	}
+}
+
+func TestNoteListPeriodFiltersCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLINoteListPeriodFixture(t, root, "notes/recent.md", "Recent Five Hour", "2026-06-21T12:30:00Z")
+	writeCLINoteListPeriodFixture(t, root, "notes/today.md", "Today Morning", "2026-06-21T08:00:00Z")
+	writeCLINoteListPeriodFixture(t, root, "notes/week.md", "This Week", "2026-06-18T10:00:00Z")
+	writeCLINoteListPeriodFixture(t, root, "notes/month.md", "This Month", "2026-06-02T10:00:00Z")
+	writeCLINoteListPeriodFixture(t, root, "notes/old.md", "Older", "2026-05-31T23:59:59Z")
+
+	fiveHour := runCLI(t, "note", "list", "--period", "5h", "--vault", root, "--json")
+	assertNoteListTitles(t, fiveHour, []string{"Recent Five Hour"}, []string{"Today Morning", "This Week", "This Month", "Older"})
+	assertNoteListFacts(t, fiveHour, map[string]string{"filter.period": "5h", "filter.updated_after": "2026-06-21T10:30:00Z", "returned": "1"})
+
+	daily := runCLI(t, "note", "list", "--period", "daily", "--vault", root, "--json")
+	assertNoteListTitles(t, daily, []string{"Recent Five Hour", "Today Morning"}, []string{"This Week", "This Month", "Older"})
+	assertNoteListFacts(t, daily, map[string]string{"filter.period": "daily", "filter.updated_after": "2026-06-21T00:00:00Z", "returned": "2"})
+
+	weekly := runCLI(t, "note", "list", "--period", "weekly", "--vault", root, "--json")
+	assertNoteListTitles(t, weekly, []string{"Recent Five Hour", "Today Morning", "This Week"}, []string{"This Month", "Older"})
+	assertNoteListFacts(t, weekly, map[string]string{"filter.period": "weekly", "filter.updated_after": "2026-06-15T00:00:00Z", "returned": "3"})
+
+	monthly := runCLI(t, "note", "list", "--period", "monthly", "--vault", root, "--json")
+	assertNoteListTitles(t, monthly, []string{"Recent Five Hour", "Today Morning", "This Week", "This Month"}, []string{"Older"})
+	assertNoteListFacts(t, monthly, map[string]string{"filter.period": "monthly", "filter.updated_after": "2026-06-01T00:00:00Z", "returned": "4"})
+}
+
+func writeCLINoteListPeriodFixture(t *testing.T, root, rel, title, updatedAt string) {
+	t.Helper()
+	writeCLIFixture(t, filepath.Join(root, filepath.FromSlash(rel)), "---\nschema_version: pinax.note.v1\nnote_id: "+strings.ReplaceAll(strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), "-", "_")+"\ntitle: "+title+"\ntags: []\nstatus: active\ncreated_at: "+updatedAt+"\nupdated_at: "+updatedAt+"\n---\n\n# "+title+"\n")
+}
+
+func assertNoteListTitles(t *testing.T, out string, wants []string, forbidden []string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(out, want) {
+			t.Fatalf("note list missing %q:\n%s", want, out)
+		}
+	}
+	for _, item := range forbidden {
+		if strings.Contains(out, item) {
+			t.Fatalf("note list should not include %q:\n%s", item, out)
+		}
+	}
+}
+
+func assertNoteListFacts(t *testing.T, out string, wants map[string]string) {
+	t.Helper()
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("note list json invalid: %v\n%s", err, out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	for key, want := range wants {
+		if facts[key] != want {
+			t.Fatalf("note list fact %s = %#v, want %q; facts=%#v\n%s", key, facts[key], want, facts, out)
+		}
 	}
 }
 
@@ -959,6 +1170,53 @@ func TestNoteCommandUXCLI(t *testing.T) {
 	}
 }
 
+func TestNotePropertyPreservesObsidianPluginFrontmatterCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	notePath := filepath.Join(root, "notes", "obsidian.md")
+	writeCLIFixture(t, notePath, strings.Join([]string{
+		"---",
+		"schema_version: pinax.note.v1",
+		"note_id: note_obsidian",
+		"title: Obsidian Note",
+		"tags: [research]",
+		"cssclasses:",
+		"  - wide",
+		"obsidian_plugin_state: keep-me",
+		"kanban-plugin: board-a",
+		"---",
+		"",
+		"# Obsidian Note",
+		"",
+		"User edited body.",
+	}, "\n"))
+
+	setOut := runCLI(t, "note", "property", "set", "Obsidian Note", "priority", "2", "--vault", root, "--json")
+	if !strings.Contains(setOut, "note.property") || !strings.Contains(setOut, `"property":"priority"`) {
+		t.Fatalf("property set output invalid:\n%s", setOut)
+	}
+	withProperty := readCLIFile(t, notePath)
+	for _, want := range []string{"cssclasses:\n  - wide", "obsidian_plugin_state: keep-me", "kanban-plugin: board-a", "priority: 2", "User edited body."} {
+		if !strings.Contains(withProperty, want) {
+			t.Fatalf("property set failed to preserve %q:\n%s", want, withProperty)
+		}
+	}
+
+	removeOut := runCLI(t, "note", "property", "remove", "Obsidian Note", "priority", "--vault", root, "--json")
+	if !strings.Contains(removeOut, "note.property") || !strings.Contains(removeOut, `"operation":"remove"`) {
+		t.Fatalf("property remove output invalid:\n%s", removeOut)
+	}
+	withoutProperty := readCLIFile(t, notePath)
+	if strings.Contains(withoutProperty, "priority:") {
+		t.Fatalf("property remove left priority frontmatter:\n%s", withoutProperty)
+	}
+	for _, want := range []string{"cssclasses:\n  - wide", "obsidian_plugin_state: keep-me", "kanban-plugin: board-a", "User edited body."} {
+		if !strings.Contains(withoutProperty, want) {
+			t.Fatalf("property remove failed to preserve %q:\n%s", want, withoutProperty)
+		}
+	}
+}
+
 func TestNoteTagBulkManagementCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -1098,6 +1356,68 @@ func TestFolderCreateListShowCLI(t *testing.T) {
 	repairOut := runCLI(t, "folder", "repair", "--plan", "--vault", root, "--json")
 	if !strings.Contains(repairOut, `"command":"folder.repair"`) || !strings.Contains(repairOut, `"writes":"false"`) {
 		t.Fatalf("folder repair plan output invalid:\n%s", repairOut)
+	}
+}
+
+func TestFolderListHumanOutputShowsDetailedRowsAndSubtreeFilterCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "folder", "create", "spaces/research", "--purpose", "notes", "--vault", root, "--json")
+	runCLI(t, "folder", "create", "spaces/research/runs", "--purpose", "notes", "--vault", root, "--json")
+	runCLI(t, "folder", "create", "assets/images", "--purpose", "assets", "--vault", root, "--json")
+	runCLI(t, "note", "new", "Alpha", "--folder", "spaces/research", "--slug", "alpha", "--vault", root, "--json")
+
+	human := runCLI(t, "folder", "list", "--include-empty", "--vault", root, "--color", "never")
+	for _, want := range []string{"Folders", "Path", "Purpose", "Managed", "Exists", "Empty", "Notes", "Assets", "Depth", "spaces/research", "managed", "notes"} {
+		if !strings.Contains(human, want) {
+			t.Fatalf("folder list human output missing %q:\n%s", want, human)
+		}
+	}
+	if strings.Contains(human, "\x1b[") {
+		t.Fatalf("folder list human output should honor --color never:\n%s", human)
+	}
+
+	subtreeJSON := runCLI(t, "folder", "list", "--under", "spaces/research", "--depth", "1", "--include-empty", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(subtreeJSON), &envelope); err != nil {
+		t.Fatalf("folder subtree json invalid: %v\n%s", err, subtreeJSON)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if facts["filter.under"] != "spaces/research" || facts["depth"] != "1" {
+		t.Fatalf("folder subtree facts invalid: %#v\n%s", facts, subtreeJSON)
+	}
+	if !strings.Contains(subtreeJSON, "spaces/research/runs") || strings.Contains(subtreeJSON, "assets/images") {
+		t.Fatalf("folder subtree filter output invalid:\n%s", subtreeJSON)
+	}
+}
+
+func TestFolderShowIncludesChildrenAndCountsCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "folder", "create", "spaces/research", "--purpose", "notes", "--vault", root, "--json")
+	runCLI(t, "folder", "create", "spaces/research/runs", "--purpose", "notes", "--vault", root, "--json")
+	runCLI(t, "folder", "create", "spaces/research/outputs", "--purpose", "generic", "--vault", root, "--json")
+
+	showOut := runCLI(t, "folder", "show", "spaces/research", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(showOut), &envelope); err != nil {
+		t.Fatalf("folder show json invalid: %v\n%s", err, showOut)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if facts["child_folders"] != "2" || facts["descendant_folders"] != "2" {
+		t.Fatalf("folder show child facts invalid: %#v\n%s", facts, showOut)
+	}
+	data := envelope["data"].(map[string]any)
+	children := data["children"].([]any)
+	if len(children) != 2 || !strings.Contains(showOut, "spaces/research/runs") || !strings.Contains(showOut, "spaces/research/outputs") {
+		t.Fatalf("folder show children invalid: %#v\n%s", children, showOut)
+	}
+
+	human := runCLI(t, "folder", "show", "spaces/research", "--vault", root, "--color", "never")
+	for _, want := range []string{"Folder details read.", "Folder path", "Child folders", "Children", "spaces/research/runs", "spaces/research/outputs"} {
+		if !strings.Contains(human, want) {
+			t.Fatalf("folder show human output missing %q:\n%s", want, human)
+		}
 	}
 }
 

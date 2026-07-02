@@ -46,15 +46,15 @@ type NoteTextRecord struct {
 
 // TagRecord 记录 note 与 tag 的多值关系。
 type TagRecord struct {
-	ID       uint `gorm:"primaryKey"`
-	NotePath string
-	Tag      string `gorm:"index"`
+	ID       uint   `gorm:"primaryKey"`
+	NotePath string `gorm:"index;index:idx_tag_note,priority:2"`
+	Tag      string `gorm:"index;index:idx_tag_note,priority:1"`
 }
 
 // LinkRecord 记录 note 之间的 wiki/markdown 链接及其解析状态。
 type LinkRecord struct {
-	ID            uint `gorm:"primaryKey"`
-	NotePath      string
+	ID            uint   `gorm:"primaryKey"`
+	NotePath      string `gorm:"index"`
 	Target        string `gorm:"index"`
 	TargetPath    string `gorm:"index"`
 	Kind          string
@@ -73,17 +73,17 @@ type LinkRecord struct {
 // SearchTokenRecord 保存 note 的分词倒排索引。
 type SearchTokenRecord struct {
 	ID       uint   `gorm:"primaryKey"`
-	Token    string `gorm:"index"`
-	NotePath string `gorm:"index"`
-	Field    string
+	Token    string `gorm:"index;index:idx_search_token_note,priority:1;index:idx_search_token_field_note,priority:1"`
+	NotePath string `gorm:"index;index:idx_search_token_note,priority:2;index:idx_search_token_field_note,priority:3"`
+	Field    string `gorm:"index:idx_search_token_field_note,priority:2"`
 	Count    int
 	Weight   int
 }
 
 // AttachmentRecord 记录 note 引用的附件及其存在性。
 type AttachmentRecord struct {
-	ID            uint `gorm:"primaryKey"`
-	NotePath      string
+	ID            uint   `gorm:"primaryKey"`
+	NotePath      string `gorm:"index"`
 	ReferenceText string
 	TargetPath    string `gorm:"index"`
 	MediaType     string
@@ -177,6 +177,23 @@ type PropertyValueRecord struct {
 	Source   string `gorm:"index"`
 }
 
+// TaskRecord 记录 Markdown task list item 的可重建查询投影。
+type TaskRecord struct {
+	ID        uint   `gorm:"primaryKey"`
+	NotePath  string `gorm:"index"`
+	NoteID    string `gorm:"index"`
+	Title     string
+	Folder    string `gorm:"index"`
+	Line      int    `gorm:"index"`
+	Text      string
+	Completed bool   `gorm:"index"`
+	Due       string `gorm:"index"`
+	Scheduled string `gorm:"index"`
+	Priority  string `gorm:"index"`
+	Tags      string `gorm:"index"`
+	BlockID   string `gorm:"index"`
+}
+
 // PromptAssetRecord stores the stable searchable projection for a reusable prompt asset.
 type PromptAssetRecord struct {
 	PromptAssetID      string `gorm:"primaryKey"`
@@ -245,6 +262,7 @@ func AllModels() []any {
 		&DimensionCountRecord{},
 		&PropertyDefinitionRecord{},
 		&PropertyValueRecord{},
+		&TaskRecord{},
 		&PromptAssetRecord{},
 		&PromptAssetVersionRecord{},
 		&PromptAssetSourceRefRecord{},

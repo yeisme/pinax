@@ -25,7 +25,7 @@ func TestJournalTemplateCreatesDailyAndDoesNotRewriteExisting(t *testing.T) {
 	}
 	path := filepath.Join(root, "daily", "2026-06-08.md")
 	body := readFile(t, path)
-	for _, want := range []string{"title: Daily-2026-06-08", "# 2026-06-08", "## Today's Focus", "<!-- pinax:managed name=daily-captures -->"} {
+	for _, want := range []string{"title: Daily-2026-06-08", "# 2026-06-08", "## Today's Focus", "<!-- pinax:managed name=planning-daily -->", "<!-- pinax:managed name=daily-task-review -->", "<!-- pinax:managed name=daily-captures -->"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("daily body missing %q:\n%s", want, body)
 		}

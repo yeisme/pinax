@@ -1,0 +1,12 @@
+# 任务
+
+- [x] 1. Owner: `cli/pinax`; Lane: A; Depends on: none; Scope: daemon service tests. 补启动即同步、pull-before-push、事件持久化、watch trigger 和脱敏测试。Acceptance: `go test ./internal/app -run 'TestSyncDaemon' -count=1` 通过；失败时先检查 daemon loop、event repository、fake executor 调用顺序。
+  - Evidence: 新增 `TestSyncDaemonRunOncePersistsTriggerAndSyncEvents`、`TestSyncDaemonEventSinkReceivesRedactedEvents`、`TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick`；`go test ./internal/app -run 'TestSyncDaemon' -count=1` 通过。
+- [x] 2. Owner: `cli/pinax`; Lane: A; Depends on: 1; Scope: daemon service implementation. 实现 startup cycle、watcher/debounce 接入、事件 emitter、scan fallback 和无变化 poll 去噪。Acceptance: `go test ./internal/app -run 'TestSyncDaemon' -count=1` 通过；失败时重查 trigger 和 state transition。
+  - Evidence: `SyncDaemonRun` 已执行 startup cycle 后再进入 watcher/ticker loop；`syncdaemon.Loop.RunOnceWithTrigger` 持久化 trigger/cycle/direction/write facts；`go test ./internal/app -run 'TestSyncDaemon' -count=1` 通过。
+- [x] 3. Owner: `cli/pinax`; Lane: B; Depends on: 2; Scope: CLI output contract. 为 `sync daemon run` 接入 human live output 和 `--events` NDJSON stream，同时保持 `--json`/`--agent` 干净。Acceptance: `go test ./cmd/pinax -run SyncDaemon -count=1` 通过；失败时检查 stdout/stderr 和 envelope。
+  - Evidence: 新增 `TestSyncDaemonRunLiveOutputModes`；`go test ./cmd/pinax -run SyncDaemon -count=1` 通过，覆盖 human live output、`--events` NDJSON 和 `--json` 单 envelope。
+- [x] 4. Owner: `cli/pinax`; Lane: C; Depends on: 2,3; Scope: e2e/docs. 更新 sync daemon e2e 脚本和命令文档。Acceptance: `go test ./tests/e2e -run TestSyncDaemon -count=1` 与 `openspec validate pinax-sync-daemon-observability-initial-sync --strict` 通过；失败时检查 fake cloud 配置和 spec delta。
+  - Evidence: 更新 README、README.zh-CN、`docs/commands/sync.md`、`docs/commands/cloud.md`、`docs/architecture/cloud-sync-design.md`；`go test ./tests/e2e -run TestSyncDaemon -count=1`、`openspec validate pinax-sync-daemon-observability-initial-sync --strict` 和 `openspec validate --all` 通过。
+- [x] 5. Owner: `cli/pinax`; Lane: sequential; Depends on: 1-4; Scope: final gates. 运行聚焦和可行质量门禁，记录结果。Acceptance: `task test:integration` 或说明不可运行原因；`task check` 或聚焦替代命令通过。
+  - Evidence: `task test:integration` 通过并生成 `temp/integration-test-runs/20260624T152955Z-3016181`；`go test ./internal/app -run 'TestSyncDaemon' -count=1`、`go test ./cmd/pinax -run SyncDaemon -count=1`、`go test ./tests/e2e -run TestSyncDaemon -count=1`、`openspec validate --all` 通过。`task check` 已运行，Go tests/build/OpenSpec/sidecar protocol 通过，但 lint 仍因既有无关 `internal/index/store.go` 的两个 unused helper 失败。

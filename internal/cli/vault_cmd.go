@@ -63,6 +63,22 @@ func addVaultCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.ValidateVault(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
 		return ctx.renderProjection(cmd, projection, err)
 	}})
+	ignoreCmd := &cobra.Command{Use: "ignore", Short: "Inspect and repair Pinax/Git ignore configuration"}
+	ignoreCmd.AddCommand(&cobra.Command{Use: "status", Short: "Show Pinax content ignore status", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.VaultIgnoreStatus(cmd.Context(), app.VaultIgnoreRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}})
+	ignoreCmd.AddCommand(&cobra.Command{Use: "plan", Short: "Plan Pinax ignore configuration changes", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.VaultIgnorePlan(cmd.Context(), app.VaultIgnoreRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}})
+	ignoreApplyCmd := &cobra.Command{Use: "apply", Short: "Apply Pinax ignore configuration changes", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.VaultIgnoreApply(cmd.Context(), app.VaultIgnoreRequest{VaultPath: *ctx.vaultPath, Yes: *ctx.yes})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	ignoreApplyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm writing ignore configuration")
+	ignoreCmd.AddCommand(ignoreApplyCmd)
+	vaultCmd.AddCommand(ignoreCmd)
 	vaultRegisterName := ""
 	vaultRegisterDefault := false
 	vaultRegisterCmd := &cobra.Command{Use: "register <path>", Short: "Register a named local vault for selection and completion", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {

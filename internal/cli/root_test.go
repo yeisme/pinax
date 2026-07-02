@@ -71,6 +71,43 @@ func TestRemoteModeUsesConfiguredAPIURL(t *testing.T) {
 	}
 }
 
+func TestRemoteModeMapsProjectSubprojectCommands(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	var seenMethod string
+	var seenParams map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rpc" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var rpc struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+			t.Fatalf("decode rpc: %v", err)
+		}
+		seenMethod = rpc.Method
+		seenParams = rpc.Params
+		_ = json.NewEncoder(w).Encode(domain.NewProjection("project.subproject.list", "remote subprojects listed"))
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+
+	cmd := NewRootCommand("test")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"project", "subproject", "list", "research", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("remote subproject list: %v\n%s", err, out.String())
+	}
+	if seenMethod != "Pinax.Project.Subproject.List" || seenParams["project"] != "research" || !strings.Contains(out.String(), `"command":"project.subproject.list"`) {
+		t.Fatalf("seen method=%q params=%#v output=%s", seenMethod, seenParams, out.String())
+	}
+}
+
 func TestRemoteModeMapsNoteListFlags(t *testing.T) {
 	root := t.TempDir()
 	xdg := filepath.Join(root, "xdg")
@@ -160,6 +197,72 @@ func TestRemoteModeMapsCreateApprovalPreviewFlags(t *testing.T) {
 	}
 	if seen["Pinax.Draft.Create"]["yes"] != true || seen["Pinax.Draft.Create"]["body"] != "draft body" {
 		t.Fatalf("draft create params = %#v", seen["Pinax.Draft.Create"])
+	}
+}
+
+func TestRemoteModeMapsMemoryCommands(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	seen := map[string]map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rpc" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var rpc struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+			t.Fatalf("decode rpc: %v", err)
+		}
+		seen[rpc.Method] = rpc.Params
+		command := "memory.list"
+		switch rpc.Method {
+		case "Pinax.Memory.Capture":
+			command = "memory.capture"
+		case "Pinax.Memory.Recall":
+			command = "memory.recall"
+		case "Pinax.Memory.Context":
+			command = "memory.context"
+		case "Pinax.Memory.Stats":
+			command = "memory.stats"
+		}
+		_ = json.NewEncoder(w).Encode(domain.NewProjection(command, "remote memory"))
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+	t.Setenv("NO_COLOR", "")
+
+	commands := [][]string{
+		{"memory", "capture", "--type", "fact", "--subject", "pinax", "--predicate", "memory_capture_usage", "--object", "Use --body or --subject and --object", "--source", "cli-test", "--entity", "pinax", "--dry-run", "--json"},
+		{"memory", "list", "--type", "fact", "--entity", "pinax", "--limit", "5", "--include-draft", "--json"},
+		{"memory", "recall", "memory capture", "--entity", "pinax", "--limit", "7", "--json"},
+		{"memory", "context", "pinax memory usage", "--entity", "pinax", "--limit", "12", "--json"},
+		{"memory", "stats", "--json"},
+	}
+	for _, args := range commands {
+		cmd := NewRootCommand("test")
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("remote %s: %v", strings.Join(args, " "), err)
+		}
+	}
+	if seen["Pinax.Memory.Capture"]["type"] != "fact" || seen["Pinax.Memory.Capture"]["subject"] != "pinax" || seen["Pinax.Memory.Capture"]["predicate"] != "memory_capture_usage" || seen["Pinax.Memory.Capture"]["dry_run"] != true {
+		t.Fatalf("memory capture params = %#v", seen["Pinax.Memory.Capture"])
+	}
+	entities, ok := seen["Pinax.Memory.Capture"]["entities"].([]any)
+	if !ok || len(entities) != 1 || entities[0] != "pinax" {
+		t.Fatalf("memory capture entities = %#v", seen["Pinax.Memory.Capture"]["entities"])
+	}
+	if seen["Pinax.Memory.List"]["type"] != "fact" || seen["Pinax.Memory.List"]["include_draft"] != true || seen["Pinax.Memory.List"]["limit"] != float64(5) {
+		t.Fatalf("memory list params = %#v", seen["Pinax.Memory.List"])
+	}
+	_, statsSeen := seen["Pinax.Memory.Stats"]
+	if seen["Pinax.Memory.Recall"]["query"] != "memory capture" || seen["Pinax.Memory.Context"]["task"] != "pinax memory usage" || !statsSeen {
+		t.Fatalf("memory recall/context/stats params = %#v", seen)
 	}
 }
 
@@ -266,6 +369,54 @@ func TestConfiguredRemoteModeRejectsUnsupportedBusinessCommand(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "error.code=remote_command_unsupported") {
 		t.Fatalf("unsupported remote output = %s", out.String())
+	}
+}
+
+func TestRemoteCommandCoverageClassifiesEveryVisibleRunnableCommand(t *testing.T) {
+	coverage := RemoteCommandCoverage(NewRootCommand("test"))
+	if len(coverage) == 0 {
+		t.Fatalf("expected command coverage entries")
+	}
+
+	byPath := map[string]RemoteCommandCoverageEntry{}
+	for _, entry := range coverage {
+		if entry.CommandPath == "" {
+			t.Fatalf("coverage entry missing command path: %#v", entry)
+		}
+		if entry.Status != "remote_supported" && entry.Status != "local_only" && entry.Status != "unsupported" {
+			t.Fatalf("coverage entry %s has invalid status %q", entry.CommandPath, entry.Status)
+		}
+		if entry.Status == "remote_supported" && entry.RPCMethod == "" {
+			t.Fatalf("remote-supported entry missing RPC method: %#v", entry)
+		}
+		if entry.Status == "local_only" && entry.Reason == "" {
+			t.Fatalf("local-only entry missing reason: %#v", entry)
+		}
+		if entry.Status == "unsupported" && entry.Reason == "" {
+			t.Fatalf("unsupported entry missing reason: %#v", entry)
+		}
+		byPath[entry.CommandPath] = entry
+	}
+
+	for _, want := range []struct {
+		path   string
+		status string
+	}{
+		{path: "pinax folder list", status: "remote_supported"},
+		{path: "pinax memory capture", status: "remote_supported"},
+		{path: "pinax memory stats", status: "remote_supported"},
+		{path: "pinax memory link", status: "unsupported"},
+		{path: "pinax note tags", status: "unsupported"},
+		{path: "pinax config get", status: "local_only"},
+		{path: "pinax sync init", status: "local_only"},
+	} {
+		entry, ok := byPath[want.path]
+		if !ok {
+			t.Fatalf("missing coverage for %s", want.path)
+		}
+		if entry.Status != want.status {
+			t.Fatalf("coverage %s status = %s, want %s (entry %#v)", want.path, entry.Status, want.status, entry)
+		}
 	}
 }
 

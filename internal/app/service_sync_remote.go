@@ -140,7 +140,7 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 	pullReq.Target = target
 	pullReq.Yes = req.Yes
 	pullReq.DryRun = req.DryRun
-	pullProj, err := buildCloudSyncProjection("sync.all.pull", root, pullReq, syncplan.DirectionPull)
+	pullProj, err := buildCloudSyncProjection(ctx, "sync.all.pull", root, pullReq, syncplan.DirectionPull)
 	if err != nil {
 		return pullProj, err
 	}
@@ -150,7 +150,7 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 	pushReq.Target = target
 	pushReq.Yes = req.Yes
 	pushReq.DryRun = req.DryRun
-	pushProj, err := buildCloudSyncProjection("sync.all.push", root, pushReq, syncplan.DirectionPush)
+	pushProj, err := buildCloudSyncProjection(ctx, "sync.all.push", root, pushReq, syncplan.DirectionPush)
 	if err != nil {
 		return pushProj, err
 	}

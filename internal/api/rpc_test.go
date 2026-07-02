@@ -21,6 +21,9 @@ func TestLocalRPCProjectBoardNoteAndProjectItemPlan(t *testing.T) {
 	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "Research", NotesPrefix: "research"}); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	if _, err := svc.ProjectSubprojectCreate(ctx, app.ProjectWorkspaceRequest{VaultPath: root, Project: "research", Subproject: "stock-learning", Title: "Stock Learning", Template: "scenario"}); err != nil {
+		t.Fatalf("create subproject: %v", err)
+	}
 	created, err := svc.ProjectItemAdd(ctx, app.ProjectItemRequest{VaultPath: root, Project: "research", Title: "RPC Item", Column: "next", Body: "secret body"})
 	if err != nil {
 		t.Fatalf("add item: %v", err)
@@ -32,6 +35,22 @@ func TestLocalRPCProjectBoardNoteAndProjectItemPlan(t *testing.T) {
 	board, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.ProjectBoard.Show", Params: map[string]any{"project": "research", "note_display": "card"}})
 	if err != nil || board.Command != "project.board.show" || board.Facts["project"] != "research" {
 		t.Fatalf("board rpc projection=%#v err=%v", board, err)
+	}
+	workspaceItem, err := svc.ProjectItemAdd(ctx, app.ProjectItemRequest{VaultPath: root, Project: "research", Subproject: "stock-learning", Title: "Workspace RPC Item", Column: "doing", Labels: []string{"research"}})
+	if err != nil || workspaceItem.Facts["subproject"] != "stock-learning" {
+		t.Fatalf("workspace item projection=%#v err=%v", workspaceItem, err)
+	}
+	subprojects, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Project.Subproject.List", Params: map[string]any{"project": "research"}})
+	if err != nil || subprojects.Command != "project.subproject.list" || subprojects.Facts["subprojects"] != "1" {
+		t.Fatalf("subproject list rpc projection=%#v err=%v", subprojects, err)
+	}
+	subproject, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Project.Subproject.Show", Params: map[string]any{"project": "research", "subproject": "stock-learning"}})
+	if err != nil || subproject.Command != "project.subproject.show" || subproject.Facts["workspace_path"] != "notes/projects/research/stock-learning" {
+		t.Fatalf("subproject show rpc projection=%#v err=%v", subproject, err)
+	}
+	scopedBoard, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.ProjectBoard.Show", Params: map[string]any{"project": "research", "subproject": "stock-learning", "note_display": "card"}})
+	if err != nil || scopedBoard.Command != "project.board.show" || scopedBoard.Facts["subproject"] != "stock-learning" || scopedBoard.Facts["doing"] != "1" {
+		t.Fatalf("scoped board rpc projection=%#v err=%v", scopedBoard, err)
 	}
 	note, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Note.Read", Params: map[string]any{"ref": noteRef, "display": "card"}})
 	if err != nil || note.Command != "note.show" || strings.Contains(note.Facts["display"], "body") {
@@ -55,6 +74,26 @@ func TestLocalRPCProjectBoardNoteAndProjectItemPlan(t *testing.T) {
 	plan, err = rpc.Call(ctx, RPCRequest{Method: "Pinax.ProjectItem.Plan", Params: map[string]any{"action": "move", "item_id": itemID, "column": "done", "yes": true}})
 	if err == nil || plan.Error == nil || plan.Error.Code != "snapshot_required" {
 		t.Fatalf("move done plan should require snapshot: projection=%#v err=%v", plan, err)
+	}
+}
+
+func TestLocalRPCWorkbenchActivity(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	rpc := NewRPCDispatcher(svc, root)
+
+	list, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Workbench.Activity.List", Params: map[string]any{"limit": 1, "query": "vault"}})
+	if err != nil || list.Command != "activity.list" || list.Facts["entries"] != "1" {
+		t.Fatalf("activity list rpc projection=%#v err=%v", list, err)
+	}
+	entries := list.Data.(map[string]any)["entries"].([]app.ActivityEntry)
+	show, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Workbench.Activity.Show", Params: map[string]any{"event_id": entries[0].EventID}})
+	if err != nil || show.Command != "activity.show" || show.Facts["event_id"] != entries[0].EventID {
+		t.Fatalf("activity show rpc projection=%#v err=%v", show, err)
 	}
 }
 
@@ -82,6 +121,36 @@ func TestLocalRPCNoteListSupportsCLIQueryFilters(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "Research Go") || strings.Contains(string(body), "Other") {
 		t.Fatalf("note list rpc data = %s", body)
+	}
+}
+
+func TestLocalRPCDatabaseTaskAndGraphCapabilities(t *testing.T) {
+	ctx := context.Background()
+	root, svc, _, _ := newAPITestVault(t, ctx)
+	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
+	taskID := addAPITaskAdoptFixture(t, ctx, root, svc)
+	rpc := NewRPCDispatcher(svc, root)
+
+	view, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.DatabaseView.Render", Params: map[string]any{"name": viewName}})
+	if err != nil || view.Command != "database.view.render" || view.Facts["database_tab.name"] != viewName || view.Facts["database.display"] != "list" {
+		t.Fatalf("database view render rpc projection=%#v err=%v", view, err)
+	}
+	data, ok := view.Data.(map[string]any)
+	if !ok || data["database_tab"] == nil || data["database_view"] == nil {
+		t.Fatalf("database view render rpc missing tab projection: %#v", view.Data)
+	}
+
+	plan, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Task.AdoptPlan", Params: map[string]any{"item_id": taskID}})
+	if err != nil || plan.Command != "task.adopt" || plan.Facts["writes"] != "false" || plan.Facts["adopted"] != "0" {
+		t.Fatalf("task adopt plan rpc projection=%#v err=%v", plan, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".pinax", "task-adoptions")); !os.IsNotExist(statErr) {
+		t.Fatalf("task adopt plan rpc wrote ledger: stat err=%v", statErr)
+	}
+
+	graph, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Graph.Summary"})
+	if err != nil || graph.Command != "graph.summary" || graph.Facts["total_links"] == "" {
+		t.Fatalf("graph summary rpc projection=%#v err=%v", graph, err)
 	}
 }
 
@@ -149,6 +218,81 @@ func TestLocalRPCCreateDryRunDoesNotWriteNotes(t *testing.T) {
 	}
 }
 
+func TestLocalRPCMemoryRoutesAndWriteGate(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	readonly := NewRPCDispatcher(svc, root)
+
+	dryRun, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "predicate": "memory_capture_usage", "object": "Use --body or --subject and --object", "source": "rpc-test", "dry_run": true}})
+	if err != nil || dryRun.Command != "memory.capture" || dryRun.Facts["dry_run"] != "true" {
+		t.Fatalf("memory capture dry-run rpc projection=%#v err=%v", dryRun, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".pinax", "memory", "ledger.sqlite")); !os.IsNotExist(statErr) {
+		t.Fatalf("memory capture dry-run wrote ledger: stat err=%v", statErr)
+	}
+
+	blocked, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision", "yes": true}})
+	if err == nil || blocked.Error == nil || blocked.Error.Code != "write_disabled" {
+		t.Fatalf("readonly memory capture should fail with write_disabled: projection=%#v err=%v", blocked, err)
+	}
+
+	writer := NewRPCDispatcherWithOptions(svc, root, DispatcherOptions{AllowWrite: true})
+	approval, err := writer.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision"}})
+	if err == nil || approval.Error == nil || approval.Error.Code != "approval_required" {
+		t.Fatalf("memory capture without approval should fail: projection=%#v err=%v", approval, err)
+	}
+	captured, err := writer.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision", "source": "rpc-test", "entities": []any{"pinax"}, "yes": true}})
+	if err != nil || captured.Command != "memory.capture" || captured.Facts["dry_run"] != "false" {
+		t.Fatalf("memory capture rpc projection=%#v err=%v", captured, err)
+	}
+	list, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.List", Params: map[string]any{"entity": "pinax"}})
+	if err != nil || list.Command != "memory.list" || list.Facts["records"] != "1" {
+		t.Fatalf("memory list rpc projection=%#v err=%v", list, err)
+	}
+	recall, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Recall", Params: map[string]any{"query": "decision", "entity": "pinax"}})
+	if err != nil || recall.Command != "memory.recall" || recall.Facts["memory.matches"] != "1" {
+		t.Fatalf("memory recall rpc projection=%#v err=%v", recall, err)
+	}
+	contextProjection, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Context", Params: map[string]any{"task": "next decision", "entity": "pinax"}})
+	if err != nil || contextProjection.Command != "memory.context" || contextProjection.Facts["memory.matches"] != "1" {
+		t.Fatalf("memory context rpc projection=%#v err=%v", contextProjection, err)
+	}
+	stats, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Stats"})
+	if err != nil || stats.Command != "memory.stats" || stats.Facts["memory.records"] != "1" {
+		t.Fatalf("memory stats rpc projection=%#v err=%v", stats, err)
+	}
+}
+
+func TestLocalRPCProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, app.ProjectRequest{VaultPath: root, Slug: "research", Name: "Research", NotesPrefix: "research"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	rpc := NewRPCDispatcherWithOptions(svc, root, DispatcherOptions{AllowWrite: true})
+
+	projection, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Project.Subproject.Create", Params: map[string]any{"project": "research", "subproject": "preview", "title": "Preview", "dry_run": true}})
+	if err != nil || projection.Command != "project.subproject.create" || projection.Facts["dry_run"] != "true" || projection.Facts["writes"] != "false" {
+		t.Fatalf("subproject dry-run projection=%#v err=%v", projection, err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, ".pinax", "project-workspaces", "research", "preview.json"),
+		filepath.Join(root, "notes", "projects", "research", "preview"),
+	} {
+		if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+			t.Fatalf("subproject dry-run wrote %s: stat=%v", path, statErr)
+		}
+	}
+}
+
 func TestLocalRPCSyncPushPullUsesWriteGateAndService(t *testing.T) {
 	ctx := context.Background()
 	objectRoot := t.TempDir()
@@ -195,21 +339,56 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 	if _, err := svc.RebuildIndex(ctx, app.VaultRequest{VaultPath: root}); err != nil {
 		t.Fatalf("rebuild index: %v", err)
 	}
+	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
+	taskID := addAPITaskAdoptFixture(t, ctx, root, svc)
 	rpc := NewRPCDispatcher(svc, root)
+	activity, err := svc.ActivityList(ctx, app.ActivityRequest{VaultPath: root, Limit: 1})
+	if err != nil {
+		t.Fatalf("activity list: %v", err)
+	}
+	activityEntries := activity.Data.(map[string]any)["entries"].([]app.ActivityEntry)
+	if len(activityEntries) == 0 {
+		t.Fatalf("expected init activity entry")
+	}
+	monitor, err := svc.MonitorList(ctx, app.MonitorRequest{VaultPath: root, Limit: 1})
+	if err != nil {
+		t.Fatalf("monitor list: %v", err)
+	}
+	monitorRuns := monitor.Data.(map[string]any)["runs"].([]app.MonitorRun)
+	if len(monitorRuns) == 0 {
+		t.Fatalf("expected monitor run")
+	}
 
 	fixtures := map[string]RPCRequest{
-		"rpc.project.board.show": {Method: "Pinax.ProjectBoard.Show", Params: map[string]any{"project": "research", "note_display": "card"}},
-		"rpc.note.read":          {Method: "Pinax.Note.Read", Params: map[string]any{"ref": noteRef, "display": "card"}},
-		"rpc.note.list":          {Method: "Pinax.Note.List", Params: map[string]any{"status": "active"}},
-		"rpc.project.item.plan":  {Method: "Pinax.ProjectItem.Plan", Params: map[string]any{"item_id": itemID, "action": "archive"}},
-		"rpc.folder.list":        {Method: "Pinax.Folder.List", Params: map[string]any{}},
-		"rpc.folder.show":        {Method: "Pinax.Folder.Show", Params: map[string]any{"path": "research"}},
-		"rpc.folder.create":      {Method: "Pinax.Folder.Create", Params: map[string]any{"path": "rpc-created", "yes": true}},
-		"rpc.folder.rename":      {Method: "Pinax.Folder.Rename", Params: map[string]any{"path": "research", "target_path": "research-renamed", "yes": true}},
-		"rpc.folder.move":        {Method: "Pinax.Folder.Move", Params: map[string]any{"path": "research", "target_parent": "api-target", "yes": true}},
-		"rpc.folder.delete":      {Method: "Pinax.Folder.Delete", Params: map[string]any{"path": "research", "empty_only": true, "yes": true}},
-		"rpc.folder.adopt":       {Method: "Pinax.Folder.Adopt", Params: map[string]any{"path": "research", "purpose": "notes", "yes": true}},
-		"rpc.folder.repair":      {Method: "Pinax.Folder.RepairPlan", Params: map[string]any{}},
+		"rpc.workbench.status":          {Method: "Pinax.Workbench.Status", Params: map[string]any{}},
+		"rpc.workbench.activity.list":   {Method: "Pinax.Workbench.Activity.List", Params: map[string]any{"limit": 1}},
+		"rpc.workbench.activity.show":   {Method: "Pinax.Workbench.Activity.Show", Params: map[string]any{"event_id": activityEntries[0].EventID}},
+		"rpc.monitor.list":              {Method: "Pinax.Monitor.List", Params: map[string]any{"limit": 1}},
+		"rpc.monitor.show":              {Method: "Pinax.Monitor.Show", Params: map[string]any{"run_id": monitorRuns[0].RunID}},
+		"rpc.monitor.summary":           {Method: "Pinax.Monitor.Summary", Params: map[string]any{}},
+		"rpc.project.board.show":        {Method: "Pinax.ProjectBoard.Show", Params: map[string]any{"project": "research", "note_display": "card"}},
+		"rpc.project.subproject.list":   {Method: "Pinax.Project.Subproject.List", Params: map[string]any{"project": "research"}},
+		"rpc.project.subproject.show":   {Method: "Pinax.Project.Subproject.Show", Params: map[string]any{"project": "research", "subproject": "stock-learning"}},
+		"rpc.project.subproject.create": {Method: "Pinax.Project.Subproject.Create", Params: map[string]any{"project": "research", "subproject": "rpc-workspace", "yes": true}},
+		"rpc.note.read":                 {Method: "Pinax.Note.Read", Params: map[string]any{"ref": noteRef, "display": "card"}},
+		"rpc.note.list":                 {Method: "Pinax.Note.List", Params: map[string]any{"status": "active"}},
+		"rpc.database.view.render":      {Method: "Pinax.DatabaseView.Render", Params: map[string]any{"name": viewName}},
+		"rpc.task.adopt.plan":           {Method: "Pinax.Task.AdoptPlan", Params: map[string]any{"item_id": taskID}},
+		"rpc.graph.summary":             {Method: "Pinax.Graph.Summary", Params: map[string]any{}},
+		"rpc.memory.list":               {Method: "Pinax.Memory.List", Params: map[string]any{}},
+		"rpc.memory.capture":            {Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "object": "rpc memory", "yes": true}},
+		"rpc.memory.recall":             {Method: "Pinax.Memory.Recall", Params: map[string]any{"query": "memory"}},
+		"rpc.memory.context":            {Method: "Pinax.Memory.Context", Params: map[string]any{"task": "memory"}},
+		"rpc.memory.stats":              {Method: "Pinax.Memory.Stats", Params: map[string]any{}},
+		"rpc.project.item.plan":         {Method: "Pinax.ProjectItem.Plan", Params: map[string]any{"item_id": itemID, "action": "archive"}},
+		"rpc.folder.list":               {Method: "Pinax.Folder.List", Params: map[string]any{}},
+		"rpc.folder.show":               {Method: "Pinax.Folder.Show", Params: map[string]any{"path": "research"}},
+		"rpc.folder.create":             {Method: "Pinax.Folder.Create", Params: map[string]any{"path": "rpc-created", "yes": true}},
+		"rpc.folder.rename":             {Method: "Pinax.Folder.Rename", Params: map[string]any{"path": "research", "target_path": "research-renamed", "yes": true}},
+		"rpc.folder.move":               {Method: "Pinax.Folder.Move", Params: map[string]any{"path": "research", "target_parent": "api-target", "yes": true}},
+		"rpc.folder.delete":             {Method: "Pinax.Folder.Delete", Params: map[string]any{"path": "research", "empty_only": true, "yes": true}},
+		"rpc.folder.adopt":              {Method: "Pinax.Folder.Adopt", Params: map[string]any{"path": "research", "purpose": "notes", "yes": true}},
+		"rpc.folder.repair":             {Method: "Pinax.Folder.RepairPlan", Params: map[string]any{}},
 		// Inbox RPC fixtures
 		"rpc.inbox.list":    {Method: "Pinax.Inbox.List", Params: map[string]any{}},
 		"rpc.inbox.show":    {Method: "Pinax.Inbox.Show", Params: map[string]any{"ref": "note_inbox_rpc_1"}},

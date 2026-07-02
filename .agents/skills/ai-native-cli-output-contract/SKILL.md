@@ -98,6 +98,8 @@ Default output is for humans:
 Privacy controls are part of the contract:
 
 - For commands likely to touch credentials, provide `--no-output`, `--output none`, or an equivalent sidecar-only path when the product surface supports it.
+- Local CLI auth/config commands may write real credentials only to user-level local config or a user-level secret store. Output, events, logs, evidence, docs, and fixtures must show only credential status, source type, env name, path, keychain ref, or redacted digest.
+- Do not document shell credential scripts as the local persistence mechanism; use CLI/service-authored config or environment variables for CI and temporary overrides.
 - Sidecar, trace, audit, and test snapshot output must use the same redaction policy as stdout.
 - Reasoning summaries may be persisted only through CLI/service-authored structured evidence after redaction; never by direct agent-written metadata files.
 

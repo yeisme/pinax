@@ -2,14 +2,13 @@
 
 `pinax cloud` manages local state for the distributed Pinax Cloud Sync protocol. It is not the same feature as `pinax api serve`: `api serve` exposes one centralized vault through local REST/RPC, while Cloud Sync keeps a separate local vault on every device and exchanges encrypted revisions, manifests, and blobs through a selected transport.
 
-The word `cloud` names the sync protocol, not necessarily a hosted Pinax Cloud service. Pinax Cloud Sync can use a server transport, S3-compatible direct storage, rclone-backed providers such as OneDrive, or embedded Go API/local RPC entrypoints that call the same app service.
+The word `cloud` names the sync protocol, not necessarily a hosted Pinax Cloud service. Pinax Cloud Sync can use the current server-style `cloud login` transport, S3-compatible direct storage, rclone-backed providers such as OneDrive, or embedded Go API/local RPC entrypoints that call the same app service.
 
 ## Subcommands
 
 | Command | Purpose | Writes |
 | --- | --- | --- |
 | `pinax cloud login` | Shortcut for configuring a server-style Cloud backend endpoint, workspace, device, and secret reference. | Writes cloud state; does not save the raw token. |
-| `pinax cloud backend set server` | Configures a Pinax Cloud Server transport. | Writes cloud state; does not save the raw token. |
 | `pinax cloud backend set s3` | Configures direct S3/MinIO/R2-compatible object storage transport. | Writes cloud state; does not save access key or secret key. |
 | `pinax cloud backend set rclone` | Configures an rclone direct transport such as an existing OneDrive remote. | Writes cloud state; does not save OAuth refresh tokens. |
 | `pinax cloud status` | Views cloud state. | Does not write. |
@@ -21,12 +20,14 @@ The word `cloud` names the sync protocol, not necessarily a hosted Pinax Cloud s
 | Pattern | Command surface | Vault ownership | Current status |
 | --- | --- | --- | --- |
 | Centralized local access | `pinax api serve`, `pinax --api-url ...`, local RPC routes | One running `pinax api serve` process owns one server-side vault. Callers do not keep an independent synchronized vault. | Implemented for registered local API routes. Not a Cloud Sync transport. |
-| Cloud Sync server transport | `pinax cloud login` / `pinax cloud backend set server`, then `pinax sync --target cloud` | Every device owns its own local vault. Pinax Cloud Server coordinates encrypted blob/revision exchange. | Implemented through the shared sync engine and `internal/cloudclient.Transport`; `remote_write=true` is emitted only after a durable revision commit and local sync-state receipt. |
+| Cloud Sync server transport | `pinax cloud login`, then `pinax sync --target cloud` | Every device owns its own local vault. Pinax Cloud Server coordinates encrypted blob/revision exchange. | Implemented through the shared sync engine and `internal/cloudclient.Transport`; `remote_write=true` is emitted only after a durable revision commit and local sync-state receipt. |
 | Cloud Sync S3 direct transport | `pinax cloud backend set s3`, then `pinax sync --target cloud` | Every device owns its own local vault. The provider stores encrypted Cloud Sync objects. | Implemented for the direct object-store engine; `remote_write=true` is emitted only after the head/revision commit succeeds. |
 | Cloud Sync rclone direct transport | `pinax cloud backend set rclone`, then `pinax sync --target cloud` | Every device owns its own local vault. rclone is the provider credential boundary. | Implemented through the shared object-store sync path; lock-object commit protection covers providers without reliable conditional writes. |
 | Embedded Go API / local RPC | `app.Service` methods and `Pinax.Sync.Push` / `Pinax.Sync.Pull` local RPC | Same local app service and vault mutation rules as CLI. | Implemented for local callers. This is not `pinax api serve` centralized remote mode. |
 
 The distributed design is similar to Obsidian Sync: laptop, phone, and desktop all keep local vaults. The transport stores encrypted sync artifacts and revision order; it does not become the plaintext note source of truth.
+
+`pinax sync daemon` is the local automation layer on top of this protocol. It runs on each device, watches local vault changes, polls the remote Cloud Sync head for remote changes, and then invokes the same pull/push engine as explicit CLI commands. It is not a hosted Pinax Cloud service, and it does not give the transport plaintext note access.
 
 ## User-runnable setup examples
 
@@ -132,6 +133,16 @@ pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace person
 pinax sync push --target cloud --vault ./device-a --yes --json
 pinax sync pull --target cloud --vault ./device-b --yes --json
 ```
+
+Local daemon preview:
+
+```bash
+pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon status --vault ./device-a --json
+pinax sync daemon stop --vault ./device-a
+```
+
+The first daemon release runs an immediate startup sync cycle, then uses remote-head polling for remote changes and a local watcher for vault file changes. Local runtime state and redacted daemon events are stored under `.pinax/sync-daemon/` and must not be synced as vault content.
 
 The push may report `"remote_write":true` only after the direct transport commits the head revision. The pull reports `"remote_write":false` because it writes the local vault from the committed remote revision.
 

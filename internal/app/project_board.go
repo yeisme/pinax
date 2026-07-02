@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,20 +18,38 @@ import (
 type ProjectBoardRequest struct {
 	VaultPath   string
 	Project     string
+	Subproject  string
+	View        string
 	NoteDisplay string
 	Columns     []string
+	GroupBy     string
+	Sort        string
+	Display     string
 	Save        bool
 	Format      string
+	Compact     bool
 }
 
 type ProjectItemRequest struct {
+	VaultPath  string
+	Project    string
+	Subproject string
+	Action     string
+	Title      string
+	ItemID     string
+	Column     string
+	Body       string
+	Labels     []string
+	Milestone  string
+	Priority   string
+	DueAt      string
+	BlockedBy  []string
+	Yes        bool
+}
+
+type TaskAdoptRequest struct {
 	VaultPath string
-	Project   string
-	Action    string
-	Title     string
 	ItemID    string
-	Column    string
-	Body      string
 	Yes       bool
 }
 
@@ -52,6 +71,41 @@ func (s *Service) ProjectBoardShow(_ context.Context, req ProjectBoardRequest) (
 	if err != nil {
 		return errorProjection("project.board.show", err), err
 	}
+	var workspace *domain.ProjectWorkspace
+	if strings.TrimSpace(req.Subproject) != "" {
+		subproject, pathErr := validateSubprojectSlug(req.Subproject)
+		if pathErr != nil {
+			return domain.NewErrorProjection("project.board.show", pathErr), pathErr
+		}
+		loaded, loadErr := loadProjectWorkspace(root, project.Slug, subproject)
+		if loadErr != nil {
+			return errorProjection("project.board.show", loadErr), loadErr
+		}
+		loaded.Directories = workspaceDirectoryStatuses(root, loaded.WorkspacePath)
+		workspace = &loaded
+	}
+	boardColumns, err := loadProjectBoardColumns(root, project.Slug, workspaceSubproject(workspace))
+	if err != nil {
+		return errorProjection("project.board.show", err), err
+	}
+	var savedView *domain.ProjectBoardView
+	if strings.TrimSpace(req.View) != "" {
+		view, viewErr := loadProjectBoardView(root, project.Slug, workspaceSubproject(workspace), req.View)
+		if viewErr != nil {
+			return errorProjection("project.board.show", viewErr), viewErr
+		}
+		savedView = &view
+		if len(view.Columns) > 0 {
+			var columnErr *domain.CommandError
+			boardColumns, columnErr = configuredBoardColumns(view.Columns)
+			if columnErr != nil {
+				return domain.NewErrorProjection("project.board.show", columnErr), columnErr
+			}
+		}
+		if strings.TrimSpace(req.NoteDisplay) == "" && strings.TrimSpace(view.Display) != "" {
+			req.NoteDisplay = view.Display
+		}
+	}
 	display, displayErr := parseNoteDisplayKind(req.NoteDisplay)
 	if displayErr != nil {
 		return domain.NewErrorProjection("project.board.show", displayErr), displayErr
@@ -61,9 +115,16 @@ func (s *Service) ProjectBoardShow(_ context.Context, req ProjectBoardRequest) (
 		return errorProjection("project.board.show", err), err
 	}
 	engine, indexStatus := boardIndexState(root, notes)
-	board := buildProjectBoard(project, ordinaryNotes(notes), display, engine, indexStatus)
+	board := buildProjectBoard(root, project, workspace, boardColumns, ordinaryNotes(notes), display, engine, indexStatus, savedView != nil)
 	projection := domain.NewProjection("project.board.show", boardHumanSummary(board))
 	projection.Facts["project"] = board.ProjectSlug
+	if board.Subproject != "" {
+		projection.Facts["subproject"] = board.Subproject
+		projection.Facts["workspace_path"] = board.WorkspacePath
+	}
+	if savedView != nil {
+		projection.Facts["view"] = savedView.View
+	}
 	projection.Facts["columns"] = fmt.Sprint(len(board.Columns))
 	projection.Facts["items"] = fmt.Sprint(len(board.Items))
 	projection.Facts["next"] = fmt.Sprint(board.Facts.Next)
@@ -71,17 +132,93 @@ func (s *Service) ProjectBoardShow(_ context.Context, req ProjectBoardRequest) (
 	projection.Facts["blocked"] = fmt.Sprint(board.Facts.Blocked)
 	projection.Facts["review"] = fmt.Sprint(board.Facts.Review)
 	projection.Facts["done"] = fmt.Sprint(board.Facts.Done)
+	for _, column := range board.Columns {
+		projection.Facts["column."+column.ID] = fmt.Sprint(board.Facts.ColumnCounts[column.ID])
+	}
 	projection.Facts["warnings"] = fmt.Sprint(len(board.Warnings))
 	projection.Facts["engine"] = board.Facts.Engine
 	projection.Facts["index_status"] = board.Facts.IndexStatus
 	projection.Facts["note_display"] = string(display)
-	projection.Data = map[string]any{"board": board}
+	projection.Facts["compact"] = fmt.Sprint(req.Compact)
+	agentContexts := projectBoardAgentContexts(board)
+	projection.Data = map[string]any{"board": board, "agent_contexts": agentContexts}
+	if workspace != nil {
+		projection.Data = map[string]any{"board": board, "workspace": *workspace, "agent_contexts": agentContexts}
+	}
+	if savedView != nil {
+		data := projection.Data.(map[string]any)
+		data["view"] = *savedView
+		projection.Data = data
+	}
 	if indexStatus == "missing" || indexStatus == "stale" {
 		projection.Status = "partial"
 		projection.Actions = []domain.Action{{Name: "index_rebuild", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(root))}}
 	} else {
-		projection.Actions = []domain.Action{{Name: "board_plan", Command: fmt.Sprintf("pinax project board plan %s --vault %s --save", project.Slug, shellQuote(root))}}
+		action := fmt.Sprintf("pinax project board plan %s --vault %s --save", project.Slug, shellQuote(root))
+		if board.Subproject != "" {
+			action = fmt.Sprintf("pinax project board plan %s --subproject %s --vault %s --save", project.Slug, shellQuote(board.Subproject), shellQuote(root))
+		}
+		projection.Actions = []domain.Action{{Name: "board_plan", Command: action}}
 	}
+	return projection, nil
+}
+
+func projectBoardAgentContexts(board domain.ProjectBoard) []domain.AgentContext {
+	contexts := make([]domain.AgentContext, 0, len(board.Items))
+	for _, item := range board.Items {
+		if item.AgentContext != nil {
+			contexts = append(contexts, *item.AgentContext)
+		}
+	}
+	return contexts
+}
+
+func (s *Service) ProjectBoardViewSave(_ context.Context, req ProjectBoardRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("project.board.view.save", err), err
+	}
+	project, err := findProject(root, req.Project)
+	if err != nil {
+		return errorProjection("project.board.view.save", err), err
+	}
+	subproject := ""
+	if strings.TrimSpace(req.Subproject) != "" {
+		var pathErr *domain.CommandError
+		subproject, pathErr = validateSubprojectSlug(req.Subproject)
+		if pathErr != nil {
+			return domain.NewErrorProjection("project.board.view.save", pathErr), pathErr
+		}
+		if _, err := loadProjectWorkspace(root, project.Slug, subproject); err != nil {
+			return errorProjection("project.board.view.save", err), err
+		}
+	}
+	viewName := strings.TrimSpace(req.View)
+	if viewName == "" || !isSafeBoardSlug(viewName) {
+		err := &domain.CommandError{Code: "invalid_board_view", Message: "Board view name must be a safe slug", Hint: "Use a name like active or weekly-review"}
+		return domain.NewErrorProjection("project.board.view.save", err), err
+	}
+	if _, err := configuredBoardColumns(req.Columns); err != nil {
+		return domain.NewErrorProjection("project.board.view.save", err), err
+	}
+	view := domain.ProjectBoardView{SchemaVersion: domain.ProjectBoardViewSchemaVersion, ProjectSlug: project.Slug, Subproject: subproject, View: viewName, Columns: req.Columns, GroupBy: strings.TrimSpace(req.GroupBy), Sort: strings.TrimSpace(req.Sort), Display: strings.TrimSpace(req.Display), UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
+	rel := projectBoardViewRel(project.Slug, subproject, viewName)
+	if err := writeJSONAsset(filepath.Join(root, filepath.FromSlash(rel)), view); err != nil {
+		return errorProjection("project.board.view.save", err), err
+	}
+	_ = appendEvent(root, "project.board.view.save", "success", map[string]string{"project": project.Slug, "subproject": subproject, "view": viewName, "saved_path": rel})
+	projection := domain.NewProjection("project.board.view.save", "Project board view saved.")
+	projection.Facts["project"] = project.Slug
+	projection.Facts["view"] = viewName
+	projection.Facts["columns"] = fmt.Sprint(len(req.Columns))
+	projection.Facts["writes"] = "true"
+	projection.Facts["saved_path"] = rel
+	if subproject != "" {
+		projection.Facts["subproject"] = subproject
+	}
+	projection.Evidence = []string{rel, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
+	projection.Data = map[string]any{"view": view}
+	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax project board show %s --view %s --vault %s --json", shellQuote(project.Slug), shellQuote(viewName), shellQuote(root))}}
 	return projection, nil
 }
 
@@ -94,12 +231,23 @@ func (s *Service) ProjectBoardConfigure(_ context.Context, req ProjectBoardReque
 	if err != nil {
 		return errorProjection("project.board.configure", err), err
 	}
+	subproject := ""
+	if strings.TrimSpace(req.Subproject) != "" {
+		var pathErr *domain.CommandError
+		subproject, pathErr = validateSubprojectSlug(req.Subproject)
+		if pathErr != nil {
+			return domain.NewErrorProjection("project.board.configure", pathErr), pathErr
+		}
+		if _, err := loadProjectWorkspace(root, project.Slug, subproject); err != nil {
+			return errorProjection("project.board.configure", err), err
+		}
+	}
 	columns, configErr := configuredBoardColumns(req.Columns)
 	if configErr != nil {
 		return domain.NewErrorProjection("project.board.configure", configErr), configErr
 	}
-	config := domain.ProjectBoardConfig{SchemaVersion: domain.ProjectBoardSchemaVersion, ProjectSlug: project.Slug, Columns: columns, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
-	rel := filepath.ToSlash(filepath.Join(".pinax", "project-boards", project.Slug+".json"))
+	config := domain.ProjectBoardConfig{SchemaVersion: domain.ProjectBoardSchemaVersion, ProjectSlug: project.Slug, Subproject: subproject, Columns: columns, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
+	rel := projectBoardConfigRel(project.Slug, subproject)
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return errorProjection("project.board.configure", err), err
@@ -111,9 +259,12 @@ func (s *Service) ProjectBoardConfigure(_ context.Context, req ProjectBoardReque
 	if err := os.WriteFile(path, append(payload, '\n'), 0o644); err != nil {
 		return errorProjection("project.board.configure", err), err
 	}
-	_ = appendEvent(root, "project.board.configure", "success", map[string]string{"project": project.Slug, "saved_path": rel})
+	_ = appendEvent(root, "project.board.configure", "success", map[string]string{"project": project.Slug, "subproject": subproject, "saved_path": rel})
 	projection := domain.NewProjection("project.board.configure", "Project board configuration saved.")
 	projection.Facts["project"] = project.Slug
+	if subproject != "" {
+		projection.Facts["subproject"] = subproject
+	}
 	projection.Facts["columns"] = fmt.Sprint(len(columns))
 	projection.Facts["saved_path"] = rel
 	projection.Facts["writes"] = "true"
@@ -198,12 +349,29 @@ func (s *Service) ProjectItemAdd(_ context.Context, req ProjectItemRequest) (dom
 	if err != nil {
 		return errorProjection("project.item.add", err), err
 	}
+	var workspace *domain.ProjectWorkspace
+	if strings.TrimSpace(req.Subproject) != "" {
+		subproject, pathErr := validateSubprojectSlug(req.Subproject)
+		if pathErr != nil {
+			return domain.NewErrorProjection("project.item.add", pathErr), pathErr
+		}
+		loaded, loadErr := loadProjectWorkspace(root, project.Slug, subproject)
+		if loadErr != nil {
+			return errorProjection("project.item.add", loadErr), loadErr
+		}
+		loaded.Directories = workspaceDirectoryStatuses(root, loaded.WorkspacePath)
+		workspace = &loaded
+	}
 	column := strings.TrimSpace(req.Column)
 	if column == "" {
 		column = "next"
 	}
-	if !isKnownBoardColumn(column) {
-		err := &domain.CommandError{Code: "invalid_board_column", Message: "Unknown board column", Hint: "Use inbox, next, doing, blocked, review, or done"}
+	boardColumns, err := loadProjectBoardColumns(root, project.Slug, workspaceSubproject(workspace))
+	if err != nil {
+		return errorProjection("project.item.add", err), err
+	}
+	if !isKnownBoardColumnIn(column, boardColumns) {
+		err := &domain.CommandError{Code: "invalid_board_column", Message: "Unknown board column", Hint: "Use a configured board column"}
 		return domain.NewErrorProjection("project.item.add", err), err
 	}
 	title := strings.TrimSpace(req.Title)
@@ -213,7 +381,9 @@ func (s *Service) ProjectItemAdd(_ context.Context, req ProjectItemRequest) (dom
 	}
 	slug := safeBoardItemSlug(title)
 	dir := strings.Trim(strings.TrimPrefix(project.NotesPrefix, "notes/"), "/")
-	if dir == "" {
+	if workspace != nil {
+		dir = filepath.ToSlash(filepath.Join(workspace.WorkspacePath, "inbox"))
+	} else if dir == "" {
 		dir = project.Slug
 	}
 	rel := filepath.ToSlash(filepath.Join(dir, slug+".md"))
@@ -228,7 +398,28 @@ func (s *Service) ProjectItemAdd(_ context.Context, req ProjectItemRequest) (dom
 		body = "## Next Steps\n"
 	}
 	content := buildNoteContentWithStatus(title, rel, project.Slug, dir, "task", nil, statusForBoardColumn(column), now, body)
-	content, _ = patchFrontmatterFields(content, map[string]string{"board_column": column})
+	fields := map[string]string{"board_column": column}
+	if workspace != nil {
+		fields["subproject"] = workspace.Subproject
+		fields["workspace_path"] = workspace.WorkspacePath
+	}
+	if labels := cleanTags(req.Labels); len(labels) > 0 {
+		fields["labels"] = formatTags(labels)
+	}
+	if strings.TrimSpace(req.Milestone) != "" {
+		fields["milestone"] = strings.TrimSpace(req.Milestone)
+	}
+	if strings.TrimSpace(req.Priority) != "" {
+		fields["priority"] = strings.TrimSpace(req.Priority)
+	}
+	if strings.TrimSpace(req.DueAt) != "" {
+		fields["due_at"] = strings.TrimSpace(req.DueAt)
+		fields["due"] = strings.TrimSpace(req.DueAt)
+	}
+	if blockedBy := cleanTags(req.BlockedBy); len(blockedBy) > 0 {
+		fields["blocked_by"] = formatTags(blockedBy)
+	}
+	content, _ = patchFrontmatterFields(content, fields)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return errorProjection("project.item.add", err), err
 	}
@@ -237,7 +428,7 @@ func (s *Service) ProjectItemAdd(_ context.Context, req ProjectItemRequest) (dom
 	}
 	note := parseNote(rel, content)
 	_ = refreshIndex(root)
-	_ = appendEvent(root, "project.item.add", "success", map[string]string{"project": project.Slug, "path": rel, "column": column})
+	_ = appendEvent(root, "project.item.add", "success", map[string]string{"project": project.Slug, "subproject": req.Subproject, "path": rel, "column": column})
 	projection := projectItemProjection("project.item.add", "Project item created.", note, column)
 	projection.Evidence = []string{rel, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	return projection, nil
@@ -249,13 +440,17 @@ func (s *Service) ProjectItemMove(ctx context.Context, req ProjectItemRequest) (
 		return errorProjection("project.item.move", err), err
 	}
 	column := strings.TrimSpace(req.Column)
-	if !isKnownBoardColumn(column) {
-		err := &domain.CommandError{Code: "invalid_board_column", Message: "Unknown board column", Hint: "Use inbox, next, doing, blocked, review, or done"}
-		return domain.NewErrorProjection("project.item.move", err), err
-	}
 	note, err := findProjectItemNote(root, req.ItemID)
 	if err != nil {
 		return errorProjection("project.item.move", err), err
+	}
+	boardColumns, err := loadProjectBoardColumns(root, note.Project, note.Subproject)
+	if err != nil {
+		return errorProjection("project.item.move", err), err
+	}
+	if !isKnownBoardColumnIn(column, boardColumns) {
+		err := &domain.CommandError{Code: "invalid_board_column", Message: "Unknown board column", Hint: "Use a configured board column"}
+		return domain.NewErrorProjection("project.item.move", err), err
 	}
 	if column == "done" {
 		if !req.Yes {
@@ -322,6 +517,16 @@ func (s *Service) ProjectItemPlan(_ context.Context, req ProjectItemRequest) (do
 	if err != nil {
 		return errorProjection("project.item.plan", err), err
 	}
+	if action == "move" {
+		boardColumns, loadErr := loadProjectBoardColumns(root, note.Project, note.Subproject)
+		if loadErr != nil {
+			return errorProjection("project.item.plan", loadErr), loadErr
+		}
+		if !isKnownBoardColumnIn(strings.TrimSpace(req.Column), boardColumns) {
+			err := &domain.CommandError{Code: "invalid_board_column", Message: "Unknown board column", Hint: "Use a configured board column"}
+			return domain.NewErrorProjection("project.item.plan", err), err
+		}
+	}
 	requiresProtectedWrite := action == "archive" || (action == "move" && strings.TrimSpace(req.Column) == "done")
 	if requiresProtectedWrite && !req.Yes {
 		err := &domain.CommandError{Code: "approval_required", Message: "High-risk project item changes require --yes", Hint: projectItemPlanApplyCommand(root, req, action)}
@@ -345,6 +550,91 @@ func (s *Service) ProjectItemPlan(_ context.Context, req ProjectItemRequest) (do
 	return projection, nil
 }
 
+func (s *Service) ProjectItemShow(_ context.Context, req ProjectItemRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("project.item.show", err), err
+	}
+	note, err := findProjectItemNote(root, req.ItemID)
+	if err != nil {
+		return errorProjection("project.item.show", err), err
+	}
+	projection := projectItemProjection("project.item.show", "Project item read.", note, boardColumnForItemPlan(note, req))
+	projection.Facts["writes"] = "false"
+	projection.Evidence = []string{note.Path}
+	projection.Actions = []domain.Action{{Name: "board_show", Command: fmt.Sprintf("pinax project board show %s --vault %s --json", shellQuote(note.Project), shellQuote(root))}}
+	return projection, nil
+}
+
+func (s *Service) TaskAdopt(_ context.Context, req TaskAdoptRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("task.adopt", err), err
+	}
+	item, err := findBoardTaskItem(root, req.ItemID)
+	if err != nil {
+		return errorProjection("task.adopt", err), err
+	}
+	if item.SourceKind != domain.BoardItemSourceInlineTask {
+		err := &domain.CommandError{Code: "task_adopt_unsupported", Message: "Only inferred checklist tasks can be adopted", Hint: "Run pinax project board show <project> --json to inspect task sources"}
+		return domain.NewErrorProjection("task.adopt", err), err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	adoption := domain.TaskAdoption{SchemaVersion: domain.TaskAdoptionSchemaVersion, TaskID: item.ItemID, Title: item.Title, Project: item.Project, Subproject: item.Subproject, SourcePath: item.Path, SourceLine: item.SourceLine, SourceStatus: "adopted", Column: item.Column, CreatedAt: now, UpdatedAt: now}
+	projection := domain.NewProjection("task.adopt", "Task adoption plan generated.")
+	projection.Facts["item_id"] = item.ItemID
+	projection.Facts["project"] = item.Project
+	projection.Facts["source_status"] = item.SourceStatus
+	projection.Facts["source_kind"] = string(item.SourceKind)
+	projection.Facts["writes"] = "false"
+	projection.Facts["adopted"] = "0"
+	projection.Data = map[string]any{"item": item, "adoption": adoption}
+	projection.Actions = []domain.Action{{Name: "adopt", Command: fmt.Sprintf("pinax task adopt %s --vault %s --yes --json", shellQuote(item.ItemID), shellQuote(root))}}
+	if !req.Yes {
+		return projection, nil
+	}
+	ledgerRel := taskAdoptionLedgerRel(item.ItemID)
+	if err := writeJSONAsset(filepath.Join(root, filepath.FromSlash(ledgerRel)), adoption); err != nil {
+		return errorProjection("task.adopt", err), err
+	}
+	_ = appendEvent(root, "task.adopt", "success", map[string]string{"item_id": item.ItemID, "project": item.Project, "source_path": item.Path})
+	projection.Summary = "Task adopted."
+	projection.Facts["writes"] = "true"
+	projection.Facts["adopted"] = "1"
+	projection.Facts["ledger_path"] = ledgerRel
+	projection.Evidence = []string{ledgerRel, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
+	return projection, nil
+}
+
+func findBoardTaskItem(root, itemID string) (domain.BoardItem, error) {
+	query := strings.TrimSpace(itemID)
+	if query == "" {
+		return domain.BoardItem{}, &domain.CommandError{Code: "argument_required", Message: "task adopt requires an item id", Hint: "Run pinax project board show <project> --json to inspect task ids"}
+	}
+	registry, err := loadProjectRegistry(root)
+	if err != nil {
+		return domain.BoardItem{}, err
+	}
+	notes, err := scanNotes(root)
+	if err != nil {
+		return domain.BoardItem{}, err
+	}
+	for _, project := range registry.Projects {
+		columns, _ := loadProjectBoardColumns(root, project.Slug, "")
+		board := buildProjectBoard(root, project, nil, columns, ordinaryNotes(notes), domain.NoteDisplayCard, "scan", "unknown", false)
+		for _, item := range board.Items {
+			if item.ItemID == query {
+				return item, nil
+			}
+		}
+	}
+	return domain.BoardItem{}, &domain.CommandError{Code: "task_not_found", Message: "Task item not found", Hint: "Run pinax project board show <project> --json to inspect task ids"}
+}
+
+func taskAdoptionLedgerRel(itemID string) string {
+	return filepath.ToSlash(filepath.Join(".pinax", "task-adoptions", itemID+".json"))
+}
+
 func projectItemPlanApplyCommand(root string, req ProjectItemRequest, action string) string {
 	if action == "move" {
 		return fmt.Sprintf("pinax project item move %s %s --vault %s --yes", shellQuote(req.ItemID), shellQuote(req.Column), shellQuote(root))
@@ -359,7 +649,7 @@ func boardColumnForItemPlan(note domain.Note, req ProjectItemRequest) string {
 	if column := strings.TrimSpace(req.Column); column != "" {
 		return column
 	}
-	column, _ := boardColumnForNote(note)
+	column, _ := boardColumnForNote(note, defaultBoardColumns)
 	return column
 }
 
@@ -494,16 +784,26 @@ func copyProjectBoardPlanningFacts(projection *domain.Projection, snapshot domai
 	}
 }
 
-func buildProjectBoard(project domain.Project, notes []domain.Note, display domain.NoteDisplayKind, engine, indexStatus string) domain.ProjectBoard {
+func buildProjectBoard(root string, project domain.Project, workspace *domain.ProjectWorkspace, columns []domain.BoardColumn, notes []domain.Note, display domain.NoteDisplayKind, engine, indexStatus string, strictColumns bool) domain.ProjectBoard {
+	if len(columns) == 0 {
+		columns = defaultBoardColumns
+	}
 	items := make([]domain.BoardItem, 0)
 	warnings := make([]domain.ProjectBoardWarning, 0)
-	counts := domain.ProjectBoardFacts{Engine: engine, IndexStatus: indexStatus}
+	counts := domain.ProjectBoardFacts{Engine: engine, IndexStatus: indexStatus, ColumnCounts: emptyBoardColumnCounts(columns)}
+	adoptions := loadTaskAdoptionsForBoard(root, project.Slug)
 	for _, note := range notes {
 		if note.Project != project.Slug {
 			continue
 		}
-		column, warning := boardColumnForNote(note)
+		if workspace != nil && note.Subproject != workspace.Subproject {
+			continue
+		}
+		column, warning := boardColumnForNote(note, columns)
 		if warning != nil {
+			if strictColumns {
+				continue
+			}
 			warnings = append(warnings, *warning)
 		}
 		item := domain.BoardItem{
@@ -511,30 +811,129 @@ func buildProjectBoard(project domain.Project, notes []domain.Note, display doma
 			Title:        note.Title,
 			Column:       column,
 			SourceKind:   domain.BoardItemSourceNote,
+			SourceStatus: "managed",
 			NoteID:       note.ID,
 			Path:         note.Path,
 			Project:      note.Project,
+			Subproject:   note.Subproject,
+			Labels:       note.Labels,
 			Tags:         note.Tags,
 			Status:       note.Status,
+			Milestone:    strings.TrimSpace(note.Milestone),
 			Priority:     strings.TrimSpace(note.Priority),
 			Due:          strings.TrimSpace(note.Due),
+			DueAt:        strings.TrimSpace(firstBoardNonEmpty(note.DueAt, note.Due)),
+			BlockedBy:    note.BlockedBy,
 			EvidenceRefs: []string{note.Path},
 			Writable:     true,
 		}
-		displayNote := buildNoteDisplay(note, display, domain.NoteExposureAgent)
+		if workspace != nil {
+			item.WorkspacePath = workspace.WorkspacePath
+		}
+		displayNote := buildNoteDisplayWithColumns(note, display, domain.NoteExposureAgent, columns)
 		item.Note = &displayNote
+		ctx := boardItemAgentContext(item, root)
+		item.AgentContext = &ctx
 		items = append(items, item)
 		counts.TotalItems++
 		counts.WritableItems++
 		incrementBoardCount(&counts, column)
+		for _, checklistItem := range checklistBoardItems(note, workspace, columns, adoptions) {
+			items = append(items, checklistItem)
+			counts.TotalItems++
+			if checklistItem.Writable {
+				counts.WritableItems++
+			}
+			incrementBoardCount(&counts, checklistItem.Column)
+		}
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].Column != items[j].Column {
-			return boardColumnOrder(items[i].Column) < boardColumnOrder(items[j].Column)
+			return boardColumnOrder(items[i].Column, columns) < boardColumnOrder(items[j].Column, columns)
 		}
 		return items[i].Path < items[j].Path
 	})
-	return domain.ProjectBoard{SchemaVersion: domain.ProjectBoardSchemaVersion, ProjectSlug: project.Slug, Title: project.Name, Columns: defaultBoardColumns, Items: items, Facts: counts, Warnings: warnings, GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
+	board := domain.ProjectBoard{SchemaVersion: domain.ProjectBoardSchemaVersion, ProjectSlug: project.Slug, Title: project.Name, Columns: columns, Items: items, Facts: counts, Warnings: warnings, GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
+	if workspace != nil {
+		board.Subproject = workspace.Subproject
+		board.WorkspacePath = workspace.WorkspacePath
+		workspaceCopy := *workspace
+		board.Workspace = &workspaceCopy
+	}
+	return board
+}
+
+func loadTaskAdoptionsForBoard(root, project string) map[string]domain.TaskAdoption {
+	dir := filepath.Join(root, ".pinax", "task-adoptions")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return map[string]domain.TaskAdoption{}
+	}
+	out := map[string]domain.TaskAdoption{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		var adoption domain.TaskAdoption
+		payload, readErr := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if readErr != nil || json.Unmarshal(payload, &adoption) != nil || adoption.SchemaVersion != domain.TaskAdoptionSchemaVersion || adoption.Project != project {
+			continue
+		}
+		out[adoption.TaskID] = adoption
+	}
+	return out
+}
+
+func checklistBoardItems(note domain.Note, workspace *domain.ProjectWorkspace, columns []domain.BoardColumn, adoptions map[string]domain.TaskAdoption) []domain.BoardItem {
+	items := []domain.BoardItem{}
+	lines := strings.Split(note.Body, "\n")
+	for i, line := range lines {
+		title, ok := parseUncheckedChecklistTitle(line)
+		if !ok {
+			continue
+		}
+		itemID := checklistTaskID(note.Path, i+1, title)
+		adoption, adopted := adoptions[itemID]
+		column := "inbox"
+		status := "inferred"
+		writable := false
+		if adopted {
+			column = adoption.Column
+			status = "adopted"
+			writable = true
+		}
+		if !isKnownBoardColumnIn(column, columns) {
+			column = "inbox"
+		}
+		item := domain.BoardItem{ItemID: itemID, Title: title, Column: column, SourceKind: domain.BoardItemSourceInlineTask, SourceStatus: status, NoteID: note.ID, Path: note.Path, SourceLine: i + 1, Project: note.Project, Subproject: note.Subproject, Status: statusForBoardColumn(column), EvidenceRefs: []string{fmt.Sprintf("%s:%d", note.Path, i+1)}, Writable: writable}
+		if workspace != nil {
+			item.WorkspacePath = workspace.WorkspacePath
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func parseUncheckedChecklistTitle(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "- [ ] ") && !strings.HasPrefix(trimmed, "* [ ] ") {
+		return "", false
+	}
+	title := strings.TrimSpace(trimmed[6:])
+	return title, title != ""
+}
+
+func checklistTaskID(path string, line int, title string) string {
+	return "task_" + strings.TrimPrefix(stableNoteID(fmt.Sprintf("%s:%d:%s", filepath.ToSlash(path), line, title)), "note_")
+}
+
+func firstBoardNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func configuredBoardColumns(values []string) ([]domain.BoardColumn, *domain.CommandError) {
@@ -577,6 +976,9 @@ func findProjectItemNote(root, itemID string) (domain.Note, error) {
 			return note, nil
 		}
 	}
+	if strings.HasPrefix(query, "task_") {
+		return domain.Note{}, &domain.CommandError{Code: "task_unmanaged", Message: "Checklist task is not a Pinax-managed task yet", Hint: "Run pinax task adopt <item_id> --plan before moving or archiving it"}
+	}
 	return domain.Note{}, &domain.CommandError{Code: "project_item_not_found", Message: "Project item not found", Hint: "Run pinax project board show <project> --json to view item_id"}
 }
 
@@ -598,12 +1000,34 @@ func patchProjectItemNote(_ context.Context, _ *Service, root string, note domai
 
 func projectItemProjection(command, summary string, note domain.Note, column string) domain.Projection {
 	projection := domain.NewProjection(command, summary)
-	item := domain.BoardItem{ItemID: boardItemID(note), Title: note.Title, Column: column, SourceKind: domain.BoardItemSourceNote, NoteID: note.ID, Path: note.Path, Project: note.Project, Tags: note.Tags, Status: statusForBoardColumn(column), EvidenceRefs: []string{note.Path}, Writable: true}
+	item := domain.BoardItem{ItemID: boardItemID(note), Title: note.Title, Column: column, SourceKind: domain.BoardItemSourceNote, NoteID: note.ID, Path: note.Path, Project: note.Project, Subproject: note.Subproject, Tags: note.Tags, Labels: note.Labels, Status: statusForBoardColumn(column), Milestone: note.Milestone, Priority: note.Priority, Due: note.Due, DueAt: firstBoardNonEmpty(note.DueAt, note.Due), BlockedBy: note.BlockedBy, EvidenceRefs: []string{note.Path}, Writable: true}
+	if note.Subproject != "" {
+		item.WorkspacePath = note.Frontmatter["workspace_path"]
+	}
 	projection.Facts["item_id"] = item.ItemID
 	projection.Facts["project"] = note.Project
+	if note.Subproject != "" {
+		projection.Facts["subproject"] = note.Subproject
+		projection.Facts["workspace_path"] = item.WorkspacePath
+	}
 	projection.Facts["path"] = note.Path
 	projection.Facts["column"] = column
 	projection.Facts["status"] = item.Status
+	if len(note.Labels) > 0 {
+		projection.Facts["labels"] = strings.Join(note.Labels, ",")
+	}
+	if note.Milestone != "" {
+		projection.Facts["milestone"] = note.Milestone
+	}
+	if note.Priority != "" {
+		projection.Facts["priority"] = note.Priority
+	}
+	if item.DueAt != "" {
+		projection.Facts["due_at"] = item.DueAt
+	}
+	if len(note.BlockedBy) > 0 {
+		projection.Facts["blocked_by"] = strings.Join(note.BlockedBy, ",")
+	}
 	projection.Facts["writes"] = "true"
 	projection.Evidence = []string{note.Path, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	projection.Data = map[string]any{"item": item}
@@ -649,6 +1073,43 @@ func statusForBoardColumn(column string) string {
 	default:
 		return "active"
 	}
+}
+
+func projectBoardConfigRel(project, subproject string) string {
+	if strings.TrimSpace(subproject) == "" {
+		return filepath.ToSlash(filepath.Join(".pinax", "project-boards", project+".json"))
+	}
+	return filepath.ToSlash(filepath.Join(".pinax", "project-boards", project, subproject+".json"))
+}
+
+func projectBoardViewRel(project, subproject, view string) string {
+	if strings.TrimSpace(subproject) == "" {
+		return filepath.ToSlash(filepath.Join(".pinax", "project-board-views", project, view+".json"))
+	}
+	return filepath.ToSlash(filepath.Join(".pinax", "project-board-views", project, subproject, view+".json"))
+}
+
+func loadProjectBoardView(root, project, subproject, viewName string) (domain.ProjectBoardView, error) {
+	viewName = strings.TrimSpace(viewName)
+	if viewName == "" || !isSafeBoardSlug(viewName) {
+		return domain.ProjectBoardView{}, &domain.CommandError{Code: "invalid_board_view", Message: "Board view name must be a safe slug", Hint: "Use a name like active or weekly-review"}
+	}
+	rel := projectBoardViewRel(project, subproject, viewName)
+	payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if errors.Is(err, os.ErrNotExist) {
+		return domain.ProjectBoardView{}, &domain.CommandError{Code: "project_board_view_not_found", Message: "Project board view not found", Hint: "Run pinax project board view save <project> <view> --vault <vault> --json"}
+	}
+	if err != nil {
+		return domain.ProjectBoardView{}, err
+	}
+	var view domain.ProjectBoardView
+	if err := json.Unmarshal(payload, &view); err != nil {
+		return domain.ProjectBoardView{}, err
+	}
+	if view.SchemaVersion == "" {
+		view.SchemaVersion = domain.ProjectBoardViewSchemaVersion
+	}
+	return view, nil
 }
 
 func boardColumnName(id string) string {
@@ -700,15 +1161,19 @@ func renderProjectBoardMarkdown(board domain.ProjectBoard) string {
 }
 
 func buildNoteDisplay(note domain.Note, display domain.NoteDisplayKind, exposure domain.NoteExposure) domain.NoteDisplay {
+	return buildNoteDisplayWithColumns(note, display, exposure, defaultBoardColumns)
+}
+
+func buildNoteDisplayWithColumns(note domain.Note, display domain.NoteDisplayKind, exposure domain.NoteExposure, columns []domain.BoardColumn) domain.NoteDisplay {
 	if display == "" {
 		display = domain.NoteDisplayCard
 	}
 	if exposure == "" {
 		exposure = domain.NoteExposureAgent
 	}
-	out := domain.NoteDisplay{NoteID: note.ID, Title: note.Title, Path: note.Path, Display: display, Exposure: exposure, Project: note.Project, BoardColumn: strings.TrimSpace(note.BoardColumn), Kind: note.Kind, Status: note.Status, Tags: note.Tags, UpdatedAt: note.UpdatedAt, Excerpt: noteExcerpt(note.Body)}
+	out := domain.NoteDisplay{NoteID: note.ID, Title: note.Title, Path: note.Path, Display: display, Exposure: exposure, Project: note.Project, Subproject: note.Subproject, WorkspacePath: note.Frontmatter["workspace_path"], BoardColumn: strings.TrimSpace(note.BoardColumn), Kind: note.Kind, Status: note.Status, Tags: note.Tags, Labels: note.Labels, Milestone: note.Milestone, Priority: note.Priority, DueAt: firstBoardNonEmpty(note.DueAt, note.Due), BlockedBy: note.BlockedBy, UpdatedAt: note.UpdatedAt, Excerpt: noteExcerpt(note.Body)}
 	if out.BoardColumn == "" {
-		out.BoardColumn, _ = boardColumnForNote(note)
+		out.BoardColumn, _ = boardColumnForNote(note, columns)
 	}
 	if display == domain.NoteDisplayBody {
 		out.Exposure = domain.NoteExposureLocalBody
@@ -716,6 +1181,8 @@ func buildNoteDisplay(note domain.Note, display domain.NoteDisplayKind, exposure
 	} else if note.Body != "" {
 		out.RedactionWarnings = []string{"body_omitted"}
 	}
+	ctx := noteAgentContext(note, display, "note", nil, nil)
+	out.AgentContext = &ctx
 	return out
 }
 
@@ -734,36 +1201,53 @@ func parseNoteDisplayKind(value string) (domain.NoteDisplayKind, *domain.Command
 	}
 }
 
-func boardColumnForNote(note domain.Note) (string, *domain.ProjectBoardWarning) {
+func boardColumnForNote(note domain.Note, columns []domain.BoardColumn) (string, *domain.ProjectBoardWarning) {
 	if column := strings.TrimSpace(note.BoardColumn); column != "" {
-		if isKnownBoardColumn(column) {
+		if isKnownBoardColumnIn(column, columns) {
 			return column, nil
 		}
-		fallback := boardColumnFromStatus(note.Status)
+		fallback := boardColumnFromStatus(note.Status, columns)
 		return fallback, &domain.ProjectBoardWarning{Code: "unknown_board_column", Message: "Unknown board column; placed in the default column by status", Path: note.Path}
 	}
-	return boardColumnFromStatus(note.Status), nil
+	return boardColumnFromStatus(note.Status, columns), nil
 }
 
-func boardColumnFromStatus(status string) string {
+func boardColumnFromStatus(status string, columns []domain.BoardColumn) string {
+	preferred := "next"
 	switch strings.TrimSpace(status) {
 	case "inbox", "":
-		return "inbox"
+		preferred = "inbox"
 	case "doing":
-		return "doing"
+		preferred = "doing"
 	case "blocked":
-		return "blocked"
+		preferred = "blocked"
 	case "review":
-		return "review"
+		preferred = "review"
 	case "done", "archived":
-		return "done"
-	default:
-		return "next"
+		preferred = "done"
 	}
+	if isKnownBoardColumnIn(preferred, columns) {
+		return preferred
+	}
+	if preferred == "next" {
+		for _, fallback := range []string{"planned", "learning", "practice"} {
+			if isKnownBoardColumnIn(fallback, columns) {
+				return fallback
+			}
+		}
+	}
+	if len(columns) > 0 {
+		return columns[0].ID
+	}
+	return preferred
 }
 
-func isKnownBoardColumn(column string) bool {
-	for _, item := range defaultBoardColumns {
+func isKnownBoardColumnIn(column string, columns []domain.BoardColumn) bool {
+	column = strings.TrimSpace(column)
+	if column == "" {
+		return false
+	}
+	for _, item := range columns {
 		if item.ID == column {
 			return true
 		}
@@ -771,7 +1255,19 @@ func isKnownBoardColumn(column string) bool {
 	return false
 }
 
+func emptyBoardColumnCounts(columns []domain.BoardColumn) map[string]int {
+	counts := make(map[string]int, len(columns))
+	for _, column := range columns {
+		counts[column.ID] = 0
+	}
+	return counts
+}
+
 func incrementBoardCount(facts *domain.ProjectBoardFacts, column string) {
+	if facts.ColumnCounts == nil {
+		facts.ColumnCounts = map[string]int{}
+	}
+	facts.ColumnCounts[column]++
 	switch column {
 	case "inbox":
 		facts.Inbox++
@@ -788,13 +1284,59 @@ func incrementBoardCount(facts *domain.ProjectBoardFacts, column string) {
 	}
 }
 
-func boardColumnOrder(column string) int {
-	for _, item := range defaultBoardColumns {
+func boardColumnOrder(column string, columns []domain.BoardColumn) int {
+	for _, item := range columns {
 		if item.ID == column {
 			return item.Order
 		}
 	}
 	return 999
+}
+
+func workspaceSubproject(workspace *domain.ProjectWorkspace) string {
+	if workspace == nil {
+		return ""
+	}
+	return workspace.Subproject
+}
+
+func loadProjectBoardColumns(root, project, subproject string) ([]domain.BoardColumn, error) {
+	config, ok, err := loadProjectBoardConfig(root, project, subproject)
+	if err != nil {
+		return nil, err
+	}
+	if ok && len(config.Columns) > 0 {
+		return config.Columns, nil
+	}
+	if strings.TrimSpace(subproject) != "" {
+		config, ok, err = loadProjectBoardConfig(root, project, "")
+		if err != nil {
+			return nil, err
+		}
+		if ok && len(config.Columns) > 0 {
+			return config.Columns, nil
+		}
+	}
+	return defaultBoardColumns, nil
+}
+
+func loadProjectBoardConfig(root, project, subproject string) (domain.ProjectBoardConfig, bool, error) {
+	rel := projectBoardConfigRel(project, subproject)
+	payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if errors.Is(err, os.ErrNotExist) {
+		return domain.ProjectBoardConfig{}, false, nil
+	}
+	if err != nil {
+		return domain.ProjectBoardConfig{}, false, err
+	}
+	var config domain.ProjectBoardConfig
+	if err := json.Unmarshal(payload, &config); err != nil {
+		return domain.ProjectBoardConfig{}, false, err
+	}
+	if config.SchemaVersion != domain.ProjectBoardSchemaVersion || strings.TrimSpace(config.ProjectSlug) == "" || !boardColumnsValid(config.Columns) {
+		return domain.ProjectBoardConfig{}, false, &domain.CommandError{Code: "invalid_project_board_config", Message: "Project board configuration asset is invalid", Hint: "Run pinax vault validate --vault <vault> --json"}
+	}
+	return config, true, nil
 }
 
 func boardItemID(note domain.Note) string {

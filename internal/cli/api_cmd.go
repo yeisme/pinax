@@ -44,6 +44,10 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.APIRoutes(cmd.Context(), app.APIRequest{VaultPath: *ctx.vaultPath})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	statusCmd := &cobra.Command{Use: "status", Short: "Show workbench status projection", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.WorkbenchStatus(cmd.Context(), app.APIRequest{VaultPath: *ctx.vaultPath, WriteMode: "local_cli"})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
 	serveCmd := &cobra.Command{Use: "serve", Short: "Start the local API server", RunE: func(cmd *cobra.Command, args []string) error {
 		if readonly && allowWrite {
 			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "write_mode_conflict", "api serve cannot use --readonly and --allow-write together", "Keep only one write-mode flag")
@@ -93,7 +97,7 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	serveCmd.Flags().BoolVar(&noAuth, "no-auth", false, "No-auth mode (forces loopback)")
 	serveCmd.Flags().StringVar(&exposeGroups, "expose", "", "Expose only the specified route groups (comma-separated)")
 	serveCmd.Flags().StringVar(&hideGroups, "hide", "", "Hide the specified route groups (comma-separated)")
-	apiCmd.AddCommand(routesCmd, newSchemaCmd("pinax api schema export --format openapi --vault ./my-notes --json"), serveCmd)
+	apiCmd.AddCommand(routesCmd, statusCmd, newSchemaCmd("pinax api schema export --format openapi --vault ./my-notes --json"), serveCmd)
 	root.AddCommand(apiCmd)
 	addTokenCommands(root, ctx)
 }

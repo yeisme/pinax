@@ -59,6 +59,7 @@ func addAssetCommands(root *cobra.Command, ctx commandBuildContext) {
 	showCmd.Flags().StringVar(&showContextNote, "context-note", "", "Context note for path display")
 	showCmd.Flags().BoolVar(&showIncludePaths, "include-paths", false, "Include display_path in the requested style")
 	_ = showCmd.RegisterFlagCompletionFunc("path-style", staticCompletion("path-style", "vault-relative", "note-relative", "absolute", "markdown", "wiki"))
+	_ = showCmd.RegisterFlagCompletionFunc("context-note", noteRefCompletion(func() string { return *ctx.vaultPath }))
 	assetCmd.AddCommand(showCmd)
 
 	linkCmd := &cobra.Command{
@@ -72,6 +73,7 @@ func addAssetCommands(root *cobra.Command, ctx commandBuildContext) {
 		},
 	}
 	linkCmd.Flags().StringVar(&linkNote, "note", "", "Target note to link to")
+	_ = linkCmd.RegisterFlagCompletionFunc("note", noteRefCompletion(func() string { return *ctx.vaultPath }))
 	assetCmd.AddCommand(linkCmd)
 
 	assetCmd.AddCommand(&cobra.Command{
@@ -168,6 +170,7 @@ func addAssetCommands(root *cobra.Command, ctx commandBuildContext) {
 	previewCmd.Flags().StringVar(&previewContextNote, "context-note", "", "Context note for path display")
 	previewCmd.Flags().IntVar(&previewMaxBytes, "max-preview-bytes", 0, "Maximum preview bytes; 0 uses the default")
 	_ = previewCmd.RegisterFlagCompletionFunc("as", staticCompletion("as", "markdown", "text"))
+	_ = previewCmd.RegisterFlagCompletionFunc("context-note", noteRefCompletion(func() string { return *ctx.vaultPath }))
 	assetCmd.AddCommand(previewCmd)
 
 	assetCmd.AddCommand(&cobra.Command{

@@ -1,6 +1,5 @@
-# Dogfood demo proof loop restore: baseline git evidence → apply → restore one file.
-# Restore uses the existing Pinax restore commands. The local git baseline gives
-# version restore a readable HEAD revision while Pinax snapshot evidence still gates apply.
+# Dogfood demo proof loop restore: Pinax content snapshot → apply → restore one file.
+# Restore uses the CLI-authored local snapshot id, so Git can stay metadata-only.
 
 prepare-demo-vault vault
 seed-demo-git-baseline vault
@@ -22,7 +21,7 @@ validate-clean-stdout repair_apply.json
 assert-demo-apply repair_apply.json
 assert-demo-metadata-patched baseline/notes/research/meeting-2026.md vault/notes/research/meeting-2026.md
 
-exec sh -c 'pinax version restore notes/research/meeting-2026.md --revision HEAD --plan --vault vault --json > restore_plan.json'
+exec sh -c 'rev=$(python3 -c "import json; print(json.load(open(\"snapshot.json\"))[\"facts\"][\"snapshot_id\"])"); pinax version restore notes/research/meeting-2026.md --revision "$rev" --plan --vault vault --json > restore_plan.json'
 validate-json-envelope restore_plan.json
 validate-clean-stdout restore_plan.json
 grep '"command":"version.restore"' restore_plan.json

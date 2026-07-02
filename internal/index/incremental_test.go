@@ -87,8 +87,8 @@ func TestAffectedLinkEdges(t *testing.T) {
 	}
 
 	links := linksForNote(t, root, "notes/a.md")
-	if len(links) != 1 || links[0].Status != "broken" || !links[0].Broken || links[0].TargetPath != "" {
-		t.Fatalf("affected source link not reclassified: %#v", links)
+	if len(links) != 1 || links[0].Status != "resolved" || links[0].Broken || links[0].TargetPath != "notes/b.md" || links[0].TargetTitle != "C" {
+		t.Fatalf("affected source link not reclassified by stable file stem: %#v", links)
 	}
 }
 
@@ -232,6 +232,29 @@ func TestIndexRefreshCreatesMissingAndSkipsUnchanged(t *testing.T) {
 	}
 	if fresh.Scanned != 1 || fresh.Indexed != 0 || fresh.Created != 0 || fresh.Skipped != 1 || fresh.Failed != 0 || fresh.IndexStatus != "fresh" {
 		t.Fatalf("refresh fresh result = %#v", fresh)
+	}
+}
+
+func TestRefreshChangedDeletesRemovedNoteProjection(t *testing.T) {
+	root := t.TempDir()
+	keep := domain.Note{ID: "note_b", Title: "B", Path: "notes/b.md", Body: "# B\nkeep\n"}
+	removed := domain.Note{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\nremove\n"}
+	if _, err := Rebuild(root, []domain.Note{removed, keep}); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	result, err := RefreshChanged(root, []domain.Note{keep}, []domain.ChangedPath{{Path: "notes/a.md", ChangeKind: "deleted", ObjectKind: domain.VaultObjectKindNote}}, RefreshOptions{})
+	if err != nil {
+		t.Fatalf("refresh changed delete: %v", err)
+	}
+	if result.Scanned != 1 || result.Deleted != 1 || result.Failed != 0 || result.IndexStatus != "fresh" {
+		t.Fatalf("refresh changed delete result = %#v", result)
+	}
+	if records := noteRecords(t, root, "notes/a.md"); len(records) != 0 {
+		t.Fatalf("deleted changed note projection remained: %#v", records)
+	}
+	if records := noteRecords(t, root, "notes/b.md"); len(records) != 1 {
+		t.Fatalf("unchanged note projection missing: %#v", records)
 	}
 }
 

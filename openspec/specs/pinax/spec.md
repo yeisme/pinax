@@ -139,20 +139,19 @@ Pinax SHALL render human, agent, JSON, events, and explain outputs from one comm
 - **AND** stdout SHALL NOT include raw provider credentials, shell-expanded secrets, or unredacted trace payloads.
 
 ### Requirement: Pinax prioritizes local notebook core before external extensions
-Pinax SHALL provide a complete local-first notebook core before relying on external provider, cloud sync, or AI automation capabilities.
 
-#### Scenario: Notebook core commands require no external credentials
-- **WHEN** a user runs daily, inbox, organization view, link, backlink, attachment, saved view, import, or export commands against a valid local vault
-- **THEN** Pinax SHALL NOT require firecrawl, agent-browser, Lark, Notion, Pinax Cloud, provider tokens, cookies, or external network access.
+Pinax SHALL provide a complete local-first notebook core before relying on external provider, cloud sync, AI automation, or dynamic plugin capabilities. Publish preview and generated HTML SHALL use the `pinax-web` static renderer; internal UI belongs in `client/yeisme-workbench` modules.
 
-#### Scenario: Notebook core writes stay inside CLI-owned boundaries
-- **WHEN** a notebook core command writes notes, attachments, saved views, import receipts, export receipts, or index projections
-- **THEN** the write SHALL happen through Cobra command dispatch into `internal/app` services
-- **AND** the command layer SHALL NOT hand-write `.pinax` JSON/YAML/JSONL assets.
+#### Scenario: Notebook core commands require no plugins
 
-#### Scenario: Notebook core keeps Markdown portable
-- **WHEN** a user opens the vault in a normal Markdown editor
-- **THEN** created notes, daily notes, inbox notes, wiki links, Markdown links, and attachment references SHALL remain readable without Pinax running.
+- **WHEN** a user runs daily, inbox, organization view, link, backlink, attachment, saved view, import, export, query, Dataview-compatible query, or publish preview commands against a valid local vault
+- **THEN** Pinax SHALL NOT require dynamic plugins, JavaScript, Python, WASM, firecrawl, agent-browser, Lark, Notion, Pinax Cloud, provider tokens, cookies, or external network access.
+
+#### Scenario: Canonical renderer stays inside Pinax boundaries
+
+- **WHEN** Pinax renders note preview or generated publish HTML
+- **THEN** rendering SHALL use the `pinax-web` canonical renderer contract and bounded projections
+- **AND** the renderer SHALL NOT become a separate source of truth for note identity, persistence, provider config, sync state or publish receipts.
 
 ### Requirement: Pinax note command is ergonomic and backwards compatible
 Pinax SHALL expose an ergonomic note command surface while preserving existing `note new`, `note list`, and `note show` behavior.
@@ -999,3 +998,80 @@ Pinax SHALL 提供一个标准 synthetic demo vault fixture，用于 proof loop 
 - **THEN** 不包含真实人名、项目名、credentials、tokens、webhook URL
 - **AND** `.pinax/config.yaml` 只包含最小配置
 
+### Requirement: Pinax remains a CLI-first local vault tool
+Pinax SHALL treat the local Markdown vault as the source of truth and SHALL expose cloud, publish and provider integrations as controlled CLI surfaces around that vault.
+
+#### Scenario: Sharing surfaces do not become note sources of truth
+- **WHEN** Pinax publishes to GitHub Pages, GitHub Wiki, GitHub Gist, an HTTP endpoint, or a local preview server
+- **THEN** the generated artifact SHALL be a delivery surface derived from selected vault content
+- **AND** Pinax SHALL NOT treat the delivery surface as authoritative note storage or bypass the vault proof loop for later writes.
+
+#### Scenario: Cloud server is a sync transport boundary
+- **WHEN** Pinax syncs through a cloud server transport
+- **THEN** the CLI SHALL own local vault selection, local file writes, approval gates, conflict handling, receipts and redacted projections
+- **AND** the server SHALL be treated as an optional transport/coordinator for encrypted sync artifacts, not as a plaintext hosted notebook or local tool executor.
+
+#### Scenario: Production server implementation stays out of CLI scope by default
+- **GIVEN** a change is scoped to the Pinax CLI repository
+- **WHEN** it references Cloud Server support
+- **THEN** it SHALL limit implementation to client protocol, transport adapter, fake/local server tests, redaction, and sync-state behavior unless a separate server-owned change explicitly expands scope
+- **AND** it SHALL NOT add a long-running hosted note backend inside ordinary CLI app services.
+
+### Requirement: Canonical renderer design follows the CLI and publish boundaries
+Pinax SHALL keep CLI chrome, future Workbench module projections and published HTML design consistent with local-first, work-focused usage through Pinax contracts and the static renderer.
+
+#### Scenario: CLI theme is concise and operational
+- **WHEN** Pinax renders default human output
+- **THEN** the output SHALL be concise, Chinese, scannable, and oriented around status, facts, evidence and next action
+- **AND** it SHALL avoid marketing copy, decorative noise, or localized text inside machine modes.
+
+#### Scenario: Publish HTML uses the canonical renderer
+- **WHEN** Pinax builds a publish site with the `pinax-web` renderer
+- **THEN** the published HTML SHALL use stable renderer semantics that future Workbench module fixtures can consume
+- **AND** it SHALL use local assets and publish-safe data files
+- **AND** it SHALL NOT require external fonts, CDN assets, analytics, remote images, the source vault, `.pinax/**`, SQLite, provider credentials, or network access by default.
+
+### Requirement: Pinax SHALL expose a unified vault workspace model
+
+Pinax SHALL let one local Markdown vault contain multiple projects, subprojects, collections, saved views, task views, database views, publish profiles, and sync policies through a shared workspace model while preserving Markdown as the content source of truth.
+
+#### Scenario: Workspace summary is bounded
+
+- **GIVEN** a vault contains projects, subprojects, board views, database views, and note collections
+- **WHEN** the user runs `pinax workspace show --vault ./my-notes --json`
+- **THEN** stdout SHALL contain one projection envelope with workspace identity, project counts, active project, view counts, task counts, index status, warnings, and next actions
+- **AND** it SHALL NOT include full note bodies, raw provider payloads, Authorization headers, cookies, tokens, hidden system prompts, private tool arguments, or complete chain-of-thought.
+
+#### Scenario: Workspace registry is CLI-authored
+
+- **WHEN** Pinax creates or updates workspace registry, project workspace registry, database view registry, task adoption ledger, event ledger, sync state, publish profile, or receipt metadata
+- **THEN** the write SHALL happen through a Pinax command or application service
+- **AND** agents SHALL NOT be required to hand-write `.pinax/**` JSON, YAML, TOML, or JSONL assets.
+
+#### Scenario: Workspace paths stay inside the vault
+
+- **WHEN** a user creates a project, subproject, collection, saved view, managed task, database view, template output, or publish source path
+- **THEN** Pinax SHALL validate the resulting path is vault-relative and outside reserved directories such as `.pinax`, `.git`, `temp`, `dist`, `node_modules`, and `vendor`
+- **AND** path traversal, absolute paths, and vault-external writes SHALL fail with stable machine-readable error codes.
+
+### Requirement: Pinax SHALL evolve workspace contracts additively
+
+Pinax SHALL implement unified workspace, task, database, API, MCP, dashboard, and sync surfaces as backward-compatible additions unless a future OpenSpec change explicitly approves migration, deprecation, and rollback for a breaking change.
+
+#### Scenario: CLI output gains optional workspace facts
+
+- **WHEN** a command begins returning workspace, task view, database view, graph, or compatibility facts
+- **THEN** those facts SHALL be added as optional fields under the existing projection envelope or optional `--agent` keys
+- **AND** existing envelope top-level fields, status enum values, and previously documented `--agent` keys SHALL remain valid.
+
+#### Scenario: API capability additions are discoverable
+
+- **WHEN** workspace, task, database, graph, or compatibility capabilities become available through REST, RPC, dashboard, MCP, or Remote API Mode
+- **THEN** the capability SHALL be registered in the shared capability registry
+- **AND** `pinax api routes --vault ./my-notes --json` SHALL expose route or RPC method, command, readonly status, body allowance, approval requirement, snapshot requirement, and stable error codes when applicable.
+
+#### Scenario: Index schema changes are additive
+
+- **WHEN** unified workspace or database features require new index projection storage
+- **THEN** Pinax SHALL add GORM-managed tables, nullable columns, or indexes rather than dropping, renaming, narrowing, or repurposing existing projection schema in the same change
+- **AND** deleting and rebuilding the index SHALL NOT delete Markdown source content.

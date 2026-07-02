@@ -1,0 +1,55 @@
+# Full local publish flow with loopback serve and explicit read-only share smoke.
+exec mkdir -p vault/notes
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_public" "title: Public Note" "kind: concept" "status: active" "publish: public" "tags: [publish]" "---" "" "# Public Note" "PUBLIC_BODY_ALLOWED" > vault/notes/public.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_private" "title: Private Note" "kind: concept" "status: active" "publish: public" "privacy: private" "---" "" "PRIVATE_BODY_SENTINEL" > vault/notes/private.md'
+exec sh -c 'printf "%s\n" "share-token" > token.txt'
+
+exec sh -c 'pinax publish profile init public --target github-pages --renderer pinax-web --title Knowledge --base-url https://example.invalid/kb/ --vault vault --json > profile.json'
+validate-json-envelope profile.json
+validate-clean-stdout profile.json
+exec grep -q '"command":"publish.profile.init"' profile.json
+
+exec sh -c 'pinax publish plan --profile public --target github-pages --vault vault --json > plan.json'
+validate-json-envelope plan.json
+validate-clean-stdout plan.json
+exec grep -q '"command":"publish.plan"' plan.json
+exec grep -q '"selected_count":"1"' plan.json
+! exec grep -q 'PRIVATE_BODY_SENTINEL\|share-token' plan.json
+
+exec sh -c 'pinax publish build --profile public --target local --out dist/site --vault vault --json > build.json'
+validate-json-envelope build.json
+validate-clean-stdout build.json
+exec grep -q '"command":"publish.build"' build.json
+exec grep -q '"target":"local"' build.json
+exec grep -q '"scan_findings":"0"' build.json
+exists dist/site/index.html
+exists dist/site/pinax-data/manifest.json
+exists dist/site/pinax-data/search-index.json
+! exec grep -R -q 'PRIVATE_BODY_SENTINEL\|share-token' dist/site build.json
+
+exec sh -c 'pinax publish serve --profile public --out dist/site --host 127.0.0.1 --port 0 --once --vault vault --json > serve.json'
+validate-json-envelope serve.json
+validate-clean-stdout serve.json
+exec grep -q '"command":"publish.serve"' serve.json
+exec grep -q '"served":"true"' serve.json
+
+exec sh -c 'pinax publish preview approve --profile public --out dist/site --vault vault --json > approve.json'
+validate-json-envelope approve.json
+validate-clean-stdout approve.json
+exec grep -q '"command":"publish.preview.approve"' approve.json
+exec grep -q '"approved":"true"' approve.json
+
+exec sh -c 'pinax share start --scope published --profile public --out dist/site --host 0.0.0.0 --port 0 --allow-lan --readonly --once --vault vault --json > share-published.json'
+validate-json-envelope share-published.json
+validate-clean-stdout share-published.json
+exec grep -q '"command":"share.start"' share-published.json
+exec grep -q '"scope":"published"' share-published.json
+exec grep -q '"api_smoke":"true"' share-published.json
+
+exec sh -c 'pinax share start --scope vault-readonly --host 0.0.0.0 --port 0 --allow-lan --readonly --token-file token.txt --once --vault vault --json > share-vault.json'
+validate-json-envelope share-vault.json
+validate-clean-stdout share-vault.json
+exec grep -q '"scope":"vault-readonly"' share-vault.json
+exec grep -q '"auth":"token-file"' share-vault.json
+exec grep -q '"api_smoke":"true"' share-vault.json
+! exec grep -q 'PRIVATE_BODY_SENTINEL\|share-token\|token.txt' share-published.json share-vault.json

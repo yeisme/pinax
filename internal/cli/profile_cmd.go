@@ -83,9 +83,10 @@ func addProfileCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 
 	profileShowCmd := &cobra.Command{
-		Use:   "show [name]",
-		Short: "Show one profile in detail",
-		Args:  cobra.ExactArgs(1),
+		Use:               "show [name]",
+		Short:             "Show one profile in detail",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: profileNameCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := profile.Load()
 			if err != nil {
@@ -117,9 +118,10 @@ func addProfileCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 
 	profileRemoveCmd := &cobra.Command{
-		Use:   "remove [name]",
-		Short: "Remove a backend connection profile",
-		Args:  cobra.ExactArgs(1),
+		Use:               "remove [name]",
+		Short:             "Remove a backend connection profile",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: profileNameCompletion,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := profile.Load()
 			if err != nil {

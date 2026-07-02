@@ -124,10 +124,11 @@ func addCloudCommands(root *cobra.Command, ctx commandBuildContext) {
 func addPlanningCommands(root *cobra.Command, ctx commandBuildContext) {
 	planCmd := &cobra.Command{Use: "plan", Short: "Manage personal planning workflows"}
 	planDailyCmd := &cobra.Command{Use: "daily", Short: "Generate a daily plan", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := ctx.svc.PlanDaily(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, WithTaskBridge: *ctx.planWithTaskBridge, DryRun: *ctx.planDryRun, Yes: *ctx.yes, Save: *ctx.planSave})
+		projection, err := ctx.svc.PlanDaily(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, WithTaskBridge: *ctx.planWithTaskBridge, TaskReview: *ctx.planTaskReview, DryRun: *ctx.planDryRun, Yes: *ctx.yes, Save: *ctx.planSave})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	planDailyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
+	planDailyCmd.Flags().BoolVar(ctx.planTaskReview, "task-review", false, "Update the daily task review managed block")
 	planDailyCmd.Flags().BoolVar(ctx.planDryRun, "dry-run", false, "Preview the plan only; do not write")
 	planDailyCmd.Flags().BoolVar(ctx.planSave, "save", false, "Save a plan snapshot")
 	planDailyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm plan writes")
@@ -151,10 +152,11 @@ func addPlanningCommands(root *cobra.Command, ctx commandBuildContext) {
 	planMonthlyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm plan writes")
 	planCmd.AddCommand(planMonthlyCmd)
 	planActionsCmd := &cobra.Command{Use: "actions", Short: "Generate TaskBridge action drafts", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := ctx.svc.PlanActions(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, FromPeriod: *ctx.planFromPeriod, Save: *ctx.planSave})
+		projection, err := ctx.svc.PlanActions(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, FromPeriod: *ctx.planFromPeriod, WithTaskBridge: *ctx.planWithTaskBridge, Save: *ctx.planSave})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	planActionsCmd.Flags().StringVar(ctx.planFromPeriod, "from", "daily", "Source planning period: daily or weekly")
+	planActionsCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
 	planActionsCmd.Flags().BoolVar(ctx.planSave, "save", false, "Save action drafts")
 	planCmd.AddCommand(planActionsCmd)
 	planSnapshotCmd := &cobra.Command{Use: "snapshot", Short: "Generate a plan snapshot", RunE: func(cmd *cobra.Command, args []string) error {
@@ -195,6 +197,7 @@ func addBackendCommands(root *cobra.Command, ctx commandBuildContext) {
 	backendAddCmd.Flags().StringVar(ctx.s3Endpoint, "endpoint", "", "S3-compatible endpoint URL")
 	backendAddCmd.Flags().StringVar(ctx.s3Profile, "profile", "", "S3 credential profile name")
 	backendAddCmd.Flags().StringVar(ctx.backendRemote, "remote", "", "rclone remote path")
+	backendAddCmd.ValidArgsFunction = backendKindCompletion
 	backendCmd.AddCommand(backendAddCmd)
 	backendCmd.AddCommand(backendUnaryCommand(ctx, "show <name>", []string{"status"}, "Show backend status", "backend.show", "backend show requires a backend name", "pinax backend show <name> --vault <vault>", func(cmd *cobra.Command, name string) (domain.Projection, error) {
 		return ctx.svc.BackendShow(cmd.Context(), app.BackendRequest{VaultPath: *ctx.vaultPath, Name: name})
@@ -220,7 +223,7 @@ func addBackendCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.svc.RemoveBackend(cmd.Context(), app.BackendRequest{VaultPath: *ctx.vaultPath, Name: name})
 	}))
 	backendObjectCmd := &cobra.Command{Use: "object", Short: "Browse backend objects"}
-	backendObjectCmd.AddCommand(&cobra.Command{Use: "list <name> [prefix]", Short: "List backend objects", RunE: func(cmd *cobra.Command, args []string) error {
+	backendObjectListCmd := &cobra.Command{Use: "list <name> [prefix]", Short: "List backend objects", ValidArgsFunction: backendNameCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 1 || len(args) > 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "backend.object.list", "argument_required", "backend object list requires a backend name", "pinax backend object list <name> [prefix] --vault <vault>")
 		}
@@ -230,20 +233,22 @@ func addBackendCommands(root *cobra.Command, ctx commandBuildContext) {
 		}
 		projection, err := ctx.svc.BackendObjectList(cmd.Context(), app.BackendObjectListRequest{VaultPath: *ctx.vaultPath, Name: args[0], Prefix: prefix})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
-	backendObjectCmd.AddCommand(&cobra.Command{Use: "stat <name> <key>", Short: "Show backend object status", RunE: func(cmd *cobra.Command, args []string) error {
+	}}
+	backendObjectCmd.AddCommand(backendObjectListCmd)
+	backendObjectStatCmd := &cobra.Command{Use: "stat <name> <key>", Short: "Show backend object status", ValidArgsFunction: backendNameCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "backend.object.stat", "argument_required", "backend object stat requires a backend name and key", "pinax backend object stat <name> <key> --vault <vault>")
 		}
 		projection, err := ctx.svc.BackendObjectStat(cmd.Context(), app.BackendObjectStatRequest{VaultPath: *ctx.vaultPath, Name: args[0], Key: args[1]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
+	}}
+	backendObjectCmd.AddCommand(backendObjectStatCmd)
 	backendCmd.AddCommand(backendObjectCmd)
 	root.AddCommand(backendCmd)
 }
 
 func backendUnaryCommand(ctx commandBuildContext, use string, aliases []string, short, command, msg, hint string, run func(*cobra.Command, string) (domain.Projection, error)) *cobra.Command {
-	return &cobra.Command{Use: use, Aliases: aliases, Short: short, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: use, Aliases: aliases, Short: short, ValidArgsFunction: backendNameCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), command, "argument_required", msg, hint)
 		}

@@ -86,6 +86,11 @@ type commandBuildContext struct {
 	queryCursor              *string
 	databaseViewQuery        *string
 	databaseViewColumns      *[]string
+	databaseViewLanguage     *string
+	databaseViewDisplay      *string
+	databaseViewGroupBy      *string
+	databaseViewCalendar     *string
+	databaseViewBoardColumn  *string
 	databaseSchemaType       *string
 	databaseSchemaValues     *string
 	syncTarget               *string
@@ -106,6 +111,8 @@ type commandBuildContext struct {
 	searchCreatedAfter       *string
 	searchUpdatedAfter       *string
 	searchAllowStale         *bool
+	searchEngine             *string
+	searchLazyIndex          *string
 	searchAt                 *string
 	searchChangedSince       *string
 	searchRevision           *string
@@ -119,6 +126,7 @@ type commandBuildContext struct {
 	backendDryRun            *bool
 	planFromPeriod           *string
 	planWithTaskBridge       *bool
+	planTaskReview           *bool
 	planDryRun               *bool
 	planSave                 *bool
 	briefingTopic            *string

@@ -169,7 +169,7 @@ func TestProjectAndStorageCLIJSON(t *testing.T) {
 	}
 
 	listOut := runCLI(t, "project", "list", "--vault", root, "--agent")
-	for _, want := range []string{"command=project.list", "fact.projects=1", "fact.current_project=research"} {
+	for _, want := range []string{"command=project.list", "fact.projects=1", "fact.current_project=research", "fact.project.1.slug=research", "fact.project.1.name=研究", "fact.project.1.notes_prefix=notes/research"} {
 		if !strings.Contains(listOut, want) {
 			t.Fatalf("project agent output missing %q:\n%s", want, listOut)
 		}
@@ -289,6 +289,235 @@ func TestProjectBoardAndNoteDisplayCLI(t *testing.T) {
 	}
 }
 
+func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "notes/research", "--vault", root, "--json")
+
+	created := runCLI(t, "project", "subproject", "create", "research", "stock-learning", "--title", "Stock Learning", "--template", "scenario", "--vault", root, "--json")
+	var createEnvelope map[string]any
+	if err := json.Unmarshal([]byte(created), &createEnvelope); err != nil {
+		t.Fatalf("subproject create json invalid: %v\n%s", err, created)
+	}
+	createFacts := createEnvelope["facts"].(map[string]any)
+	if createEnvelope["command"] != "project.subproject.create" || createFacts["project"] != "research" || createFacts["subproject"] != "stock-learning" || createFacts["workspace_path"] != "notes/projects/research/stock-learning" || createFacts["directories"] != "7" || createFacts["writes"] != "true" {
+		t.Fatalf("subproject create facts invalid: %#v\n%s", createFacts, created)
+	}
+	fullPath := filepath.Join(root, "notes", "projects", "research", "stock-learning")
+	if createFacts["vault_root"] != root || createFacts["workspace.full_path"] != fullPath {
+		t.Fatalf("subproject create path facts invalid: %#v\n%s", createFacts, created)
+	}
+	for _, rel := range []string{"charter", "inbox", "sources", "runs", "outputs", "retros", "tool-candidates"} {
+		if !fileExists(filepath.Join(root, "notes", "projects", "research", "stock-learning", rel)) {
+			t.Fatalf("subproject directory missing: %s", rel)
+		}
+	}
+	registry := readCLIFile(t, filepath.Join(root, ".pinax", "project-workspaces", "research", "stock-learning.json"))
+	if !strings.Contains(registry, `"schema_version": "pinax.project_workspace.v1"`) || !strings.Contains(registry, `"subproject": "stock-learning"`) {
+		t.Fatalf("subproject registry invalid:\n%s", registry)
+	}
+	if strings.Contains(registry, root) || strings.Contains(registry, fullPath) {
+		t.Fatalf("subproject registry must remain vault-portable, got absolute path:\n%s", registry)
+	}
+	currentRegistry := readCLIFile(t, filepath.Join(root, ".pinax", "workspaces", "current.json"))
+	for _, want := range []string{`"schema_version": "pinax.current_workspace.v1"`, `"project": "research"`, `"subproject": "stock-learning"`, `"workspace_path": "notes/projects/research/stock-learning"`} {
+		if !strings.Contains(currentRegistry, want) {
+			t.Fatalf("current workspace registry missing %q:\n%s", want, currentRegistry)
+		}
+	}
+
+	listOut := runCLI(t, "project", "subproject", "list", "research", "--vault", root, "--agent")
+	for _, want := range []string{"command=project.subproject.list", "fact.project=research", "fact.subprojects=1", "fact.subproject.1=stock-learning", "fact.workspace.1=notes/projects/research/stock-learning"} {
+		if !strings.Contains(listOut, want) {
+			t.Fatalf("subproject list agent missing %q:\n%s", want, listOut)
+		}
+	}
+
+	showOut := runCLI(t, "project", "subproject", "show", "research", "stock-learning", "--vault", root, "--json")
+	if !strings.Contains(showOut, `"command":"project.subproject.show"`) || !strings.Contains(showOut, `"directories"`) || !strings.Contains(showOut, `"charter"`) || strings.Contains(showOut, `"00-charter"`) || !strings.Contains(showOut, `"vault_root":"`+root+`"`) || !strings.Contains(showOut, `"workspace.full_path":"`+fullPath+`"`) {
+		t.Fatalf("subproject show output invalid:\n%s", showOut)
+	}
+	showAgent := runCLI(t, "project", "subproject", "show", "research", "stock-learning", "--vault", root, "--agent")
+	for _, want := range []string{"fact.workspace.project=research", "fact.workspace.subproject=stock-learning", "fact.workspace.path=notes/projects/research/stock-learning", "fact.vault_root=" + root, "fact.workspace.full_path=" + fullPath} {
+		if !strings.Contains(showAgent, want) {
+			t.Fatalf("subproject show agent missing %q:\n%s", want, showAgent)
+		}
+	}
+	showHuman := runCLI(t, "project", "subproject", "show", "research", "stock-learning", "--vault", root, "--color", "never")
+	for _, want := range []string{"Vault root", root, "Workspace path", "notes/projects/research/stock-learning", "Full path preview", fullPath} {
+		if !strings.Contains(showHuman, want) {
+			t.Fatalf("subproject show human missing %q:\n%s", want, showHuman)
+		}
+	}
+
+	subprojectCompletion := runCLI(t, "__complete", "project", "board", "show", "research", "--vault", root, "--subproject", "")
+	if !strings.Contains(subprojectCompletion, "stock-learning\tStock Learning") || !strings.Contains(subprojectCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("board show subproject completion invalid:\n%s", subprojectCompletion)
+	}
+
+	configureOut := runCLI(t, "project", "board", "configure", "research", "--subproject", "stock-learning", "--columns", "inbox,next,doing,blocked,review,done", "--vault", root, "--json")
+	if !strings.Contains(configureOut, `"command":"project.board.configure"`) || !strings.Contains(configureOut, `.pinax/project-boards/research/stock-learning.json`) {
+		t.Fatalf("subproject board configure output invalid:\n%s", configureOut)
+	}
+	itemOut := runCLI(t, "project", "item", "add", "research", "Run first research", "--subproject", "stock-learning", "--column", "next", "--labels", "research,learning", "--milestone", "phase-1", "--priority", "high", "--due-at", "2026-07-01", "--blocked-by", "item_source_review", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.item.add"`, `"subproject":"stock-learning"`, `"labels":["research","learning"]`, `"milestone":"phase-1"`, `"priority":"high"`, `"due_at":"2026-07-01"`, `"blocked_by":["item_source_review"]`} {
+		if !strings.Contains(itemOut, want) {
+			t.Fatalf("project item add output missing %q:\n%s", want, itemOut)
+		}
+	}
+	if !strings.Contains(itemOut, `notes/projects/research/stock-learning/inbox`) {
+		t.Fatalf("subproject item path should live under workspace inbox:\n%s", itemOut)
+	}
+
+	boardJSON := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.board.show"`, `"subproject":"stock-learning"`, `"workspace_path":"notes/projects/research/stock-learning"`, `"next":"1"`, `"labels":["research","learning"]`} {
+		if !strings.Contains(boardJSON, want) {
+			t.Fatalf("subproject board json missing %q:\n%s", want, boardJSON)
+		}
+	}
+	boardAgent := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--agent")
+	for _, want := range []string{"mode=agent", "command=project.board.show", "fact.project=research", "fact.subproject=stock-learning", "fact.workspace_path=notes/projects/research/stock-learning", `item.1.title="Run first research"`, "item.1.column=next", "item.1.path=notes/projects/research/stock-learning/inbox/run-first-research.md", "item.1.subproject=stock-learning", "item.1.labels=research,learning", "action.board_plan="} {
+		if !strings.Contains(boardAgent, want) {
+			t.Fatalf("subproject board agent missing %q:\n%s", want, boardAgent)
+		}
+	}
+	if strings.Contains(boardAgent, root) || strings.Contains(boardAgent, "受控工作项") || strings.Contains(boardAgent, "状态:") {
+		t.Fatalf("subproject board agent leaked local path, body, or prose:\n%s", boardAgent)
+	}
+	human := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--color", "never")
+	for _, want := range []string{"Project: research / stock-learning", "Path: notes/projects/research/stock-learning", "Structure:", "Board:", "Next", "Run first research", "Recommended next step"} {
+		if !strings.Contains(human, want) {
+			t.Fatalf("subproject board human output missing %q:\n%s", want, human)
+		}
+	}
+}
+
+func TestTaskAdoptCLIPlansAndWritesLedger(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "notes/research", "--vault", root, "--json")
+	writeCLIFixture(t, filepath.Join(root, "checklist.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_checklist\ntitle: Checklist Source\nproject: research\nkind: reference\nstatus: active\n---\n\n- [ ] Review source material\n- [x] Already handled\n")
+
+	boardOut := runCLI(t, "project", "board", "show", "research", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(boardOut), &envelope); err != nil {
+		t.Fatalf("board json invalid: %v\n%s", err, boardOut)
+	}
+	data := envelope["data"].(map[string]any)
+	board := data["board"].(map[string]any)
+	items := board["items"].([]any)
+	itemID := ""
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["title"] == "Review source material" {
+			itemID = item["item_id"].(string)
+			if item["source_status"] != "inferred" || item["writable"] != false {
+				t.Fatalf("inferred task item invalid: %#v", item)
+			}
+		}
+	}
+	if itemID == "" {
+		t.Fatalf("missing inferred task item in board:\n%s", boardOut)
+	}
+
+	planOut := runCLI(t, "task", "adopt", itemID, "--plan", "--vault", root, "--agent")
+	for _, want := range []string{"command=task.adopt", "fact.writes=false", "fact.adopted=0", "fact.source_status=inferred"} {
+		if !strings.Contains(planOut, want) {
+			t.Fatalf("task adopt plan missing %q:\n%s", want, planOut)
+		}
+	}
+	if fileExists(filepath.Join(root, ".pinax", "task-adoptions")) {
+		t.Fatalf("task adopt --plan wrote ledger")
+	}
+
+	applyOut := runCLI(t, "task", "adopt", itemID, "--yes", "--vault", root, "--json")
+	if !strings.Contains(applyOut, `"command":"task.adopt"`) || !strings.Contains(applyOut, `"writes":"true"`) || !strings.Contains(applyOut, `"ledger_path"`) {
+		t.Fatalf("task adopt apply output invalid:\n%s", applyOut)
+	}
+	ledger := readCLIFile(t, filepath.Join(root, ".pinax", "task-adoptions", itemID+".json"))
+	if !strings.Contains(ledger, `"schema_version": "pinax.task_adoption.v1"`) || !strings.Contains(ledger, `"source_status": "adopted"`) || strings.Contains(ledger, "Already handled") {
+		t.Fatalf("task adoption ledger invalid:\n%s", ledger)
+	}
+}
+
+func TestProjectBoardViewSaveAndShowCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "notes/research", "--vault", root, "--json")
+	runCLI(t, "project", "item", "add", "research", "Active item", "--column", "next", "--vault", root, "--json")
+	runCLI(t, "project", "item", "add", "research", "Blocked item", "--column", "blocked", "--vault", root, "--json")
+
+	saved := runCLI(t, "project", "board", "view", "save", "research", "active", "--columns", "next,doing", "--group", "column", "--sort", "priority", "--display", "card", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.board.view.save"`, `"view":"active"`, `"writes":"true"`, `.pinax/project-board-views/research/active.json`} {
+		if !strings.Contains(saved, want) {
+			t.Fatalf("board view save missing %q:\n%s", want, saved)
+		}
+	}
+	registry := readCLIFile(t, filepath.Join(root, ".pinax", "project-board-views", "research", "active.json"))
+	for _, want := range []string{`"schema_version": "pinax.project_board_view.v1"`, `"view": "active"`, `"columns": [`, `"next"`, `"doing"`} {
+		if !strings.Contains(registry, want) {
+			t.Fatalf("board view registry missing %q:\n%s", want, registry)
+		}
+	}
+	if strings.Contains(registry, "Active item") || strings.Contains(registry, "Blocked item") {
+		t.Fatalf("board view registry should not save result rows:\n%s", registry)
+	}
+
+	show := runCLI(t, "project", "board", "show", "research", "--view", "active", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.board.show"`, `"view":"active"`, `"column.next":"1"`, `"column.doing":"0"`} {
+		if !strings.Contains(show, want) {
+			t.Fatalf("board show --view missing %q:\n%s", want, show)
+		}
+	}
+	if strings.Contains(show, `"column.blocked"`) {
+		t.Fatalf("board show --view should use saved view columns only:\n%s", show)
+	}
+}
+
+func TestProjectLearningInitCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	created := runCLI(t, "project", "learning", "init", "investing", "stock-learning", "--title", "学习炒股的全部笔记", "--project-name", "学习炒股", "--notes-prefix", "notes/investing", "--preset", "stock-learning", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.learning.init"`, `"project":"investing"`, `"subproject":"stock-learning"`, `"preset":"stock-learning"`, `"notes.created":"3"`, `"items.created":"4"`, `"columns":"7"`} {
+		if !strings.Contains(created, want) {
+			t.Fatalf("learning init output missing %q:\n%s", want, created)
+		}
+	}
+	for _, rel := range []string{
+		"notes/projects/investing/stock-learning/charter/learning-charter.md",
+		"notes/projects/investing/stock-learning/sources/source-index.md",
+		"notes/projects/investing/stock-learning/retros/weekly-review.md",
+	} {
+		if !fileExists(filepath.Join(root, filepath.FromSlash(rel))) {
+			t.Fatalf("learning starter note missing: %s", rel)
+		}
+	}
+	createdAgent := runCLI(t, "project", "learning", "init", "history-learning", "history-info", "--title", "历史信息学习资料库", "--project-name", "历史信息学习", "--notes-prefix", "notes/history-learning", "--preset", "learning", "--vault", root, "--agent")
+	for _, want := range []string{"mode=agent", "command=project.learning.init", "fact.project=history-learning", "fact.subproject=history-info", "fact.workspace_path=notes/projects/history-learning/history-info", "learning.project=history-learning", "learning.subproject=history-info", "learning.workspace_path=notes/projects/history-learning/history-info", "learning.column.1=inbox", "learning.starter_note.1=notes/projects/history-learning/history-info/charter/learning-charter.md", "learning.starter_item.1=notes/projects/history-learning/history-info/inbox/建立术语表.md", "action.board_show="} {
+		if !strings.Contains(createdAgent, want) {
+			t.Fatalf("learning init agent missing %q:\n%s", want, createdAgent)
+		}
+	}
+	if strings.Contains(createdAgent, root) || strings.Contains(createdAgent, "状态:") || strings.Contains(createdAgent, "Learning project initialized") {
+		t.Fatalf("learning init agent leaked local path or prose:\n%s", createdAgent)
+	}
+
+	board := runCLI(t, "project", "board", "show", "investing", "--subproject", "stock-learning", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.board.show"`, `"column.learning":"1"`, `"column.planned":"1"`, `"column.retrospective":"1"`, `"建立交易术语表"`, `"整理 K 线与成交量基础"`} {
+		if !strings.Contains(board, want) {
+			t.Fatalf("learning board output missing %q:\n%s", want, board)
+		}
+	}
+
+	second := runCLI(t, "project", "learning", "init", "investing", "stock-learning", "--title", "学习炒股的全部笔记", "--project-name", "学习炒股", "--notes-prefix", "notes/investing", "--preset", "stock-learning", "--vault", root, "--json")
+	for _, want := range []string{`"command":"project.learning.init"`, `"notes.created":"0"`, `"items.created":"0"`} {
+		if !strings.Contains(second, want) {
+			t.Fatalf("second learning init output missing %q:\n%s", want, second)
+		}
+	}
+}
+
 func TestStorageSetS3RequiresBucketAndRegion(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault")
@@ -373,7 +602,7 @@ func TestVaultStatsDoctorAndDashboardCLI(t *testing.T) {
 		}
 	}
 	vaultHelp := runCLI(t, "vault", "--help")
-	for _, want := range []string{"stats", "doctor", "dashboard"} {
+	for _, want := range []string{"stats", "doctor", "dashboard", "ignore"} {
 		if !strings.Contains(vaultHelp, want) {
 			t.Fatalf("vault help missing %q:\n%s", want, vaultHelp)
 		}
@@ -395,5 +624,16 @@ func TestInitWithoutArgUsesVaultFlagDefault(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".pinax", "config.yaml")); err != nil {
 		t.Fatalf("init without arg did not create config in cwd: %v", err)
+	}
+	for _, rel := range []string{".pinaxignore", ".gitignore"} {
+		if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
+			t.Fatalf("init without arg did not create %s: %v", rel, err)
+		}
+	}
+	status := runCLIInDir(t, root, "vault", "ignore", "status", "--vault", root, "--json")
+	for _, want := range []string{`"command":"vault.ignore.status"`, `"pinaxignore":"present"`, `"git_metadata_only":"present"`} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("ignore status missing %q:\n%s", want, status)
+		}
 	}
 }

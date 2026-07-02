@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -15,8 +16,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -24,6 +27,7 @@ import (
 	"github.com/yeisme/pinax/internal/app/noteops"
 	"github.com/yeisme/pinax/internal/app/planningops"
 	"github.com/yeisme/pinax/internal/app/searchops"
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/app/syncops"
 	"github.com/yeisme/pinax/internal/app/templateops"
 	"github.com/yeisme/pinax/internal/app/vaultops"
@@ -36,12 +40,14 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 	gitstore "github.com/yeisme/pinax/internal/git"
 	noteindex "github.com/yeisme/pinax/internal/index"
+	"github.com/yeisme/pinax/internal/markdownnote"
 	pinaxprofile "github.com/yeisme/pinax/internal/profile"
 	"github.com/yeisme/pinax/internal/promptasset"
 	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 	notesearch "github.com/yeisme/pinax/internal/search"
 	syncplan "github.com/yeisme/pinax/internal/sync"
 	"github.com/yeisme/pinax/internal/templateengine"
+	"github.com/yeisme/pinax/internal/vaultignore"
 	pinaxversion "github.com/yeisme/pinax/internal/version"
 )
 
@@ -57,6 +63,11 @@ type InitVaultRequest struct {
 type VaultRequest struct {
 	VaultPath string
 	Query     string
+}
+
+type VaultIgnoreRequest struct {
+	VaultPath string
+	Yes       bool
 }
 
 type IndexRefreshRequest struct {
@@ -165,8 +176,13 @@ type ViewRequest struct {
 	CreatedAfter  string
 	UpdatedBefore string
 	Yes           bool
+	Language      string
 	Query         string
 	Columns       []string
+	Display       string
+	GroupBy       string
+	CalendarField string
+	BoardColumn   string
 }
 
 type DatabaseSchemaRequest struct {
@@ -179,6 +195,15 @@ type DatabaseSchemaRequest struct {
 type QueryRequest struct {
 	VaultPath string
 	SQL       string
+	LazyIndex bool
+	Limit     int
+	Sort      string
+	Cursor    string
+}
+
+type DataviewRequest struct {
+	VaultPath string
+	Query     string
 	LazyIndex bool
 	Limit     int
 	Sort      string
@@ -200,6 +225,8 @@ type SearchRequest struct {
 	Limit         int
 	Sort          string
 	AllowStale    bool
+	Engine        string
+	LazyIndex     string
 	At            string
 	IncludeDirty  bool
 	ChangedSince  string
@@ -207,7 +234,7 @@ type SearchRequest struct {
 }
 
 func toSearchOpsRequest(req SearchRequest) searchops.Request {
-	return searchops.Request{VaultPath: req.VaultPath, Query: req.Query, Tags: req.Tags, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, LinkTarget: req.LinkTarget, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: req.Sort, AllowStale: req.AllowStale, At: req.At, ChangedSince: req.ChangedSince, Revision: req.Revision}
+	return searchops.Request{VaultPath: req.VaultPath, Query: req.Query, Tags: req.Tags, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, LinkTarget: req.LinkTarget, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: req.Sort, AllowStale: req.AllowStale, Engine: req.Engine, LazyIndex: req.LazyIndex, At: req.At, IncludeDirty: req.IncludeDirty, ChangedSince: req.ChangedSince, Revision: req.Revision}
 }
 
 type CreateNoteRequest struct {
@@ -328,7 +355,9 @@ type NoteListRequest struct {
 	Kind             string
 	Status           string
 	CreatedAfter     string
+	UpdatedAfter     string
 	UpdatedBefore    string
+	Period           string
 	Recent           bool
 	Limit            int
 	Sort             string
@@ -527,6 +556,9 @@ func (s *Service) InitVault(_ context.Context, req InitVaultRequest) (domain.Pro
 	if err := os.WriteFile(config, []byte(content), 0o644); err != nil {
 		return errorProjection("vault.init", err), err
 	}
+	if err := ensureDefaultIgnoreFiles(root); err != nil {
+		return errorProjection("vault.init", err), err
+	}
 	if err := ensureEventLog(root); err != nil {
 		return errorProjection("vault.init", err), err
 	}
@@ -535,8 +567,193 @@ func (s *Service) InitVault(_ context.Context, req InitVaultRequest) (domain.Pro
 	projection := domain.NewProjection("vault.init", "Pinax vault initialized.")
 	projection.Facts["vault"] = root
 	projection.Facts["title"] = req.Title
+	projection.Evidence = []string{".pinax/config.yaml", ".pinaxignore", ".gitignore", ".pinax/events.jsonl"}
 	projection.Actions = []domain.Action{{Name: "validate", Command: fmt.Sprintf("pinax vault validate --vault %s", shellQuote(root))}}
 	return projection, nil
+}
+
+func ensureDefaultIgnoreFiles(root string) error {
+	if err := writeFileIfMissing(filepath.Join(root, vaultignore.PinaxIgnoreName), vaultignore.DefaultPinaxIgnore(), 0o644); err != nil {
+		return err
+	}
+	return writeFileIfMissing(filepath.Join(root, ".gitignore"), vaultignore.MetadataOnlyGitignoreBlock(), 0o644)
+}
+
+func writeFileIfMissing(path, body string, perm os.FileMode) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(body), perm)
+}
+
+func (s *Service) VaultIgnoreStatus(_ context.Context, req VaultIgnoreRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("vault.ignore.status", err), err
+	}
+	stats, err := vaultIgnoreStats(root)
+	if err != nil {
+		return errorProjection("vault.ignore.status", err), err
+	}
+	projection := domain.NewProjection("vault.ignore.status", "Vault ignore status read.")
+	addVaultIgnoreFacts(&projection, stats)
+	projection.Data = stats
+	return projection, nil
+}
+
+func (s *Service) VaultIgnorePlan(_ context.Context, req VaultIgnoreRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("vault.ignore.plan", err), err
+	}
+	stats, err := vaultIgnoreStats(root)
+	if err != nil {
+		return errorProjection("vault.ignore.plan", err), err
+	}
+	ops := vaultIgnoreOperations(stats)
+	projection := domain.NewProjection("vault.ignore.plan", "Vault ignore repair plan generated.")
+	projection.Facts["writes"] = "false"
+	projection.Facts["operations"] = fmt.Sprint(len(ops))
+	addVaultIgnoreFacts(&projection, stats)
+	if len(ops) > 0 {
+		projection.Actions = []domain.Action{{Name: "apply", Command: fmt.Sprintf("pinax vault ignore apply --vault %s --yes --json", shellQuote(root))}}
+	}
+	projection.Data = map[string]any{"operations": ops, "status": stats}
+	return projection, nil
+}
+
+func (s *Service) VaultIgnoreApply(_ context.Context, req VaultIgnoreRequest) (domain.Projection, error) {
+	if !req.Yes {
+		err := &domain.CommandError{Code: "approval_required", Message: "vault ignore apply requires explicit approval", Hint: "Rerun with --yes after reviewing the ignore plan"}
+		return domain.NewErrorProjection("vault.ignore.apply", err), err
+	}
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("vault.ignore.apply", err), err
+	}
+	stats, err := vaultIgnoreStats(root)
+	if err != nil {
+		return errorProjection("vault.ignore.apply", err), err
+	}
+	ops := vaultIgnoreOperations(stats)
+	if stats.PinaxIgnore == "missing" {
+		if err := os.WriteFile(filepath.Join(root, vaultignore.PinaxIgnoreName), []byte(vaultignore.DefaultPinaxIgnore()), 0o644); err != nil {
+			return errorProjection("vault.ignore.apply", err), err
+		}
+	}
+	if stats.GitMetadataOnly == "missing" {
+		gitPath := filepath.Join(root, ".gitignore")
+		existing, readErr := os.ReadFile(gitPath)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return errorProjection("vault.ignore.apply", readErr), readErr
+		}
+		updated := vaultignore.ApplyMetadataOnlyGitignore(string(existing))
+		if err := os.WriteFile(gitPath, []byte(updated), 0o644); err != nil {
+			return errorProjection("vault.ignore.apply", err), err
+		}
+	}
+	_ = appendEvent(root, "vault.ignore.apply", "success", map[string]string{"operations": fmt.Sprint(len(ops))})
+	projection := domain.NewProjection("vault.ignore.apply", "Vault ignore configuration updated.")
+	projection.Facts["local_write"] = "true"
+	projection.Facts["operations"] = fmt.Sprint(len(ops))
+	projection.Evidence = []string{".pinaxignore", ".gitignore", filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
+	projection.Data = map[string]any{"operations": ops}
+	return projection, nil
+}
+
+type vaultIgnoreStatus struct {
+	PinaxIgnore     string `json:"pinaxignore"`
+	GitMetadataOnly string `json:"git_metadata_only"`
+	ContentFiles    int    `json:"content_files"`
+	IgnoredFiles    int    `json:"ignored_files"`
+	ContentBytes    int64  `json:"content_bytes"`
+	BinaryFiles     int    `json:"binary_files"`
+	ScriptFiles     int    `json:"script_files"`
+}
+
+func vaultIgnoreStats(root string) (vaultIgnoreStatus, error) {
+	status := vaultIgnoreStatus{PinaxIgnore: "present", GitMetadataOnly: "present"}
+	if _, err := os.Stat(filepath.Join(root, vaultignore.PinaxIgnoreName)); errors.Is(err, os.ErrNotExist) {
+		status.PinaxIgnore = "missing"
+	} else if err != nil {
+		return status, err
+	}
+	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if errors.Is(err, os.ErrNotExist) {
+		status.GitMetadataOnly = "missing"
+	} else if err != nil {
+		return status, err
+	} else if !strings.Contains(string(gitignore), "# BEGIN PINAX METADATA-ONLY") || !strings.Contains(string(gitignore), "# END PINAX METADATA-ONLY") {
+		status.GitMetadataOnly = "missing"
+	}
+	matcher, err := vaultignore.Load(root)
+	if err != nil {
+		return status, err
+	}
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if entry.IsDir() {
+			if matcher.Ignored(rel, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || matcher.Ignored(rel, false) {
+			status.IgnoredFiles++
+			return nil
+		}
+		status.ContentFiles++
+		status.ContentBytes += info.Size()
+		if strings.HasPrefix(rel, "scripts/") || info.Mode().Perm()&0o111 != 0 {
+			status.ScriptFiles++
+			return nil
+		}
+		if !isManifestText(rel) {
+			status.BinaryFiles++
+		}
+		return nil
+	})
+	return status, err
+}
+
+func vaultIgnoreOperations(status vaultIgnoreStatus) []domain.PlanOperation {
+	ops := make([]domain.PlanOperation, 0, 2)
+	if status.PinaxIgnore == "missing" {
+		ops = append(ops, domain.PlanOperation{Kind: "write_pinaxignore", Path: ".pinaxignore", Reason: "Create Pinax content ignore rules", Status: "planned"})
+	}
+	if status.GitMetadataOnly == "missing" {
+		ops = append(ops, domain.PlanOperation{Kind: "patch_gitignore", Path: ".gitignore", Reason: "Add Pinax metadata-only Git ignore block", Status: "planned"})
+	}
+	return ops
+}
+
+func addVaultIgnoreFacts(projection *domain.Projection, status vaultIgnoreStatus) {
+	projection.Facts["pinaxignore"] = status.PinaxIgnore
+	projection.Facts["git_metadata_only"] = status.GitMetadataOnly
+	projection.Facts["content_files"] = fmt.Sprint(status.ContentFiles)
+	projection.Facts["ignored_files"] = fmt.Sprint(status.IgnoredFiles)
+	projection.Facts["content_bytes"] = fmt.Sprint(status.ContentBytes)
+	projection.Facts["binary_files"] = fmt.Sprint(status.BinaryFiles)
+	projection.Facts["script_files"] = fmt.Sprint(status.ScriptFiles)
 }
 
 func (s *Service) ValidateVault(_ context.Context, req VaultRequest) (domain.Projection, error) {
@@ -634,8 +851,46 @@ func (s *Service) ListProjects(_ context.Context, req VaultRequest) (domain.Proj
 	if registry.CurrentProject != "" {
 		projection.Facts["current_project"] = registry.CurrentProject
 	}
+	for i, project := range registry.Projects {
+		prefix := fmt.Sprintf("project.%d.", i+1)
+		projection.Facts[prefix+"slug"] = project.Slug
+		projection.Facts[prefix+"name"] = project.Name
+		projection.Facts[prefix+"notes_prefix"] = project.NotesPrefix
+		if project.Description != "" {
+			projection.Facts[prefix+"description"] = project.Description
+		}
+		if project.CreatedAt != "" {
+			projection.Facts[prefix+"created_at"] = project.CreatedAt
+		}
+	}
 	projection.Data = map[string]any{"registry": registry}
 	projection.Actions = []domain.Action{{Name: "create", Command: fmt.Sprintf("pinax project create <slug> --vault %s", shellQuote(root))}}
+	return projection, nil
+}
+
+func (s *Service) ProjectShow(_ context.Context, req ProjectRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("project.show", err), err
+	}
+	project, err := findProject(root, req.Slug)
+	if err != nil {
+		if commandErr, ok := err.(*domain.CommandError); ok && commandErr.Code == "project_not_found" {
+			restoreErr := projectNotFoundWithRestore(root, req.Slug)
+			projection := domain.NewErrorProjection("project.show", restoreErr)
+			if restoreErr.Hint != commandErr.Hint {
+				projection.Actions = []domain.Action{{Name: "restore", Command: restoreErr.Hint}}
+			}
+			return projection, restoreErr
+		}
+		return errorProjection("project.show", err), err
+	}
+	projection := domain.NewProjection("project.show", "Project read.")
+	projection.Facts["project"] = project.Slug
+	projection.Facts["name"] = project.Name
+	projection.Facts["notes_prefix"] = project.NotesPrefix
+	projection.Data = map[string]any{"project": project}
+	projection.Actions = []domain.Action{{Name: "subprojects", Command: fmt.Sprintf("pinax project subproject list %s --vault %s --json", shellQuote(project.Slug), shellQuote(root))}}
 	return projection, nil
 }
 
@@ -797,6 +1052,7 @@ func (s *Service) VaultDoctor(_ context.Context, req VaultDoctorRequest) (domain
 	stats := vaultops.Stats(root, toVaultOpsFacts(facts), time.Since(started))
 	facts = ordinaryNoteFacts(facts)
 	issues := VaultHealthService{}.Issues(root, facts, stats, req.StaleAfter)
+	issues = append(issues, projectTrashLifecycleIssues(root)...)
 	report := domain.VaultDoctorReport{VaultPath: root, Issues: issues, Counts: countIssuesBySeverity(issues), Stats: stats}
 	projection := domain.NewProjection("vault.doctor", "Vault health check completed.")
 	projection.Facts["vault"] = root
@@ -828,6 +1084,7 @@ func (s *Service) PlanRepair(_ context.Context, req RepairPlanRequest) (domain.P
 	facts = ordinaryNoteFacts(facts)
 	stats := vaultops.Stats(root, toVaultOpsFacts(facts), elapsed)
 	issues := VaultHealthService{}.Issues(root, facts, stats, 90*24*time.Hour)
+	issues = append(issues, projectTrashLifecycleIssues(root)...)
 	issues = append(issues, assetAndVersionRepairIssues(root, issues)...)
 	plan := buildRepairPlan(root, facts, stats, issues, elapsed)
 	if req.Save {
@@ -1138,6 +1395,59 @@ func assetVaultIssue(code, severity, path, message string, evidence []string, ac
 	return domain.VaultIssue{Code: code, Severity: severity, Path: path, Message: message, Evidence: evidence, NextActions: actions}
 }
 
+func projectTrashLifecycleIssues(root string) []domain.VaultIssue {
+	issues := []domain.VaultIssue{}
+	registry, err := loadProjectRegistry(root)
+	if err == nil {
+		for _, project := range registry.Projects {
+			workspaces, listErr := listProjectWorkspaces(root, project.Slug)
+			if listErr != nil {
+				issues = append(issues, domain.VaultIssue{Code: "project_workspace_registry_unreadable", Severity: "warning", Path: filepath.ToSlash(filepath.Join(".pinax", "project-workspaces", project.Slug)), Message: "Project workspace registry could not be read", Evidence: []string{"project=" + project.Slug, "error=" + listErr.Error()}, NextActions: []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}})
+				continue
+			}
+			for _, workspace := range workspaces {
+				if strings.TrimSpace(workspace.WorkspacePath) == "" {
+					continue
+				}
+				workspacePath, pathErr := safeJoin(root, workspace.WorkspacePath)
+				if pathErr != nil {
+					issues = append(issues, domain.VaultIssue{Code: "project_workspace_path_invalid", Severity: "warning", Path: workspace.WorkspacePath, Message: "Project workspace path is invalid", Evidence: []string{"project=" + project.Slug, "subproject=" + workspace.Subproject}, NextActions: []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}})
+					continue
+				}
+				if info, statErr := os.Stat(workspacePath); statErr != nil || !info.IsDir() {
+					evidence := []string{"project=" + project.Slug, "subproject=" + workspace.Subproject, "workspace_path=" + workspace.WorkspacePath}
+					if statErr != nil {
+						evidence = append(evidence, "error="+statErr.Error())
+					}
+					issues = append(issues, domain.VaultIssue{Code: "project_workspace_missing", Severity: "warning", Path: workspace.WorkspacePath, Message: "Active project workspace path is missing", Evidence: evidence, NextActions: []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}})
+				}
+			}
+		}
+	}
+	tombstones, err := loadTrashTombstones(root)
+	if err != nil {
+		issues = append(issues, domain.VaultIssue{Code: "trash_tombstones_unreadable", Severity: "warning", Path: tombstonesRel, Message: "Trash tombstones could not be read", Evidence: []string{"error=" + err.Error()}, NextActions: []domain.Action{{Name: "trash_list", Command: fmt.Sprintf("pinax trash list --vault %s --json", shellQuote(root))}}})
+		return issues
+	}
+	for objectID, tombstone := range tombstones {
+		if tombstone.RestoredAt != "" || strings.TrimSpace(tombstone.TrashPath) == "" {
+			continue
+		}
+		trashPath, pathErr := safeJoin(root, tombstone.TrashPath)
+		evidence := []string{"object_id=" + defaultString(trashObjectID(tombstone), objectID), "object_kind=" + trashObjectKind(tombstone), "trash_path=" + tombstone.TrashPath}
+		if pathErr != nil {
+			evidence = append(evidence, "error="+pathErr.Error())
+			issues = append(issues, domain.VaultIssue{Code: "trash_backup_missing", Severity: "warning", Path: tombstone.TrashPath, Message: "Trash tombstone points to an invalid backup path", Evidence: evidence, NextActions: []domain.Action{{Name: "trash_list", Command: fmt.Sprintf("pinax trash list --vault %s --json", shellQuote(root))}}})
+			continue
+		}
+		if _, statErr := os.Stat(trashPath); statErr != nil {
+			evidence = append(evidence, "error="+statErr.Error())
+			issues = append(issues, domain.VaultIssue{Code: "trash_backup_missing", Severity: "warning", Path: tombstone.TrashPath, Message: "Trash tombstone backup is missing", Evidence: evidence, NextActions: []domain.Action{{Name: "trash_list", Command: fmt.Sprintf("pinax trash list --vault %s --json", shellQuote(root))}}})
+		}
+	}
+	return issues
+}
+
 func assetEvidence(asset domain.Asset, extra ...string) []string {
 	evidence := []string{"asset_id=" + asset.ID, "path=" + asset.Path, "media_type=" + asset.MediaType}
 	if asset.SHA256 != "" {
@@ -1272,7 +1582,7 @@ func repairOperationForIssue(planID string, issue domain.VaultIssue) (domain.Rep
 		op.Kind = "manual_review"
 		op.Mode = "manual_review"
 		op.Risk = "review"
-	case "asset_missing", "asset_hash_changed", "orphan_manifest_entry", "dangling_asset_link", "version_evidence_missing":
+	case "asset_missing", "asset_hash_changed", "orphan_manifest_entry", "dangling_asset_link", "version_evidence_missing", "trash_backup_missing", "trash_tombstones_unreadable", "project_workspace_registry_unreadable", "project_workspace_path_invalid", "project_workspace_missing":
 		op.Kind = issue.Code
 		op.Mode = "manual_review"
 		op.Risk = "review"
@@ -1971,6 +2281,11 @@ func (s *Service) ListNotesQuery(_ context.Context, req NoteListRequest) (domain
 	if err != nil {
 		return errorProjection("note.list", err), err
 	}
+	if periodUpdatedAfter, err := noteListPeriodUpdatedAfter(req.Period, req.UpdatedAfter); err != nil {
+		return errorProjection("note.list", err), err
+	} else if periodUpdatedAfter != "" {
+		req.UpdatedAfter = periodUpdatedAfter
+	}
 	facts, err := scanNoteFacts(root)
 	if err != nil {
 		return errorProjection("note.list", err), err
@@ -2033,8 +2348,14 @@ func (s *Service) ListNotesQuery(_ context.Context, req NoteListRequest) (domain
 	if req.CreatedAfter != "" {
 		projection.Facts["filter.created_after"] = req.CreatedAfter
 	}
+	if req.UpdatedAfter != "" {
+		projection.Facts["filter.updated_after"] = req.UpdatedAfter
+	}
 	if req.UpdatedBefore != "" {
 		projection.Facts["filter.updated_before"] = req.UpdatedBefore
+	}
+	if req.Period != "" {
+		projection.Facts["filter.period"] = req.Period
 	}
 	if req.PathPrefix != "" {
 		projection.Facts["filter.path_prefix"] = req.PathPrefix
@@ -2050,6 +2371,33 @@ func (s *Service) ListNotesQuery(_ context.Context, req NoteListRequest) (domain
 	}
 	projection.Data = data
 	return projection, nil
+}
+
+func noteListPeriodUpdatedAfter(period, explicitUpdatedAfter string) (string, error) {
+	period = strings.TrimSpace(period)
+	if period == "" {
+		return strings.TrimSpace(explicitUpdatedAfter), nil
+	}
+	if strings.TrimSpace(explicitUpdatedAfter) != "" {
+		return "", &domain.CommandError{Code: "note_list_period_conflict", Message: "--period and --updated-after cannot be used together", Hint: "Use either pinax note list --period daily or pinax note list --updated-after <date>"}
+	}
+	now := currentTimeUTC()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	var boundary time.Time
+	switch period {
+	case "5h":
+		boundary = now.Add(-5 * time.Hour)
+	case "daily", "day", "today":
+		boundary = dayStart
+	case "weekly", "week", "this-week":
+		weekdayOffset := (int(now.Weekday()) + 6) % 7
+		boundary = dayStart.AddDate(0, 0, -weekdayOffset)
+	case "monthly", "month", "this-month":
+		boundary = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	default:
+		return "", &domain.CommandError{Code: "note_list_period_invalid", Message: "Invalid note list period: " + period, Hint: "Use one of: 5h, daily, weekly, monthly"}
+	}
+	return boundary.Format(time.RFC3339), nil
 }
 
 func selectedNoteProperties(notes []domain.Note, names []string, strict bool) (map[string]map[string]domain.PropertyValue, error) {
@@ -2329,6 +2677,8 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	var templatePathPattern string
 	templateDefaults := map[string]string{}
 	templateOverrides := []string{}
+	templateMeta := templateengine.Metadata{}
+	templateSource := ""
 	if templateName != "" {
 		doc, err := parseTemplateForProjection(root, templateName)
 		if err != nil {
@@ -2339,6 +2689,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 			return domain.NewErrorProjection("note.new", err), err
 		}
 		templateDoc = doc
+		templateMeta, templateSource = templateProjectionMetadata(root, templateName, doc.Metadata)
 		templatePathPattern = doc.Metadata.Output.PathPattern
 		templateDefaults = doc.Metadata.Defaults
 		if req.Kind == "" && templateDefaults["kind"] != "" {
@@ -2353,6 +2704,16 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		}
 		if req.Dir != "" || req.Folder != "" || req.Slug != "" || req.Project != "" {
 			templateOverrides = append(templateOverrides, "path")
+		}
+		if len(req.Tags) == 0 && templateDefaults["tags"] != "" {
+			req.Tags = splitCommaValues(templateDefaults["tags"])
+			var tagErr *domain.CommandError
+			req.Tags, tagErr = normalizeTagsForWrite(req.Tags)
+			if tagErr != nil {
+				return domain.NewErrorProjection("note.new", tagErr), tagErr
+			}
+		} else if len(req.Tags) > 0 && templateDefaults["tags"] != "" {
+			templateOverrides = append(templateOverrides, "tags")
 		}
 	}
 	body, err := noteBodyFromRequest(req)
@@ -2427,6 +2788,18 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	}
 	if templateName != "" {
 		projection.Facts["template"] = templateName
+		templateUseID := stableNoteID(templateName + ":" + rel)
+		projection.Facts["template_use_id"] = templateUseID
+		projection.Facts["effective_path"] = rel
+		if templateMeta.ScenarioID != "" {
+			projection.Facts["scenario_id"] = templateMeta.ScenarioID
+		}
+		if templateMeta.Pack.ID != "" {
+			projection.Facts["template_pack"] = templateMeta.Pack.ID
+		}
+		if templateMeta.ProofGate.Status != "" {
+			projection.Facts["proof_gate.status"] = templateMeta.ProofGate.Status
+		}
 		if templatePathPattern != "" {
 			projection.Facts["template.path_pattern"] = templatePathPattern
 		}
@@ -2437,8 +2810,25 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 			projection.Facts["template.overrides"] = strings.Join(templateOverrides, ",")
 		}
 	}
-	projection.Data = map[string]any{"note": domain.Note{ID: stableNoteID(rel), Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}, "planned_path": rel, "frontmatter_preview": strings.SplitN(content, "---\n\n", 2)[0] + "---", "body_preview": strings.TrimSpace(body)}
+	data := map[string]any{"note": domain.Note{ID: stableNoteID(rel), Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}, "planned_path": rel, "frontmatter_preview": strings.SplitN(content, "---\n\n", 2)[0] + "---", "body_preview": strings.TrimSpace(body)}
 	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax note show %s --vault %s", shellQuote(rel), shellQuote(root))}}
+	if templateName != "" {
+		nextActions := templateMetadataActions(templateMeta.AfterCreateActions)
+		nextActions = append(nextActions, projection.Actions...)
+		data["template_use"] = map[string]any{
+			"template_use_id":      projection.Facts["template_use_id"],
+			"template":             templateName,
+			"template_pack":        templateMeta.Pack.ID,
+			"scenario_id":          templateMeta.ScenarioID,
+			"effective_path":       rel,
+			"source":               templateSource,
+			"proof_gate":           templateMeta.ProofGate,
+			"next_actions":         nextActions,
+			"after_create_actions": templateMeta.AfterCreateActions,
+		}
+		projection.Actions = nextActions
+	}
+	projection.Data = data
 	if req.DryRun {
 		projection.Summary = "Note create plan generated."
 		projection.Facts["ledger_status"] = "preview"
@@ -2484,7 +2874,13 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		return errorProjection("note.new", recordErr), recordErr
 	}
 	applyRecordEventFacts(&projection, recordEvent)
-	_ = appendEvent(root, "note.new", "success", map[string]string{"path": rel, "title": req.Title})
+	eventFacts := map[string]string{"path": rel, "title": req.Title}
+	if templateName != "" {
+		eventFacts["template"] = templateName
+		eventFacts["template_use_id"] = projection.Facts["template_use_id"]
+		eventFacts["scenario_id"] = templateMeta.ScenarioID
+	}
+	_ = appendEvent(root, "note.new", "success", eventFacts)
 	return projection, nil
 }
 
@@ -2825,6 +3221,7 @@ func (s *Service) ShowNoteProjection(ctx context.Context, req ShowNoteRequest) (
 	queryFacts := map[string]map[string]string{}
 	renderRuns := []renderRunReceipt{}
 	embeddedAssets := []pinaxassets.EmbeddedAssetPreview{}
+	databaseTabs := []domain.DatabaseTab{}
 	if req.Runs {
 		runs, err := listNoteRenderRuns(root, note.Path)
 		if err != nil {
@@ -2850,6 +3247,7 @@ func (s *Service) ShowNoteProjection(ctx context.Context, req ShowNoteRequest) (
 			body = rendered.Body
 			queryCount = rendered.QueryCount
 			queryFacts = facts
+			databaseTabs = rendered.DatabaseTabs
 		}
 		if req.EmbedAttachments != "" {
 			preview, err := pinaxassets.RenderEmbeddedPreview(pinaxassets.RenderPreviewRequest{Root: root, SourcePath: note.Path, Body: body, Mode: req.EmbedAttachments, MaxDepth: req.MaxEmbedDepth, MaxBytes: req.MaxEmbedBytes})
@@ -2869,6 +3267,9 @@ func (s *Service) ShowNoteProjection(ctx context.Context, req ShowNoteRequest) (
 	if len(queryFacts) > 0 {
 		projection.Facts["queries"] = fmt.Sprint(len(queryFacts))
 	}
+	if len(databaseTabs) > 0 {
+		projection.Facts["database_tabs"] = fmt.Sprint(len(databaseTabs))
+	}
 	data := map[string]any{"note": note, "body": body, "view": view, "query_facts": queryFacts, "render_runs": renderRuns}
 	if displayRequested {
 		displayNote := buildNoteDisplay(note, display, domain.NoteExposureLocalDetail)
@@ -2881,6 +3282,9 @@ func (s *Service) ShowNoteProjection(ctx context.Context, req ShowNoteRequest) (
 	}
 	if len(embeddedAssets) > 0 {
 		data["embedded_assets"] = embeddedAssets
+	}
+	if len(databaseTabs) > 0 {
+		data["database_tabs"] = databaseTabs
 	}
 	projection.Data = data
 	return projection, nil
@@ -2960,17 +3364,21 @@ func (s *Service) RefreshNoteRendered(ctx context.Context, req NoteRefreshReques
 }
 
 type renderedNoteBody struct {
-	Body       string
-	ByName     map[string]string
-	QueryCount int
+	Body         string
+	ByName       map[string]string
+	QueryCount   int
+	DatabaseTabs []domain.DatabaseTab
 }
 
-var noteQueryFencePattern = regexp.MustCompile("(?ms)^```pinax-sql(?:[ \\t]+(?:name=)?([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(.*?)\\n```[ \\t]*(?:\\n|$)")
+var noteQueryFencePattern = regexp.MustCompile("(?ms)^```(pinax-sql|pinax-dataview)(?:[ \\t]+(?:name=)?([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(.*?)\\n```[ \\t]*(?:\\n|$)")
+var noteDatabaseViewFencePattern = regexp.MustCompile("(?ms)^```pinax-database-view(?:[ \\t]+([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(?:([A-Za-z_][A-Za-z0-9_:-]*)[ \\t]*\\n)?```[ \\t]*(?:\\n|$)")
 var managedRenderBlockPattern = regexp.MustCompile("(?ms)<!-- pinax:render ([A-Za-z_][A-Za-z0-9_:-]*) start -->.*?<!-- pinax:render ([A-Za-z_][A-Za-z0-9_:-]*) end -->")
+var managedDataviewBlockPattern = regexp.MustCompile("(?ms)<!-- pinax:managed name=([A-Za-z_][A-Za-z0-9_:-]*) -->.*?<!-- /pinax:managed -->")
 
 func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) (renderedNoteBody, map[string]map[string]string, error) {
 	byName := map[string]string{}
 	facts := map[string]map[string]string{}
+	databaseTabs := []domain.DatabaseTab{}
 	count := 0
 	var firstErr error
 	rendered := noteQueryFencePattern.ReplaceAllStringFunc(body, func(block string) string {
@@ -2978,15 +3386,22 @@ func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) 
 			return block
 		}
 		match := noteQueryFencePattern.FindStringSubmatch(block)
-		if len(match) < 3 {
+		if len(match) < 4 {
 			return block
 		}
-		name := strings.TrimSpace(match[1])
+		kind := strings.TrimSpace(match[1])
+		name := strings.TrimSpace(match[2])
 		if name == "" {
 			name = fmt.Sprintf("query%d", count+1)
 		}
-		sql := strings.TrimSpace(match[2])
-		projection, err := s.QueryRun(ctx, QueryRequest{VaultPath: root, SQL: sql, Limit: 50, LazyIndex: true})
+		query := strings.TrimSpace(match[3])
+		var projection domain.Projection
+		var err error
+		if kind == "pinax-dataview" {
+			projection, err = s.DataviewRun(ctx, DataviewRequest{VaultPath: root, Query: query, Limit: 50, LazyIndex: true})
+		} else {
+			projection, err = s.QueryRun(ctx, QueryRequest{VaultPath: root, SQL: query, Limit: 50, LazyIndex: true})
+		}
 		if err != nil {
 			firstErr = templateQueryCommandError(name, err)
 			return block
@@ -2998,10 +3413,121 @@ func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) 
 		count++
 		return markdown + "\n"
 	})
+	rendered = noteDatabaseViewFencePattern.ReplaceAllStringFunc(rendered, func(block string) string {
+		if firstErr != nil {
+			return block
+		}
+		match := noteDatabaseViewFencePattern.FindStringSubmatch(block)
+		if len(match) < 3 {
+			return block
+		}
+		name := strings.TrimSpace(match[1])
+		if name == "" {
+			name = strings.TrimSpace(match[2])
+		}
+		if name == "" {
+			firstErr = &domain.CommandError{Code: "database_tab_view_required", Message: "pinax-database-view fence requires a saved view name", Hint: "Use ```pinax-database-view <name>"}
+			return block
+		}
+		projection, err := s.RenderDatabaseView(ctx, ViewRequest{VaultPath: root, Name: name})
+		if err != nil {
+			firstErr = databaseTabCommandError(name, err)
+			return block
+		}
+		tab := databaseTabFromProjection(name, projection)
+		markdown := databaseTabMarkdown(tab)
+		databaseTabs = append(databaseTabs, tab)
+		byName[name] = markdown
+		facts[name] = projection.Facts
+		count++
+		return markdown + "\n"
+	})
 	if firstErr != nil {
 		return renderedNoteBody{}, nil, firstErr
 	}
-	return renderedNoteBody{Body: rendered, ByName: byName, QueryCount: count}, facts, nil
+	return renderedNoteBody{Body: rendered, ByName: byName, QueryCount: count, DatabaseTabs: databaseTabs}, facts, nil
+}
+
+func databaseTabCommandError(name string, err error) *domain.CommandError {
+	var commandErr *domain.CommandError
+	if errors.As(err, &commandErr) && commandErr.Code == "view_not_found" {
+		return &domain.CommandError{Code: "database_tab_view_not_found", Message: "Database tab saved view not found: " + name, Hint: "Run pinax database view list --vault <vault>"}
+	}
+	message := "Database tab render failed: " + name
+	if err != nil && err.Error() != "" {
+		message += ": " + err.Error()
+	}
+	return &domain.CommandError{Code: "database_tab_render_failed", Message: message, Hint: "Run pinax database view render " + shellQuote(name) + " --vault <vault> --json"}
+}
+
+func databaseTabFromProjection(name string, projection domain.Projection) domain.DatabaseTab {
+	data, _ := projection.Data.(map[string]any)
+	if tab, ok := data["database_tab"].(domain.DatabaseTab); ok {
+		return tab
+	}
+	render, _ := data["render"].(domain.DatabaseViewRender)
+	display := projection.Facts["display"]
+	if display == "" {
+		display = render.Display
+	}
+	return domain.DatabaseTab{Name: name, View: projection.Facts["view"], Display: display, Rows: render.RowCount, Render: render, Facts: projection.Facts}
+}
+
+func databaseTabMarkdown(tab domain.DatabaseTab) string {
+	var b strings.Builder
+	b.WriteString("### ")
+	b.WriteString(tab.Name)
+	b.WriteString("\n\n")
+	switch tab.Display {
+	case "table":
+		if tab.Render.Table != nil {
+			b.WriteString(tableResultMarkdown(*tab.Render.Table))
+		}
+	case "list":
+		for _, item := range tab.Render.List {
+			b.WriteString("- ")
+			b.WriteString(item.Title)
+			if item.Path != "" {
+				b.WriteString(" (")
+				b.WriteString(item.Path)
+				b.WriteString(")")
+			}
+			b.WriteString("\n")
+		}
+	case "board":
+		for _, column := range tab.Render.Board.Columns {
+			b.WriteString("#### ")
+			b.WriteString(column.ID)
+			b.WriteString("\n")
+			for _, item := range column.Items {
+				b.WriteString("- ")
+				b.WriteString(item.Title)
+				b.WriteString("\n")
+			}
+			b.WriteString("\n")
+		}
+	case "calendar":
+		for _, event := range tab.Render.Calendar.Events {
+			b.WriteString("- ")
+			b.WriteString(event.Date)
+			b.WriteString(" - ")
+			b.WriteString(event.Title)
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func tableResultMarkdown(result domain.TableResult) string {
+	converted := templateengine.QueryResult{Columns: result.Columns, Rows: make([]map[string]string, 0, len(result.Rows))}
+	for _, row := range result.Rows {
+		values := map[string]string{}
+		for _, column := range result.Columns {
+			values[column] = databaseViewRowValue(row, column)
+		}
+		converted.Rows = append(converted.Rows, values)
+	}
+	return templateops.QueryResultMarkdown(converted)
 }
 
 func replaceManagedRenderBlocks(body string, rendered map[string]string) (string, int) {
@@ -3018,6 +3544,19 @@ func replaceManagedRenderBlocks(body string, rendered map[string]string) (string
 		}
 		changed++
 		return fmt.Sprintf("<!-- pinax:render %s start -->\n%s\n<!-- pinax:render %s end -->", name, strings.TrimSpace(content), name)
+	})
+	updated = managedDataviewBlockPattern.ReplaceAllStringFunc(updated, func(block string) string {
+		match := managedDataviewBlockPattern.FindStringSubmatch(block)
+		if len(match) < 2 {
+			return block
+		}
+		name := match[1]
+		content, ok := rendered[name]
+		if !ok {
+			return block
+		}
+		changed++
+		return fmt.Sprintf("<!-- pinax:managed name=%s -->\n%s\n<!-- /pinax:managed -->", name, strings.TrimSpace(content))
 	})
 	return updated, changed
 }
@@ -3051,6 +3590,7 @@ func (s *Service) NoteLinks(ctx context.Context, req NoteLinkRequest) (domain.Pr
 	projection.Facts["broken"] = fmt.Sprint(countBrokenLinks(links))
 	projection.Facts["ambiguous"] = "0"
 	projection.Facts["engine"] = "scan"
+	addLinkCompatibilityFacts(projection.Facts)
 	if countBrokenLinks(links) > 0 {
 		projection.Status = "partial"
 		projection.Actions = []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}
@@ -3086,6 +3626,7 @@ func (s *Service) NoteBacklinks(ctx context.Context, req NoteLinkRequest) (domai
 	projection.Facts["backlinks"] = fmt.Sprint(len(backlinks))
 	projection.Facts["unresolved"] = "0"
 	projection.Facts["engine"] = "scan"
+	addLinkCompatibilityFacts(projection.Facts)
 	projection.Data = map[string]any{"note": note, "backlinks": backlinks}
 	return projection, nil
 }
@@ -3964,60 +4505,106 @@ func folderRenameTargetPath(note domain.Note, oldFolder, newFolder string) strin
 	return filepath.ToSlash(filepath.Join(newFolder, base))
 }
 
-func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (SearchResult, error) {
+func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (result SearchResult, err error) {
 	searchReq := toSearchOpsRequest(req)
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return SearchResult{}, err
 	}
+	monitorFacts := monitorQueryFacts("query", req.Query)
+	monitorFacts["engine_requested"] = searchops.NormalizedEngine(req.Engine)
+	monitorFacts["lazy_index"] = searchops.NormalizedLazyIndex(req.LazyIndex)
+	monitorFacts["limit"] = fmt.Sprint(req.Limit)
+	rec := startMonitorRun(root, "note.search", monitorFacts)
+	defer func() { rec.Finish("", err) }()
 	searchReq.VaultPath = root
+	endStep := rec.BeginStep("search.validate", nil)
 	if err := searchops.ValidateVersionAware(searchReq); err != nil {
+		endStep(err)
 		return SearchResult{}, err
 	}
 	if err := searchops.ValidateDateFilters(searchReq); err != nil {
+		endStep(err)
 		return SearchResult{}, err
 	}
+	endStep(nil)
+	engine := searchops.NormalizedEngine(searchReq.Engine)
+	endStep = rec.BeginStep("notes.scan", nil)
 	notes, err := scanNotes(root)
 	if err != nil {
+		endStep(err)
 		return SearchResult{}, err
 	}
 	notes = ordinaryNotes(notes)
+	endStep(nil)
+	endStep = rec.BeginStep("link_filter.build", map[string]string{"active": fmt.Sprint(strings.TrimSpace(req.LinkTarget) != "")})
 	linkFilter, err := searchops.BuildLinkTargetFilter(notes, req.LinkTarget, func(notes []domain.Note) map[string][]domain.NoteLink {
 		outgoing, _ := BuildEnhancedLinkGraph(notes)
 		return outgoing
 	})
 	if err != nil {
+		endStep(err)
 		return SearchResult{}, err
 	}
+	endStep(nil)
+	endStep = rec.BeginStep("index.inspect", nil)
 	status, err := noteindex.Inspect(root, notes)
+	endStep(err)
 	indexLoaded := ""
-	if err == nil && searchops.LazyIndexAllowed(searchReq, status, notes) {
+	if err == nil && engine == "auto" && searchops.LazyIndexAllowed(searchReq, status, notes) {
 		select {
 		case <-ctx.Done():
 			return SearchResult{}, ctx.Err()
 		default:
 		}
+		endStep = rec.BeginStep("index.lazy_rebuild", map[string]string{"index_status": status.Status})
 		if _, rebuildErr := noteindex.Rebuild(root, notes); rebuildErr == nil {
+			endStep(nil)
+			endStep = rec.BeginStep("index.inspect_after_lazy_rebuild", nil)
 			if rebuiltStatus, inspectErr := noteindex.Inspect(root, notes); inspectErr == nil {
 				status = rebuiltStatus
 				indexLoaded = "lazy_rebuild"
 			}
+			endStep(nil)
+		} else {
+			endStep(rebuildErr)
 		}
+	}
+	if engine == "native" {
+		endStep = rec.BeginStep("native.search", nil)
+		result := notesearch.Notes(ctx, root, req.Query, notes)
+		endStep(nil)
+		indexStatus := "missing"
+		if err == nil && status.Status != "" {
+			indexStatus = status.Status
+		}
+		return searchops.ResultFromFallback(searchReq, result.Engine, result.Notes, indexStatus, linkFilter), nil
+	}
+	if engine == "index" && (err != nil || (status.Status != "fresh" && (status.Status != "stale" || !req.AllowStale))) {
+		indexStatus := "missing"
+		if err == nil && status.Status != "" {
+			indexStatus = status.Status
+		}
+		return SearchResult{}, &domain.CommandError{Code: "search_index_unavailable", Message: "Search index is not available for --engine index: " + indexStatus, Hint: fmt.Sprintf("pinax index refresh --vault %s --json", shellQuote(root))}
 	}
 	if err == nil && (status.Status == "fresh" || (status.Status == "stale" && req.AllowStale)) {
 		indexReq := searchops.BuildIndexRequest(searchReq, linkFilter)
+		endStep = rec.BeginStep("index.search", map[string]string{"index_status": status.Status})
 		result, searchErr := noteindex.Search(root, indexReq)
+		endStep(searchErr)
 		if searchErr == nil && (result.Returned > 0 || strings.TrimSpace(req.Query) == "") {
 			result.IndexStatus = status.Status
 			return searchops.ResultFromIndex(searchReq, indexLoaded, result, linkFilter), nil
 		}
 	}
-	result := notesearch.Notes(ctx, root, req.Query, notes)
+	endStep = rec.BeginStep("native.search", map[string]string{"fallback": "true"})
+	nativeResult := notesearch.Notes(ctx, root, req.Query, notes)
+	endStep(nil)
 	indexStatus := "missing"
 	if err == nil && status.Status != "" {
 		indexStatus = status.Status
 	}
-	return searchops.ResultFromFallback(searchReq, result.Engine, result.Notes, indexStatus, linkFilter), nil
+	return searchops.ResultFromFallback(searchReq, nativeResult.Engine, nativeResult.Notes, indexStatus, linkFilter), nil
 }
 
 type SearchResult = searchops.Result
@@ -4076,6 +4663,7 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 					if noteNeedsMetadataInVault(root, note) {
 						ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: note.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
 					}
+					ops = append(ops, durableSourceMetadataOperations(note)...)
 				}
 				if !matchedNote {
 					ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: candidate.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
@@ -4099,6 +4687,7 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 		if noteNeedsMetadataInVault(root, note) {
 			ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: note.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
 		}
+		ops = append(ops, durableSourceMetadataOperations(note)...)
 	}
 	projection := domain.NewProjection("metadata.plan", "Metadata plan generated.")
 	projection.Facts["planned_updates"] = fmt.Sprint(len(ops))
@@ -4158,14 +4747,24 @@ func (s *Service) PlanOrganize(_ context.Context, req VaultRequest) (domain.Proj
 	if err != nil {
 		return errorProjection("organize.plan", err), err
 	}
+	facts, err := scanNoteFacts(root)
+	if err != nil {
+		return errorProjection("organize.plan", err), err
+	}
+	ops = append(ops, organizeFactOperations(root, organizeCandidateFacts(facts))...)
 	moves := 0
+	manualReview := 0
 	for _, op := range ops {
 		if op.Kind == "move" && op.Status == "planned" {
 			moves++
 		}
+		if op.Status == "manual_review" {
+			manualReview++
+		}
 	}
 	projection := domain.NewProjection("organize.plan", "Organize plan generated.")
 	projection.Facts["planned_moves"] = fmt.Sprint(moves)
+	projection.Facts["manual_review"] = fmt.Sprint(manualReview)
 	projection.Data = map[string]any{"operations": ops}
 	if moves > 0 {
 		projection.Actions = []domain.Action{{Name: "snapshot", Command: fmt.Sprintf("pinax version snapshot --vault %s --message %s", shellQuote(root), shellQuote("snapshot before organize"))}}
@@ -4854,19 +5453,29 @@ func (s *Service) AssetOrphans(_ context.Context, req VaultRequest) (domain.Proj
 		}
 	}
 	orphans := make([]domain.Asset, 0)
+	visibleAssets := make([]domain.Asset, 0, len(assets))
 	for _, asset := range assets {
+		if isPinaxAuxiliaryContentPath(asset.Path) {
+			continue
+		}
+		visibleAssets = append(visibleAssets, asset)
 		if !linked[asset.Path] {
 			orphans = append(orphans, asset)
 		}
 	}
 	projection := domain.NewProjection("asset.orphans", "Orphan assets listed.")
-	projection.Facts["assets"] = fmt.Sprint(len(assets))
+	projection.Facts["assets"] = fmt.Sprint(len(visibleAssets))
 	projection.Facts["orphan"] = fmt.Sprint(len(orphans))
 	projection.Facts["index_status"] = status.Status
 	projection.Actions = []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax asset repair --plan --vault %s --json", shellQuote(root))}}
 	projection.Evidence = []string{status.Path}
 	projection.Data = map[string]any{"assets": orphans}
 	return projection, nil
+}
+
+func isPinaxAuxiliaryContentPath(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(path)))
+	return clean == ".gitignore" || clean == vaultignore.PinaxIgnoreName
 }
 
 func (s *Service) AssetMissing(_ context.Context, req VaultRequest) (domain.Projection, error) {
@@ -5355,8 +5964,8 @@ func (s *Service) VersionRestorePlan(ctx context.Context, req VersionRestorePlan
 		err := &domain.CommandError{Code: "revision_required", Message: "version restore requires a revision", Hint: "Provide --revision <revision>"}
 		return domain.NewErrorProjection("version.restore", err), err
 	}
-	// ReadFile 是 best-effort：local backend 不支持读历史内容，但 git HEAD commit 仍可恢复。
-	// 只要 git 历史存在，restore apply 就能通过 git checkout 回到 plan 生成时的提交。
+	// ReadFile 是首选历史内容来源；local backend 会从 Pinax content objects 读取，
+	// legacy Git checkout 仅作为旧计划或手工 Git 内容库的兼容 fallback。
 	file, fileErr := s.versionBackend.ReadFile(ctx, pinaxversion.ReadFileRequest{Root: root, Path: path, Revision: revision})
 	fileEvidence := []string{}
 	fileBackend := "local"
@@ -5372,7 +5981,7 @@ func (s *Service) VersionRestorePlan(ctx context.Context, req VersionRestorePlan
 		filesChanged = diff.FilesChanged
 	}
 	// 生成并持久化只读 restore plan，restore apply 据此把历史内容安全写回本地。
-	// plan 记录 vault hash、revision 和 git HEAD commit，apply 时校验目标 vault 未漂移并用 git checkout 恢复。
+	// plan 记录 vault hash、revision、content hash 和可选 git HEAD commit，apply 时校验目标 vault 未漂移。
 	now := time.Now().UTC()
 	planID := "restore_" + now.Format("20060102T150405Z")
 	vaultHash, hashErr := versionVaultHash(root)
@@ -5389,7 +5998,7 @@ func (s *Service) VersionRestorePlan(ctx context.Context, req VersionRestorePlan
 		err := &domain.CommandError{Code: domain.ErrorCodeVersionReadUnavailable, Message: "version backend cannot read historical content for restore", Hint: "Take a git snapshot (pinax version snapshot) before generating a restore plan"}
 		return domain.NewErrorProjection("version.restore", err), err
 	}
-	operation := domain.PlanOperation{Kind: "version_restore", Path: path, Reason: "Restore historical content via the version backend or git checkout", Status: "planned", Evidence: fileEvidence}
+	operation := domain.PlanOperation{Kind: "version_restore", Path: path, Reason: "Restore historical content via the version backend or legacy git checkout", Status: "planned", Evidence: fileEvidence}
 	plan := domain.RestorePlan{
 		SchemaVersion:  "pinax.restore_plan.v1",
 		PlanID:         planID,
@@ -5418,6 +6027,9 @@ func (s *Service) VersionRestorePlan(ctx context.Context, req VersionRestorePlan
 	projection.Facts["files_changed"] = fmt.Sprint(filesChanged)
 	projection.Facts["plan_id"] = plan.PlanID
 	projection.Facts["saved_path"] = plan.SavedPath
+	if fileContentHash != "" {
+		projection.Facts["content_hash"] = fileContentHash
+	}
 	if gitCommit != "" {
 		projection.Facts["git_commit"] = gitCommit
 	}
@@ -5464,15 +6076,32 @@ func (s *Service) VersionRestoreApply(ctx context.Context, req VersionRestoreApp
 		projection.Data = map[string]any{"plan_id": plan.PlanID}
 		return projection, err
 	}
-	// 恢复优先用 git checkout：plan 记录了生成时的 HEAD commit，checkout 把单个文件
-	// 工作区内容恢复到该 commit。这复用 git 历史真源，不发明内容，也不缓存明文在 plan 里。
 	restoredHash := plan.ContentHash
 	restoredBackend := plan.VersionBackend
-	if err := gitstore.RestorePathFromCommit(ctx, root, plan.GitCommit, plan.Path); err != nil {
-		failure, _ := writeReceipt(root, "restore", map[string]any{"plan_id": plan.PlanID, "path": plan.Path, "revision": plan.Revision, "status": "failed", "error": err.Error()})
-		projection := errorProjection("version.restore.apply", err)
-		projection.Facts["receipt"] = failure
-		return projection, err
+	if file, err := s.versionBackend.ReadFile(ctx, pinaxversion.ReadFileRequest{Root: root, Path: plan.Path, Revision: plan.Revision}); err == nil {
+		path, joinErr := safeJoin(root, file.Path)
+		if joinErr != nil {
+			return errorProjection("version.restore.apply", joinErr), joinErr
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return errorProjection("version.restore.apply", err), err
+		}
+		mode := os.FileMode(0o600)
+		if info, statErr := os.Stat(path); statErr == nil {
+			mode = info.Mode().Perm()
+		}
+		if err := os.WriteFile(path, []byte(file.Content), mode); err != nil {
+			return errorProjection("version.restore.apply", err), err
+		}
+		restoredHash = file.ContentHash
+		restoredBackend = file.Backend
+	} else {
+		if gitErr := gitstore.RestorePathFromCommit(ctx, root, plan.GitCommit, plan.Path); gitErr != nil {
+			failure, _ := writeReceipt(root, "restore", map[string]any{"plan_id": plan.PlanID, "path": plan.Path, "revision": plan.Revision, "status": "failed", "error": gitErr.Error(), "version_error": err.Error()})
+			projection := errorProjection("version.restore.apply", gitErr)
+			projection.Facts["receipt"] = failure
+			return projection, gitErr
+		}
 	}
 	receiptRel, err := writeReceipt(root, "restore", map[string]any{
 		"plan_id":         plan.PlanID,
@@ -5725,12 +6354,26 @@ func (s *Service) RecommendTemplate(_ context.Context, req TemplateRequest) (dom
 	}
 	items := templateCatalogItems(root)
 	primary := recommendTemplate(items, req.Intent)
+	recommendations := workflowRecommendations(items, primary, req.Intent, root)
 	projection := domain.NewProjection("template.recommend", "Template recommendations generated.")
 	projection.Facts["intent"] = strings.TrimSpace(req.Intent)
 	projection.Facts["primary"] = primary.Name
 	projection.Facts["templates"] = fmt.Sprint(len(items))
-	projection.Data = map[string]any{"primary": primary, "templates": items}
-	projection.Actions = []domain.Action{{Name: "use", Command: fmt.Sprintf("pinax note add <title> --template %s --vault %s --json", shellQuote(primary.Name), shellQuote(root))}}
+	if primary.ScenarioID != "" {
+		projection.Facts["scenario_id"] = primary.ScenarioID
+	}
+	if primary.Maturity != "" {
+		projection.Facts["maturity"] = primary.Maturity
+	}
+	if primary.Pack.ID != "" {
+		projection.Facts["pack"] = primary.Pack.ID
+	}
+	projection.Data = map[string]any{"primary": primary, "templates": items, "recommendations": recommendations}
+	if len(recommendations) > 0 && recommendations[0].CreateCommand != "" {
+		projection.Actions = []domain.Action{{Name: "use", Command: recommendations[0].CreateCommand}}
+	} else {
+		projection.Actions = []domain.Action{{Name: "preview", Command: fmt.Sprintf("pinax template preview %s --vault %s --json", shellQuote(primary.Name), shellQuote(root))}}
+	}
 	return projection, nil
 }
 
@@ -5786,10 +6429,28 @@ func (s *Service) renderTemplateProjection(ctx context.Context, req TemplateRequ
 		return projection, err
 	}
 	doc, _ := parseTemplateForProjection(root, req.Name)
+	meta, source := templateProjectionMetadata(root, req.Name, doc.Metadata)
 	projection := domain.NewProjection(command, summary)
 	projection.Facts["template"] = req.Name
 	projection.Facts["title"] = req.Title
 	projection.Facts["bytes"] = fmt.Sprint(len(body))
+	projection.Facts["read_only"] = fmt.Sprint(command == "template.preview")
+	projection.Facts["writes"] = "false"
+	if source != "" {
+		projection.Facts["source"] = source
+	}
+	if meta.ScenarioID != "" {
+		projection.Facts["scenario_id"] = meta.ScenarioID
+	}
+	if meta.Maturity != "" {
+		projection.Facts["maturity"] = meta.Maturity
+	}
+	if meta.Lifecycle != "" {
+		projection.Facts["lifecycle"] = meta.Lifecycle
+	}
+	if meta.Pack.ID != "" {
+		projection.Facts["pack"] = meta.Pack.ID
+	}
 	tags := cleanTags(req.Tags)
 	if len(tags) > 0 {
 		projection.Facts["tags"] = strings.Join(tags, ",")
@@ -5815,7 +6476,10 @@ func (s *Service) renderTemplateProjection(ctx context.Context, req TemplateRequ
 		projection.Facts["run_name"] = run.Name
 		savedRun = &run
 	}
-	projection.Data = map[string]any{"template": req.Name, "body": body, "engine": doc.Engine, "tags": tags, "render_run": savedRun}
+	missingVariables := missingTemplateVariables(meta, req.Vars)
+	nextCommand := fmt.Sprintf("pinax note add %s --template %s --vault %s --json", shellQuote(defaultString(req.Title, meta.Title)), shellQuote(req.Name), shellQuote(root))
+	projection.Data = map[string]any{"template": req.Name, "body": body, "engine": doc.Engine, "tags": tags, "render_run": savedRun, "workflow": meta, "variable_schema": meta.VariableSchema, "required_variables": requiredTemplateVariables(meta), "missing_variables": missingVariables, "output_policy": meta.OutputPolicy, "proof_gate": meta.ProofGate, "body_exposure": "preview_body", "write_impact": map[string]any{"writes": false, "target_policy": meta.OutputPolicy, "source": source}, "next_command": nextCommand}
+	projection.Actions = append(projection.Actions, domain.Action{Name: "create", Command: nextCommand})
 	return projection, nil
 }
 
@@ -5828,11 +6492,30 @@ func (s *Service) InspectTemplate(ctx context.Context, req TemplateRequest) (dom
 	if err != nil {
 		return errorProjection("template.inspect", err), err
 	}
+	meta, source := templateProjectionMetadata(root, req.Name, doc.Metadata)
 	issues := validateTemplateContent(doc.Body, TemplateRequest{Name: req.Name, Vars: req.Vars})
 	projection := domain.NewProjection("template.inspect", "Template inspection completed.")
 	projection.Facts["template"] = req.Name
 	projection.Facts["engine"] = doc.Engine
 	projection.Facts["issues"] = fmt.Sprint(len(issues))
+	if source != "" {
+		projection.Facts["source"] = source
+	}
+	if meta.ScenarioID != "" {
+		projection.Facts["scenario_id"] = meta.ScenarioID
+	}
+	if meta.TemplateKind != "" {
+		projection.Facts["template_kind"] = meta.TemplateKind
+	}
+	if meta.Maturity != "" {
+		projection.Facts["maturity"] = meta.Maturity
+	}
+	if meta.Lifecycle != "" {
+		projection.Facts["lifecycle"] = meta.Lifecycle
+	}
+	if meta.Pack.ID != "" {
+		projection.Facts["pack"] = meta.Pack.ID
+	}
 	if doc.Metadata.SchemaVersion != "" {
 		projection.Facts["schema_version"] = doc.Metadata.SchemaVersion
 		if doc.Metadata.Kind != "" {
@@ -5860,7 +6543,7 @@ func (s *Service) InspectTemplate(ctx context.Context, req TemplateRequest) (dom
 		if blocks, err := templateengine.InspectManagedBlocks(doc.Body); err == nil && len(blocks) > 0 {
 			projection.Facts["refreshable"] = "true"
 		}
-		projection.Actions = templateInspectActions(root, req.Name, doc.Metadata)
+		projection.Actions = templateInspectActions(root, req.Name, meta)
 		projection.Facts["after_create_action_count"] = fmt.Sprint(len(projection.Actions))
 		if blocks, err := templateengine.InspectManagedBlocks(doc.Body); err == nil {
 			projection.Facts["managed_blocks"] = fmt.Sprint(len(blocks))
@@ -5880,7 +6563,7 @@ func (s *Service) InspectTemplate(ctx context.Context, req TemplateRequest) (dom
 		renderRuns = runs
 		projection.Facts["runs"] = fmt.Sprint(len(runs))
 	}
-	projection.Data = map[string]any{"template": req.Name, "engine": doc.Engine, "metadata": doc.Metadata, "issues": issues, "query_explain": queryExplain, "render_runs": renderRuns}
+	projection.Data = map[string]any{"template": req.Name, "engine": doc.Engine, "metadata": meta, "workflow": meta, "source": source, "variable_schema": meta.VariableSchema, "output_policy": meta.OutputPolicy, "proof_gate": meta.ProofGate, "after_create_actions": meta.AfterCreateActions, "issues": issues, "query_explain": queryExplain, "render_runs": renderRuns}
 	if len(issues) > 0 {
 		projection.Status = "partial"
 	}
@@ -5910,6 +6593,17 @@ func templateInspectActions(root, name string, meta templateengine.Metadata) []d
 	default:
 		return []domain.Action{{Name: "preview", Command: fmt.Sprintf("pinax template preview %s --vault %s --json", shellQuote(name), shellQuote(root))}}
 	}
+}
+
+func templateMetadataActions(actions []templateengine.TemplateActionMetadata) []domain.Action {
+	out := make([]domain.Action, 0, len(actions))
+	for _, action := range actions {
+		if strings.TrimSpace(action.Name) == "" || strings.TrimSpace(action.Command) == "" {
+			continue
+		}
+		out = append(out, domain.Action{Name: action.Name, Command: action.Command})
+	}
+	return out
 }
 
 func (s *Service) CreateTemplate(_ context.Context, req TemplateRequest) (domain.Projection, error) {
@@ -6262,36 +6956,53 @@ func fileCandidateMatch(path, query string) ([]string, int) {
 	}{{"path", path, 95, 55}, {"filename", filepath.Base(path), 90, 50}, {"stem", strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), 90, 50}}
 	return matchFields(q, checks)
 }
-func (s *Service) IndexRefresh(ctx context.Context, req IndexRefreshRequest) (domain.Projection, error) {
+func (s *Service) IndexRefresh(ctx context.Context, req IndexRefreshRequest) (projection domain.Projection, err error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("index.refresh", err), err
 	}
+	rec := startMonitorRun(root, "index.refresh", map[string]string{"changed_since": strings.TrimSpace(req.ChangedSince)})
+	defer func() {
+		runID, evidence := rec.Finish(projection.Status, err)
+		addMonitorProjectionFacts(&projection, runID, evidence)
+	}()
+	endStep := rec.BeginStep("vault_assets.ensure", nil)
 	if err := ensureVaultAssets(root); err != nil {
+		endStep(err)
 		return errorProjection("index.refresh", err), err
 	}
-	notes, err := scanNotes(root)
+	endStep(nil)
+	endStep = rec.BeginStep("notes.scan", nil)
+	validNotes, failedPaths, err := scanIndexRefreshNotes(root)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.refresh", err), err
 	}
-	notes = ordinaryNotes(notes)
-	validNotes, failedPaths := refreshableIndexNotes(notes)
+	endStep(nil)
+	scanned := len(validNotes) + len(failedPaths)
 	changedSince := strings.TrimSpace(req.ChangedSince)
 	changedCandidates := []pinaxversion.ChangedPath{}
 	var result noteindex.RefreshResult
 	if changedSince != "" {
+		endStep = rec.BeginStep("version.changed_since", nil)
 		changedCandidates, err = s.versionBackend.ChangedSince(ctx, pinaxversion.ChangedSinceRequest{Root: root, SinceRevision: changedSince})
 		if err != nil {
+			endStep(err)
 			return errorProjection("index.refresh", err), err
 		}
+		endStep(nil)
+		endStep = rec.BeginStep("index.refresh_changed", map[string]string{"changed_candidates": fmt.Sprint(len(changedCandidates))})
 		result, err = noteindex.RefreshChanged(root, validNotes, changedCandidates, noteindex.RefreshOptions{})
 	} else {
+		endStep = rec.BeginStep("index.refresh", map[string]string{"notes": fmt.Sprint(len(validNotes))})
 		result, err = noteindex.Refresh(root, validNotes, noteindex.RefreshOptions{})
-		result.Scanned = len(notes)
+		result.Scanned = scanned
 	}
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.refresh", err), err
 	}
+	endStep(nil)
 	result.Failed += len(failedPaths)
 	result.FailedPaths = append(result.FailedPaths, failedPaths...)
 	if result.Failed > 0 {
@@ -6302,7 +7013,7 @@ func (s *Service) IndexRefresh(ctx context.Context, req IndexRefreshRequest) (do
 		status = "partial"
 	}
 	_ = appendEvent(root, "index.refresh", status, map[string]string{"scanned": fmt.Sprint(result.Scanned), "indexed": fmt.Sprint(result.Indexed), "failed": fmt.Sprint(result.Failed)})
-	projection := domain.NewProjection("index.refresh", "Local index refresh completed.")
+	projection = domain.NewProjection("index.refresh", "Local index refresh completed.")
 	projection.Status = status
 	projection.Facts["scanned"] = fmt.Sprint(result.Scanned)
 	projection.Facts["changed"] = fmt.Sprint(result.Changed)
@@ -6345,11 +7056,16 @@ func refreshableIndexNotes(notes []domain.Note) ([]domain.Note, []string) {
 	return valid, failedPaths
 }
 
-func (s *Service) IndexRepair(_ context.Context, req IndexRepairRequest) (domain.Projection, error) {
+func (s *Service) IndexRepair(_ context.Context, req IndexRepairRequest) (projection domain.Projection, err error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("index.repair", err), err
 	}
+	rec := startMonitorRun(root, "index.repair", map[string]string{"kind": strings.TrimSpace(req.Kind), "dry_run": fmt.Sprint(req.DryRun)})
+	defer func() {
+		runID, evidence := rec.Finish(projection.Status, err)
+		addMonitorProjectionFacts(&projection, runID, evidence)
+	}()
 	kind := strings.TrimSpace(req.Kind)
 	if kind == "" {
 		kind = "recreate"
@@ -6361,7 +7077,7 @@ func (s *Service) IndexRepair(_ context.Context, req IndexRepairRequest) (domain
 	indexRel := filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))
 	operation := map[string]string{"kind": kind, "mode": repairMode(req), "risk": "low", "path": indexRel, "reason": "recreate local projection"}
 	if req.DryRun {
-		projection := domain.NewProjection("index.repair", "Index repair plan generated.")
+		projection = domain.NewProjection("index.repair", "Index repair plan generated.")
 		projection.Facts["dry_run"] = "true"
 		projection.Facts["writes"] = "false"
 		projection.Facts["operations"] = "1"
@@ -6375,22 +7091,31 @@ func (s *Service) IndexRepair(_ context.Context, req IndexRepairRequest) (domain
 		err := &domain.CommandError{Code: "approval_required", Message: "index repair requires --yes or --dry-run", Hint: fmt.Sprintf("Run pinax index repair --vault %s --kind recreate --dry-run first, then add --yes after confirming", shellQuote(root))}
 		return domain.NewErrorProjection("index.repair", err), err
 	}
+	endStep := rec.BeginStep("index.backup", nil)
 	backupRel, err := backupIndexProjection(root)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.repair", err), err
 	}
+	endStep(nil)
+	endStep = rec.BeginStep("notes.scan", nil)
 	notes, err := scanNotes(root)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.repair", err), err
 	}
 	notes = ordinaryNotes(notes)
+	endStep(nil)
 	validNotes, _ := refreshableIndexNotes(notes)
+	endStep = rec.BeginStep("index.rebuild", map[string]string{"notes": fmt.Sprint(len(validNotes))})
 	counts, err := noteindex.Rebuild(root, validNotes)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.repair", err), err
 	}
+	endStep(nil)
 	_ = appendEvent(root, "index.repair", "success", map[string]string{"kind": kind, "writes": "true"})
-	projection := domain.NewProjection("index.repair", "Index projection repaired.")
+	projection = domain.NewProjection("index.repair", "Index projection repaired.")
 	projection.Facts["dry_run"] = "false"
 	projection.Facts["writes"] = "true"
 	projection.Facts["operations"] = "1"
@@ -6431,25 +7156,39 @@ func backupIndexProjection(root string) (string, error) {
 	return backupRel, nil
 }
 
-func (s *Service) RebuildIndex(_ context.Context, req VaultRequest) (domain.Projection, error) {
+func (s *Service) RebuildIndex(_ context.Context, req VaultRequest) (projection domain.Projection, err error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("index.rebuild", err), err
 	}
+	rec := startMonitorRun(root, "index.rebuild", nil)
+	defer func() {
+		runID, evidence := rec.Finish(projection.Status, err)
+		addMonitorProjectionFacts(&projection, runID, evidence)
+	}()
+	endStep := rec.BeginStep("vault_assets.ensure", nil)
 	if err := ensureVaultAssets(root); err != nil {
+		endStep(err)
 		return errorProjection("index.rebuild", err), err
 	}
+	endStep(nil)
+	endStep = rec.BeginStep("notes.scan", nil)
 	notes, err := scanNotes(root)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.rebuild", err), err
 	}
 	notes = ordinaryNotes(notes)
+	endStep(nil)
+	endStep = rec.BeginStep("index.rebuild", map[string]string{"notes": fmt.Sprint(len(notes))})
 	counts, err := noteindex.Rebuild(root, notes)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.rebuild", err), err
 	}
+	endStep(nil)
 	_ = appendEvent(root, "index.rebuild", "success", map[string]string{"notes": fmt.Sprint(counts.Notes)})
-	projection := domain.NewProjection("index.rebuild", "Local index rebuilt.")
+	projection = domain.NewProjection("index.rebuild", "Local index rebuilt.")
 	projection.Facts["notes"] = fmt.Sprint(counts.Notes)
 	projection.Facts["tags"] = fmt.Sprint(counts.Tags)
 	projection.Facts["links"] = fmt.Sprint(counts.Links)
@@ -6463,19 +7202,30 @@ func (s *Service) RebuildIndex(_ context.Context, req VaultRequest) (domain.Proj
 	return projection, nil
 }
 
-func (s *Service) InitIndex(_ context.Context, req VaultRequest) (domain.Projection, error) {
+func (s *Service) InitIndex(_ context.Context, req VaultRequest) (projection domain.Projection, err error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("index.init", err), err
 	}
+	rec := startMonitorRun(root, "index.init", nil)
+	defer func() {
+		runID, evidence := rec.Finish(projection.Status, err)
+		addMonitorProjectionFacts(&projection, runID, evidence)
+	}()
+	endStep := rec.BeginStep("vault_assets.ensure", nil)
 	if err := ensureVaultAssets(root); err != nil {
+		endStep(err)
 		return errorProjection("index.init", err), err
 	}
+	endStep(nil)
+	endStep = rec.BeginStep("index.init", nil)
 	status, err := noteindex.Init(root)
 	if err != nil {
+		endStep(err)
 		return errorProjection("index.init", err), err
 	}
-	projection := domain.NewProjection("index.init", "Local index database initialized.")
+	endStep(nil)
+	projection = domain.NewProjection("index.init", "Local index database initialized.")
 	projection.Facts["path"] = status.Path
 	projection.Facts["index_status"] = status.Status
 	projection.Facts["schema_version"] = status.SchemaVersion
@@ -7324,13 +8074,13 @@ func cloudStateErrorProjection(command, root string, err error) (domain.Projecti
 	return errorProjection(command, err), err
 }
 
-func (s *Service) SyncDiff(_ context.Context, req SyncRequest) (domain.Projection, error) {
+func (s *Service) SyncDiff(ctx context.Context, req SyncRequest) (domain.Projection, error) {
 	root, target, err := cleanSyncRequest(req)
 	if err != nil {
 		return errorProjection("sync.diff", err), err
 	}
 	if target == "cloud" {
-		projection, cloudErr := buildCloudSyncProjection("sync.diff", root, req, syncplan.DirectionDiff)
+		projection, cloudErr := buildCloudSyncProjection(ctx, "sync.diff", root, req, syncplan.DirectionDiff)
 		if cloudErr != nil {
 			if pinaxcloud.IsNotConfigured(cloudErr) || isCommandErrorCode(cloudErr, "cloud_not_configured") {
 				return cloudSyncNotConfiguredProjection(root), nil
@@ -7354,11 +8104,16 @@ func (s *Service) SyncDiff(_ context.Context, req SyncRequest) (domain.Projectio
 	return projection, nil
 }
 
-func (s *Service) SyncPush(_ context.Context, req SyncRequest) (domain.Projection, error) {
+func (s *Service) SyncPush(ctx context.Context, req SyncRequest) (domain.Projection, error) {
 	root, target, err := cleanSyncRequest(req)
 	if err != nil {
 		return errorProjection("sync.push", err), err
 	}
+	lock, err := syncdaemon.AcquireOperationLock(root, "sync.push")
+	if err != nil {
+		return commandErrorProjection("sync.push", err)
+	}
+	defer lock.Release()
 	if target == "cloud" {
 		if !req.Yes && !req.DryRun {
 			err := &domain.CommandError{Code: "approval_required", Message: "sync push requires --yes or --dry-run", Hint: "Review the plan first with pinax sync push --target cloud --dry-run, then add --yes after confirming"}
@@ -7366,7 +8121,7 @@ func (s *Service) SyncPush(_ context.Context, req SyncRequest) (domain.Projectio
 			_ = writeApprovalRequiredSyncRun(root, req, "sync.push", syncplan.DirectionPush, err, &projection)
 			return projection, err
 		}
-		return buildCloudSyncProjection("sync.push", root, req, syncplan.DirectionPush)
+		return buildCloudSyncProjection(ctx, "sync.push", root, req, syncplan.DirectionPush)
 	}
 	if !req.Yes {
 		err := &domain.CommandError{Code: "approval_required", Message: "sync push requires --yes", Hint: "Review the plan first with pinax sync diff, then add --yes after confirming"}
@@ -7375,11 +8130,16 @@ func (s *Service) SyncPush(_ context.Context, req SyncRequest) (domain.Projectio
 	return writeSyncState(root, target, "push")
 }
 
-func (s *Service) SyncPull(_ context.Context, req SyncRequest) (domain.Projection, error) {
+func (s *Service) SyncPull(ctx context.Context, req SyncRequest) (domain.Projection, error) {
 	root, target, err := cleanSyncRequest(req)
 	if err != nil {
 		return errorProjection("sync.pull", err), err
 	}
+	lock, err := syncdaemon.AcquireOperationLock(root, "sync.pull")
+	if err != nil {
+		return commandErrorProjection("sync.pull", err)
+	}
+	defer lock.Release()
 	if target == "cloud" {
 		if !req.Yes && !req.DryRun {
 			err := &domain.CommandError{Code: "approval_required", Message: "sync pull requires --yes or --dry-run", Hint: "Review the plan first with pinax sync pull --target cloud --dry-run, then add --yes after confirming"}
@@ -7387,7 +8147,7 @@ func (s *Service) SyncPull(_ context.Context, req SyncRequest) (domain.Projectio
 			_ = writeApprovalRequiredSyncRun(root, req, "sync.pull", syncplan.DirectionPull, err, &projection)
 			return projection, err
 		}
-		return buildCloudSyncProjection("sync.pull", root, req, syncplan.DirectionPull)
+		return buildCloudSyncProjection(ctx, "sync.pull", root, req, syncplan.DirectionPull)
 	}
 	if !req.Yes {
 		err := &domain.CommandError{Code: "approval_required", Message: "sync pull requires --yes", Hint: "Review the plan first with pinax sync diff, then add --yes after confirming"}
@@ -7416,7 +8176,7 @@ func cloudStateForSync(root string, req SyncRequest) (pinaxcloud.State, error) {
 	}, nil
 }
 
-func buildCloudSyncProjection(command, root string, req SyncRequest, direction syncplan.Direction) (domain.Projection, error) {
+func buildCloudSyncProjection(ctx context.Context, command, root string, req SyncRequest, direction syncplan.Direction) (domain.Projection, error) {
 	started := time.Now()
 	pathPolicy := syncops.NormalizePathPolicy(req.PathPolicy)
 	state, err := cloudStateForSync(root, req)
@@ -7449,6 +8209,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 			projection.Evidence = []string{receiptPath}
 		}
 		addCloudSyncFacts(&projection, state, plan)
+		addCloudContentFacts(&projection, manifest)
 		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
 		return projection, commandErr
 	}
@@ -7457,7 +8218,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 		return projection, planErr
 	}
 	if direction == syncplan.DirectionPush && req.Yes && !req.DryRun && isExecutableCloudState(state) {
-		commit, execErr := executeCloudPush(root, state, manifest, req.BaseRevision)
+		commit, execErr := executeCloudPush(ctx, root, state, manifest, req.BaseRevision)
 		if execErr != nil {
 			plan.RemoteWrite = false
 			commandErr := commandErrorFromError(execErr)
@@ -7476,7 +8237,9 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 		receipt.RemoteWrite = commit.RemoteWrite
 		receipt.RevisionID = commit.RevisionID
 		receipt.ManifestBlobID = commit.ManifestBlobID
-		receipt.Counts["blobs"] = len(manifest.Entries)
+		receipt.Counts["blobs"] = len(manifest.Entries) + manifestTrashBackupCount(manifest)
+		receipt.Counts["delete_markers"] = len(manifest.Deletes)
+		receipt.Counts["trash_backup_blobs"] = manifestTrashBackupCount(manifest)
 		projection := domain.NewProjection(command, "Cloud sync push completed through configured backend.")
 		projection.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))}}
 		receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "success", nil, projection.Actions, pathPolicy, started)
@@ -7487,6 +8250,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 			return errorProjection(command, err), err
 		}
 		addCloudSyncFacts(&projection, state, plan)
+		addCloudContentFacts(&projection, manifest)
 		projection.Facts["run_id"] = receipt.RunID
 		projection.Facts["revision_id"] = commit.RevisionID
 		projection.Evidence = []string{receiptPath}
@@ -7494,7 +8258,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 		return projection, nil
 	}
 	if direction == syncplan.DirectionPull && req.Yes && !req.DryRun && isExecutableCloudState(state) {
-		pullResult, execErr := executeCloudPull(root, state)
+		pullResult, execErr := executeCloudPull(ctx, root, state)
 		if execErr != nil {
 			commandErr := commandErrorFromError(execErr)
 			projection := domain.NewErrorProjection(command, commandErr)
@@ -7508,10 +8272,11 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
 			return projection, commandErr
 		}
-		receipt.LocalWrite = pullResult.FilesApplied > 0
+		receipt.LocalWrite = pullResult.FilesApplied > 0 || pullResult.DeletesApplied > 0
 		receipt.RevisionID = pullResult.RevisionID
 		receipt.ManifestBlobID = pullResult.ManifestBlobID
 		receipt.Counts["files_applied"] = pullResult.FilesApplied
+		receipt.Counts["delete_markers_applied"] = pullResult.DeletesApplied
 		receipt.Counts["conflicts"] = len(pullResult.Conflicts)
 		projection := domain.NewProjection(command, "Cloud sync pull completed through configured backend.")
 		projection.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))}}
@@ -7528,11 +8293,12 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 		addCloudSyncFacts(&projection, state, plan)
 		projection.Facts["run_id"] = receipt.RunID
 		projection.Facts["files_applied"] = fmt.Sprint(pullResult.FilesApplied)
+		projection.Facts["delete_markers_applied"] = fmt.Sprint(pullResult.DeletesApplied)
 		projection.Facts["revision_id"] = pullResult.RevisionID
 		projection.Facts["conflicts"] = fmt.Sprint(len(pullResult.Conflicts))
 		addSyncConflictFacts(&projection, pullResult.Conflicts)
 		projection.Evidence = []string{receiptPath}
-		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": receipt}
+		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "delete_markers_applied": pullResult.DeletesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": receipt}
 		return projection, nil
 	}
 	projection := domain.NewProjection(command, "Cloud sync plan generated; real remote writes are not wired yet.")
@@ -7561,6 +8327,7 @@ func buildCloudSyncProjection(command, root string, req SyncRequest, direction s
 	}
 	_ = writeCurrentSyncState(root, state, receipt, "")
 	addCloudSyncFacts(&projection, state, plan)
+	addCloudContentFacts(&projection, manifest)
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Evidence = []string{receiptPath}
 	projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "blocked_by": projection.Facts["blocked_by"], "receipt": receipt}
@@ -7577,11 +8344,15 @@ func commandErrorFromError(err error) *domain.CommandError {
 	switch {
 	case strings.Contains(rawMessage, "lock_held"):
 		return &domain.CommandError{Code: "lock_held", Message: message, Hint: "Retry after the current cloud sync finishes"}
-	case strings.Contains(rawMessage, "transport_unavailable"), strings.Contains(rawMessage, "rclone copyto failed"):
+	case strings.Contains(rawMessage, "transport_unavailable"), isRcloneCommandFailure(rawMessage):
 		return &domain.CommandError{Code: "transport_unavailable", Message: message, Hint: "Check the configured cloud transport before retrying"}
 	default:
 		return &domain.CommandError{Code: "cloud_sync_failed", Message: message, Hint: "Run pinax cloud doctor --vault <vault> --json"}
 	}
+}
+
+func isRcloneCommandFailure(message string) bool {
+	return strings.Contains(message, "rclone ") && strings.Contains(message, " failed")
 }
 
 func directBackendKind(state pinaxcloud.State) string {
@@ -7626,17 +8397,18 @@ func cloudTransportForState(ctx context.Context, state pinaxcloud.State) (clouds
 
 type directPullResult struct {
 	FilesApplied   int
+	DeletesApplied int
 	RevisionID     string
 	ManifestBlobID string
 	Conflicts      []domain.SyncConflictEntry
 }
 
-func executeCloudPull(root string, state pinaxcloud.State) (directPullResult, error) {
-	transport, err := cloudTransportForState(context.Background(), state)
+func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State) (directPullResult, error) {
+	transport, err := cloudTransportForState(ctx, state)
 	if err != nil {
 		return directPullResult{}, err
 	}
-	head, err := transport.CurrentHead(context.Background(), state.Config.WorkspaceID)
+	head, err := transport.CurrentHead(ctx, state.Config.WorkspaceID)
 	if err != nil {
 		return directPullResult{}, err
 	}
@@ -7647,7 +8419,7 @@ func executeCloudPull(root string, state pinaxcloud.State) (directPullResult, er
 	if err != nil {
 		return directPullResult{}, err
 	}
-	manifestEnvelope, err := transport.GetManifest(context.Background(), head.ManifestBlobID)
+	manifestEnvelope, err := transport.GetManifest(ctx, head.ManifestBlobID)
 	if err != nil {
 		return directPullResult{}, err
 	}
@@ -7656,9 +8428,22 @@ func executeCloudPull(root string, state pinaxcloud.State) (directPullResult, er
 		return directPullResult{}, err
 	}
 	filesApplied := 0
+	deletesApplied := 0
 	conflicts := []domain.SyncConflictEntry{}
+	for _, deleteMarker := range manifest.Deletes {
+		result, err := applyRemoteTrashDelete(root, remoteTrashDeleteMarker{ObjectKind: deleteMarker.ObjectKind, ObjectID: deleteMarker.ObjectID, TombstoneID: deleteMarker.TombstoneID, DeletedAt: deleteMarker.DeletedAt})
+		if err != nil {
+			return directPullResult{}, err
+		}
+		if result.Applied {
+			deletesApplied++
+		}
+		if result.Conflict != nil {
+			conflicts = append(conflicts, *result.Conflict)
+		}
+	}
 	for _, entry := range manifest.Entries {
-		blobEnvelope, err := transport.GetBlob(context.Background(), entry.BlobID)
+		blobEnvelope, err := transport.GetBlob(ctx, entry.BlobID)
 		if err != nil {
 			return directPullResult{}, err
 		}
@@ -7670,9 +8455,22 @@ func executeCloudPull(root string, state pinaxcloud.State) (directPullResult, er
 		if err != nil {
 			return directPullResult{}, err
 		}
-		if existing, err := os.ReadFile(path); err == nil && string(existing) != string(content) {
+		fileMode := os.FileMode(entry.Mode & 0o777)
+		if fileMode == 0 {
+			fileMode = 0o600
+		}
+		if existing, err := os.ReadFile(path); err == nil {
+			if bytes.Equal(existing, content) {
+				if info, statErr := os.Stat(path); statErr == nil && info.Mode().Perm() != fileMode {
+					if err := os.Chmod(path, fileMode); err != nil {
+						return directPullResult{}, err
+					}
+					filesApplied++
+				}
+				continue
+			}
 			conflictPath := strings.TrimSuffix(path, filepath.Ext(path)) + "." + time.Now().UTC().Format("20060102150405") + ".conflict" + filepath.Ext(path)
-			if err := os.WriteFile(conflictPath, existing, 0o600); err != nil {
+			if err := os.WriteFile(conflictPath, existing, fileMode); err != nil {
 				return directPullResult{}, err
 			}
 			if rel, relErr := filepath.Rel(root, conflictPath); relErr == nil {
@@ -7687,12 +8485,12 @@ func executeCloudPull(root string, state pinaxcloud.State) (directPullResult, er
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return directPullResult{}, err
 		}
-		if err := os.WriteFile(path, content, 0o600); err != nil {
+		if err := os.WriteFile(path, content, fileMode); err != nil {
 			return directPullResult{}, err
 		}
 		filesApplied++
 	}
-	result := directPullResult{FilesApplied: filesApplied, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID, Conflicts: conflicts}
+	result := directPullResult{FilesApplied: filesApplied, DeletesApplied: deletesApplied, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID, Conflicts: conflicts}
 
 	return result, nil
 }
@@ -7716,8 +8514,8 @@ func localCloudBaseRevision(root string, cloudState pinaxcloud.State) string {
 	return strings.TrimSpace(state.LastSyncedRevision)
 }
 
-func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string) (cloudsync.CommitResult, error) {
-	transport, err := cloudTransportForState(context.Background(), state)
+func executeCloudPush(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string) (cloudsync.CommitResult, error) {
+	transport, err := cloudTransportForState(ctx, state)
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}
@@ -7728,13 +8526,20 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}
-	blobIDs := make([]string, 0, len(manifest.Entries))
-	objectRefs := make([]cloudsync.ObjectRef, 0, len(manifest.Entries))
+	blobIDs := make([]string, 0, len(manifest.Entries)+len(manifest.Deletes))
+	objectRefs := make([]cloudsync.ObjectRef, 0, len(manifest.Entries)+(len(manifest.Deletes)*2))
 	for _, entry := range manifest.Entries {
 		blobIDs = append(blobIDs, entry.BlobID)
 		objectRefs = append(objectRefs, cloudsync.ObjectRef{PathHash: entry.PathHash, BlobID: entry.BlobID, BlobHash: entry.SHA256, Size: entry.Size})
 	}
-	missing, err := transport.BatchCheck(context.Background(), blobIDs)
+	for _, deleteMarker := range manifest.Deletes {
+		if strings.HasPrefix(deleteMarker.TrashBlobID, "blob_") {
+			blobIDs = append(blobIDs, deleteMarker.TrashBlobID)
+			objectRefs = append(objectRefs, cloudsync.ObjectRef{PathHash: deleteMarker.PathHash, BlobID: deleteMarker.TrashBlobID})
+		}
+		objectRefs = append(objectRefs, cloudsync.ObjectRef{PathHash: deleteMarker.PathHash, BlobID: deleteMarker.TrashBlobID, Deleted: true})
+	}
+	missing, err := transport.BatchCheck(ctx, blobIDs)
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}
@@ -7766,7 +8571,7 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 		if metadataWriter, ok := transport.(interface {
 			PutBlobWithEnvelopeMetadata(context.Context, string, cloudsync.Envelope) (string, int64, error)
 		}); ok {
-			blobHash, sizeBytes, err := metadataWriter.PutBlobWithEnvelopeMetadata(context.Background(), entry.BlobID, cloudBlob)
+			blobHash, sizeBytes, err := metadataWriter.PutBlobWithEnvelopeMetadata(ctx, entry.BlobID, cloudBlob)
 			if err != nil {
 				return cloudsync.CommitResult{}, err
 			}
@@ -7774,7 +8579,43 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 			objectRefs[i].Size = sizeBytes
 			continue
 		}
-		if err := transport.PutBlob(context.Background(), entry.BlobID, cloudBlob); err != nil {
+		if err := transport.PutBlob(ctx, entry.BlobID, cloudBlob); err != nil {
+			return cloudsync.CommitResult{}, err
+		}
+	}
+	for i := len(manifest.Entries); i < len(objectRefs); i++ {
+		ref := objectRefs[i]
+		if ref.Deleted || ref.BlobID == "" || !strings.HasPrefix(ref.BlobID, "blob_") {
+			continue
+		}
+		if _, ok := missingSet[ref.BlobID]; !ok {
+			if fact, ok := presentFacts[ref.BlobID]; ok {
+				objectRefs[i].BlobHash = fact.BlobHash
+				objectRefs[i].Size = fact.Size
+			}
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(root, ".pinax", "cloud", "blob-cache", ref.BlobID))
+		if err != nil {
+			return cloudsync.CommitResult{}, err
+		}
+		envelope, err := pinaxcloud.EncryptBlob(key, content, []byte(ref.BlobID))
+		if err != nil {
+			return cloudsync.CommitResult{}, err
+		}
+		cloudBlob := cloudEnvelope(envelope)
+		if metadataWriter, ok := transport.(interface {
+			PutBlobWithEnvelopeMetadata(context.Context, string, cloudsync.Envelope) (string, int64, error)
+		}); ok {
+			blobHash, sizeBytes, err := metadataWriter.PutBlobWithEnvelopeMetadata(ctx, ref.BlobID, cloudBlob)
+			if err != nil {
+				return cloudsync.CommitResult{}, err
+			}
+			objectRefs[i].BlobHash = blobHash
+			objectRefs[i].Size = sizeBytes
+			continue
+		}
+		if err := transport.PutBlob(ctx, ref.BlobID, cloudBlob); err != nil {
 			return cloudsync.CommitResult{}, err
 		}
 	}
@@ -7787,10 +8628,10 @@ func executeCloudPush(root string, state pinaxcloud.State, manifest pinaxcloud.M
 		return cloudsync.CommitResult{}, err
 	}
 	manifestBlobID := "manifest_" + strings.TrimPrefix(pinaxcloud.BlobID(manifestBytes), "blob_")
-	if err := transport.PutManifest(context.Background(), manifestBlobID, cloudEnvelope(manifestEnvelope)); err != nil {
+	if err := transport.PutManifest(ctx, manifestBlobID, cloudEnvelope(manifestEnvelope)); err != nil {
 		return cloudsync.CommitResult{}, err
 	}
-	return transport.CommitRevision(context.Background(), cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, ObjectRefs: objectRefs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
+	return transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, ObjectRefs: objectRefs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
 }
 
 func remoteEnvelope(envelope cloudsync.Envelope) pinaxcloud.EncryptedEnvelope {
@@ -7829,6 +8670,59 @@ func addCloudSyncFacts(projection *domain.Projection, state pinaxcloud.State, pl
 	projection.Facts["base_revision"] = plan.BaseRevision
 	projection.Facts["remote_revision"] = plan.RemoteRevision
 	projection.Facts["conflicts"] = fmt.Sprint(len(plan.ConflictQueue))
+}
+
+func addCloudContentFacts(projection *domain.Projection, manifest pinaxcloud.Manifest) {
+	var bytes int64
+	scripts := 0
+	binaries := 0
+	trashBackups := 0
+	for _, entry := range manifest.Entries {
+		bytes += entry.Size
+		if isManifestScript(entry) {
+			scripts++
+			continue
+		}
+		if !isManifestText(entry.Path) {
+			binaries++
+		}
+	}
+	for _, deleteMarker := range manifest.Deletes {
+		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" {
+			trashBackups++
+		}
+	}
+	projection.Facts["content_files"] = fmt.Sprint(len(manifest.Entries))
+	projection.Facts["content_bytes"] = fmt.Sprint(bytes)
+	projection.Facts["script_files"] = fmt.Sprint(scripts)
+	projection.Facts["binary_files"] = fmt.Sprint(binaries)
+	projection.Facts["delete_markers"] = fmt.Sprint(len(manifest.Deletes))
+	projection.Facts["trash_backup_blobs"] = fmt.Sprint(trashBackups)
+}
+
+func manifestTrashBackupCount(manifest pinaxcloud.Manifest) int {
+	count := 0
+	for _, deleteMarker := range manifest.Deletes {
+		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func isManifestScript(entry pinaxcloud.ManifestEntry) bool {
+	return strings.HasPrefix(entry.Path, "scripts/") || entry.Mode&0o111 != 0 || strings.HasSuffix(strings.ToLower(entry.Path), ".sh")
+}
+
+func isManifestText(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".txt", ".yaml", ".yml", ".json", ".jsonl", ".toml", ".csv", ".gitignore", ".pinaxignore":
+		return true
+	case ".sh", ".bash", ".zsh", ".fish", ".py", ".js", ".ts":
+		return true
+	}
+	base := filepath.Base(path)
+	return base == ".gitignore" || base == ".pinaxignore"
 }
 
 func saveProjectRegistryProjection(root string, registry domain.ProjectRegistry, project domain.Project, created bool) (domain.Projection, error) {
@@ -8103,6 +8997,12 @@ func organizeOperationFromPlan(planID string, op domain.PlanOperation) domain.Or
 	case "manual_review":
 		before = map[string]string{"path": op.Path}
 		after = map[string]string{"review": "required"}
+	case "source_move":
+		before = map[string]string{"path": op.Path}
+		after = map[string]string{"path": op.Target}
+	case "source_review":
+		before = map[string]string{"path": op.Path}
+		after = map[string]string{"review": op.Target}
 	}
 	evidence := op.Evidence
 	if len(evidence) == 0 {
@@ -8128,6 +9028,15 @@ func organizeFactOperations(root string, facts []noteFact) []domain.PlanOperatio
 	outgoing, incoming := BuildEnhancedLinkGraph(notes)
 	ops := make([]domain.PlanOperation, 0)
 	for _, fact := range facts {
+		if info, ok := durableSourceInfo(fact.note); ok {
+			target := durableSourceTargetPath(info)
+			if target != "" && fact.rel != target {
+				ops = append(ops, domain.PlanOperation{Kind: "source_move", Path: fact.rel, Target: target, Reason: "Move durable GitHub source note under sources/github/", Status: "manual_review", Evidence: []string{"source_url=" + info.URL, "repo=" + info.Owner + "/" + info.Repo}})
+			}
+			if missing := missingDurableSourceSections(fact.note.Body); len(missing) > 0 {
+				ops = append(ops, domain.PlanOperation{Kind: "source_review", Path: fact.rel, Target: strings.Join(missing, ","), Reason: "Missing durable source sections", Status: "manual_review", Evidence: []string{"source_url=" + info.URL, "missing=" + strings.Join(missing, ",")}})
+			}
+		}
 		inlineTags := cleanTags(noteAllTags(fact.note))
 		if len(fact.note.Tags) == 0 && len(inlineTags) > 0 {
 			ops = append(ops, domain.PlanOperation{Kind: "tag_patch", Path: fact.rel, Target: strings.Join(inlineTags, ","), Reason: "Add frontmatter tags from inline body tags", Status: "planned"})
@@ -8177,6 +9086,129 @@ func inferNoteKind(note domain.Note) string {
 		return "daily"
 	}
 	return "reference"
+}
+
+type durableSourceCandidate struct {
+	URL   string
+	Owner string
+	Repo  string
+}
+
+var githubRepoURLPattern = regexp.MustCompile(`https?://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)(?:[/?#][^\s)\]]*)?`)
+
+func durableSourceInfo(note domain.Note) (durableSourceCandidate, bool) {
+	if value := strings.TrimSpace(note.Frontmatter["source_url"]); value != "" {
+		if candidate, ok := parseGitHubRepoURL(value); ok {
+			return candidate, true
+		}
+	}
+	if candidate, ok := firstGitHubRepoURL(note.Body); ok {
+		return candidate, true
+	}
+	if candidate, ok := ownerRepoFromTitle(note.Title); ok && durableSourceTagSignal(note) {
+		candidate.URL = "https://github.com/" + candidate.Owner + "/" + candidate.Repo
+		return candidate, true
+	}
+	return durableSourceCandidate{}, false
+}
+
+func durableSourceMetadataOperations(note domain.Note) []domain.PlanOperation {
+	info, ok := durableSourceInfo(note)
+	if !ok {
+		return nil
+	}
+	targets := []string{"source_url=" + info.URL}
+	if strings.TrimSpace(note.Kind) != "source" {
+		targets = append(targets, "kind=source")
+	}
+	tags := durableSourceRecommendedTags(note)
+	if len(tags) > 0 {
+		targets = append(targets, "tags="+strings.Join(tags, ","))
+	}
+	for _, key := range []string{"last_checked_at", "source_license", "review_after"} {
+		if strings.TrimSpace(note.Frontmatter[key]) == "" {
+			targets = append(targets, key+"=<review>")
+		}
+	}
+	return []domain.PlanOperation{{Kind: "source_metadata", Path: note.Path, Target: strings.Join(targets, ";"), Reason: "Review durable source metadata for external GitHub reference", Status: "manual_review", Evidence: []string{"source_url=" + info.URL, "repo=" + info.Owner + "/" + info.Repo}}}
+}
+
+func durableSourceRecommendedTags(note domain.Note) []string {
+	recommended := []string{"source/github", "reference/source"}
+	existing := map[string]bool{}
+	for _, tag := range noteAllTags(note) {
+		existing[strings.ToLower(tag)] = true
+	}
+	missing := make([]string, 0, len(recommended))
+	for _, tag := range recommended {
+		if !existing[strings.ToLower(tag)] {
+			missing = append(missing, tag)
+		}
+	}
+	return missing
+}
+
+func durableSourceTargetPath(info durableSourceCandidate) string {
+	slug := slugify(info.Owner + "-" + info.Repo)
+	if slug == "" {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Join("sources", "github", slug+".md"))
+}
+
+func firstGitHubRepoURL(body string) (durableSourceCandidate, bool) {
+	match := githubRepoURLPattern.FindStringSubmatch(body)
+	if len(match) < 3 {
+		return durableSourceCandidate{}, false
+	}
+	raw := match[0]
+	if candidate, ok := parseGitHubRepoURL(raw); ok {
+		return candidate, true
+	}
+	return durableSourceCandidate{URL: "https://github.com/" + match[1] + "/" + strings.TrimSuffix(match[2], ".git"), Owner: match[1], Repo: strings.TrimSuffix(match[2], ".git")}, true
+}
+
+func parseGitHubRepoURL(raw string) (durableSourceCandidate, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !strings.EqualFold(parsed.Host, "github.com") {
+		return durableSourceCandidate{}, false
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return durableSourceCandidate{}, false
+	}
+	repo := strings.TrimSuffix(parts[1], ".git")
+	return durableSourceCandidate{URL: "https://github.com/" + parts[0] + "/" + repo, Owner: parts[0], Repo: repo}, true
+}
+
+func ownerRepoFromTitle(title string) (durableSourceCandidate, bool) {
+	parts := strings.Split(strings.TrimSpace(title), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(title, " \t\n") {
+		return durableSourceCandidate{}, false
+	}
+	return durableSourceCandidate{Owner: parts[0], Repo: strings.TrimSuffix(parts[1], ".git")}, true
+}
+
+func durableSourceTagSignal(note domain.Note) bool {
+	for _, tag := range noteAllTags(note) {
+		switch strings.ToLower(tag) {
+		case "github", "source", "reference", "repo", "source/github", "reference/source":
+			return true
+		}
+	}
+	return false
+}
+
+func missingDurableSourceSections(body string) []string {
+	required := []string{"Use decision", "Risk and boundary", "Verification", "Related notes"}
+	lower := strings.ToLower(body)
+	missing := make([]string, 0, len(required))
+	for _, section := range required {
+		if !strings.Contains(lower, strings.ToLower(section)) {
+			missing = append(missing, section)
+		}
+	}
+	return missing
 }
 
 func organizeSourceFacts(facts []noteFact) map[string]string {
@@ -8375,7 +9407,7 @@ func scanNotes(root string) ([]domain.Note, error) {
 		if err != nil {
 			return err
 		}
-		meta, _ := splitFrontmatter(string(content))
+		meta, _, _ := markdownnote.ParseFrontmatter(content)
 		if !isPinaxNoteFrontmatter(meta) {
 			return nil
 		}
@@ -8391,6 +9423,125 @@ func scanNotes(root string) ([]domain.Note, error) {
 	}
 	sort.Slice(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
 	return notes, nil
+}
+
+type indexRefreshScanItem struct {
+	path       string
+	note       domain.Note
+	failedPath string
+	err        error
+}
+
+func scanIndexRefreshNotes(root string) ([]domain.Note, []string, error) {
+	root, err := cleanVaultPath(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	paths := make([]string, 0)
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if shouldSkipVaultWalkDir(entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".md") {
+			paths = append(paths, path)
+		}
+		return nil
+	}); err != nil {
+		return nil, nil, err
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return nil, nil, nil
+	}
+	workers := indexRefreshWorkerCount(len(paths))
+	jobs := make(chan string)
+	results := make(chan indexRefreshScanItem, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for path := range jobs {
+				results <- scanIndexRefreshNote(root, path)
+			}
+		}()
+	}
+	go func() {
+		for _, path := range paths {
+			jobs <- path
+		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
+	notes := make([]domain.Note, 0, len(paths))
+	failedPaths := make([]string, 0)
+	var firstErr error
+	for item := range results {
+		if item.err != nil {
+			if firstErr == nil {
+				firstErr = item.err
+			}
+			continue
+		}
+		if item.failedPath != "" {
+			failedPaths = append(failedPaths, item.failedPath)
+			continue
+		}
+		if item.note.Path != "" {
+			notes = append(notes, item.note)
+		}
+	}
+	if firstErr != nil {
+		return nil, nil, firstErr
+	}
+	sort.Slice(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
+	sort.Strings(failedPaths)
+	return notes, failedPaths, nil
+}
+
+func scanIndexRefreshNote(root, path string) indexRefreshScanItem {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return indexRefreshScanItem{err: err}
+	}
+	rel = filepath.ToSlash(rel)
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return indexRefreshScanItem{path: rel, failedPath: rel}
+	}
+	meta, _, _ := markdownnote.ParseFrontmatter(content)
+	if !isPinaxNoteFrontmatter(meta) {
+		return indexRefreshScanItem{path: rel}
+	}
+	note := parseNote(rel, string(content))
+	if isSystemIndexNote(note) || isSystemJournalNote(note) {
+		return indexRefreshScanItem{path: rel}
+	}
+	if strings.TrimSpace(note.Path) == "" || strings.TrimSpace(note.ID) == "" {
+		return indexRefreshScanItem{path: rel, failedPath: rel}
+	}
+	return indexRefreshScanItem{path: rel, note: note}
+}
+
+func indexRefreshWorkerCount(total int) int {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 8 {
+		workers = 8
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if total > 0 && workers > total {
+		workers = total
+	}
+	return workers
 }
 
 func ordinaryNotes(notes []domain.Note) []domain.Note {
@@ -8440,6 +9591,10 @@ func isSystemJournalNote(note domain.Note) bool {
 	return strings.HasPrefix(path, note.Kind+"/") || strings.HasPrefix(path, "notes/"+note.Kind+"/")
 }
 func parseNote(rel, content string) domain.Note {
+	doc, err := markdownnote.ParseFull(rel, []byte(content))
+	if err == nil {
+		return doc.Note
+	}
 	meta, body := splitFrontmatter(content)
 	title := meta["title"]
 	if title == "" {
@@ -8448,23 +9603,7 @@ func parseNote(rel, content string) domain.Note {
 	if title == "" {
 		title = strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
 	}
-	return domain.Note{
-		ID:          meta["note_id"],
-		Title:       title,
-		Path:        rel,
-		Tags:        parseTags(meta["tags"]),
-		Body:        strings.TrimSpace(body),
-		Frontmatter: meta,
-		Project:     meta["project"],
-		Folder:      meta["folder"],
-		Kind:        meta["kind"],
-		Status:      meta["status"],
-		BoardColumn: meta["board_column"],
-		Priority:    meta["priority"],
-		Due:         meta["due"],
-		CreatedAt:   meta["created_at"],
-		UpdatedAt:   meta["updated_at"],
-	}
+	return domain.Note{ID: meta["note_id"], Title: title, Path: rel, Tags: parseTags(meta["tags"]), Labels: parseTags(meta["labels"]), Body: strings.TrimSpace(body), Frontmatter: meta, Project: meta["project"], Subproject: meta["subproject"], Folder: meta["folder"], Kind: meta["kind"], Status: meta["status"], BoardColumn: meta["board_column"], Milestone: meta["milestone"], Priority: meta["priority"], Due: meta["due"], DueAt: meta["due_at"], BlockedBy: parseTags(meta["blocked_by"]), CreatedAt: meta["created_at"], UpdatedAt: meta["updated_at"]}
 }
 
 func splitFrontmatter(content string) (map[string]string, string) {
@@ -8853,7 +9992,7 @@ func resolveNoteRef(notes []domain.Note, ref string) (domain.Note, error) {
 
 func noteMatchesQuery(note domain.Note, req NoteListRequest) bool {
 	// List query only applies explicit dimensions; it avoids fuzzy title/body matching so CLI output remains predictable.
-	return noteops.MatchesList(note, noteops.ListRequest{Project: req.Project, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedBefore: req.UpdatedBefore, PathPrefix: req.PathPrefix, Tags: req.Tags})
+	return noteops.MatchesList(note, noteops.ListRequest{Project: req.Project, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, UpdatedBefore: req.UpdatedBefore, PathPrefix: req.PathPrefix, Tags: req.Tags})
 }
 
 func sortNotes(notes []domain.Note, req NoteListRequest) {
@@ -9261,6 +10400,52 @@ func parseTemplateForProjection(root, name string) (templateengine.TemplateDocum
 	return doc, nil
 }
 
+func templateProjectionMetadata(root, name string, meta templateengine.Metadata) (templateengine.Metadata, string) {
+	source := templateSource(root, name)
+	workflow := templateWorkflowMetadata(name, source, meta)
+	if source == "vault-local" {
+		if _, ok := builtInTemplates()[name]; ok {
+			workflow.Lifecycle = "overridden"
+		}
+	}
+	return workflow, source
+}
+
+func templateSource(root, name string) string {
+	path, err := templatePath(root, name)
+	if err == nil {
+		if _, statErr := os.Stat(path); statErr == nil {
+			return "vault-local"
+		}
+	}
+	if _, ok := builtInTemplates()[name]; ok {
+		return "builtin"
+	}
+	return "unknown"
+}
+
+func requiredTemplateVariables(meta templateengine.Metadata) []string {
+	vars := make([]string, 0, len(meta.VariableSchema))
+	for key, variable := range meta.VariableSchema {
+		if variable.Required {
+			vars = append(vars, key)
+		}
+	}
+	sort.Strings(vars)
+	return vars
+}
+
+func missingTemplateVariables(meta templateengine.Metadata, values map[string]string) []string {
+	required := requiredTemplateVariables(meta)
+	missing := make([]string, 0, len(required))
+	for _, key := range required {
+		if values == nil || strings.TrimSpace(values[key]) == "" {
+			missing = append(missing, key)
+		}
+	}
+	return missing
+}
+
 func templateSourceBody(req TemplateRequest, name string) (string, error) {
 	sources := 0
 	if req.SourcePath != "" {
@@ -9436,7 +10621,7 @@ func (s *Service) renderTemplateBody(ctx context.Context, root string, req Templ
 }
 
 func templateDocumentIsDesignDraft(doc templateengine.TemplateDocument) bool {
-	if doc.Metadata.SchemaVersion == "pinax.template_design.v1" || doc.Metadata.Kind == "template_design" {
+	if doc.Metadata.SchemaVersion == "pinax.template_design.v1" || doc.Metadata.Kind == "template_design" || doc.Metadata.Lifecycle == "draft_design" {
 		return true
 	}
 	for _, issue := range doc.Issues {
@@ -9667,6 +10852,18 @@ func cleanTags(tags []string) []string {
 		}
 	}
 	return cleaned
+}
+
+func splitCommaValues(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
 }
 
 func normalizeTagsForWrite(tags []string) ([]string, *domain.CommandError) {
@@ -10504,6 +11701,7 @@ type PlanningRequest struct {
 	VaultPath      string
 	Period         string // daily, weekly, monthly
 	WithTaskBridge bool
+	TaskReview     bool
 	DryRun         bool
 	Yes            bool
 	Save           bool
@@ -10511,21 +11709,21 @@ type PlanningRequest struct {
 }
 
 // PlanDaily 生成每日Plan。
-func (s *Service) PlanDaily(_ context.Context, req PlanningRequest) (domain.Projection, error) {
-	return s.planPeriod(req, domain.PlanningDaily)
+func (s *Service) PlanDaily(ctx context.Context, req PlanningRequest) (domain.Projection, error) {
+	return s.planPeriod(ctx, req, domain.PlanningDaily)
 }
 
 // PlanWeekly 生成每周Plan。
-func (s *Service) PlanWeekly(_ context.Context, req PlanningRequest) (domain.Projection, error) {
-	return s.planPeriod(req, domain.PlanningWeekly)
+func (s *Service) PlanWeekly(ctx context.Context, req PlanningRequest) (domain.Projection, error) {
+	return s.planPeriod(ctx, req, domain.PlanningWeekly)
 }
 
 // PlanMonthly 生成每月Plan。
-func (s *Service) PlanMonthly(_ context.Context, req PlanningRequest) (domain.Projection, error) {
-	return s.planPeriod(req, domain.PlanningMonthly)
+func (s *Service) PlanMonthly(ctx context.Context, req PlanningRequest) (domain.Projection, error) {
+	return s.planPeriod(ctx, req, domain.PlanningMonthly)
 }
 
-func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) (domain.Projection, error) {
+func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period domain.PlanningPeriod) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("plan."+string(period), err), err
@@ -10534,7 +11732,7 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 		return errorProjection("plan."+string(period), err), err
 	}
 	// 生成 planning snapshot。
-	now := time.Now().UTC()
+	now := currentTimeUTC()
 	snapshot := domain.PlanningSnapshot{
 		SchemaVersion: "pinax.planning.snapshot.v1",
 		SnapshotID:    planningSnapshotID(root, string(period), now),
@@ -10570,6 +11768,17 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 	}
 	planningops.AddCapacityRisk(&snapshot, &decision, len(facts), maxCommitments)
 	command := "plan." + string(period)
+	if req.WithTaskBridge && period == domain.PlanningDaily {
+		taskBridge, err := loadTaskBridgeDaily(ctx, now)
+		if err != nil {
+			return errorProjection(command, err), err
+		}
+		applyTaskBridgePlanning(&snapshot, &decision, taskBridge, maxCommitments)
+	}
+	if req.TaskReview && period == domain.PlanningDaily {
+		return s.planDailyTaskReview(ctx, root, now, snapshot, decision, req.Yes)
+	}
+	targetNote := filepath.ToSlash(filepath.Join("daily", now.Format("2006-01-02")+".md"))
 	if req.DryRun || !req.Yes {
 		projection := domain.NewProjection(command, string(period)+" plan previewed.")
 		projection.Facts["period"] = string(period)
@@ -10578,12 +11787,32 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 		projection.Facts["decision_id"] = decision.DecisionID
 		projection.Facts["max_commitments"] = fmt.Sprint(maxCommitments)
 		projection.Facts["risks"] = fmt.Sprint(len(snapshot.Risks))
+		if req.WithTaskBridge && period == domain.PlanningDaily {
+			projection.Facts["source"] = "taskbridge"
+			projection.Facts["captured_at"] = snapshot.CapturedAt
+			projection.Facts["target_note"] = targetNote
+			projection.Facts["managed_block"] = planningDailyBlockName
+			projection.Facts["selected_commitments"] = fmt.Sprint(len(decision.Selected))
+			projection.Facts["taskbridge_tasks"] = snapshot.Facts["taskbridge_tasks"]
+		}
 		copyProjectBoardPlanningFacts(&projection, snapshot)
 		projection.Data = map[string]any{"snapshot": snapshot, "decision": decision}
+		applyCommand := fmt.Sprintf("pinax plan %s --vault %s --yes", string(period), shellQuote(root))
+		if req.WithTaskBridge && period == domain.PlanningDaily {
+			applyCommand = fmt.Sprintf("pinax plan daily --taskbridge --vault %s --yes", shellQuote(root))
+		}
 		projection.Actions = []domain.Action{
-			{Name: "apply", Command: fmt.Sprintf("pinax plan %s --vault %s --yes", string(period), shellQuote(root))},
+			{Name: "apply", Command: applyCommand},
 		}
 		return projection, nil
+	}
+	if req.WithTaskBridge && period == domain.PlanningDaily {
+		markdown := renderTaskBridgeDailyMarkdown(snapshot, decision)
+		dailyRel, err := writeDailyPlanningBlock(root, now, markdown)
+		if err != nil {
+			return errorProjection(command, err), err
+		}
+		snapshot.Facts["target_note"] = dailyRel
 	}
 	// 写入 snapshot。
 	if req.Save {
@@ -10600,6 +11829,14 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 	projection.Facts["decision_id"] = decision.DecisionID
 	projection.Facts["max_commitments"] = fmt.Sprint(maxCommitments)
 	projection.Facts["risks"] = fmt.Sprint(len(snapshot.Risks))
+	if req.WithTaskBridge && period == domain.PlanningDaily {
+		projection.Facts["source"] = "taskbridge"
+		projection.Facts["captured_at"] = snapshot.CapturedAt
+		projection.Facts["target_note"] = snapshot.Facts["target_note"]
+		projection.Facts["managed_block"] = planningDailyBlockName
+		projection.Facts["selected_commitments"] = fmt.Sprint(len(decision.Selected))
+		projection.Facts["taskbridge_tasks"] = snapshot.Facts["taskbridge_tasks"]
+	}
 	copyProjectBoardPlanningFacts(&projection, snapshot)
 	if snapshot.SavedPath != "" {
 		projection.Facts["saved_path"] = snapshot.SavedPath
@@ -10613,7 +11850,7 @@ func (s *Service) planPeriod(req PlanningRequest, period domain.PlanningPeriod) 
 }
 
 // PlanActions 生成 TaskBridge action file 草稿。
-func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Projection, error) {
+func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("plan.actions", err), err
@@ -10621,7 +11858,7 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 	if err := ensureVaultAssets(root); err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	now := time.Now().UTC()
+	now := currentTimeUTC()
 	period := strings.TrimSpace(req.FromPeriod)
 	if period == "" {
 		period = "daily"
@@ -10630,7 +11867,7 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	preview, err := s.planPeriod(PlanningRequest{VaultPath: root, Period: period, DryRun: true}, planningPeriod)
+	preview, err := s.planPeriod(ctx, PlanningRequest{VaultPath: root, Period: period, WithTaskBridge: req.WithTaskBridge, DryRun: true}, planningPeriod)
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
@@ -10647,9 +11884,16 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 		projection.Facts["source_decision"] = draft.SourceDecision
 		projection.Facts["snapshot_id"] = draft.SourceSnapshot
 		projection.Facts["tasks"] = fmt.Sprint(len(draft.Tasks))
+		if req.WithTaskBridge && planningPeriod == domain.PlanningDaily {
+			projection.Facts["source"] = "taskbridge"
+		}
 		projection.Data = map[string]any{"draft": draft}
+		saveCommand := fmt.Sprintf("pinax plan actions --from %s --vault %s --save", period, shellQuote(root))
+		if req.WithTaskBridge && planningPeriod == domain.PlanningDaily {
+			saveCommand = fmt.Sprintf("pinax plan actions --from daily --taskbridge --vault %s --save", shellQuote(root))
+		}
 		projection.Actions = []domain.Action{
-			{Name: "save", Command: fmt.Sprintf("pinax plan actions --from %s --vault %s --save", period, shellQuote(root))},
+			{Name: "save", Command: saveCommand},
 		}
 		return projection, nil
 	}
@@ -10666,6 +11910,9 @@ func (s *Service) PlanActions(_ context.Context, req PlanningRequest) (domain.Pr
 	projection.Facts["snapshot_id"] = draft.SourceSnapshot
 	projection.Facts["tasks"] = fmt.Sprint(len(draft.Tasks))
 	projection.Facts["saved_path"] = rel
+	if req.WithTaskBridge && planningPeriod == domain.PlanningDaily {
+		projection.Facts["source"] = "taskbridge"
+	}
 	projection.Evidence = []string{rel}
 	projection.Data = map[string]any{"draft": draft}
 	projection.Actions = []domain.Action{

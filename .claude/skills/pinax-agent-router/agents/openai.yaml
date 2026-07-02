@@ -1,0 +1,3 @@
+display_name: Pinax Agent Router
+short_description: Route Pinax note, retrieval, memory, sync, proof, project, template, asset, publish, API, plugin, and MCP tasks to the smallest safe operator skill.
+default_prompt: 帮我完成一篇笔记，并通过 Pinax 路由到正确 operator；新生成笔记默认写入 notes/index，需要维护、同步、模板、资产或发布/API任务时也选择最小 operator。

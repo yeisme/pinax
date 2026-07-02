@@ -17,6 +17,7 @@ type ListRequest struct {
 	Kind          string
 	Status        string
 	CreatedAfter  string
+	UpdatedAfter  string
 	UpdatedBefore string
 	PathPrefix    string
 	Tags          []string
@@ -41,6 +42,9 @@ func MatchesList(note domain.Note, req ListRequest) bool {
 		return false
 	}
 	if req.CreatedAfter != "" && !timestampAfterOrEqual(note.CreatedAt, req.CreatedAfter) {
+		return false
+	}
+	if req.UpdatedAfter != "" && !timestampAfterOrEqual(note.UpdatedAt, req.UpdatedAfter) {
 		return false
 	}
 	if req.UpdatedBefore != "" && !timestampBeforeOrEqual(note.UpdatedAt, req.UpdatedBefore) {

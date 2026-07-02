@@ -1,4 +1,5 @@
 # Project board workspace through the real CLI.
+env PINAX_TEST_NOW=2026-06-21T15:30:00Z
 exec pinax init vault --title Vault --json
 ! stderr .
 stdout '"command":"vault.init"'
@@ -73,6 +74,45 @@ stdout '"command":"project.board.export"'
 stdout '## next'
 stdout '看板任务'
 
+exec pinax project item add research '今日到期' --column next --due-at 2026-06-21 --vault vault --json
+! stderr .
+stdout '"command":"project.item.add"'
+
+exec pinax project item add research '已经逾期' --column next --due-at 2026-06-20 --vault vault --json
+! stderr .
+stdout '"command":"project.item.add"'
+
+exec pinax project item add research '等待评审' --column review --vault vault --json
+! stderr .
+stdout '"command":"project.item.add"'
+
+exec sh -c 'mkdir -p vault/daily && printf "%s\n" "# 2026-06-21" "" "manual note" > vault/daily/2026-06-21.md'
+! exec pinax plan daily --task-review --yes --vault vault --json
+stdout '"code":"managed_block_missing"'
+grep 'manual note' vault/daily/2026-06-21.md
+
+exec sh -c 'printf "%s\n" "# 2026-06-21" "" "manual note" "" "<!-- pinax:managed name=daily-task-review -->" "old review" "<!-- /pinax:managed -->" > vault/daily/2026-06-21.md'
+exec pinax plan daily --task-review --vault vault --json
+! stderr .
+stdout '"managed_block":"daily-task-review"'
+stdout '"writes":"false"'
+grep 'old review' vault/daily/2026-06-21.md
+
+exec pinax plan daily --task-review --yes --vault vault --json
+! stderr .
+stdout '"managed_block":"daily-task-review"'
+stdout '"writes":"true"'
+stdout '"today":"1"'
+stdout '"overdue":"1"'
+stdout '"blocked":"1"'
+stdout '"review":"1"'
+grep '## Daily Task Review' vault/daily/2026-06-21.md
+grep '今日到期' vault/daily/2026-06-21.md
+grep '已经逾期' vault/daily/2026-06-21.md
+grep '阻塞任务' vault/daily/2026-06-21.md
+grep '等待评审' vault/daily/2026-06-21.md
+! grep 'old review' vault/daily/2026-06-21.md
+
 exec pinax project item add research '实现 item flow' --column next --body 受控工作项 --vault vault --json
 ! stderr .
 stdout '"command":"project.item.add"'
@@ -118,3 +158,57 @@ exec pinax api schema export --format openapi --vault vault --json
 ! stderr .
 stdout '"command":"api.schema.export"'
 stdout '"openapi":"3.1.0"'
+
+# Long-term learning project pack through the real CLI.
+exec pinax init learning-vault --title '学习炒股的全部笔记' --json
+! stderr .
+stdout '"command":"vault.init"'
+
+exec pinax project learning init investing stock-learning --title '学习炒股的全部笔记' --project-name '学习炒股' --notes-prefix notes/investing --preset stock-learning --vault learning-vault --json
+! stderr .
+stdout '"command":"project.learning.init"'
+stdout '"project":"investing"'
+stdout '"subproject":"stock-learning"'
+stdout '"preset":"stock-learning"'
+stdout '"notes.created":"3"'
+stdout '"items.created":"4"'
+stdout '"columns":"7"'
+exists learning-vault/notes/projects/investing/stock-learning/charter/learning-charter.md
+exists learning-vault/notes/projects/investing/stock-learning/sources/source-index.md
+exists learning-vault/notes/projects/investing/stock-learning/retros/weekly-review.md
+
+exec pinax project board show investing --subproject stock-learning --vault learning-vault --json
+! stderr .
+stdout '"command":"project.board.show"'
+stdout '"column.learning":"1"'
+stdout '"column.planned":"1"'
+stdout '"column.retrospective":"1"'
+stdout '建立交易术语表'
+stdout '整理 K 线与成交量基础'
+
+exec pinax template recommend --intent 'K线' --vault learning-vault --json
+! stderr .
+stdout '"command":"template.recommend"'
+stdout '"primary":"learning.stock.indicator"'
+
+exec pinax note add 'K线基础' --template learning.stock.indicator --project investing --vault learning-vault --json
+! stderr .
+stdout '"command":"note.new"'
+stdout '"template":"learning.stock.indicator"'
+stdout '"kind":"learning"'
+stdout '"tags":"learning,stock,indicator"'
+
+exec pinax index refresh --vault learning-vault --json
+! stderr .
+stdout '"command":"index.refresh"'
+
+exec pinax search 'K线' --vault learning-vault --json
+! stderr .
+stdout '"command":"note.search"'
+stdout 'K线基础'
+
+exec pinax project learning init investing stock-learning --title '学习炒股的全部笔记' --project-name '学习炒股' --notes-prefix notes/investing --preset stock-learning --vault learning-vault --json
+! stderr .
+stdout '"command":"project.learning.init"'
+stdout '"notes.created":"0"'
+stdout '"items.created":"0"'

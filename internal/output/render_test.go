@@ -99,6 +99,144 @@ func TestSummaryRendersEnglishFactKeysAndCommonValues(t *testing.T) {
 	}
 }
 
+func TestSummaryRendersProjectListFactLabels(t *testing.T) {
+	projection := domain.NewProjection("project.list", "Project list read.")
+	projection.Facts["project.1.slug"] = "history"
+	projection.Facts["project.1.name"] = "History"
+	projection.Facts["project.1.notes_prefix"] = "notes/history"
+	projection.Facts["project.1.created_at"] = "2026-06-27T06:07:55Z"
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render summary: %v", err)
+	}
+	got := summary.String()
+	for _, want := range []string{"Project 1 slug", "Project 1 name", "Project 1 notes path prefix", "Project 1 created"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing project fact label %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "project.1") || strings.Contains(got, "notes_prefix") || strings.Contains(got, "created_at") {
+		t.Fatalf("summary leaked raw project fact keys:\n%s", got)
+	}
+}
+
+func TestFactKeyRenderingUsesNaturalNumericOrder(t *testing.T) {
+	projection := domain.NewProjection("project.subproject.list", "Project subprojects listed.")
+	projection.Facts["subprojects"] = "10"
+	projection.Facts["subproject.10"] = "ten"
+	projection.Facts["subproject.2"] = "two"
+	projection.Facts["subproject.1"] = "one"
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render summary: %v", err)
+	}
+	gotSummary := summary.String()
+	count, one, two, ten := strings.Index(gotSummary, "Subprojects"), strings.Index(gotSummary, "one"), strings.Index(gotSummary, "two"), strings.Index(gotSummary, "ten")
+	if count < 0 || one < 0 || two < 0 || ten < 0 || count >= one || one >= two || two >= ten {
+		t.Fatalf("summary facts not naturally ordered:\n%s", gotSummary)
+	}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render agent: %v", err)
+	}
+	gotAgent := agent.String()
+	idxCount := strings.Index(gotAgent, "fact.subprojects=10")
+	idx1 := strings.Index(gotAgent, "fact.subproject.1=one")
+	idx2 := strings.Index(gotAgent, "fact.subproject.2=two")
+	idx10 := strings.Index(gotAgent, "fact.subproject.10=ten")
+	if idxCount < 0 || idx1 < 0 || idx2 < 0 || idx10 < 0 || idxCount >= idx1 || idx1 >= idx2 || idx2 >= idx10 {
+		t.Fatalf("agent facts not naturally ordered:\n%s", gotAgent)
+	}
+}
+
+func TestSummaryRendersGenericListData(t *testing.T) {
+	projection := domain.NewProjection("template.list", "Template list read.")
+	projection.Facts["templates"] = "2"
+	projection.Data = map[string]any{"templates": []map[string]any{
+		{"name": "daily", "source": "builtin", "kind": "template", "maturity": "first-support", "pack": map[string]any{"id": "legacy"}},
+		{"name": "meeting", "source": "vault-local", "kind": "template", "maturity": "mature", "pack": map[string]any{"id": "starter"}},
+	}}
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render summary: %v", err)
+	}
+	got := summary.String()
+	for _, want := range []string{"Template", "Source", "Kind", "Pack", "Maturity", "daily", "builtin", "legacy", "meeting", "vault-local", "starter"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing list value %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestAgentExpandsListDataItems(t *testing.T) {
+	projection := domain.NewProjection("activity.list", "Activity entries listed.")
+	projection.Facts["entries"] = "1"
+	projection.Data = map[string]any{"entries": []map[string]any{{
+		"event_id": "vault_events:abc", "source": "vault_events", "kind": "project.create", "status": "success", "object_ref": "history", "ts": "2026-06-27T06:07:55Z",
+	}}}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render agent: %v", err)
+	}
+	got := agent.String()
+	for _, want := range []string{"fact.entries=1", "entry.1.event_id=vault_events:abc", "entry.1.source=vault_events", "entry.1.kind=project.create", "entry.1.status=success", "entry.1.object_ref=history"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("agent output missing list item %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestAgentExpandsNoteAndSearchResultItems(t *testing.T) {
+	projection := domain.NewProjection("note.search", "Search completed.")
+	projection.Facts["returned"] = "1"
+	projection.Data = map[string]any{"results": []map[string]any{{
+		"note":    map[string]any{"path": "notes/demo.md", "title": "Demo", "kind": "reference", "status": "active"},
+		"snippet": "matched text",
+	}}}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render agent: %v", err)
+	}
+	got := agent.String()
+	for _, want := range []string{"result.1.path=notes/demo.md", "result.1.title=Demo", "result.1.kind=reference", "result.1.status=active", "result.1.snippet=\"matched text\""} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("agent output missing search item %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestSyncLogsTailRendersEventItems(t *testing.T) {
+	projection := domain.NewProjection("sync.logs.tail", "Sync event timeline read.")
+	projection.Facts["events"] = "1"
+	projection.Data = map[string]any{"events": []map[string]any{{"type": "sync.run", "run_id": "sync_1", "direction": "push", "status": "success", "backend_kind": "server", "ts": "2026-06-27T10:00:00Z"}}}
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render summary: %v", err)
+	}
+	for _, want := range []string{"Run ID", "Direction", "Backend", "sync_1", "push", "server"} {
+		if !strings.Contains(summary.String(), want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary.String())
+		}
+	}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render agent: %v", err)
+	}
+	for _, want := range []string{"event.1.run_id=sync_1", "event.1.direction=push", "event.1.backend_kind=server", "event.1.status=success"} {
+		if !strings.Contains(agent.String(), want) {
+			t.Fatalf("agent missing %q:\n%s", want, agent.String())
+		}
+	}
+}
+
 func TestNoteTagRecordFactsRenderInAllModes(t *testing.T) {
 	projection := domain.NewProjection("note.tag", "Note tags updated.")
 	projection.Facts["record_event"] = "note.metadata_updated"

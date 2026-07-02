@@ -87,7 +87,7 @@ nfpms:
       - src: LICENSE
         dst: /usr/share/licenses/pinax/LICENSE
 
-brews:
+homebrew_casks:
   - name: pinax
     ids:
       - pinax-archives
@@ -95,14 +95,12 @@ brews:
       owner: yeisme
       name: homebrew-tap
       token: "{{ .Env.PUBLISHER_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: https://github.com/yeisme/pinax
     description: Agent-safe knowledge control plane for local Markdown vaults.
     license: MIT
-    install: |
-      bin.install "pinax"
-    test: |
-      system "#{bin}/pinax", "--help"
+    binaries:
+      - pinax
     skip_upload: "{{ .IsSnapshot }}"
     commit_msg_template: "Homebrew formula update for {{ .ProjectName }} version {{ .Tag }}"
     commit_author:

@@ -26,7 +26,10 @@ type Request struct {
 	Limit         int
 	Sort          string
 	AllowStale    bool
+	Engine        string
+	LazyIndex     string
 	At            string
+	IncludeDirty  bool
 	ChangedSince  string
 	Revision      string
 }
@@ -39,9 +42,12 @@ type Result struct {
 	Returned             int                        `json:"returned"`
 	Notes                []domain.Note              `json:"notes,omitempty"`
 	Results              []noteindex.ResultItem     `json:"results,omitempty"`
+	AgentContexts        []domain.AgentContext      `json:"agent_contexts,omitempty"`
 	LinkTargetStatus     string                     `json:"link_target_status,omitempty"`
 	LinkTargetMatches    int                        `json:"link_target_matches,omitempty"`
 	LinkTargetCandidates []domain.NoteLinkCandidate `json:"link_target_candidates,omitempty"`
+	LazyIndex            string                     `json:"lazy_index,omitempty"`
+	LazyIndexDeferred    bool                       `json:"lazy_index_deferred,omitempty"`
 }
 
 type LinkGraphBuilder func([]domain.Note) map[string][]domain.NoteLink
@@ -85,6 +91,9 @@ func ValidateDateFilters(req Request) error {
 }
 
 func LazyIndexAllowed(req Request, status noteindex.Status, notes []domain.Note) bool {
+	if NormalizedLazyIndex(req.LazyIndex) == "off" {
+		return false
+	}
 	if req.AllowStale {
 		return false
 	}
@@ -93,6 +102,28 @@ func LazyIndexAllowed(req Request, status noteindex.Status, notes []domain.Note)
 	}
 	const lazyIndexNoteBudget = 10000
 	return len(notes) <= lazyIndexNoteBudget
+}
+
+func NormalizedEngine(engine string) string {
+	switch strings.TrimSpace(engine) {
+	case "", "auto":
+		return "auto"
+	case "index", "native":
+		return strings.TrimSpace(engine)
+	default:
+		return "auto"
+	}
+}
+
+func NormalizedLazyIndex(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "", "auto":
+		return "auto"
+	case "off", "sync":
+		return strings.TrimSpace(mode)
+	default:
+		return "auto"
+	}
 }
 
 func BuildIndexRequest(req Request, linkFilter LinkTargetFilter) noteindex.SearchRequest {
@@ -116,7 +147,7 @@ func ResultFromIndex(req Request, indexLoaded string, result noteindex.SearchRes
 	for _, item := range result.Results {
 		resultNotes = append(resultNotes, item.Note)
 	}
-	return Result{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: result.Total, Returned: result.Returned, Notes: resultNotes, Results: result.Results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates}
+	return Result{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: result.Total, Returned: result.Returned, Notes: resultNotes, Results: result.Results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex)}
 }
 
 func ResultFromFallback(req Request, engine string, notes []domain.Note, indexStatus string, linkFilter LinkTargetFilter) Result {
@@ -134,7 +165,7 @@ func ResultFromFallback(req Request, engine string, notes []domain.Note, indexSt
 	for _, note := range filtered {
 		items = append(items, noteindex.ResultItem{Note: note, Score: 1, MatchedFields: []string{engine}, Snippet: FirstSnippet(note.Body, req.Query)})
 	}
-	return Result{Engine: engine, IndexStatus: indexStatus, Total: total, Returned: len(items), Notes: filtered, Results: items, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates}
+	return Result{Engine: engine, IndexStatus: indexStatus, Total: total, Returned: len(items), Notes: filtered, Results: items, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex)}
 }
 
 func Projection(req Request, result Result, shellQuote func(string) string) domain.Projection {
@@ -143,7 +174,12 @@ func Projection(req Request, result Result, shellQuote func(string) string) doma
 	projection.Facts["total"] = fmt.Sprint(result.Total)
 	projection.Facts["returned"] = fmt.Sprint(result.Returned)
 	projection.Facts["engine"] = result.Engine
+	projection.Facts["engine_requested"] = NormalizedEngine(req.Engine)
+	projection.Facts["lazy_index"] = NormalizedLazyIndex(req.LazyIndex)
 	projection.Facts["sort"] = NormalizedSort(req.Sort)
+	if result.LazyIndexDeferred {
+		projection.Facts["lazy_index.deferred"] = "true"
+	}
 	if result.IndexStatus != "" {
 		projection.Facts["index_status"] = result.IndexStatus
 	}
@@ -161,9 +197,39 @@ func Projection(req Request, result Result, shellQuote func(string) string) doma
 		projection.Status = "partial"
 		projection.Actions = []domain.Action{{Name: "index_rebuild", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(req.VaultPath))}}
 	}
+	result.AgentContexts = searchAgentContexts(result.Results, req.VaultPath, shellQuote)
 	AddFilterFacts(projection.Facts, req)
 	projection.Data = result
 	return projection
+}
+
+func searchAgentContexts(results []noteindex.ResultItem, vaultPath string, shellQuote func(string) string) []domain.AgentContext {
+	contexts := make([]domain.AgentContext, 0, len(results))
+	for _, item := range results {
+		note := item.Note
+		title := strings.TrimSpace(note.Title)
+		if title == "" {
+			title = note.Path
+		}
+		contextID := note.ID
+		if contextID == "" {
+			contextID = note.Path
+		}
+		snippets := []domain.AgentContextSnippet{}
+		if strings.TrimSpace(item.Snippet) != "" {
+			snippets = append(snippets, domain.AgentContextSnippet{Kind: "match", Text: item.Snippet, Source: note.Path})
+		}
+		evidence := []string{}
+		if note.ID != "" {
+			evidence = append(evidence, "note_id:"+note.ID)
+		}
+		if note.Path != "" {
+			evidence = append(evidence, note.Path)
+		}
+		evidence = append(evidence, item.MatchedFields...)
+		contexts = append(contexts, domain.AgentContext{SchemaVersion: domain.AgentContextSchemaVersion, ContextID: "search_result:" + contextID, SourceKind: "search_result", DisplayTitle: title, Refs: []domain.AgentContextRef{{Kind: "note", ID: note.ID, Path: note.Path, Title: title}}, Snippets: snippets, Evidence: evidence, BodyExposure: "snippet", Actions: []domain.Action{{Name: "read", Command: fmt.Sprintf("pinax note read %s --display card --vault %s --json", shellQuote(title), shellQuote(vaultPath))}}})
+	}
+	return contexts
 }
 
 func NormalizedSort(sortMode string) string {

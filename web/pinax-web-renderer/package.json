@@ -1,0 +1,26 @@
+{
+  "name": "pinax-web-renderer",
+  "module": "src/render-static.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "rehype-sanitize": "^6.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc --noEmit",
+    "render:static": "bun src/render-static.ts"
+  }
+}

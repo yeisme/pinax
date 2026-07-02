@@ -69,14 +69,21 @@ type NoteRecord struct {
 }
 
 type Tombstone struct {
-	NoteID    string   `json:"note_id"`
-	OldPath   string   `json:"old_path"`
-	OldHash   string   `json:"old_hash,omitempty"`
-	Title     string   `json:"title,omitempty"`
-	DeletedAt string   `json:"deleted_at"`
-	Source    string   `json:"source,omitempty"`
-	Evidence  []string `json:"evidence,omitempty"`
-	ExpiresAt string   `json:"expires_at,omitempty"`
+	NoteID        string         `json:"note_id"`
+	ObjectKind    string         `json:"object_kind,omitempty"`
+	ObjectID      string         `json:"object_id,omitempty"`
+	TombstoneID   string         `json:"tombstone_id,omitempty"`
+	OldPath       string         `json:"old_path"`
+	OldHash       string         `json:"old_hash,omitempty"`
+	Title         string         `json:"title,omitempty"`
+	TrashPath     string         `json:"trash_path,omitempty"`
+	RegistryPath  string         `json:"registry_path,omitempty"`
+	RegistryFacts map[string]any `json:"registry_facts,omitempty"`
+	DeletedAt     string         `json:"deleted_at"`
+	RestoredAt    string         `json:"restored_at,omitempty"`
+	Source        string         `json:"source,omitempty"`
+	Evidence      []string       `json:"evidence,omitempty"`
+	ExpiresAt     string         `json:"expires_at,omitempty"`
 }
 
 type RecordIssue struct {

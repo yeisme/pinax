@@ -179,6 +179,75 @@ func TestBackendProviderCLI(t *testing.T) {
 	}
 }
 
+func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
+	installFakeTaskBridgeCLI(t)
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	dryOut, dryErr, err := runCLISeparate("plan", "daily", "--taskbridge", "--dry-run", "--vault", root, "--json")
+	if err != nil || dryErr != "" {
+		t.Fatalf("plan daily taskbridge dry-run err=%v stderr=%q stdout=%s", err, dryErr, dryOut)
+	}
+	var dryEnvelope map[string]any
+	if err := json.Unmarshal([]byte(dryOut), &dryEnvelope); err != nil {
+		t.Fatalf("dry-run json invalid: %v\n%s", err, dryOut)
+	}
+	dryFacts := dryEnvelope["facts"].(map[string]any)
+	if dryFacts["source"] != "taskbridge" || dryFacts["captured_at"] != "2026-06-21T15:30:00Z" || dryFacts["target_note"] != "daily/2026-06-21.md" {
+		t.Fatalf("dry-run facts = %#v", dryFacts)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "daily", "2026-06-21.md")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("dry-run should not create daily note, stat=%v", statErr)
+	}
+
+	applyOut := runCLI(t, "plan", "daily", "--taskbridge", "--save", "--yes", "--vault", root, "--json")
+	var applyEnvelope map[string]any
+	if err := json.Unmarshal([]byte(applyOut), &applyEnvelope); err != nil {
+		t.Fatalf("apply json invalid: %v\n%s", err, applyOut)
+	}
+	applyFacts := applyEnvelope["facts"].(map[string]any)
+	if applyFacts["managed_block"] != "planning-daily" || applyFacts["saved_path"] == "" {
+		t.Fatalf("apply facts = %#v", applyFacts)
+	}
+	daily := readCLIFile(t, filepath.Join(root, "daily", "2026-06-21.md"))
+	for _, want := range []string{"<!-- pinax:managed name=planning-daily -->", "Captured at: 2026-06-21T15:30:00Z", "CLI task", "task_cli_1"} {
+		if !strings.Contains(daily, want) {
+			t.Fatalf("daily note missing %q:\n%s", want, daily)
+		}
+	}
+
+	actionsOut := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--save", "--vault", root, "--json")
+	var actionsEnvelope map[string]any
+	if err := json.Unmarshal([]byte(actionsOut), &actionsEnvelope); err != nil {
+		t.Fatalf("taskbridge actions json invalid: %v\n%s", err, actionsOut)
+	}
+	actionsFacts := actionsEnvelope["facts"].(map[string]any)
+	if actionsFacts["source"] != "taskbridge" || actionsFacts["tasks"] != "1" || actionsFacts["saved_path"] == "" {
+		t.Fatalf("taskbridge actions facts = %#v", actionsFacts)
+	}
+	draft := readCLIFile(t, filepath.Join(root, actionsFacts["saved_path"].(string)))
+	if !strings.Contains(draft, `"task_id": "task_cli_2"`) || strings.Contains(draft, "--confirm") {
+		t.Fatalf("taskbridge action draft invalid:\n%s", draft)
+	}
+}
+
+func installFakeTaskBridgeCLI(t *testing.T) {
+	t.Helper()
+	binDir := t.TempDir()
+	path := filepath.Join(binDir, "taskbridge")
+	script := `#!/bin/sh
+if [ "$1 $2" != "agent today" ]; then echo unexpected args: "$@" >&2; exit 2; fi
+cat <<'JSON'
+{"schema":"taskbridge.agent-result.v1","status":"ok","request_id":"req_cli","dry_run":false,"requires_confirmation":false,"result":{"schema":"taskbridge.today.v1","date":"2026-06-21","status":"ok","summary":{"must_do":1,"at_risk":1,"inbox":0,"overdue":0,"project_next":0,"sync_warnings":0},"sections":[{"id":"must_do","title":"Must do today","tasks":[{"id":"task_cli_1","title":"CLI task","status":"todo","source":"local","priority":"high","reason":"Due today"}]},{"id":"at_risk","title":"At risk","tasks":[{"id":"task_cli_2","title":"CLI deferred task","status":"todo","source":"local","priority":"low","reason":"Too large"}]}],"suggested_actions":[{"id":"act_cli_1","type":"defer_task","task_id":"task_cli_2","reason":"Too large for today","requires_confirmation":true}],"warnings":[]},"warnings":[],"errors":[]}
+JSON
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake taskbridge: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestFeishuDeliveryCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

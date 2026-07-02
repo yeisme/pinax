@@ -13,6 +13,9 @@
 | `pinax vault remote list` | Lists cached remote selectors without network access. | Does not write. |
 | `pinax vault stats` | Summarizes note counts, tags, directories, indexes, and other metadata. | Does not write. |
 | `pinax vault validate` | Validates the vault structure and Pinax conventions. | Does not write. |
+| `pinax vault ignore status` | Shows `.pinaxignore`, metadata-only `.gitignore`, and managed content counts. | Does not write. |
+| `pinax vault ignore plan` | Plans missing Pinax/Git ignore configuration. | Does not write. |
+| `pinax vault ignore apply --yes` | Writes missing `.pinaxignore` and patches the Pinax metadata-only `.gitignore` block. | Writes ignore files and event evidence. |
 | `pinax vault doctor` | Checks for health issues and provides maintenance suggestions. | Does not write. |
 | `pinax vault dashboard` | Starts a localhost read-only dashboard. | Does not write to the vault; only provides a local read-only HTTP surface. |
 
@@ -29,9 +32,23 @@ pinax vault remote refresh --profile cloud-work --json
 pinax vault remote list --profile cloud-work --json
 pinax vault stats --vault work
 pinax vault validate --vault work --json
+pinax vault ignore status --vault work --json
+pinax vault ignore plan --vault work --json
 pinax vault doctor --vault work --agent
 pinax vault dashboard --vault work --port 0
 ```
+
+## Ignore Policy
+
+`.pinaxignore` controls Pinax content manifest and Cloud Sync selection. It is separate from `.gitignore`: Git ignore rules do not implicitly exclude Pinax content.
+
+New vaults receive a default `.pinaxignore` plus a metadata-only `.gitignore` block. The Git block keeps Git focused on safe `.pinax` project metadata while Pinax sync/provider transports manage Markdown, scripts, assets, attachments, and other unignored regular files.
+
+Obsidian-style vault compatibility is preview. New vault ignore defaults include `.obsidian/`, and existing vaults can review the gap with `pinax vault ignore status --vault ./my-notes --json` and `pinax vault ignore plan --vault ./my-notes --json`. Pinax supports wikilinks/backlinks, properties, daily managed blocks, template preview, asset missing/orphan doctor, dataview database blocks, canvas/plugin ignore, and publish planning without writing Obsidian plugin config into `.pinax/**`.
+
+## Dashboard Boundary
+
+`pinax vault dashboard` is a local read-only client over shared application service projections. It may display overview, graph health, repair plans, project boards, bounded note displays, and database tabs. Active tab selection remains client-local and is not persisted as a layout registry.
 
 ## Completion and Selection
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
@@ -47,6 +48,110 @@ func TestIncrementalMatchesFullRebuild(t *testing.T) {
 		if got, want := searchPaths(t, incrementalRoot, query), searchPaths(t, fullRoot, query); !reflect.DeepEqual(got, want) {
 			t.Fatalf("search %q mismatch got=%v want=%v", query, got, want)
 		}
+	}
+}
+
+func TestRebuildProjectsEnhancedWikiLinkMetadata(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{
+		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alpha|Short]] [[Alpha#Details]] ![[diagram.png]] [[Meeting]]\n"},
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Body: "# Alpha\n"},
+		{ID: "note_meeting_a", Title: "Meeting", Path: "notes/work/meeting-a.md", Body: "# Meeting\n"},
+		{ID: "note_meeting_b", Title: "Meeting", Path: "notes/home/meeting-b.md", Body: "# Meeting\n"},
+	}
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	links := linksForNote(t, root, "notes/source.md")
+	if len(links) != 3 {
+		t.Fatalf("expected 3 note links, got %d: %#v", len(links), links)
+	}
+	byRaw := map[string]LinkRecord{}
+	for _, link := range links {
+		byRaw[link.TargetRaw] = link
+	}
+	alias := byRaw["Alpha|Short"]
+	if alias.Status != string(domain.LinkStatusResolved) || alias.TargetAlias != "Short" || alias.TargetHeading != "" || alias.TargetPath != "notes/alpha.md" || alias.TargetNoteID != "note_alpha" {
+		t.Fatalf("alias link not enhanced/resolved: %#v", alias)
+	}
+	heading := byRaw["Alpha#Details"]
+	if heading.Status != string(domain.LinkStatusResolved) || heading.TargetHeading != "Details" || heading.TargetAlias != "" || heading.TargetPath != "notes/alpha.md" {
+		t.Fatalf("heading link not enhanced/resolved: %#v", heading)
+	}
+	ambiguous := byRaw["Meeting"]
+	if ambiguous.Status != string(domain.LinkStatusAmbiguous) || ambiguous.Broken || ambiguous.TargetPath != "" || !strings.Contains(ambiguous.Evidence, "ambiguous") {
+		t.Fatalf("ambiguous link not preserved for review: %#v", ambiguous)
+	}
+	if _, ok := byRaw["diagram.png"]; ok {
+		t.Fatalf("media embed should not be projected as note link: %#v", links)
+	}
+}
+
+func TestSearchUsesTokenIndexForBodyMatches(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Body: "searchable token lives in the body", Tags: []string{"work"}},
+		{ID: "note_beta", Title: "Beta", Path: "notes/beta.md", Body: "other content", Tags: []string{"work"}},
+	}
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	db, err := open(root)
+	if err != nil {
+		t.Fatalf("open index: %v", err)
+	}
+	if err := db.Model(&NoteTextRecord{}).Where("note_path = ?", "notes/alpha.md").Update("body_text", "").Error; err != nil {
+		t.Fatalf("clear body text projection: %v", err)
+	}
+
+	result, err := Search(root, SearchRequest{Query: "searchable"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if result.Total != 1 || result.Results[0].Note.Path != "notes/alpha.md" {
+		t.Fatalf("search should use token index candidates, got %#v", result)
+	}
+	if !containsString(result.Results[0].MatchedFields, "body") {
+		t.Fatalf("body token match should be reported, got %#v", result.Results[0].MatchedFields)
+	}
+}
+
+func TestSearchUsesTokenIndexForUnicodeSubstringMatches(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{
+		{ID: "note_title", Title: "认证方案", Path: "notes/title.md", Body: "OAuth login", Tags: []string{"auth"}},
+		{ID: "note_body", Title: "Auth A", Path: "notes/body.md", Body: "认证 checklist", Tags: []string{"auth"}},
+	}
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	result, err := Search(root, SearchRequest{Query: "认证"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if got, want := resultPaths(result), []string{"notes/body.md", "notes/title.md"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unicode substring search paths got=%v want=%v result=%#v", got, want, result)
+	}
+}
+
+func TestExtractLinkRowsUsesEnhancedWikiParser(t *testing.T) {
+	notes := []domain.Note{
+		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alias Target]] [[Alpha|Short]]\n"},
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Frontmatter: map[string]string{"alias": "Alias Target"}},
+	}
+	rows := ExtractLinkRows(notes)
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 link rows, got %d: %#v", len(rows), rows)
+	}
+	for _, row := range rows {
+		if row.Values["status"].Raw != string(domain.LinkStatusResolved) || row.Values["target_path"].Raw != "notes/alpha.md" || row.Values["target_note_id"].Raw != "note_alpha" {
+			t.Fatalf("row should be resolved with shared parser: %#v", row.Values)
+		}
+	}
+	aliasRow := rows[1]
+	if aliasRow.Values["target_alias"].Raw != "Short" {
+		t.Fatalf("row should preserve target alias: %#v", aliasRow.Values)
 	}
 }
 
@@ -102,6 +207,20 @@ func BenchmarkSearchLinkTarget(b *testing.B) {
 	}
 }
 
+func BenchmarkIndexSearchTokenCandidates(b *testing.B) {
+	notes := syntheticNotes(1000)
+	root := b.TempDir()
+	if _, err := Rebuild(root, notes); err != nil {
+		b.Fatalf("rebuild: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Search(root, SearchRequest{Query: fmt.Sprintf("body %d", i%len(notes)), Limit: 20}); err != nil {
+			b.Fatalf("search token candidates: %v", err)
+		}
+	}
+}
+
 type snapshotRow struct {
 	Kind   string
 	Path   string
@@ -144,6 +263,24 @@ func searchPaths(t *testing.T, root, query string) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func resultPaths(result SearchResult) []string {
+	paths := make([]string, 0, len(result.Results))
+	for _, item := range result.Results {
+		paths = append(paths, item.Note.Path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func syntheticNotes(count int) []domain.Note {

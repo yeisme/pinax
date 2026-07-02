@@ -35,6 +35,39 @@ tasks:
     cmds:
       - go run ./internal/testkit/integrationevidence
 
+  kb:sidecar:test:
+    desc: Run Python LanceDB KB sidecar tests.
+    deps: [kb:sidecar:protocol]
+    cmds:
+      - |
+        venv_dir="$(mktemp -d)"
+        trap 'rm -rf "$venv_dir"' EXIT
+        python3 -m venv "$venv_dir/venv"
+        "$venv_dir/venv/bin/python" -m pip install -e tools/pinax-lancedb-sidecar
+        PYTHONPATH=tools/pinax-lancedb-sidecar/src "$venv_dir/venv/bin/python" -m unittest discover tools/pinax-lancedb-sidecar/tests
+
+  kb:sidecar:protocol:
+    desc: Run offline Python sidecar protocol tests without installing LanceDB.
+    cmds:
+      - python3 -m compileall tools/pinax-lancedb-sidecar
+      - PYTHONPATH=tools/pinax-lancedb-sidecar/src python3 -m unittest tools/pinax-lancedb-sidecar/tests/test_protocol_offline.py
+
+  publish:renderer:test:
+    desc: Run the Pinax web renderer Vitest suite.
+    dir: web/pinax-web-renderer
+    cmds:
+      - bun run test
+
+  publish:renderer:build:
+    desc: Build the Pinax web renderer package.
+    dir: web/pinax-web-renderer
+    cmds:
+      - bun run build
+
+  publish:smoke:
+    desc: Run Pinax static publish renderer smoke checks.
+    deps: [publish:renderer:test, publish:renderer:build]
+
   build:
     desc: Build the Pinax CLI.
     deps: [fmt-check]
@@ -208,6 +241,45 @@ tasks:
         fi
         printf 'checked archive smoke and SBOM: %s\n' "$archive"
 
+  release:smoke:
+    desc: Smoke-test the locally built release binary against a temporary vault.
+    deps: [build]
+    cmds:
+      - |
+        set -eu
+        bin="dist/pinax"
+        if [ ! -f "$bin" ]; then
+          printf 'release smoke failed: binary not found at %s; run task build first\n' "$bin" >&2
+          exit 1
+        fi
+        if [ ! -x "$bin" ]; then
+          printf 'release smoke failed: binary is not executable at %s\n' "$bin" >&2
+          exit 1
+        fi
+
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        vault="$tmp/vault"
+
+        "$bin" version >/dev/null || { printf 'release smoke failed: version command failed\n' >&2; exit 1; }
+        "$bin" init "$vault" --title "Release Smoke" --json >/dev/null || { printf 'release smoke failed: init command failed\n' >&2; exit 1; }
+        "$bin" note add "Release Smoke" --body "release smoke proof loop note" --vault "$vault" --json >/dev/null || { printf 'release smoke failed: note add command failed\n' >&2; exit 1; }
+        out="$tmp/proof-loop.json"
+        "$bin" proof loop run --vault "$vault" --json >"$out" || { printf 'release smoke failed: proof loop command failed\n' >&2; exit 1; }
+        python3 - "$out" <<'PY'
+        import json
+        import sys
+        payload = json.load(open(sys.argv[1]))
+        facts = payload.get('facts') or {}
+        if payload.get('command') != 'proof.loop.run' or payload.get('status') not in {'success', 'partial'}:
+            raise SystemExit(f'release smoke failed: unexpected proof loop envelope {payload!r}')
+        if not facts.get('proof_loop_run_id'):
+            raise SystemExit('release smoke failed: missing proof_loop_run_id')
+        if facts.get('local_write') == 'true' or facts.get('remote_write') == 'true':
+            raise SystemExit(f'release smoke failed: preview reported writes {facts!r}')
+        PY
+        printf 'release smoke passed: %s\n' "$bin"
+
   release:build:
     desc: Build release binaries with GoReleaser without publishing.
     cmds:
@@ -255,7 +327,7 @@ tasks:
 
   check:
     desc: Run the local Pinax quality gate.
-    deps: [fmt-check, lint, test, build, openspec]
+    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:protocol, publish:smoke]
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.

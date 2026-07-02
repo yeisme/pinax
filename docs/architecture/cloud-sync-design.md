@@ -39,6 +39,8 @@ laptop vault        phone vault         desktop vault
 
 The word `cloud` names the synchronization protocol, not necessarily a hosted Pinax Cloud service.
 
+Backup mirror language is allowed only for CLI-side direct transports where Pinax writes encrypted Cloud Sync objects to a user-selected provider bucket, prefix, rclone remote, or file store. A backup mirror is not a Pinax Cloud server feature: it does not gain Pinax server-side auth, server audit, object lifecycle policy, multi-tenant controls, or rate limiting. Those controls exist only when the configured transport is the Pinax Cloud server transport.
+
 ### Transport modes
 
 | Transport | Endpoint example | Needs remote Pinax Cloud service | Implemented status | Trade-off |
@@ -57,6 +59,24 @@ All transports must expose the same logical operations:
 - `CommitRevision`: atomically move head from `base_revision` to `new_revision`, or return `revision_conflict`.
 
 Unsupported schemes, unavailable backends, and failed commit paths must return stable partial/error codes such as `unsupported_scheme`, `transport_unavailable`, `unauthorized`, `backend_unavailable`, or `revision_conflict`. They must not silently no-op, write dummy revisions, or emit `remote_write=true`.
+
+### Local daemon layer
+
+`pinax sync daemon` is a client-side process that reuses the same Cloud Sync transport operations. It does not add a new remote service role.
+
+The daemon is the realtime convergence layer, not the backup mirror layer. New daemon behavior, automatic conflict handling, push notification support, background lifecycle changes, or conflict resolution semantics require separate OpenSpec coverage before implementation. Backup mirror wording must not imply automatic merge, realtime watch/poll guarantees, or conflict resolution beyond the explicit `pinax sync pull` / `pinax sync push` / `pinax sync conflicts` workflows.
+
+```text
+local watcher + remote head poller
+  -> serial daemon queue
+  -> sync pull when remote head is newer
+  -> sync push when local manifest is dirty
+  -> local state/events under .pinax/sync-daemon/
+```
+
+The daemon runs one startup pull-before-push cycle before waiting for the next timer or file event. Remote changes are detected by polling `CurrentHead` in the first release. Local changes are detected by a vault watcher with scan fallback. `.git/`, `.pinax/`, LanceDB projections, provider caches, and daemon runtime files are ignored so generated state does not trigger sync loops.
+
+The daemon must acquire a per-vault runner lock and the shared sync operation lock. It must pause with `conflict_required` when pull creates conflict copies, and it must not emit `remote_write=true` unless the underlying push path completed the durable revision commit and local sync-state receipt.
 
 ## Object-store layout for direct transports
 
@@ -229,6 +249,21 @@ Direct transports do not provide Pinax server-side auth, server audit, multi-ten
 The redaction boundary covers stdout, stderr, `--events`, sync-state, sync run receipts, `.pinax/events.jsonl`, test fixtures, object keys, object metadata, fake backend logs, provider stderr, and archive evidence. These surfaces may include stable ids, counts, timestamps, backend kind, transport kind, revision ids, and redacted next actions. They must not include plaintext note bodies, plaintext object keys derived from note paths, raw tokens, Authorization headers, cookies, raw secret refs, provider stderr, or provider payloads.
 
 When local conflict inspection intentionally shows note content, it must be an explicit local command such as `pinax sync conflicts show <file> --json`; that local content view is not Cloud transport evidence and must not be copied into backend fixtures or archive receipts.
+
+## Agent Brain projection sync policy
+
+Cloud Sync does not turn Agent Brain projections into shared plaintext state. The authority split is:
+
+| Data product | Sync authority | Rebuild policy |
+| --- | --- | --- |
+| Markdown notes and user assets | Encrypted content manifest/blob source of truth | Pulled to each device, then local projections may be refreshed. |
+| Import/proof/sync receipts | Service-owned evidence, subject to each feature's redaction contract | May be synced only through explicit encrypted content/evidence contracts. |
+| Memory ledger | Local service-owned memory evidence | Do not upload raw `.pinax/memory/` as plaintext Cloud data; future cross-device memory sync needs a dedicated encrypted contract. |
+| SQLite/GORM index | Rebuildable projection | Excluded from manifests; rebuild with `pinax index refresh --vault ./my-notes --json`. |
+| KB/LanceDB vectors | Rebuildable projection | Excluded from manifests; rebuild or refresh with `pinax kb refresh --vault ./my-notes`; never upload plaintext vectors or provider payloads. |
+| Graph projections | Rebuildable projection | Excluded from manifests; rebuild with `pinax graph rebuild --vault ./my-notes --json`. |
+| Answer cache | Planned rebuildable cache | No current Cloud Sync behavior; future cache sync must not store raw prompts, provider payloads, or full note bodies. |
+| Maintenance plan | Reviewable service-owned plan evidence | Saved plans require redacted receipts and proof-loop apply gates; they are not background rewrites. |
 
 ## Non-Cloud CLI drift exclusion
 

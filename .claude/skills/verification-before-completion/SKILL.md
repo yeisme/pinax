@@ -48,7 +48,6 @@ Skip any step = lying, not verifying
 | Regression test works | Red-green cycle verified | Test passes once |
 | Agent completed | VCS diff shows changes | Agent reports "success" |
 | Requirements met | Line-by-line checklist | Tests passing |
-| Plan/checklist/work-item slice closed | owner 的 `openspec/changes/<change-id>/` 已归档到 `openspec/changes/archive/YYYY-MM-DD-<change-id>/`，且 evidence/readiness 已更新 | 只勾完 checkbox，或任务状态仍放在 `docs/**/checklists`、`docs/**/plans/active`、`work-items/active/` 或根 `openspec/` 跟踪子项目实现 |
 
 ## Red Flags - STOP
 
@@ -100,12 +99,6 @@ Skip any step = lying, not verifying
 ❌ "Tests pass, phase complete"
 ```
 
-**Plan/checklist closeout:**
-```
-✅ 检查 proposal/design/tasks/specs → 如在 docs/checklists、docs/plans/active、work-items 或错误 owner 下则先迁到正确 OpenSpec change → 按 docs/workflows/execution-slice-lifecycle.md 更新 readiness/evidence → 移动 owner 的 openspec/changes/<change-id> 到 openspec/changes/archive/YYYY-MM-DD-<change-id> → 修正旧引用
-❌ "Tasks are all checked, done" while the change still lives under active/ or in the wrong owner directory
-```
-
 **Agent delegation:**
 ```
 ✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
@@ -128,7 +121,6 @@ From 24 failure memories:
 - ANY expression of satisfaction
 - ANY positive statement about work state
 - Committing, PR creation, task completion
-- closeout gate 已通过后，仍把执行变更留在 owner 的 `openspec/changes/<change-id>/`，或继续把任务状态放在 `docs/**/checklists`、`docs/**/plans/active`、`work-items/active/`、临时目录或错误 owner
 - Moving to next task
 - Delegating to agents
 

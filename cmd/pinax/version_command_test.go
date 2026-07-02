@@ -2,14 +2,11 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	gitstore "github.com/yeisme/pinax/internal/git"
 )
 
 func TestVersionCommand(t *testing.T) {
@@ -64,7 +61,7 @@ func TestVersionWorkflowContractsCLI(t *testing.T) {
 		t.Fatalf("version status json invalid: %v\n%s", err, statusOut)
 	}
 	statusFacts := statusEnvelope["facts"].(map[string]any)
-	for key, want := range map[string]string{"version_backend": "local", "snapshot_supported": "true", "changed_paths_supported": "false", "read_at_revision_supported": "false"} {
+	for key, want := range map[string]string{"version_backend": "local", "snapshot_supported": "true", "changed_paths_supported": "false", "read_at_revision_supported": "true"} {
 		if statusFacts[key] != want {
 			t.Fatalf("version status fact %s=%#v want %q envelope=%#v", key, statusFacts[key], want, statusEnvelope)
 		}
@@ -164,14 +161,12 @@ func TestVersionRestoreApplyRevertsBadLocalApply(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "notes", "alpha.md")
 	writeCLIFixture(t, notePath, "# Alpha\n\noriginal baseline content\n")
-	// 基线 git commit：HEAD 记录原始内容。
-	if err := gitstore.Snapshot(context.Background(), root, "baseline before apply"); err != nil {
-		t.Fatalf("baseline git snapshot: %v", err)
-	}
+	snapshotOut := runCLI(t, "version", "snapshot", "--vault", root, "--message", "baseline before apply", "--json")
+	snapshotID := jsonParseFacts(t, snapshotOut)["snapshot_id"].(string)
 	// 坏本地 apply：覆盖成损坏内容。
 	writeCLIFixture(t, notePath, "# Alpha\n\ncorrupted by bad apply\n")
 
-	planOut := runCLI(t, "version", "restore", "notes/alpha.md", "--revision", "HEAD", "--plan", "--vault", root, "--json")
+	planOut := runCLI(t, "version", "restore", "notes/alpha.md", "--revision", snapshotID, "--plan", "--vault", root, "--json")
 	var planEnvelope map[string]any
 	if err := json.Unmarshal([]byte(planOut), &planEnvelope); err != nil {
 		t.Fatalf("restore plan json invalid: %v\n%s", err, planOut)
@@ -181,8 +176,8 @@ func TestVersionRestoreApplyRevertsBadLocalApply(t *testing.T) {
 	if !ok || planID == "" {
 		t.Fatalf("restore plan missing plan_id: %#v", planFacts)
 	}
-	if gitCommit, ok := planFacts["git_commit"].(string); !ok || gitCommit == "" {
-		t.Fatalf("restore plan missing git_commit: %#v", planFacts)
+	if planFacts["version_backend"] != "local" || planFacts["content_hash"] == "" {
+		t.Fatalf("restore plan missing local content evidence: %#v", planFacts)
 	}
 
 	// 不带 --yes 必须拒绝写入并给出审批提示。
@@ -221,6 +216,38 @@ func TestVersionRestoreApplyRevertsBadLocalApply(t *testing.T) {
 	}
 }
 
+func TestVersionRestoreApplyUsesLocalSnapshotWithoutGitCommit(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	noteRel := "notes/local-only.md"
+	notePath := filepath.Join(root, filepath.FromSlash(noteRel))
+	writeCLIFixture(t, notePath, "# Local Only\n\noriginal pinax snapshot content\n")
+
+	snapshotOut := runCLI(t, "version", "snapshot", "--vault", root, "--message", "pinax managed baseline", "--json")
+	snapshotID := jsonParseFacts(t, snapshotOut)["snapshot_id"].(string)
+	writeCLIFixture(t, notePath, "# Local Only\n\ncorrupted without git commit\n")
+
+	planOut := runCLI(t, "version", "restore", noteRel, "--revision", snapshotID, "--plan", "--vault", root, "--json")
+	planFacts := jsonParseFacts(t, planOut)
+	if planFacts["version_backend"] != "local" {
+		t.Fatalf("restore plan should use local backend: %#v", planFacts)
+	}
+	if _, hasGitCommit := planFacts["git_commit"]; hasGitCommit {
+		t.Fatalf("local-only restore plan should not require git commit: %#v", planFacts)
+	}
+	planID := planFacts["plan_id"].(string)
+
+	applyOut := runCLI(t, "version", "restore", "apply", "--vault", root, "--plan", planID, "--yes", "--json")
+	applyFacts := jsonParseFacts(t, applyOut)
+	if applyFacts["version_backend"] != "local" || applyFacts["local_write"] != "true" || applyFacts["remote_write"] != "false" {
+		t.Fatalf("restore apply facts = %#v", applyFacts)
+	}
+	restored := readCLIFile(t, notePath)
+	if !strings.Contains(restored, "original pinax snapshot content") || strings.Contains(restored, "corrupted without git commit") {
+		t.Fatalf("restore apply did not use Pinax snapshot content:\n%s", restored)
+	}
+}
+
 // TestVersionRestoreApplyRefusesStalePlan 证明 vault 在 plan 生成后被改动时 apply 拒绝执行。
 
 func TestVersionRestoreApplyRefusesStalePlan(t *testing.T) {
@@ -228,11 +255,10 @@ func TestVersionRestoreApplyRefusesStalePlan(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "notes", "beta.md")
 	writeCLIFixture(t, notePath, "# Beta\n\nfirst\n")
-	if err := gitstore.Snapshot(context.Background(), root, "baseline"); err != nil {
-		t.Fatalf("baseline git snapshot: %v", err)
-	}
+	snapshotOut := runCLI(t, "version", "snapshot", "--vault", root, "--message", "baseline", "--json")
+	snapshotID := jsonParseFacts(t, snapshotOut)["snapshot_id"].(string)
 	writeCLIFixture(t, notePath, "# Beta\n\nsecond\n")
-	planOut := runCLI(t, "version", "restore", "notes/beta.md", "--revision", "HEAD", "--plan", "--vault", root, "--json")
+	planOut := runCLI(t, "version", "restore", "notes/beta.md", "--revision", snapshotID, "--plan", "--vault", root, "--json")
 	planID := jsonParseFacts(t, planOut)["plan_id"].(string)
 	// plan 生成后再改动 vault，vault hash 漂移。
 	writeCLIFixture(t, notePath, "# Beta\n\nthird drift\n")

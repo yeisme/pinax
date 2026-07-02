@@ -50,8 +50,9 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	// 3. inbox triage <note>
 	inboxTriageCmd := &cobra.Command{
-		Use:   "triage <note>",
-		Short: "Triage an inbox note into a project and folder",
+		Use:               "triage <note>",
+		Short:             "Triage an inbox note into a project and folder",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "inbox.triage", "argument_required", "inbox triage requires a note reference", "pinax inbox triage <note> --group <group> --vault <vault>")
@@ -71,12 +72,17 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	inboxTriageCmd.Flags().StringVar(ctx.noteFolder, "folder", "", "Target relative folder")
 	inboxTriageCmd.Flags().StringVar(ctx.noteKind, "kind", "", "Target kind")
 	inboxTriageCmd.Flags().StringVar(ctx.noteStatus, "status", "", "Target status")
+	_ = inboxTriageCmd.RegisterFlagCompletionFunc("group", projectSlugCompletion(func() string { return *ctx.vaultPath }))
+	_ = inboxTriageCmd.RegisterFlagCompletionFunc("folder", folderPathCompletion(func() string { return *ctx.vaultPath }))
+	_ = inboxTriageCmd.RegisterFlagCompletionFunc("kind", staticCompletion("kind", "fleeting", "reference", "project", "daily", "inbox"))
+	_ = inboxTriageCmd.RegisterFlagCompletionFunc("status", staticCompletion("status", "active", "draft", "inbox", "archived", "discarded"))
 	inboxCmd.AddCommand(inboxTriageCmd)
 
 	// 4. inbox show <note>
 	inboxShowCmd := &cobra.Command{
-		Use:   "show <note>",
-		Short: "Show the specified inbox note content",
+		Use:               "show <note>",
+		Short:             "Show the specified inbox note content",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "inbox.show", "argument_required", "inbox show requires a note reference", "pinax inbox show <note> --vault <vault>")
@@ -92,13 +98,16 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	inboxShowCmd.Flags().StringVar(ctx.noteView, "view", "source", "View mode: source or rendered")
 	inboxShowCmd.Flags().StringVar(ctx.noteDisplay, "display", "", "Display style: card, detail, context, or body")
+	_ = inboxShowCmd.RegisterFlagCompletionFunc("view", staticCompletion("view", "source", "rendered"))
+	_ = inboxShowCmd.RegisterFlagCompletionFunc("display", staticCompletion("display", "card", "detail", "context", "body"))
 	inboxCmd.AddCommand(inboxShowCmd)
 
 	// 5. inbox promote <note> --to <draft|active>
 	var promoteTo string
 	inboxPromoteCmd := &cobra.Command{
-		Use:   "promote <note>",
-		Short: "Promote an inbox note to draft or active status",
+		Use:               "promote <note>",
+		Short:             "Promote an inbox note to draft or active status",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "inbox.promote", "argument_required", "inbox promote requires a note reference", "pinax inbox promote <note> --vault <vault>")
@@ -122,12 +131,17 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	inboxPromoteCmd.Flags().StringVar(ctx.noteKind, "kind", "", "Target kind")
 	inboxPromoteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm the status transition")
 	inboxPromoteCmd.Flags().BoolVar(ctx.noteDryRun, "dry-run", false, "Preview the transition plan without modifying files")
+	_ = inboxPromoteCmd.RegisterFlagCompletionFunc("to", staticCompletion("status", "draft", "active"))
+	_ = inboxPromoteCmd.RegisterFlagCompletionFunc("group", projectSlugCompletion(func() string { return *ctx.vaultPath }))
+	_ = inboxPromoteCmd.RegisterFlagCompletionFunc("folder", folderPathCompletion(func() string { return *ctx.vaultPath }))
+	_ = inboxPromoteCmd.RegisterFlagCompletionFunc("kind", staticCompletion("kind", "fleeting", "reference", "project", "daily", "inbox"))
 	inboxCmd.AddCommand(inboxPromoteCmd)
 
 	// 6. inbox discard <note>
 	inboxDiscardCmd := &cobra.Command{
-		Use:   "discard <note>",
-		Short: "Discard an inbox note",
+		Use:               "discard <note>",
+		Short:             "Discard an inbox note",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "inbox.discard", "argument_required", "inbox discard requires a note reference", "pinax inbox discard <note> --vault <vault>")
@@ -208,6 +222,7 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	for _, c := range []*cobra.Command{inboxIndexPreviewCmd, inboxIndexCreateCmd, inboxIndexRefreshCmd} {
 		c.Flags().StringVar(&indexTemplate, "template", "index.inbox", "Custom inbox index page template")
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true, true))
 		inboxIndexCmd.AddCommand(c)
 	}
 	inboxCmd.AddCommand(inboxIndexCmd)

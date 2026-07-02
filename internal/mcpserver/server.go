@@ -34,8 +34,13 @@ type MCPError struct {
 }
 
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	InputSchema  map[string]any `json:"input_schema,omitempty"`
+	Readonly     bool           `json:"readonly,omitempty"`
+	BodyExposure string         `json:"body_exposure,omitempty"`
+	CostClass    string         `json:"cost_class,omitempty"`
+	Scope        string         `json:"scope,omitempty"`
 }
 
 type Resource struct {
@@ -72,14 +77,20 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 	case "tools/list":
 		resp.Tools = []Tool{
 			{Name: "pinax.search", Description: "Search local notes"},
+			brainTool("pinax.brain.context", "Read bounded Agent Brain context bundle"),
+			brainTool("pinax.brain.answer", "Preview a citation-first bounded answer"),
+			brainTool("pinax.brain.sources", "List bounded Agent Brain evidence sources"),
+			brainTool("pinax.brain.maintenance_plan", "Preview Agent Brain maintenance next steps without writing"),
 			{Name: "pinax.query.run", Description: "Run bounded readonly Pinax SQL query"},
 			{Name: "pinax.database.view.show", Description: "Show saved readonly database view"},
+			{Name: "pinax.database.view.render", Description: "Render saved readonly database view as a bounded tab projection"},
 			{Name: "pinax.note.read", Description: "Read one local note"},
 			{Name: "pinax.note.links", Description: "Read outgoing links for a note"},
 			{Name: "pinax.note.backlinks", Description: "Read backlinks for a note"},
 			{Name: "pinax.note.context", Description: "Read bounded graph context around a note"},
 			{Name: "pinax.vault.graph_summary", Description: "Read vault link graph health summary"},
 			{Name: "pinax.project.board", Description: "Read bounded project board facts"},
+			{Name: "pinax.task.adopt_plan", Description: "Preview inferred task adoption without writing"},
 			{Name: "pinax.organize.plan", Description: "Preview organize operations"},
 			{Name: "pinax.git.snapshot_plan", Description: "Show snapshot command"},
 		}
@@ -96,6 +107,46 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 	name, _ := req.Params["name"].(string)
 	args, _ := req.Params["arguments"].(map[string]any)
 	switch name {
+	case "pinax.brain.context":
+		question := mcpBrainQuestion(args)
+		projection, err := s.service.BrainAnswerPreview(ctx, app.BrainAnswerRequest{VaultPath: s.vault, Question: question})
+		if err != nil {
+			return resp, err
+		}
+		answer, _ := projection.Data.(domain.AgentBrainAnswer)
+		resp.Result = projectionMap(projection.Status, "Bounded Agent Brain context bundle generated.", answer.ContextBundle)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = "brain.context"
+		resp.Result["body_exposure"] = "bounded_projection"
+		return resp, nil
+	case "pinax.brain.answer":
+		question := mcpBrainQuestion(args)
+		projection, err := s.service.BrainAnswerPreview(ctx, app.BrainAnswerRequest{VaultPath: s.vault, Question: question})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = projection.Command
+		return resp, nil
+	case "pinax.brain.sources":
+		question := mcpBrainQuestion(args)
+		projection, err := s.service.BrainAnswerPreview(ctx, app.BrainAnswerRequest{VaultPath: s.vault, Question: question})
+		if err != nil {
+			return resp, err
+		}
+		answer, _ := projection.Data.(domain.AgentBrainAnswer)
+		resp.Result = map[string]any{"status": projection.Status, "summary": "Bounded Agent Brain sources listed.", "command": "brain.sources", "sources": answer.Sources, "body_exposure": answer.BodyExposure, "cost": answer.Cost, "next_actions": answer.NextActions}
+		return resp, nil
+	case "pinax.brain.maintenance_plan":
+		projection, err := s.service.BrainMaintenancePlan(ctx, app.BrainMaintenanceRequest{VaultPath: s.vault, DryRun: true})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = projection.Command
+		return resp, nil
 	case "pinax.query.run":
 		sql, _ := args["sql"].(string)
 		projection, err := s.service.QueryRun(ctx, app.QueryRequest{VaultPath: s.vault, SQL: sql})
@@ -113,6 +164,16 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		}
 		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
 		resp.Result["facts"] = projection.Facts
+		return resp, nil
+	case "pinax.database.view.render":
+		name, _ := args["name"].(string)
+		projection, err := s.service.RenderDatabaseView(ctx, app.ViewRequest{VaultPath: s.vault, Name: name})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = projection.Command
 		return resp, nil
 	case "pinax.search":
 		query, _ := args["query"].(string)
@@ -200,6 +261,19 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
 		resp.Result["facts"] = projection.Facts
 		return resp, nil
+	case "pinax.task.adopt_plan":
+		itemID, _ := args["item_id"].(string)
+		if itemID == "" {
+			itemID, _ = args["item"].(string)
+		}
+		projection, err := s.service.TaskAdopt(ctx, app.TaskAdoptRequest{VaultPath: s.vault, ItemID: itemID, Yes: false})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = projectionMap(projection.Status, projection.Summary, projection.Data)
+		resp.Result["facts"] = projection.Facts
+		resp.Result["command"] = projection.Command
+		return resp, nil
 	case "pinax.organize.plan":
 		projection, err := s.service.PlanOrganize(ctx, app.VaultRequest{VaultPath: s.vault})
 		if err != nil {
@@ -213,6 +287,20 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 	default:
 		return resp, &MCPError{Code: "approval_required", Message: "MVP MCP surface 只允许只读工具"}
 	}
+}
+
+func brainTool(name, description string) Tool {
+	return Tool{Name: name, Description: description, Readonly: true, BodyExposure: "bounded_projection", CostClass: "none", Scope: "local_vault", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"question": map[string]any{"type": "string"}, "task": map[string]any{"type": "string"}, "body_exposure": map[string]any{"type": "string", "enum": []string{"bounded_projection"}}}}}
+}
+
+func mcpBrainQuestion(args map[string]any) string {
+	if question, _ := args["question"].(string); strings.TrimSpace(question) != "" {
+		return question
+	}
+	if task, _ := args["task"].(string); strings.TrimSpace(task) != "" {
+		return task
+	}
+	return "agent brain context"
 }
 
 // mcpNoteRef 从 MCP arguments 中提取 note 引用。

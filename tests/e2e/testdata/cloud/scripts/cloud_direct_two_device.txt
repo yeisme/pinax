@@ -40,3 +40,34 @@ stdout '"command":"sync.pull"'
 stdout '"status":"success"'
 grep 'updated from device A' device-b/notes/alpha.md
 exec sh -c 'grep "local desktop edit" device-b/notes/*.conflict.md'
+
+# Delete markers converge project registry state and keep a restorable local tombstone.
+exec pinax project create history --name History --notes-prefix notes/history --vault device-a --json
+stdout '"command":"project.create"'
+exec pinax project create history --name History --notes-prefix notes/history --vault device-b --json
+stdout '"command":"project.create"'
+
+exec pinax project delete history --vault device-a --yes --json
+stdout '"command":"project.delete"'
+stdout '"status":"success"'
+
+exec pinax sync push --target cloud --vault device-a --yes --json
+stdout '"command":"sync.push"'
+stdout '"delete_markers":"1"'
+stdout '"remote_write":true'
+
+exec sh -c 'pinax sync pull --target cloud --vault device-b --yes --json > pull-delete.json'
+grep '"command":"sync.pull"' pull-delete.json
+grep '"delete_markers_applied":"1"' pull-delete.json
+grep '"remote_write":false' pull-delete.json
+
+exec sh -c 'pinax project list --vault device-b --json > projects-after-delete.json'
+! grep 'history' projects-after-delete.json
+exec sh -c 'pinax trash list --vault device-b --json > trash-after-delete.json'
+grep 'project/history' trash-after-delete.json
+
+exec pinax trash restore project/history --vault device-b --json
+stdout '"command":"trash.restore"'
+stdout '"status":"success"'
+exec pinax project list --vault device-b --json
+stdout 'history'

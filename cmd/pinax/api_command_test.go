@@ -65,3 +65,35 @@ func TestAPIRoutesHumanOutputListsEndpointsCLI(t *testing.T) {
 		t.Fatalf("api routes human output should not be JSON:\n%s", out)
 	}
 }
+
+func TestAPIRoutesJSONExposesReleaseCoreCapabilitiesCLI(t *testing.T) {
+	root := t.TempDir()
+	out := runCLI(t, "api", "routes", "--vault", root, "--json")
+	// Every release core capability must be discoverable with its proof-loop
+	// metadata, including the local-only CLI capabilities that have no REST route.
+	for _, want := range []string{
+		`"release_core"`,
+		`"id":"repair.apply"`,
+		`"local_only_reason":"cli-proof-loop"`,
+		`"copy_command":"pinax repair apply --vault <vault> --plan <plan-id> --yes --json"`,
+		`"snapshot_required":true`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("api routes --json release core discovery missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPIWorkbenchStatusCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Workbench", "--json")
+	out := runCLI(t, "api", "status", "--vault", root, "--json")
+	for _, want := range []string{`"command":"workbench.status"`, `"ui_group":"workbench.status"`, `"vault_root":"` + root + `"`, `"index_status"`, `"write_mode":"local_cli"`, `"body_exposure_default":"none"`, `"pinax index refresh --vault `} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("api status missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Authorization") || strings.Contains(out, "Bearer ") || strings.Contains(out, "raw prompt") {
+		t.Fatalf("api status leaked sensitive text:\n%s", out)
+	}
+}

@@ -40,7 +40,19 @@ func addConfigCommands(root *cobra.Command, ctx commandBuildContext) {
 			projection := domain.NewProjection("config.get", fmt.Sprintf("%s = %s", key, value))
 			projection.Facts["key"] = key
 			projection.Facts["value"] = value
-			projection.Data = map[string]string{"key": key, "value": value}
+			projection.Data = map[string]any{"key": key, "value": value}
+			if setting, ok := configSetting(*ctx.configResult, key); ok {
+				projection.Facts["source"] = setting.Source
+				projection.Facts["writable"] = fmt.Sprint(setting.Writable)
+				projection.Facts["write_scope"] = setting.WriteScope
+				if len(setting.WritableScopes) > 0 {
+					projection.Facts["write_scopes"] = strings.Join(setting.WritableScopes, ",")
+				}
+				projection.Data = map[string]any{"key": key, "value": value, "setting": setting}
+				if setting.NextAction != "" {
+					projection.Actions = []domain.Action{{Name: "set", Command: setting.NextAction}}
+				}
+			}
 			return ctx.renderProjection(cmd, projection, nil)
 		},
 	})
@@ -56,7 +68,20 @@ func addConfigCommands(root *cobra.Command, ctx commandBuildContext) {
 			projection.Facts["output.color"] = ctx.configResult.Config.Output.Color
 			projection.Facts["output.theme"] = ctx.configResult.Config.Output.Theme
 			projection.Facts["output.width"] = fmt.Sprint(ctx.configResult.Config.Output.Width)
-			projection.Data = map[string]any{"config": ctx.configResult.Config, "sources": ctx.configResult.Sources, "paths": paths}
+			diagnostics := map[string]string{
+				"local_api_status":      configuredStatus(ctx.configResult.Config.Remote.APIURL),
+				"remote_api_source":     configSourceForKey(*ctx.configResult, "remote.api_url"),
+				"write_mode":            "local_config_write_requires_scope",
+				"redaction_status":      "enabled",
+				"profile_status":        "not_inspected",
+				"token_status":          "not_inspected",
+				"secret_ref_boundary":   "no_plaintext_secret_values",
+				"body_exposure_default": "none",
+			}
+			for key, value := range diagnostics {
+				projection.Facts[key] = value
+			}
+			projection.Data = map[string]any{"config": ctx.configResult.Config, "sources": ctx.configResult.Sources, "paths": paths, "settings": ctx.configResult.Settings, "diagnostics": diagnostics}
 			return ctx.renderProjection(cmd, projection, nil)
 		},
 	})
@@ -106,6 +131,29 @@ func addConfigCommands(root *cobra.Command, ctx commandBuildContext) {
 	configCmd.AddCommand(unsetCmd)
 
 	root.AddCommand(configCmd)
+}
+
+func configSetting(result pinaxconfig.LoadResult, key string) (pinaxconfig.SettingProjection, bool) {
+	for _, setting := range result.Settings {
+		if setting.Key == key {
+			return setting, true
+		}
+	}
+	return pinaxconfig.SettingProjection{}, false
+}
+
+func configSourceForKey(result pinaxconfig.LoadResult, key string) string {
+	if setting, ok := configSetting(result, key); ok {
+		return setting.Source
+	}
+	return "unknown"
+}
+
+func configuredStatus(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "not_configured"
+	}
+	return "configured"
 }
 
 func currentConfigPaths(ctx commandBuildContext) pinaxconfig.Paths {

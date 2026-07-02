@@ -1,0 +1,125 @@
+# Unified workspace smoke flow across workspace, tasks, database tabs, graph, assets, API discovery, MCP, and publish plan.
+env PINAX_TEST_NOW=2026-06-25T10:00:00Z
+
+exec mkdir -p vault/notes vault/assets vault/daily
+exec sh -c 'pinax init vault --title Unified --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+
+exec sh -c 'pinax project create research --name Research --notes-prefix notes/research --vault vault --json > project.json'
+validate-json-envelope project.json
+exec sh -c 'pinax project subproject create research stock-learning --title "Stock Learning" --template scenario --vault vault --json > workspace.json'
+validate-json-envelope workspace.json
+exec grep -q '"command":"project.subproject.create"' workspace.json
+exec grep -q '"workspace.path":"notes/projects/research/stock-learning"' workspace.json
+
+exec sh -c 'pinax project item add research "Managed Followup" --subproject stock-learning --column next --due-at 2026-06-25 --vault vault --json > managed-task.json'
+validate-json-envelope managed-task.json
+exec grep -q '"command":"project.item.add"' managed-task.json
+
+exec sh -c 'pinax project item add research "Blocked Integration" --subproject stock-learning --column blocked --due-at 2026-06-24 --vault vault --json > blocked-task.json'
+validate-json-envelope blocked-task.json
+exec sh -c 'pinax project item add research "Review Notes" --subproject stock-learning --column review --vault vault --json > review-task.json'
+validate-json-envelope review-task.json
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_inline_tasks" "title: Inline Tasks" "project: research" "status: active" "kind: reference" "tags: [unified]" "publish: public" "---" "" "# Inline Tasks" "" "- [ ] Adopt this checklist task due:: 2026-06-25 priority:: high" "" "See [[Beta Note]] and ![[assets/diagram.png]]." "![[assets/missing.png]]" > vault/notes/inline-tasks.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_beta" "title: Beta Note" "status: active" "tags: [unified]" "publish: public" "---" "" "# Beta Note" "" "Backlink target." > vault/notes/beta.md'
+exec sh -c 'printf "%s" "png" > vault/assets/diagram.png'
+exec sh -c 'printf "%s" "orphan" > vault/assets/orphan.pdf'
+
+exec sh -c 'pinax index refresh --vault vault --json > index.json'
+validate-json-envelope index.json
+
+exec sh -c 'pinax project board show research --subproject stock-learning --note-display card --vault vault --json > board.json'
+validate-json-envelope board.json
+exec grep -q 'Managed Followup' board.json
+
+exec sh -c 'pinax project board show research --note-display card --vault vault --json > project-board.json'
+validate-json-envelope project-board.json
+exec grep -q '"source_status":"inferred"' project-board.json
+
+exec sh -c 'task_id=$(grep -o "task_[A-Za-z0-9_]*" project-board.json | head -1); test -n "$task_id"; pinax task adopt "$task_id" --plan --vault vault --json > adopt-plan.json; pinax task adopt "$task_id" --yes --vault vault --json > adopt-apply.json'
+validate-json-envelope adopt-plan.json
+validate-json-envelope adopt-apply.json
+exec grep -q '"writes":"false"' adopt-plan.json
+exec grep -q '"writes":"true"' adopt-apply.json
+exists vault/.pinax/task-adoptions
+
+exec sh -c 'pinax project board show research --subproject stock-learning --note-display card --vault vault --json > board-after-adopt.json'
+validate-json-envelope board-after-adopt.json
+exec sh -c 'pinax project board show research --note-display card --vault vault --json > project-board-after-adopt.json'
+validate-json-envelope project-board-after-adopt.json
+exec grep -q '"source_status":"adopted"' project-board-after-adopt.json
+
+exec sh -c 'pinax database view save table-active --display table --query "SELECT title, status FROM notes WHERE status = \"active\" LIMIT 10" --vault vault --json > table-save.json'
+validate-json-envelope table-save.json
+exec sh -c 'pinax database view save board-status --display board --query "SELECT title, status FROM notes LIMIT 10" --board-column status --vault vault --json > board-save.json'
+validate-json-envelope board-save.json
+exec sh -c 'pinax database view save calendar-due --display calendar --query "SELECT title, due FROM notes LIMIT 10" --calendar-field due --vault vault --json > calendar-save.json'
+validate-json-envelope calendar-save.json
+! exec grep -q '"rows"' vault/.pinax/views.json
+
+exec sh -c 'pinax database view render table-active --vault vault --json > table-render.json'
+validate-json-envelope table-render.json
+exec grep -q '"database_tab"' table-render.json
+exec grep -q '"database.display":"table"' table-render.json
+exec sh -c 'pinax database view render board-status --vault vault --json > board-render.json'
+validate-json-envelope board-render.json
+exec grep -q '"display":"board"' board-render.json
+exec sh -c 'pinax database view render calendar-due --vault vault --json > calendar-render.json'
+validate-json-envelope calendar-render.json
+exec grep -q '"display":"calendar"' calendar-render.json
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_dashboard" "title: Unified Dashboard" "status: active" "---" "" "# Unified Dashboard" "" "\`\`\`pinax-database-view table-active" "\`\`\`" "" "\`\`\`pinax-database-view calendar-due" "\`\`\`" "" "manual dashboard text" > vault/notes/dashboard.md'
+exec sh -c 'pinax note show "Unified Dashboard" --view rendered --vault vault --json > dashboard-rendered.json'
+validate-json-envelope dashboard-rendered.json
+exec grep -q '"database_tabs":"2"' dashboard-rendered.json
+exec grep -q '"name":"table-active"' dashboard-rendered.json
+exec grep -q 'manual dashboard text' dashboard-rendered.json
+! exec grep -q '"rows"' vault/.pinax/views.json
+
+exec sh -c 'pinax journal daily show --date 2026-06-25 --template journal.daily --vault vault --json > daily.json'
+validate-json-envelope daily.json
+exec sh -c 'pinax plan daily --task-review --yes --vault vault --json > daily-review.json'
+validate-json-envelope daily-review.json
+exec grep -q '"managed_block":"daily-task-review"' daily-review.json
+exec grep -q 'Managed Followup' vault/daily/2026-06-25.md
+exec grep -q 'Blocked Integration' vault/daily/2026-06-25.md
+exec grep -q 'Review Notes' vault/daily/2026-06-25.md
+
+exec sh -c 'pinax note backlinks "Beta Note" --vault vault --json > backlinks.json'
+validate-json-envelope backlinks.json
+exec grep -q 'notes/inline-tasks.md' backlinks.json
+exec sh -c 'pinax note links "Inline Tasks" --vault vault --json > graph.json'
+validate-json-envelope graph.json
+exec grep -q '"compat.wikilink":"supported"' graph.json
+
+exec sh -c 'pinax asset missing --vault vault --json > asset-missing.json'
+validate-json-envelope asset-missing.json
+exec grep -q 'assets/missing.png' asset-missing.json
+exec sh -c 'pinax asset orphans --vault vault --json > asset-orphans.json'
+validate-json-envelope asset-orphans.json
+exec grep -q 'assets/orphan.pdf' asset-orphans.json
+
+exec sh -c 'pinax api routes --vault vault --json > api-routes.json'
+validate-json-envelope api-routes.json
+exec grep -q 'database.view.render' api-routes.json
+exec grep -q '/v1/database/views/{name}:render' api-routes.json
+exec grep -q 'task.adopt' api-routes.json
+exec grep -q 'graph.summary' api-routes.json
+
+exec sh -c 'printf "%s\n" "{\"id\":1,\"method\":\"tools/list\"}" "{\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"pinax.database.view.render\",\"arguments\":{\"name\":\"table-active\"}}}" | pinax mcp serve --vault vault > mcp.jsonl'
+exec grep -q 'pinax.database.view.render' mcp.jsonl
+exec grep -q 'database_tab' mcp.jsonl
+
+! exec pinax --api-url http://127.0.0.1:9 version --json
+stdout 'remote_command_unsupported'
+
+exec sh -c 'pinax publish profile init public --target github-pages --renderer hugo --title Unified --base-url https://example.invalid/ --theme builtin:pinax-encyclopedia --vault vault --json > publish-init.json'
+validate-json-envelope publish-init.json
+exec sh -c 'pinax publish plan --profile public --target github-pages --vault vault --json > publish-plan.json'
+validate-json-envelope publish-plan.json
+exec grep -q 'Inline Tasks' publish-plan.json
+exec grep -q 'Beta Note' publish-plan.json
+
+! exec grep -R 'Authorization: Bearer\|raw prompt\|provider payload\|hidden system prompt\|private tool arguments\|full chain-of-thought\|正文不能进 card' *.json *.jsonl vault/.pinax

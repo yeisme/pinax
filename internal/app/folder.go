@@ -20,6 +20,7 @@ const folderRegistrySchemaVersion = "pinax.folders.v1"
 type FolderListRequest struct {
 	VaultPath    string
 	Purpose      string
+	Under        string
 	IncludeEmpty bool
 	Depth        int
 }
@@ -55,13 +56,25 @@ func (s *Service) ListFolders(_ context.Context, req FolderListRequest) (domain.
 	if purposeErr != nil {
 		return domain.NewErrorProjection("folder.list", purposeErr), purposeErr
 	}
-	folders, err := collectFolders(root, req.IncludeEmpty, req.Depth)
+	under := ""
+	if strings.TrimSpace(req.Under) != "" {
+		var pathErr *domain.CommandError
+		under, pathErr = validateVaultFolderPath(req.Under)
+		if pathErr != nil {
+			return domain.NewErrorProjection("folder.list", pathErr), pathErr
+		}
+	}
+	collectDepth := req.Depth
+	if under != "" {
+		collectDepth = 0
+	}
+	folders, err := collectFolders(root, req.IncludeEmpty, collectDepth)
 	if err != nil {
 		return errorProjection("folder.list", err), err
 	}
 	filtered := make([]domain.FolderInfo, 0, len(folders))
 	for _, folder := range folders {
-		if folderPurposeMatches(purpose, folder.Purpose) {
+		if folderPurposeMatches(purpose, folder.Purpose) && folderUnderPathMatches(folder.Path, under, req.Depth) {
 			filtered = append(filtered, folder)
 		}
 	}
@@ -69,10 +82,13 @@ func (s *Service) ListFolders(_ context.Context, req FolderListRequest) (domain.
 	projection.Facts["folders"] = fmt.Sprint(len(filtered))
 	projection.Facts["filter.purpose"] = purpose
 	projection.Facts["include_empty"] = fmt.Sprint(req.IncludeEmpty)
+	if under != "" {
+		projection.Facts["filter.under"] = under
+	}
 	if req.Depth > 0 {
 		projection.Facts["depth"] = fmt.Sprint(req.Depth)
 	}
-	projection.Data = map[string]any{"folders": filtered, "purpose": purpose, "include_empty": req.IncludeEmpty}
+	projection.Data = map[string]any{"folders": filtered, "purpose": purpose, "under": under, "include_empty": req.IncludeEmpty}
 	return projection, nil
 }
 
@@ -91,9 +107,13 @@ func (s *Service) ShowFolder(_ context.Context, req FolderRequest) (domain.Proje
 	}
 	for _, folder := range folders {
 		if folder.Path == folderPath {
+			children := immediateChildFolders(folders, folderPath)
+			descendants := descendantFolderCount(folders, folderPath)
 			projection := domain.NewProjection("folder.show", "Folder details read.")
 			setFolderFacts(projection.Facts, folder)
-			projection.Data = map[string]any{"folder": folder}
+			projection.Facts["child_folders"] = fmt.Sprint(len(children))
+			projection.Facts["descendant_folders"] = fmt.Sprint(descendants)
+			projection.Data = map[string]any{"folder": folder, "children": children, "child_count": len(children), "descendant_count": descendants}
 			return projection, nil
 		}
 	}
@@ -817,6 +837,43 @@ func normalizeFolderPurpose(raw string, fallback domain.FolderPurpose) (domain.F
 
 func folderPurposeMatches(filter string, purpose domain.FolderPurpose) bool {
 	return filter == "" || filter == "all" || filter == string(purpose)
+}
+
+func folderUnderPathMatches(path, under string, maxRelativeDepth int) bool {
+	if under == "" {
+		return true
+	}
+	if path != under && !strings.HasPrefix(path, under+"/") {
+		return false
+	}
+	if maxRelativeDepth <= 0 {
+		return true
+	}
+	return folderDepth(path)-folderDepth(under) <= maxRelativeDepth
+}
+
+func immediateChildFolders(folders []domain.FolderInfo, parent string) []domain.FolderInfo {
+	children := make([]domain.FolderInfo, 0)
+	for _, folder := range folders {
+		if folder.Path == parent || !strings.HasPrefix(folder.Path, parent+"/") {
+			continue
+		}
+		if folderDepth(folder.Path)-folderDepth(parent) == 1 {
+			children = append(children, folder)
+		}
+	}
+	sort.Slice(children, func(i, j int) bool { return children[i].Path < children[j].Path })
+	return children
+}
+
+func descendantFolderCount(folders []domain.FolderInfo, parent string) int {
+	count := 0
+	for _, folder := range folders {
+		if folder.Path != parent && strings.HasPrefix(folder.Path, parent+"/") {
+			count++
+		}
+	}
+	return count
 }
 
 func inferFolderPurpose(info domain.FolderInfo) domain.FolderPurpose {

@@ -95,6 +95,32 @@ func TestCLIRemoteModeForwardsSupportedCommands(t *testing.T) {
 	}
 }
 
+func TestCLIRemoteModeForwardsDatabaseViewRender(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rpc" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected remote request %s %s", r.Method, r.URL.Path)
+		}
+		var req struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode remote request: %v", err)
+		}
+		if req.Method != "Pinax.DatabaseView.Render" || req.Params["name"] != "active-tab" {
+			t.Fatalf("remote request = %#v", req)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"spec_version": "1.0", "mode": "json", "command": "database.view.render", "status": "success", "facts": map[string]string{"database_tab.name": "active-tab"}, "data": map[string]any{"database_tab": map[string]any{"name": "active-tab"}}})
+	}))
+	defer server.Close()
+
+	out := runCLI(t, "--api-url", server.URL, "database", "view", "render", "active-tab", "--json")
+	assertJSONCommandStatus(t, out, "database.view.render", "success")
+	if !strings.Contains(out, `"database_tab"`) {
+		t.Fatalf("remote database view output missing tab projection: %s", out)
+	}
+}
+
 func TestCLIRemoteModeEnvironmentAndAgentOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -238,6 +264,19 @@ func TestApplyHelpDocumentsSafetyFlags(t *testing.T) {
 	for _, want := range []string{"--yes", "--snapshot-message", "saved and reviewed plan from pinax organize plan --save", "version snapshot"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("organize apply help missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestProofLoopRunHelpDocumentsPrimaryPath(t *testing.T) {
+	out := runCLI(t, "proof", "loop", "run", "--help")
+	for _, want := range []string{
+		"pinax proof loop run --vault ./my-notes --json",
+		"pinax proof loop run --vault ./my-notes --apply --yes --json",
+		"proof_loop_run_id",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("proof loop run help missing %q:\n%s", want, out)
 		}
 	}
 }

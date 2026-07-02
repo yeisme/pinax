@@ -1,8 +1,14 @@
 # sync Command
 
-`pinax sync` generates, records, and executes sync plans. It is intended for short-lived CLI workflows, not as a long-running daemon.
+`pinax sync` generates, records, and executes sync plans. Explicit `diff`/`push`/`pull` commands are short-lived workflows; `pinax sync daemon` is the local long-running process for automatic Cloud Sync.
 
-For `--target cloud`, the protocol is distributed: every device keeps a local Markdown vault, and the selected Cloud Sync transport coordinates encrypted blob, manifest, and revision exchange. The transport can be Pinax Cloud Server, S3-compatible direct storage, rclone direct storage, or embedded Go API/local RPC. This differs from `pinax api serve`, which is centralized remote access to one server-side vault.
+For `--target cloud`, the protocol is distributed: every device keeps a local vault, and the selected Cloud Sync transport coordinates encrypted blob, manifest, and revision exchange. The content manifest is selected by `.pinaxignore` and can include Markdown, scripts, assets, attachments, and other regular files. The transport can be Pinax Cloud Server, S3-compatible direct storage, rclone direct storage, or embedded Go API/local RPC. This differs from `pinax api serve`, which is centralized remote access to one server-side vault.
+
+Project and subproject deletions are represented as explicit encrypted delete markers in the manifest. A deletion is not inferred from a missing file entry. Push reports additive `delete_markers` and `trash_backup_blobs` facts, and `remote_write=true` is still emitted only after the selected transport commits the revision.
+
+When docs or operator notes use the phrase backup mirror, it means a CLI-side direct transport mirror of encrypted Cloud Sync objects under a user-controlled provider boundary. S3 direct and rclone direct do not become Pinax Cloud server-side storage: provider credentials own access, and Pinax does not provide server-side auth, audit, object lifecycle, tenant policy, or rate limiting for those writes. Pinax Cloud server transport is the path that owns server auth/audit/object lifecycle semantics.
+
+The backup mirror boundary also excludes realtime daemon and conflict policy changes. `pinax sync daemon` remains the local realtime automation layer, and conflict inspection/resolution remains under explicit `pinax sync conflicts` commands. New daemon lifecycle behavior, automatic merge behavior, conflict resolution semantics, or transport-specific push notifications need separate OpenSpec coverage before implementation.
 
 ## Subcommands
 
@@ -11,6 +17,11 @@ For `--target cloud`, the protocol is distributed: every device keeps a local Ma
 | `pinax sync diff` | Generates a sync diff plan. | Does not write to the remote. |
 | `pinax sync push` | Pushes local encrypted manifest/blob changes when the selected transport can commit a durable revision. | Requires `--yes`; `remote_write=true` is allowed only after revision commit succeeds. |
 | `pinax sync pull` | Pulls the committed remote revision and applies decrypted local changes. | Requires `--yes`; preserves conflicting local edits as `.conflict.md` copies. |
+| `pinax sync daemon run` | Runs the local sync daemon in the foreground. | Requires `--yes`; watches local changes and polls remote head. |
+| `pinax sync daemon start` | Starts the local sync daemon in the background. | Requires `--yes`; writes `.pinax/sync-daemon/` runtime state. |
+| `pinax sync daemon status` | Reads local daemon state. | Read-only. |
+| `pinax sync daemon stop` | Requests graceful daemon shutdown. | Writes a local stop request. |
+| `pinax sync daemon logs` | Reads redacted daemon events. | Read-only. |
 | `pinax sync conflicts list` | Lists local conflict copies. | Read-only. |
 | `pinax sync conflicts diff <file>` | Shows a diff between a conflict copy and its trunk file. | Read-only. |
 | `pinax sync conflicts show <file>` | Shows conflict content for manual or agent merge workflows. | Read-only. |
@@ -21,6 +32,7 @@ For `--target cloud`, the protocol is distributed: every device keeps a local Ma
 Inspect a plan without writing:
 
 ```bash
+pinax vault ignore status --vault ./my-notes --json
 pinax sync diff --target cloud --vault ./my-notes --json
 pinax sync push --target cloud --vault ./my-notes --dry-run --json
 ```
@@ -58,6 +70,14 @@ pinax sync push --target cloud --vault ./device-a --yes --json
 pinax sync pull --target cloud --vault ./device-b --yes --json
 ```
 
+Delete markers are produced by CLI-authored trash commands before sync:
+
+```bash
+pinax project delete history --vault ./device-a --yes --json
+pinax trash list --vault ./device-a --json
+pinax sync push --target cloud --vault ./device-a --yes --json
+```
+
 Configure server and rclone backends; a push claims a completed write only after the selected transport commits a durable revision:
 
 ```bash
@@ -68,14 +88,33 @@ pinax cloud backend set rclone --remote onedrive:PinaxSync --workspace personal 
 pinax sync push --target cloud --vault ./my-notes --yes --json
 ```
 
+Run local automatic sync after Cloud Sync is configured:
+
+```bash
+pinax sync daemon run --target cloud --vault ./my-notes --yes
+pinax sync daemon status --vault ./my-notes --json
+pinax sync daemon logs --vault ./my-notes --limit 20 --json
+pinax sync daemon stop --vault ./my-notes
+```
+
+`run` stays in the foreground and handles terminal/process shutdown. It performs one startup pull-before-push sync cycle immediately, then continues watching local changes and polling the remote head. Default human output prints live progress lines; use `--events` for NDJSON streaming automation while `--json` remains a final single-envelope output.
+
+`start` launches the same runner in the background where supported:
+
+```bash
+pinax sync daemon start --target cloud --vault ./my-notes --yes
+```
+
+The first daemon release detects local file changes with a local watcher and detects remote changes by polling the Cloud Sync head. Redacted daemon state and event logs live under `.pinax/sync-daemon/` and can be inspected with `pinax sync daemon logs --vault ./my-notes --limit 20 --json`. It is a local process, not a hosted service, and it does not change the Cloud Sync plaintext boundary: transports still coordinate encrypted blobs, encrypted manifests, and revision metadata only.
+
 These apply commands use the same sync engine as direct object-store transports. If the selected backend is unavailable, the commit fails, or the configured scheme is unsupported, the command must return a structured partial/error such as `transport_unavailable`, `unsupported_scheme`, or `revision_conflict` with `remote_write=false`. It must not silently no-op, produce a dummy revision, or emit `remote_write=true`.
 
 ## Cloud Sync execution model
 
 The target execution flow is transport-independent:
 
-1. Scan the local vault and build a client-side manifest.
-2. Encrypt note blobs and manifest metadata before upload.
+1. Scan the local vault and build a client-side manifest from files allowed by `.pinaxignore`.
+2. Encrypt content blobs and manifest metadata before upload.
 3. Ask the selected transport which encrypted blobs are missing.
 4. Upload missing encrypted blobs and the encrypted manifest object.
 5. Commit the new revision with compare-and-swap against the known base revision.
@@ -84,6 +123,8 @@ The target execution flow is transport-independent:
 8. Conflicting local edits are preserved as local conflict copies instead of being silently overwritten.
 
 `remote_write=true` belongs only to step 5 after a durable revision commit. It is not valid for dry-runs, plan generation, blob uploads, manifest uploads, conflict failures, unsupported transports, or pull operations.
+
+The daemon uses the same rule. It may call `sync pull` before `sync push` when the remote head is newer, and it stops automatic writes with `conflict_required` if pull creates conflict copies that need user review.
 
 ## Conflict workflow
 
@@ -107,6 +148,10 @@ Conflict output and next actions must be consumable by humans and agents. Note b
 
 Pinax Cloud Server is one Cloud Sync transport and owns auth/device state, revision CAS, blob persistence, audit, and readiness. S3/rclone direct transports skip the remote Pinax Cloud service and use provider credentials as the access boundary. Embedded Go API/local RPC calls the same app service as the CLI and does not bypass approval, dry-run, snapshot, conflict, event, or redaction rules.
 
+S3 direct can serve as a backup mirror for encrypted Cloud Sync objects, but it remains a direct object-store transport. It must not be documented as Pinax Cloud server-side storage, and backup mirror wording must not promise daemon convergence or conflict resolution without a separate OpenSpec change.
+
 `pinax api serve` is not a Cloud Sync transport. It exposes one centralized vault through local REST/RPC and is useful for dashboards and local agents that intentionally operate against that vault.
 
-See [`docs/architecture/cloud-sync-design.md`](../architecture/cloud-sync-design.md) for the architecture split.
+Client CLI parity does not replace the daemon. Remote API Mode can let a client trigger supported explicit sync operations through registered RPC capabilities, but realtime multi-device convergence should run `pinax sync daemon` on each device that owns a local vault.
+
+See [`docs/architecture/cloud-sync-design.md`](../architecture/cloud-sync-design.md) for the architecture split. See [Client CLI Parity and Realtime Sync](../interfaces/client-cli-parity-and-sync.md) for the client coverage boundary. See also [`api`](./api.md), [`token`](./token.md), and [`profile`](./profile.md) for Remote API Mode.

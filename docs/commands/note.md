@@ -28,7 +28,14 @@ pinax note add "Meeting Notes" --stdin --vault ./my-notes
 pinax note list --tag research --recent --limit 20 --vault ./my-notes
 pinax note show "Research Log" --view source --vault ./my-notes
 pinax note show "Research Log" --view rendered --vault ./my-notes
+pinax note read "Research Log" --display card --vault ./my-notes --json
+pinax note read "Research Log" --display body --vault ./my-notes --json
+pinax note preview "Research Log" --vault ./my-notes
 ```
+
+`note read|show --display card|detail|context` returns bounded note metadata, excerpts, and `agent_context` without exposing the full note body. `--display body` is the explicit body exposure mode for source editing and review. Agent output stays compact and should not include full body content unless the caller explicitly selected body mode through JSON/detail workflows.
+
+`note preview` is optimized for direct reading. In default human mode it renders the preview body only; it does not print a separate success table such as `Local note read.`. If the rendered body is empty, a successful preview is silent. Use `--json` or `--agent` when automation needs the success envelope, note path, resolver facts, or render metadata.
 
 ## Individual Note Maintenance
 
@@ -46,6 +53,12 @@ Tag writes only accept safe tags: letters, digits, English words, `_`, `-`, `/`;
 After `note tag` succeeds, it updates Markdown frontmatter, appends a record ledger metadata event, and refreshes the local index. `--json` and `--agent` output stable facts such as `record_event`, `ledger_seq`, `record_version`, `index_updated`, or `index_status`, making it convenient for automation to decide whether `pinax index rebuild --vault <vault>` is needed next.
 
 When creating a note with `--template`, the v2 note template's `defaults.kind`, `defaults.status`, and `output.path_pattern` are used as defaults; explicit CLI arguments take precedence.
+
+For long-lived GitHub repository source cards, use the built-in `source.github` template. It writes an ordinary Markdown note under `sources/github/` with `kind: source` and source-oriented tags; see [Durable Source Notes](../overview/durable-source-notes.md) for the storage and review workflow.
+
+```bash
+pinax note add "iptv-org/iptv" --template source.github --var url=https://github.com/iptv-org/iptv --vault ./my-notes --json
+```
 
 ## Links and Attachments
 

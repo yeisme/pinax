@@ -88,31 +88,26 @@ Pinax SHALL expose local organization dimensions as first-class readable views u
 ### Requirement: Links and backlinks are inspectable
 Pinax SHALL let users inspect note links, backlinks, orphan notes, unresolved references, ambiguous references, and local bidirectional graph facts from local Markdown content.
 
-#### Scenario: Show note outgoing links
-- **WHEN** a user runs `pinax note links note_123 --vault ./my-notes --json`
-- **THEN** Pinax SHALL return wiki links and Markdown note links found in the note body
-- **AND** each link SHALL include source path, target text, link kind, resolved target path when available, broken status, ambiguous status, alias when available, heading when available, and line number when available.
+#### Scenario: Wiki links preserve alias and heading
+- **WHEN** a note contains `[[Title|Alias]]`, `[[Title#Heading]]`, or `[[Title#Heading|Alias]]`
+- **THEN** `pinax note links <note> --vault ./my-notes --json` SHALL return wiki link edges
+- **AND** each edge SHALL preserve raw target, normalized target, alias when present, heading when present, link kind, line number, and resolution status.
 
-#### Scenario: Show note backlinks
-- **WHEN** a user runs `pinax note backlinks note_123 --vault ./my-notes --json`
-- **THEN** Pinax SHALL return notes that link to the target note by note id, vault-relative path, exact title, unique case-insensitive title, or wiki reference
-- **AND** it SHALL include stable facts for backlink count, resolved count, broken count, ambiguous count, and unresolved count.
+#### Scenario: Ambiguous wiki targets are not guessed
+- **GIVEN** multiple notes can satisfy the same title, alias, or filename stem
+- **WHEN** a note links to that target with `[[Target]]`
+- **THEN** Pinax SHALL mark the link edge as `ambiguous`
+- **AND** the edge SHALL include candidate paths or note ids without selecting one automatically.
 
-#### Scenario: Show ambiguous backlink candidates
-- **WHEN** a target reference could match multiple notes
-- **AND** a user runs `pinax note backlinks <target> --vault ./my-notes --json`
-- **THEN** Pinax SHALL fail or return partial graph facts with stable error code `note_ref_ambiguous` or `link_target_ambiguous`
-- **AND** the projection SHALL include candidate paths or note ids without selecting one automatically.
+#### Scenario: Non-note wiki embeds do not become broken note links
+- **WHEN** a note contains `![[image.png]]` or wiki-style non-Markdown asset references
+- **THEN** Pinax SHALL NOT count those references as broken note graph edges
+- **AND** asset reference handling MAY report them through asset projections instead.
 
-#### Scenario: List orphan notes
-- **WHEN** a user runs `pinax note orphans --vault ./my-notes --json`
-- **THEN** Pinax SHALL list notes with no incoming and no outgoing note links by default
-- **AND** system index notes SHALL NOT be counted as ordinary orphans.
-
-#### Scenario: Classify partial orphans
-- **WHEN** a user runs `pinax note orphans --mode no-incoming --vault ./my-notes --json` or `pinax note orphans --mode no-outgoing --vault ./my-notes --json`
-- **THEN** Pinax SHALL list notes matching the selected orphan class
-- **AND** stdout facts SHALL include the selected mode and returned count.
+#### Scenario: Link repair remains reviewable
+- **WHEN** `pinax repair plan --vault ./my-notes --json` detects a broken or ambiguous note link
+- **THEN** the plan SHALL use `manual_review` operations such as `link_resolution` or `link_rewrite`
+- **AND** Pinax SHALL NOT automatically rewrite the Markdown body.
 
 ### Requirement: Attachments are managed inside the vault
 Pinax SHALL let users attach local files to notes while keeping attachments inside the vault boundary.
@@ -263,29 +258,58 @@ Pinax SHALL provide task-oriented built-in note templates that create useful not
 - **THEN** Pinax SHALL create registered notes under `learning/` or `research/`
 - **AND** each template SHALL include sections that support later review, evidence capture, conclusions, and next steps.
 
+#### Scenario: Parked idea seed template creates an idea note
+- **WHEN** a user runs `pinax note add "某篇小说是怎么写成的" --template idea.research_seed --vault ./my-notes --json`
+- **THEN** Pinax SHALL create a Markdown note under `ideas/research/`
+- **AND** the note frontmatter SHALL include `kind: idea`, `status: parked`, and tags including `idea` and `research-seed`
+- **AND** the template body SHALL use Chinese headings for trigger, value, questions, leads, and related notes without creating todo checkboxes.
+
+#### Scenario: Sticky template creates a short inbox note
+- **WHEN** a user runs `pinax note add "临时线索" --template sticky.capture --vault ./my-notes --json`
+- **THEN** Pinax SHALL create a Markdown note under `inbox/sticky/`
+- **AND** the note frontmatter SHALL include `kind: sticky`, `status: inbox`, and tags including `sticky` and `capture`
+- **AND** the template body SHALL remain a short capture note without creating todo checkboxes, `board_column`, or managed project item metadata.
+
+#### Scenario: Sticky project signal keeps project context without becoming a board item
+- **WHEN** a user runs `pinax note add "子项目看板线索" --template sticky.project_signal --project research --folder inbox --vault ./my-notes --json`
+- **THEN** Pinax SHALL create a Markdown note in the project inbox path
+- **AND** the note SHALL keep `kind: sticky` and `status: inbox`
+- **AND** it SHALL NOT write `board_column` or `kind: task`; creating a movable board item SHALL continue to require `pinax project item add`.
+
+#### Scenario: Ideas index template creates a managed index page
+- **WHEN** a user runs `pinax index page create ideas --template index.ideas --vault ./my-notes --json`
+- **THEN** Pinax SHALL create a managed index page for notes where `kind` is `idea` and `status` is `parked`.
+
 #### Scenario: Explicit note fields override template defaults
 - **WHEN** a user runs `pinax note add "Later idea" --template inbox.capture --kind reference --status active --dir custom --vault ./my-notes --json`
 - **THEN** Pinax SHALL prefer explicit CLI fields over template defaults and output path pattern
 - **AND** stdout SHALL include facts showing the effective path, kind, status, and template name.
 
 ### Requirement: Template recommendation helps users choose templates
-Pinax SHALL let users discover templates by intent, use case, pack, and starter status without requiring memorized template names.
 
-#### Scenario: List starter templates first
-- **WHEN** a user runs `pinax template list --pack starter --vault ./my-notes --json`
-- **THEN** Pinax SHALL list starter templates such as `note.quick`, `inbox.capture`, `meeting.notes`, `decision.record`, and `project.brief`
-- **AND** each item SHALL include template name, kind, source, use cases, output path pattern, starter status, and one recommended next action.
+Pinax SHALL recommend workflow starters from local template metadata by intent, use case, pack, lifecycle, and readiness without requiring memorized template names or external provider calls.
 
-#### Scenario: Recommend template by intent
+#### Scenario: Recommend workflow starter by intent
+
 - **WHEN** a user runs `pinax template recommend --intent meeting --vault ./my-notes --json`
-- **THEN** Pinax SHALL return `meeting.notes` as the primary recommendation or an equivalent meeting template
-- **AND** it SHALL include at most three alternatives
-- **AND** it SHALL NOT call external providers, execute templates, execute SQL, write `.pinax` state, write Markdown, or access the network.
+- **THEN** Pinax SHALL return a primary recommendation such as `meeting.notes` and at most three alternatives
+- **AND** the JSON output SHALL preserve existing envelope, facts, actions, and template fields
+- **AND** the recommendation MAY include optional workflow fields for `scenario_id`, `maturity`, `pack`, `fit_reason`, `preview_command`, `create_command`, `proof_gate`, and `after_create_actions`
+- **AND** it SHALL NOT call external providers, execute templates, execute SQL, write `.pinax` state, write Markdown, mutate Git state, or access the network.
 
-#### Scenario: Recommendation falls back to capture templates
+#### Scenario: Recommend conservative fallback with next command
+
 - **WHEN** a user runs `pinax template recommend --intent unknown-intent --vault ./my-notes --json`
-- **THEN** Pinax SHALL return a conservative fallback such as `note.quick` or `inbox.capture`
-- **AND** it SHALL include a real command the user can run next.
+- **THEN** Pinax SHALL return a conservative capture workflow such as `note.quick`, `inbox.capture`, or `sticky.capture`
+- **AND** the recommendation SHALL include a real preview or create command the user can run next
+- **AND** it SHALL mark the fit as fallback or low confidence without inventing an unsupported scenario.
+
+#### Scenario: Agent output remains stable while recommendation grows
+
+- **WHEN** a user runs `pinax template recommend --intent "便签" --vault ./my-notes --agent`
+- **THEN** stdout SHALL remain stable key=value output
+- **AND** new workflow fields SHALL be added as optional keys such as `recommendation.0.scenario_id` or `recommendation.0.proof_gate`
+- **AND** stdout SHALL NOT include localized prose, raw prompts, provider payloads, secrets, Authorization headers, hidden system prompts, or full chain-of-thought.
 
 ### Requirement: Draft workflow supports reviewable authoring
 
@@ -362,4 +386,228 @@ Pinax SHALL enforce inbox and draft lifecycle transitions through application se
 - **WHEN** Pinax completes an approved inbox or draft lifecycle transition
 - **THEN** it SHALL append a redacted event, append record metadata evidence when record ledger is available, and refresh the local index
 - **AND** stdout SHALL include stable facts for old status, new status, path, writes, record event, and index update status.
+
+### Requirement: Daily journal template SHALL reserve planning managed content
+
+Pinax SHALL provide a stable managed-block location for generated daily planning content while keeping user-authored daily note content editable.
+
+#### Scenario: journal daily template includes planning block
+- **WHEN** a user runs `pinax journal daily open --template journal.daily --vault ./my-notes --json`
+- **THEN** a newly created daily note SHALL include `<!-- pinax:managed name=planning-daily -->`
+- **AND** it SHALL still include the existing `daily-captures` managed block
+
+#### Scenario: existing daily note receives planning block only on approval
+- **GIVEN** today's daily note exists without `planning-daily`
+- **WHEN** the user runs `pinax plan daily --vault ./my-notes --taskbridge --yes --json`
+- **THEN** Pinax MAY append the `planning-daily` managed block to the daily note
+- **AND** it SHALL preserve all existing user-authored content and other managed blocks
+
+#### Scenario: invalid planning block fails closed
+- **GIVEN** today's daily note has duplicate or unclosed `planning-daily` managed block markers
+- **WHEN** the user runs `pinax plan daily --vault ./my-notes --taskbridge --yes --json`
+- **THEN** Pinax SHALL refuse the write with `PLANNING_BLOCK_CONFLICT`
+- **AND** it SHALL include a safe next action rather than guessing an insertion point
+
+### Requirement: Notes MAY belong to a project subproject
+
+Pinax SHALL allow notes and managed project items to carry an optional `subproject` field inside a project while preserving existing project-only note behavior.
+
+#### Scenario: Add note to subproject directory
+- **WHEN** the user runs `pinax note add "Stock Learning Charter" --project research --subproject stock-learning --dir projects/stock-learning/00-charter --body "目标：建立个人股票学习和研究流程。" --vault yeisme-notes --json`
+- **THEN** Pinax SHALL create the note through the application service inside the vault content boundary
+- **AND** frontmatter SHALL include project and subproject facts
+- **AND** `.pinax` structured assets SHALL NOT be hand-written by the caller.
+
+#### Scenario: Project-only notes remain compatible
+- **WHEN** the user runs `pinax note add "Research Log" --project research --vault yeisme-notes --json`
+- **THEN** Pinax SHALL preserve existing project-only behavior
+- **AND** it SHALL NOT require a subproject field.
+
+#### Scenario: Subproject directory cannot escape vault
+- **WHEN** a note command combines `--project`, `--subproject`, and `--dir` with a path that escapes the vault or targets a reserved directory
+- **THEN** Pinax SHALL fail with a stable error code
+- **AND** it SHALL NOT write Markdown, `.pinax` assets, Git state, provider state, or remote state.
+
+### Requirement: Pinax SHALL provide an Obsidian compatibility pack
+
+Pinax SHALL support common Obsidian-style Markdown vault structures as local source material while keeping Pinax-owned metadata, repairs, views, and receipts behind CLI/application service boundaries.
+
+#### Scenario: Obsidian-style vault can be inspected safely
+
+- **GIVEN** a vault contains Markdown notes, wikilinks, aliases, headings, properties/frontmatter, daily notes, attachments, templates, `.obsidian/**`, and plugin metadata
+- **WHEN** the user runs `pinax vault doctor --vault ./my-notes --json`
+- **THEN** Pinax SHALL inspect supported note, link, property, attachment, template, and index facts
+- **AND** it SHALL treat `.obsidian/**` and unknown plugin metadata as non-Pinax-owned inputs unless a future explicit importer is selected
+- **AND** it SHALL NOT rewrite Obsidian config or plugin metadata.
+
+#### Scenario: Link repair is plan-first
+
+- **WHEN** Pinax finds broken, ambiguous, or conflicting wikilinks in an Obsidian-style vault
+- **THEN** `pinax repair plan --vault ./my-notes --json` SHALL report candidates, risks, and proposed edits without modifying note bodies
+- **AND** applying a repair SHALL require explicit approval and snapshot protection according to the normal proof loop.
+
+#### Scenario: Properties remain user-editable Markdown
+
+- **WHEN** a user edits note frontmatter properties in Obsidian or a text editor
+- **THEN** Pinax SHALL read and index those properties as source facts
+- **AND** Pinax SHALL NOT overwrite unknown properties unless a user-approved metadata or repair plan explicitly owns the change.
+
+### Requirement: Obsidian-style graph and backlink facts SHALL be bounded
+
+Pinax SHALL expose graph, backlinks, orphan notes, unresolved references, aliases, headings, and block references as bounded facts suitable for agents and dashboards.
+
+#### Scenario: Backlink projection includes ambiguity facts
+
+- **WHEN** a user runs `pinax note backlinks <target> --vault ./my-notes --json`
+- **THEN** stdout SHALL include backlink count, resolved count, broken count, ambiguous count, candidate paths or note ids when applicable, alias facts when applicable, and index status
+- **AND** it SHALL NOT automatically choose between ambiguous candidates.
+
+#### Scenario: Graph projection is body-safe
+
+- **WHEN** a user runs `pinax graph show --vault ./my-notes --json` or an equivalent graph command
+- **THEN** stdout SHALL include bounded node and edge facts, graph scope, filters, warnings, and next actions
+- **AND** it SHALL NOT include full note bodies, provider payloads, raw prompts, secrets, or hidden system prompts.
+
+### Requirement: Obsidian-compatible workflows SHALL remain local-first
+
+Pinax SHALL let users use Obsidian-like workflows without requiring Obsidian itself, external plugins, cloud services, provider credentials, or network access for core local behavior.
+
+#### Scenario: Daily notes and templates work without external plugins
+
+- **WHEN** the user runs `pinax journal daily open --template journal.daily --vault ./my-notes --json`
+- **THEN** Pinax SHALL create or show a local daily note from inspectable templates
+- **AND** it SHALL NOT require Obsidian, DataviewJS, Templater, Lark, Notion, Pinax Cloud, provider tokens, cookies, or network access.
+
+#### Scenario: Publish plan treats vault as source and output as artifact
+
+- **WHEN** the user runs `pinax publish plan --profile public --target github-pages --vault ./my-notes --json`
+- **THEN** Pinax SHALL plan a generated publish artifact from local vault content and configured profile
+- **AND** GitHub Pages, Wiki, or other publish targets SHALL NOT become the note source of truth.
+
+#### Scenario: Plugin failures cannot replace core behavior
+
+- **WHEN** a Pinax plugin or Obsidian-origin plugin metadata is present but invalid, disabled, or unsupported
+- **THEN** core local commands for note list/show, search, query, backlinks, vault doctor, database view render, project board show, and publish plan SHALL continue to work or return bounded warnings
+- **AND** plugin failure SHALL NOT corrupt Markdown, `.pinax/**`, index, sync state, provider state, or Git state.
+
+### Requirement: Built-in templates cover learning workflows
+Pinax SHALL provide executable built-in note templates for long-term learning projects while keeping templates local-only and safe.
+
+#### Scenario: Generic learning templates are available
+- **WHEN** the user runs `pinax template recommend --intent "术语" --vault ./my-notes --json`
+- **THEN** Pinax SHALL recommend a learning template such as `learning.term`
+- **AND** the template SHALL be executable by `pinax note add <title> --template learning.term --vault ./my-notes --json`.
+
+#### Scenario: Stock learning templates preserve safety boundary
+- **WHEN** the user creates a note with `pinax note add "K线基础" --template learning.stock.indicator --vault ./my-notes --json`
+- **THEN** the note body SHALL frame the content as learning, historical review, simulation, or risk-rule documentation
+- **AND** it SHALL NOT claim to provide investment advice, buy/sell recommendations, guaranteed returns, or automated trading decisions.
+
+### Requirement: Templates are workflow starters
+
+Pinax SHALL treat executable templates as workflow starters that declare intent, scenario, variables, output policy, maturity, proof gate, pack, lifecycle, and after-create actions through local metadata.
+
+#### Scenario: Inspect exposes workflow starter metadata
+
+- **WHEN** a user runs `pinax template inspect meeting.notes --vault ./my-notes --json`
+- **THEN** stdout SHALL contain one JSON envelope with command `template.inspect`
+- **AND** existing facts such as `template`, `template_kind`, `engine`, `path_pattern`, and `source` SHALL remain present
+- **AND** Pinax MAY add optional workflow metadata for `scenario_id`, `intents`, `variable_schema`, `output_policy`, `maturity`, `pack`, `lifecycle`, `proof_gate`, and `after_create_actions`.
+
+#### Scenario: Design drafts are not primary executable recommendations
+
+- **GIVEN** a template declares lifecycle `draft_design`
+- **WHEN** a user runs `pinax template recommend --intent "meeting" --vault ./my-notes --json`
+- **THEN** Pinax SHALL NOT present that draft as the primary executable create path
+- **AND** it MAY show the draft as a design-only alternative when output explicitly marks it as non-executable.
+
+#### Scenario: Deprecated templates recommend replacements without removal
+
+- **GIVEN** a template declares lifecycle `deprecated` and replacement `meeting.notes.v2`
+- **WHEN** a user runs `pinax template inspect meeting.notes --vault ./my-notes --json`
+- **THEN** Pinax SHALL mark the template as deprecated
+- **AND** the output SHALL include a replacement preview or inspect command
+- **AND** Pinax SHALL NOT delete or rewrite the existing template as part of inspect, recommend, or preview.
+
+### Requirement: Template preview describes write impact and proof gate
+
+Pinax SHALL make template preview a read-only workflow review that explains variables, output path policy, body exposure, proof gate, and next command before any write.
+
+#### Scenario: Preview workflow starter is read-only
+
+- **WHEN** a user runs `pinax template preview meeting.notes --title "Client Meeting" --vault ./my-notes --json`
+- **THEN** Pinax SHALL render a preview projection without writing notes, `.pinax` structured assets, render receipts, Git state, provider state, or remote services
+- **AND** the output MAY include optional fields for required variables, effective output policy, proof gate, body exposure, and next command.
+
+#### Scenario: Preview reports missing variables with rerun command
+
+- **GIVEN** a workflow template requires variable `client`
+- **WHEN** a user runs `pinax template preview meeting.notes --vault ./my-notes --json` without `--var client=...`
+- **THEN** Pinax SHALL fail with stable error code `template_variable_missing`
+- **AND** the error projection SHALL include a rerun command such as `pinax template preview meeting.notes --var client=... --vault ./my-notes --json`
+- **AND** the rerun command SHALL NOT include secret-like original values, raw prompts, provider payloads, Authorization headers, hidden system prompts, or private tool arguments.
+
+### Requirement: Template use produces reviewable evidence
+
+Pinax SHALL expose template use evidence when a workflow starter creates a note, journal page, index page, or project workspace artifact through application services.
+
+#### Scenario: Note created from template reports use evidence
+
+- **WHEN** a user runs `pinax note add "Client Meeting" --template meeting.notes --dir index --vault ./my-notes --json`
+- **THEN** Pinax SHALL create the Markdown note through the application service
+- **AND** stdout SHALL preserve existing JSON envelope, facts, actions, note id, path, and template fields
+- **AND** stdout MAY include optional evidence fields such as `template_use_id`, `template_pack`, `scenario_id`, `maturity`, `effective_path`, `receipt_ref`, `proof_gate`, and `next_actions`.
+
+#### Scenario: Template use evidence is redacted
+
+- **WHEN** a template-backed create command emits JSON, agent output, event evidence, or a receipt
+- **THEN** Pinax SHALL NOT include raw provider payloads, hidden system prompts, private tool arguments, Authorization headers, cookies, tokens, secret-like variable values, or full chain-of-thought
+- **AND** persisted receipt or event data SHALL be written only by Pinax CLI/application service, not by agent-authored file edits.
+
+#### Scenario: Dry-run and preview do not write evidence receipts
+
+- **WHEN** a user runs a template preview or a supported template-backed command with `--dry-run --json`
+- **THEN** Pinax SHALL return planned operations or preview output
+- **AND** it SHALL NOT write Markdown notes, `.pinax` structured assets, template use receipts, Git state, provider state, or remote services.
+
+### Requirement: Local template packs are discoverable without marketplace behavior
+
+Pinax SHALL support local template pack discovery for built-in and vault-local packs while excluding remote marketplace, scoring, and cloud sync behavior from the template catalog MVP.
+
+#### Scenario: Built-in pack metadata is discoverable
+
+- **WHEN** a user runs `pinax template list --pack starter --vault ./my-notes --json`
+- **THEN** Pinax SHALL list matching built-in templates
+- **AND** each listed item MAY include optional pack metadata such as pack id, source, readiness, lifecycle, and scenario ids
+- **AND** existing list fields SHALL remain present for compatibility.
+
+#### Scenario: Vault-local pack overrides are explicit
+
+- **GIVEN** a vault-local template overrides a built-in template name
+- **WHEN** a user runs `pinax template inspect <name> --vault ./my-notes --json`
+- **THEN** Pinax SHALL identify the effective source as vault-local or override
+- **AND** it SHALL NOT delete, rewrite, or silently publish the overridden built-in or local template.
+
+#### Scenario: Remote template marketplace is not used
+
+- **WHEN** a user runs `pinax template recommend --intent "stock learning" --vault ./my-notes --json`
+- **THEN** Pinax SHALL use local metadata from built-in and vault-local templates only
+- **AND** it SHALL NOT fetch remote packages, call a marketplace, send template metadata to a provider, or sync templates to a cloud service.
+
+### Requirement: Template scenarios have readiness and handoff evidence
+
+Pinax SHALL classify broad template workflow scenarios by readiness and expose validation, evidence, and handoff expectations in docs and OpenSpec.
+
+#### Scenario: Scenario matrix distinguishes exploratory workflows
+
+- **WHEN** a template pack or workflow scenario is documented
+- **THEN** the scenario matrix SHALL include scenario id, target user, job-to-be-done, required artifacts, gate/review checks, evidence path, export/handoff path, validation command, and readiness label
+- **AND** exploratory scenarios SHALL NOT be presented as production-ready.
+
+#### Scenario: Project workspace consumes template output without owning template model
+
+- **WHEN** a template-backed workflow creates or links a project workspace artifact
+- **THEN** the template catalog SHALL own starter metadata, variable schema, output policy, and after-create action recommendations
+- **AND** the project workspace SHALL own board item state, columns, milestones, and project progress
+- **AND** template recommendation SHALL NOT directly mutate project board state; project writes SHALL continue through explicit project commands or application services.
 

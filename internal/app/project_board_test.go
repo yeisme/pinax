@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -259,6 +260,93 @@ func TestValidateVaultChecksProjectBoardAssets(t *testing.T) {
 	}
 }
 
+func TestConfiguredProjectBoardColumnsDriveItemsAndProjection(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Learning Board Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "investing", Name: "学习炒股", NotesPrefix: "notes/investing"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := svc.ProjectSubprojectCreate(ctx, ProjectWorkspaceRequest{VaultPath: root, Project: "investing", Subproject: "stock-learning", Title: "学习炒股的全部笔记", Template: "long-term-learning"}); err != nil {
+		t.Fatalf("create subproject: %v", err)
+	}
+	columns := []string{"inbox", "planned", "learning", "practice", "review", "retrospective", "done"}
+	if _, err := svc.ProjectBoardConfigure(ctx, ProjectBoardRequest{VaultPath: root, Project: "investing", Subproject: "stock-learning", Columns: columns}); err != nil {
+		t.Fatalf("configure learning board: %v", err)
+	}
+	created, err := svc.ProjectItemAdd(ctx, ProjectItemRequest{VaultPath: root, Project: "investing", Subproject: "stock-learning", Title: "学习 K 线基础", Column: "learning", Labels: []string{"stock", "technical-analysis"}})
+	if err != nil {
+		t.Fatalf("add learning item using configured column: projection=%#v err=%v", created, err)
+	}
+	if created.Facts["column"] != "learning" || created.Facts["status"] != "active" {
+		t.Fatalf("created learning item facts = %#v", created.Facts)
+	}
+
+	boardProjection, err := svc.ProjectBoardShow(ctx, ProjectBoardRequest{VaultPath: root, Project: "investing", Subproject: "stock-learning", NoteDisplay: string(domain.NoteDisplayCard)})
+	if err != nil {
+		t.Fatalf("show learning board: %v", err)
+	}
+	if boardProjection.Facts["column.learning"] != "1" || boardProjection.Facts["column.practice"] != "0" || boardProjection.Facts["items"] != "1" {
+		t.Fatalf("dynamic column facts missing: %#v", boardProjection.Facts)
+	}
+	board := boardProjection.Data.(map[string]any)["board"].(domain.ProjectBoard)
+	if len(board.Columns) != len(columns) {
+		t.Fatalf("board columns = %#v", board.Columns)
+	}
+	for i, want := range columns {
+		if board.Columns[i].ID != want {
+			t.Fatalf("board column %d = %q, want %q; columns=%#v", i, board.Columns[i].ID, want, board.Columns)
+		}
+	}
+	if board.Facts.ColumnCounts["learning"] != 1 || board.Items[0].Column != "learning" {
+		t.Fatalf("board counts/items = facts %#v items %#v", board.Facts, board.Items)
+	}
+}
+
+func TestProjectLearningInitCreatesReusableStockLearningPack(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Stock Learning Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	created, err := svc.ProjectLearningInit(ctx, ProjectLearningRequest{VaultPath: root, Project: "investing", Subproject: "stock-learning", Title: "学习炒股的全部笔记", ProjectName: "学习炒股", NotesPrefix: "notes/investing", Preset: "stock-learning"})
+	if err != nil {
+		t.Fatalf("learning init: projection=%#v err=%v", created, err)
+	}
+	if created.Command != "project.learning.init" || created.Facts["project"] != "investing" || created.Facts["subproject"] != "stock-learning" || created.Facts["preset"] != "stock-learning" || created.Facts["writes"] != "true" {
+		t.Fatalf("learning init facts = %#v command=%s", created.Facts, created.Command)
+	}
+	for _, rel := range []string{
+		"notes/projects/investing/stock-learning/charter/learning-charter.md",
+		"notes/projects/investing/stock-learning/sources/source-index.md",
+		"notes/projects/investing/stock-learning/retros/weekly-review.md",
+	} {
+		if !fileExistsApp(filepath.Join(root, filepath.FromSlash(rel))) {
+			t.Fatalf("learning starter note missing: %s", rel)
+		}
+	}
+	content := readAppFixture(t, filepath.Join(root, "notes", "projects", "investing", "stock-learning", "charter", "learning-charter.md"))
+	for _, forbidden := range []string{"buy recommendation", "sell recommendation", "guaranteed returns", "automated trading decision"} {
+		if strings.Contains(strings.ToLower(content), forbidden) {
+			t.Fatalf("stock learning charter must not include forbidden advice phrase %q:\n%s", forbidden, content)
+		}
+	}
+
+	second, err := svc.ProjectLearningInit(ctx, ProjectLearningRequest{VaultPath: root, Project: "investing", Subproject: "stock-learning", Title: "学习炒股的全部笔记", ProjectName: "学习炒股", NotesPrefix: "notes/investing", Preset: "stock-learning"})
+	if err != nil {
+		t.Fatalf("learning init second run: projection=%#v err=%v", second, err)
+	}
+	if second.Facts["notes.created"] != "0" || second.Facts["items.created"] != "0" {
+		t.Fatalf("second run should be idempotent, facts=%#v", second.Facts)
+	}
+}
+
 func TestProjectItemMoveRefusesUnmanagedNote(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -274,6 +362,79 @@ func TestProjectItemMoveRefusesUnmanagedNote(t *testing.T) {
 	}
 }
 
+func TestProjectBoardInferredChecklistTasksRequireAdoption(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Checklist Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "research", Name: "研究", NotesPrefix: "research"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	writeAppFixture(t, filepath.Join(root, "checklist.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_checklist\ntitle: Checklist Source\nproject: research\nkind: reference\nstatus: active\n---\n\n## Tasks\n\n- [ ] Review source material\n- [x] Already handled\n")
+
+	boardProjection, err := svc.ProjectBoardShow(ctx, ProjectBoardRequest{VaultPath: root, Project: "research"})
+	if err != nil {
+		t.Fatalf("project board show: %v", err)
+	}
+	board := boardProjection.Data.(map[string]any)["board"].(domain.ProjectBoard)
+	var inferred domain.BoardItem
+	for _, item := range board.Items {
+		if item.Title == "Review source material" {
+			inferred = item
+		}
+	}
+	if inferred.ItemID == "" || inferred.SourceKind != domain.BoardItemSourceInlineTask || inferred.SourceStatus != "inferred" || inferred.Writable {
+		t.Fatalf("inferred checklist item not read-only: %#v", inferred)
+	}
+
+	moveProjection, err := svc.ProjectItemMove(ctx, ProjectItemRequest{VaultPath: root, ItemID: inferred.ItemID, Column: "doing"})
+	if err == nil || moveProjection.Error == nil || moveProjection.Error.Code != "task_unmanaged" {
+		t.Fatalf("move inferred task should fail with task_unmanaged: projection=%#v err=%v", moveProjection, err)
+	}
+
+	plan, err := svc.TaskAdopt(ctx, TaskAdoptRequest{VaultPath: root, ItemID: inferred.ItemID})
+	if err != nil {
+		t.Fatalf("task adopt plan: %v", err)
+	}
+	if plan.Command != "task.adopt" || plan.Facts["writes"] != "false" || plan.Facts["source_status"] != "inferred" || plan.Facts["adopted"] != "0" {
+		t.Fatalf("task adopt plan facts = %#v", plan.Facts)
+	}
+	if fileExistsApp(filepath.Join(root, ".pinax", "task-adoptions")) {
+		t.Fatalf("task adopt plan wrote ledger")
+	}
+
+	adopted, err := svc.TaskAdopt(ctx, TaskAdoptRequest{VaultPath: root, ItemID: inferred.ItemID, Yes: true})
+	if err != nil {
+		t.Fatalf("task adopt apply: projection=%#v err=%v", adopted, err)
+	}
+	if adopted.Facts["writes"] != "true" || adopted.Facts["adopted"] != "1" || adopted.Facts["ledger_path"] == "" {
+		t.Fatalf("task adopt apply facts = %#v", adopted.Facts)
+	}
+	ledgerPath := filepath.Join(root, filepath.FromSlash(adopted.Facts["ledger_path"]))
+	ledger := readAppFixture(t, ledgerPath)
+	if !strings.Contains(ledger, `"schema_version": "pinax.task_adoption.v1"`) || !strings.Contains(ledger, `"source_status": "adopted"`) || strings.Contains(ledger, "Already handled") {
+		t.Fatalf("task adoption ledger invalid or leaked unrelated body:\n%s", ledger)
+	}
+
+	afterProjection, err := svc.ProjectBoardShow(ctx, ProjectBoardRequest{VaultPath: root, Project: "research"})
+	if err != nil {
+		t.Fatalf("project board after adopt: %v", err)
+	}
+	afterBoard := afterProjection.Data.(map[string]any)["board"].(domain.ProjectBoard)
+	var after domain.BoardItem
+	for _, item := range afterBoard.Items {
+		if item.ItemID == inferred.ItemID {
+			after = item
+		}
+	}
+	if after.SourceStatus != "adopted" || !after.Writable {
+		t.Fatalf("adopted checklist item not promoted in board projection: %#v", after)
+	}
+}
+
 func hasIssueCode(issues []domain.Issue, code string) bool {
 	for _, issue := range issues {
 		if issue.Code == code {
@@ -281,6 +442,15 @@ func hasIssueCode(issues []domain.Issue, code string) bool {
 		}
 	}
 	return false
+}
+
+func readAppFixture(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	return string(b)
 }
 
 func writeBoardNote(t *testing.T, root, rel, id, title, project, status, column, body string) {
