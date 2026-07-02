@@ -3,9 +3,7 @@
 ## Purpose
 
 This spec defines how future Pinax internal UI should consume Pinax bounded projections through `client/yeisme-workbench`. Pinax does not own an Electron/Web standalone client in `cli/pinax`.
-
 ## Requirements
-
 ### Requirement: Workbench module consumes bounded projections only
 
 Pinax SHALL expose workbench-facing state through Local REST/RPC, CLI JSON, MCP/dashboard shared projections, or copyable real `pinax ...` commands. The Workbench module SHALL NOT read `.pinax/**`, SQLite, LanceDB, token files, provider config, sync state, receipts, or other structured assets directly.
@@ -41,3 +39,20 @@ Internal Pinax UI SHALL be implemented as a `client/yeisme-workbench` Pinax modu
 - **WHEN** a future request asks for a Pinax notes/search/sync/project UI
 - **THEN** the implementation SHALL be routed to `client/yeisme-workbench`
 - **AND** `cli/pinax` SHALL provide stable contracts rather than adding a React/Electron app.
+
+### Requirement: API Workbench surfaces memory and capability workflows
+
+The Local API workbench SHALL provide a browser UI for memory records and capability discovery without moving write behavior into the read-only vault dashboard.
+
+#### Scenario: Workbench shows memory operations
+- **WHEN** a user opens `/workbench` on `pinax api serve`
+- **THEN** the page provides controls for capture dry-run, confirmed capture, records, recall, context, and stats using Local API routes
+
+#### Scenario: Workbench shows route metadata from capabilities
+- **WHEN** the workbench loads capability explorer data
+- **THEN** it displays each capability's id, command, REST/RPC route, read-only status, write gate, and copy command from `/v1/capabilities`
+
+#### Scenario: Vault dashboard remains read-only
+- **WHEN** a user opens `pinax vault dashboard`
+- **THEN** the dashboard does not expose direct memory write controls
+
