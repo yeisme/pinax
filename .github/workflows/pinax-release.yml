@@ -43,6 +43,10 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install Pinax web renderer dependencies
+        working-directory: web/pinax-web-renderer
+        run: bun install --frozen-lockfile
+
       - name: Set up Python (for LanceDB sidecar)
         uses: actions/setup-python@v5
         with:
