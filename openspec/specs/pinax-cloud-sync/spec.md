@@ -70,6 +70,24 @@ Cloud Sync SHALL expose a transport-independent protocol so server, S3 direct, r
 - **AND** it SHALL report `remote_write=false`
 - **AND** it SHALL NOT silently fallback to local-only execution, direct transport or dummy success.
 
+### Requirement: direct backup mirror、Pinax Cloud 与 realtime daemon 边界分离
+
+Pinax SHALL preserve the local-first boundary between CLI-side backup mirror transports, Pinax Cloud server transport, and realtime daemon/conflict behavior.
+
+#### Scenario: S3 direct backup mirror 不获得 Pinax Cloud server 能力
+
+- **GIVEN** 用户配置 S3 direct 或 rclone direct object-store transport
+- **WHEN** Pinax builds a sync or backup mirror plan
+- **THEN** Pinax SHALL treat the direct transport as a CLI-side provider-credential backup mirror for encrypted Cloud Sync objects
+- **AND** it SHALL NOT claim Pinax Cloud server-side auth, server audit, object lifecycle policy, multi-tenant controls, or rate limiting for direct transport writes
+- **AND** Pinax Cloud server transport SHALL remain the path that owns server auth, audit, object lifecycle, and cloud sync semantics.
+
+#### Scenario: backup mirror 不包含 daemon 和 conflict policy 变更
+
+- **WHEN** docs, plans, or command help describe backup mirror behavior
+- **THEN** Pinax SHALL NOT imply realtime daemon convergence, automatic merge, conflict resolution, or push notification behavior
+- **AND** daemon lifecycle, automatic conflict handling, conflict resolution semantics, and transport-specific realtime behavior SHALL require separate OpenSpec coverage before implementation.
+
 ### Requirement: 端侧加密保护明文
 
 Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备的 explicit local content flows.
@@ -90,6 +108,24 @@ Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开�
 
 - **WHEN** 测试、stdout、stderr、event、receipt、fixture、backend log 或 object metadata 写入 Cloud Sync 相关数据
 - **THEN** 不得暴露 plaintext note body、plaintext path in protected surfaces, raw token, Authorization header, Cookie, raw secret ref, provider stderr, or provider payload
+
+### Requirement: Agent Brain 投影不作为 Cloud Sync 明文状态
+
+Cloud Sync SHALL preserve the distinction between encrypted source content, service-owned evidence, and rebuildable Agent Brain projections.
+
+#### Scenario: Brain projections are rebuilt locally
+
+- **WHEN** Cloud Sync scans a vault with local `.pinax/index.sqlite`, `.pinax/kb/lancedb/`, `.pinax/graph/`, answer cache, or provider cache files
+- **THEN** those files SHALL be treated as local rebuildable projections or cache state
+- **AND** they SHALL NOT be uploaded as plaintext Cloud Sync content
+- **AND** after pull/import, users MAY rebuild projections with commands such as `pinax index refresh --vault ./my-notes --json`, `pinax kb refresh --vault ./my-notes`, or `pinax graph rebuild --vault ./my-notes --json`.
+
+#### Scenario: Memory and maintenance evidence require explicit encrypted contract
+
+- **WHEN** memory ledger records, maintenance plans, proof receipts, or answer caches are considered for cross-device behavior
+- **THEN** Pinax SHALL classify them as service-owned evidence or rebuildable cache rather than raw note content
+- **AND** raw prompts, hidden system prompts, provider payloads, plaintext vectors, full note bodies, Authorization headers, cookies, tokens, and private tool arguments SHALL NOT be written to Cloud transport evidence
+- **AND** any future cross-device memory or answer-cache sync SHALL require a dedicated encrypted contract.
 
 ### Requirement: Revision CAS 提交准入
 
@@ -386,4 +422,22 @@ Pinax SHALL document and preserve the distinction between Remote API Mode and Cl
 - **WHEN** a client calls a registered `sync.push` or `sync.pull` RPC method
 - **THEN** Pinax SHALL treat it as an explicit sync operation
 - **AND** realtime watch/poll behavior SHALL remain owned by `pinax sync daemon` rather than the Remote API server.
+
+### Requirement: Pinax SHALL separate direct backup transport, Cloud Sync, and realtime daemon boundaries
+
+Pinax SHALL document and preserve the boundary between CLI-side backup mirror transports, Pinax Cloud server transport, and realtime daemon/conflict behavior.
+
+#### Scenario: S3 direct is not Pinax Cloud storage
+- **GIVEN** a user configures S3 direct or rclone direct object-store transport
+- **WHEN** Pinax builds a sync or backup mirror plan
+- **THEN** Pinax SHALL treat the direct transport as a CLI-side provider-credential backup mirror for encrypted Cloud Sync objects
+- **AND** it SHALL NOT claim Pinax Cloud server-side auth, server audit, object lifecycle policy, multi-tenant controls, or rate limiting for direct transport writes
+- **AND** Pinax Cloud server transport SHALL remain the server-authenticated path for cloud sync semantics
+- **AND** realtime daemon behavior, automatic merge, conflict resolution, and push notification semantics SHALL require separate OpenSpec coverage before implementation
+
+#### Scenario: backup mirror wording does not expand daemon or conflict behavior
+- **WHEN** docs, plans, or command help describe backup mirror behavior
+- **THEN** Pinax SHALL NOT imply realtime daemon convergence, automatic merge, conflict resolution, or transport-specific push notification behavior
+- **AND** `pinax sync daemon` SHALL remain the local realtime automation layer
+- **AND** `pinax sync conflicts` SHALL remain the explicit conflict inspection and resolution surface unless a separate OpenSpec change modifies that behavior
 

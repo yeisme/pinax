@@ -7,6 +7,7 @@ type RemoteCapability struct {
 	ID                  string   `json:"id"`
 	Surfaces            []string `json:"surfaces"`
 	Command             string   `json:"command"`
+	ReleaseCore         bool     `json:"release_core"`
 	Readonly            bool     `json:"readonly"`
 	BodyAllowed         bool     `json:"body_allowed"`
 	ApprovalRequired    bool     `json:"approval_required"`
@@ -30,6 +31,7 @@ type RemoteRoute struct {
 	Command             string   `json:"command"`
 	CapabilityID        string   `json:"capability_id"`
 	SchemaVersion       string   `json:"schema_version"`
+	ReleaseCore         bool     `json:"release_core"`
 	Readonly            bool     `json:"readonly"`
 	BodyAllowed         bool     `json:"body_allowed"`
 	ApprovalRequired    bool     `json:"approval_required"`

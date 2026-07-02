@@ -169,7 +169,7 @@ func TestProjectAndStorageCLIJSON(t *testing.T) {
 	}
 
 	listOut := runCLI(t, "project", "list", "--vault", root, "--agent")
-	for _, want := range []string{"command=project.list", "fact.projects=1", "fact.current_project=research"} {
+	for _, want := range []string{"command=project.list", "fact.projects=1", "fact.current_project=research", "fact.project.1.slug=research", "fact.project.1.name=研究", "fact.project.1.notes_prefix=notes/research"} {
 		if !strings.Contains(listOut, want) {
 			t.Fatalf("project agent output missing %q:\n%s", want, listOut)
 		}
@@ -375,6 +375,15 @@ func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
 			t.Fatalf("subproject board json missing %q:\n%s", want, boardJSON)
 		}
 	}
+	boardAgent := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--agent")
+	for _, want := range []string{"mode=agent", "command=project.board.show", "fact.project=research", "fact.subproject=stock-learning", "fact.workspace_path=notes/projects/research/stock-learning", `item.1.title="Run first research"`, "item.1.column=next", "item.1.path=notes/projects/research/stock-learning/inbox/run-first-research.md", "item.1.subproject=stock-learning", "item.1.labels=research,learning", "action.board_plan="} {
+		if !strings.Contains(boardAgent, want) {
+			t.Fatalf("subproject board agent missing %q:\n%s", want, boardAgent)
+		}
+	}
+	if strings.Contains(boardAgent, root) || strings.Contains(boardAgent, "受控工作项") || strings.Contains(boardAgent, "状态:") {
+		t.Fatalf("subproject board agent leaked local path, body, or prose:\n%s", boardAgent)
+	}
 	human := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--color", "never")
 	for _, want := range []string{"Project: research / stock-learning", "Path: notes/projects/research/stock-learning", "Structure:", "Board:", "Next", "Run first research", "Recommended next step"} {
 		if !strings.Contains(human, want) {
@@ -483,6 +492,15 @@ func TestProjectLearningInitCLI(t *testing.T) {
 		if !fileExists(filepath.Join(root, filepath.FromSlash(rel))) {
 			t.Fatalf("learning starter note missing: %s", rel)
 		}
+	}
+	createdAgent := runCLI(t, "project", "learning", "init", "history-learning", "history-info", "--title", "历史信息学习资料库", "--project-name", "历史信息学习", "--notes-prefix", "notes/history-learning", "--preset", "learning", "--vault", root, "--agent")
+	for _, want := range []string{"mode=agent", "command=project.learning.init", "fact.project=history-learning", "fact.subproject=history-info", "fact.workspace_path=notes/projects/history-learning/history-info", "learning.project=history-learning", "learning.subproject=history-info", "learning.workspace_path=notes/projects/history-learning/history-info", "learning.column.1=inbox", "learning.starter_note.1=notes/projects/history-learning/history-info/charter/learning-charter.md", "learning.starter_item.1=notes/projects/history-learning/history-info/inbox/建立术语表.md", "action.board_show="} {
+		if !strings.Contains(createdAgent, want) {
+			t.Fatalf("learning init agent missing %q:\n%s", want, createdAgent)
+		}
+	}
+	if strings.Contains(createdAgent, root) || strings.Contains(createdAgent, "状态:") || strings.Contains(createdAgent, "Learning project initialized") {
+		t.Fatalf("learning init agent leaked local path or prose:\n%s", createdAgent)
 	}
 
 	board := runCLI(t, "project", "board", "show", "investing", "--subproject", "stock-learning", "--vault", root, "--json")

@@ -139,16 +139,19 @@ Pinax SHALL render human, agent, JSON, events, and explain outputs from one comm
 - **AND** stdout SHALL NOT include raw provider credentials, shell-expanded secrets, or unredacted trace payloads.
 
 ### Requirement: Pinax prioritizes local notebook core before external extensions
-Pinax SHALL provide a complete local-first notebook core before relying on external provider, cloud sync, AI automation, or dynamic plugin capabilities.
+
+Pinax SHALL provide a complete local-first notebook core before relying on external provider, cloud sync, AI automation, or dynamic plugin capabilities. Publish preview and generated HTML SHALL use the `pinax-web` static renderer; internal UI belongs in `client/yeisme-workbench` modules.
 
 #### Scenario: Notebook core commands require no plugins
+
 - **WHEN** a user runs daily, inbox, organization view, link, backlink, attachment, saved view, import, export, query, Dataview-compatible query, or publish preview commands against a valid local vault
 - **THEN** Pinax SHALL NOT require dynamic plugins, JavaScript, Python, WASM, firecrawl, agent-browser, Lark, Notion, Pinax Cloud, provider tokens, cookies, or external network access.
 
-#### Scenario: Plugin hooks cannot replace core semantics
-- **WHEN** a plugin contributes a hook for query, template, export, publish, diagnostic, or action planning
-- **THEN** Pinax SHALL preserve built-in command behavior and use plugin output only through documented capability extension points
-- **AND** plugin failure SHALL NOT corrupt or replace built-in notebook core behavior.
+#### Scenario: Canonical renderer stays inside Pinax boundaries
+
+- **WHEN** Pinax renders note preview or generated publish HTML
+- **THEN** rendering SHALL use the `pinax-web` canonical renderer contract and bounded projections
+- **AND** the renderer SHALL NOT become a separate source of truth for note identity, persistence, provider config, sync state or publish receipts.
 
 ### Requirement: Pinax note command is ergonomic and backwards compatible
 Pinax SHALL expose an ergonomic note command surface while preserving existing `note new`, `note list`, and `note show` behavior.
@@ -1014,17 +1017,18 @@ Pinax SHALL treat the local Markdown vault as the source of truth and SHALL expo
 - **THEN** it SHALL limit implementation to client protocol, transport adapter, fake/local server tests, redaction, and sync-state behavior unless a separate server-owned change explicitly expands scope
 - **AND** it SHALL NOT add a long-running hosted note backend inside ordinary CLI app services.
 
-### Requirement: Theme design follows the CLI and publish boundaries
-Pinax SHALL keep CLI chrome and publish-site theme design consistent with local-first, work-focused usage.
+### Requirement: Canonical renderer design follows the CLI and publish boundaries
+Pinax SHALL keep CLI chrome, future Workbench module projections and published HTML design consistent with local-first, work-focused usage through Pinax contracts and the static renderer.
 
 #### Scenario: CLI theme is concise and operational
 - **WHEN** Pinax renders default human output
 - **THEN** the output SHALL be concise, Chinese, scannable, and oriented around status, facts, evidence and next action
 - **AND** it SHALL avoid marketing copy, decorative noise, or localized text inside machine modes.
 
-#### Scenario: Publish site theme is inspectable and local
-- **WHEN** Pinax builds a publish site with the built-in theme
-- **THEN** the theme SHALL use local CSS/JS assets and publish-safe data files
+#### Scenario: Publish HTML uses the canonical renderer
+- **WHEN** Pinax builds a publish site with the `pinax-web` renderer
+- **THEN** the published HTML SHALL use stable renderer semantics that future Workbench module fixtures can consume
+- **AND** it SHALL use local assets and publish-safe data files
 - **AND** it SHALL NOT require external fonts, CDN assets, analytics, remote images, the source vault, `.pinax/**`, SQLite, provider credentials, or network access by default.
 
 ### Requirement: Pinax SHALL expose a unified vault workspace model
@@ -1071,4 +1075,3 @@ Pinax SHALL implement unified workspace, task, database, API, MCP, dashboard, an
 - **WHEN** unified workspace or database features require new index projection storage
 - **THEN** Pinax SHALL add GORM-managed tables, nullable columns, or indexes rather than dropping, renaming, narrowing, or repurposing existing projection schema in the same change
 - **AND** deleting and rebuilding the index SHALL NOT delete Markdown source content.
-

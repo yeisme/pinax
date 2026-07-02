@@ -24,11 +24,12 @@ type DeployPolicy struct {
 	SecretRef  string                   `json:"secret_ref,omitempty"`
 	GistID     string                   `json:"gist_id,omitempty"`
 	Visibility string                   `json:"visibility,omitempty"`
+	Project    string                   `json:"project,omitempty"`
 }
 
 func ParseDeployPolicy(req DeployPolicyRequest) (DeployPolicy, error) {
 	profile := req.Profile
-	policy := DeployPolicy{Mode: profile.Deploy.Mode, Target: profile.Target, Repo: strings.TrimSpace(profile.Deploy.Repo), Branch: strings.TrimSpace(profile.Deploy.Branch), Strategy: strings.TrimSpace(profile.Deploy.Strategy), Endpoint: strings.TrimSpace(profile.Deploy.Endpoint), Method: strings.ToUpper(strings.TrimSpace(profile.Deploy.Method)), SecretRef: strings.TrimSpace(profile.Deploy.SecretRef), GistID: strings.TrimSpace(profile.Deploy.GistID), Visibility: strings.TrimSpace(profile.Deploy.Visibility)}
+	policy := DeployPolicy{Mode: profile.Deploy.Mode, Target: profile.Target, Repo: strings.TrimSpace(profile.Deploy.Repo), Branch: strings.TrimSpace(profile.Deploy.Branch), Strategy: strings.TrimSpace(profile.Deploy.Strategy), Endpoint: strings.TrimSpace(profile.Deploy.Endpoint), Method: strings.ToUpper(strings.TrimSpace(profile.Deploy.Method)), SecretRef: strings.TrimSpace(profile.Deploy.SecretRef), GistID: strings.TrimSpace(profile.Deploy.GistID), Visibility: strings.TrimSpace(profile.Deploy.Visibility), Project: strings.TrimSpace(profile.Deploy.Project)}
 	if policy.Mode == "" {
 		policy.Mode = domain.PublishDeployModeNone
 	}
@@ -38,6 +39,10 @@ func ParseDeployPolicy(req DeployPolicyRequest) (DeployPolicy, error) {
 			policy.Mode = domain.PublishDeployModeGist
 		case domain.PublishTargetHTTP:
 			policy.Mode = domain.PublishDeployModeHTTP
+		case domain.PublishTargetVercel:
+			policy.Mode = domain.PublishDeployModeVercel
+		case domain.PublishTargetCloudflare:
+			policy.Mode = domain.PublishDeployModeCloudflarePages
 		}
 	}
 	switch policy.Mode {
@@ -64,10 +69,18 @@ func ParseDeployPolicy(req DeployPolicyRequest) (DeployPolicy, error) {
 		if policy.Method != "POST" && policy.Method != "PUT" {
 			return DeployPolicy{}, fmt.Errorf("unsupported publish http method %q", policy.Method)
 		}
+	case domain.PublishDeployModeVercel:
+		if policy.Project == "" {
+			return DeployPolicy{}, fmt.Errorf("publish deploy vercel project is required")
+		}
+	case domain.PublishDeployModeCloudflarePages:
+		if policy.Project == "" {
+			return DeployPolicy{}, fmt.Errorf("publish deploy cloudflare pages project is required")
+		}
 	default:
 		return DeployPolicy{}, fmt.Errorf("unsupported publish deploy mode %q", policy.Mode)
 	}
-	if policy.Mode == domain.PublishDeployModeGist || policy.Mode == domain.PublishDeployModeHTTP {
+	if policy.Mode == domain.PublishDeployModeGist || policy.Mode == domain.PublishDeployModeHTTP || policy.Mode == domain.PublishDeployModeVercel || policy.Mode == domain.PublishDeployModeCloudflarePages {
 		return policy, nil
 	}
 	if policy.Branch == "" || (policy.Target == domain.PublishTargetGitHubWiki && policy.Branch == "gh-pages") {

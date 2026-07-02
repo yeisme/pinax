@@ -11,6 +11,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
+	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/index/query"
 	pinaxplugin "github.com/yeisme/pinax/internal/plugin"
@@ -165,6 +166,32 @@ func syncConflictCompletion(vaultPathValue func() string) func(*cobra.Command, [
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		items, err := syncConflictCompletionItems(completionVaultRoot(vaultPathValue()))
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+func monitorRunCompletion(vaultPathValue func() string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		items, err := monitorRunCompletionItems(cmd.Context(), completionVaultRoot(vaultPathValue()))
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+func activityEventCompletion(vaultPathValue func() string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		items, err := activityEventCompletionItems(cmd.Context(), completionVaultRoot(vaultPathValue()))
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -338,6 +365,77 @@ func syncConflictCompletionItems(root string) ([]string, error) {
 	}
 	sort.Strings(items)
 	return items, nil
+}
+
+func monitorRunCompletionItems(ctx context.Context, root string) ([]string, error) {
+	projection, err := app.NewService().MonitorList(ctx, app.MonitorRequest{VaultPath: root, Limit: 100})
+	if err != nil {
+		return nil, err
+	}
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		return []string{}, nil
+	}
+	runs, ok := data["runs"].([]app.MonitorRun)
+	if !ok {
+		return []string{}, nil
+	}
+	items := make([]string, 0, len(runs))
+	for _, run := range runs {
+		runID := strings.TrimSpace(run.RunID)
+		if runID == "" {
+			continue
+		}
+		description := strings.TrimSpace(run.Command + " " + run.Status)
+		if run.DurationMS > 0 {
+			description = strings.TrimSpace(fmt.Sprintf("%s %dms", description, run.DurationMS))
+		}
+		if description == "" {
+			description = "monitor run"
+		}
+		items = append(items, runID+"\t"+description)
+	}
+	sort.Strings(items)
+	return items, nil
+}
+
+func activityEventCompletionItems(ctx context.Context, root string) ([]string, error) {
+	projection, err := app.NewService().ActivityList(ctx, app.ActivityRequest{VaultPath: root, Source: "all", Limit: 100})
+	if err != nil {
+		return nil, err
+	}
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		return []string{}, nil
+	}
+	entries, ok := data["entries"].([]app.ActivityEntry)
+	if !ok {
+		return []string{}, nil
+	}
+	items := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		eventID := strings.TrimSpace(entry.EventID)
+		if eventID == "" {
+			continue
+		}
+		description := strings.Join(nonEmptyCompletionParts(entry.Source, entry.Kind, entry.Status), " ")
+		if description == "" {
+			description = "activity event"
+		}
+		items = append(items, eventID+"\t"+description)
+	}
+	sort.Strings(items)
+	return items, nil
+}
+
+func nonEmptyCompletionParts(parts ...string) []string {
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func loadPluginRegistry(root string) (pinaxplugin.Registry, error) {

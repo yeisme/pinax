@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -352,6 +353,60 @@ func TestLocalAPIRPCErrorsAndWriteGateUseProjectionEnvelope(t *testing.T) {
 	}
 }
 
+func TestLocalAPIMemoryRoutesAndWriteGate(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	readonly := NewServer(svc, root)
+
+	dryRun := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(dryRun, httptest.NewRequest(http.MethodPost, "/v1/memory:capture?dry_run=true", strings.NewReader(`{"type":"fact","subject":"pinax","predicate":"memory_capture_usage","object":"Use --body or --subject and --object","source":"http-test"}`)))
+	if dryRun.Code != http.StatusOK || !strings.Contains(dryRun.Body.String(), `"command":"memory.capture"`) || !strings.Contains(dryRun.Body.String(), `"dry_run":"true"`) {
+		t.Fatalf("memory dry-run response: status=%d body=%s", dryRun.Code, dryRun.Body.String())
+	}
+	if fileExistsForAPITest(filepath.Join(root, ".pinax", "memory", "ledger.sqlite")) {
+		t.Fatalf("memory dry-run wrote ledger")
+	}
+
+	blocked := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(blocked, httptest.NewRequest(http.MethodPost, "/v1/memory:capture?yes=true", strings.NewReader(`{"type":"decision","body":"Persist this decision"}`)))
+	assertRESTErrorProjection(t, blocked, http.StatusForbidden, "write_disabled")
+
+	writer := NewServerWithOptions(svc, root, ServerOptions{AllowWrite: true})
+	approval := httptest.NewRecorder()
+	writer.Handler().ServeHTTP(approval, httptest.NewRequest(http.MethodPost, "/v1/memory:capture", strings.NewReader(`{"type":"decision","body":"Persist this decision"}`)))
+	assertRESTErrorProjection(t, approval, http.StatusBadRequest, "approval_required")
+
+	captured := httptest.NewRecorder()
+	writer.Handler().ServeHTTP(captured, httptest.NewRequest(http.MethodPost, "/v1/memory:capture?yes=true", strings.NewReader(`{"type":"decision","body":"Persist this decision","source":"http-test","entities":["pinax"]}`)))
+	if captured.Code != http.StatusOK || !strings.Contains(captured.Body.String(), `"command":"memory.capture"`) || !strings.Contains(captured.Body.String(), `"dry_run":"false"`) {
+		t.Fatalf("memory capture response: status=%d body=%s", captured.Code, captured.Body.String())
+	}
+	list := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/v1/memory?entity=pinax", nil))
+	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"command":"memory.list"`) || !strings.Contains(list.Body.String(), `"records":"1"`) {
+		t.Fatalf("memory list response: status=%d body=%s", list.Code, list.Body.String())
+	}
+	recall := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(recall, httptest.NewRequest(http.MethodGet, "/v1/memory:recall?query=decision&entity=pinax", nil))
+	if recall.Code != http.StatusOK || !strings.Contains(recall.Body.String(), `"command":"memory.recall"`) || !strings.Contains(recall.Body.String(), `"memory.matches":"1"`) {
+		t.Fatalf("memory recall response: status=%d body=%s", recall.Code, recall.Body.String())
+	}
+	contextRes := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(contextRes, httptest.NewRequest(http.MethodGet, "/v1/memory:context?task=next+decision&entity=pinax", nil))
+	if contextRes.Code != http.StatusOK || !strings.Contains(contextRes.Body.String(), `"command":"memory.context"`) || !strings.Contains(contextRes.Body.String(), `"memory.matches":"1"`) {
+		t.Fatalf("memory context response: status=%d body=%s", contextRes.Code, contextRes.Body.String())
+	}
+	stats := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(stats, httptest.NewRequest(http.MethodGet, "/v1/memory:stats", nil))
+	if stats.Code != http.StatusOK || !strings.Contains(stats.Body.String(), `"command":"memory.stats"`) || !strings.Contains(stats.Body.String(), `"memory.records":"1"`) {
+		t.Fatalf("memory stats response: status=%d body=%s", stats.Code, stats.Body.String())
+	}
+}
+
 func TestLocalAPIRPCAuthScopeAndHiddenGroupUseMethodMetadata(t *testing.T) {
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
@@ -403,6 +458,24 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
 	taskID := addAPITaskAdoptFixture(t, ctx, root, svc)
 	server := NewServer(svc, root)
+	activity, err := svc.ActivityList(ctx, app.ActivityRequest{VaultPath: root, Limit: 1})
+	if err != nil {
+		t.Fatalf("activity list: %v", err)
+	}
+	activityEntries := activity.Data.(map[string]any)["entries"].([]app.ActivityEntry)
+	if len(activityEntries) == 0 {
+		t.Fatalf("expected init activity entry")
+	}
+	activityEventID := url.PathEscape(activityEntries[0].EventID)
+	monitor, err := svc.MonitorList(ctx, app.MonitorRequest{VaultPath: root, Limit: 1})
+	if err != nil {
+		t.Fatalf("monitor list: %v", err)
+	}
+	monitorRuns := monitor.Data.(map[string]any)["runs"].([]app.MonitorRun)
+	if len(monitorRuns) == 0 {
+		t.Fatalf("expected monitor run")
+	}
+	monitorRunID := url.PathEscape(monitorRuns[0].RunID)
 
 	fixtures := map[string]struct {
 		method      string
@@ -411,6 +484,11 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 		wantCommand string
 	}{
 		"rest.workbench.status":          {method: http.MethodGet, path: "/v1/workbench/status", wantStatus: http.StatusOK, wantCommand: "workbench.status"},
+		"rest.workbench.activity.list":   {method: http.MethodGet, path: "/v1/workbench/activity?limit=1", wantStatus: http.StatusOK, wantCommand: "activity.list"},
+		"rest.workbench.activity.show":   {method: http.MethodGet, path: "/v1/workbench/activity/" + activityEventID, wantStatus: http.StatusOK, wantCommand: "activity.show"},
+		"rest.monitor.list":              {method: http.MethodGet, path: "/v1/monitor/runs?limit=1", wantStatus: http.StatusOK, wantCommand: "monitor.runs"},
+		"rest.monitor.show":              {method: http.MethodGet, path: "/v1/monitor/runs/" + monitorRunID, wantStatus: http.StatusOK, wantCommand: "monitor.show"},
+		"rest.monitor.summary":           {method: http.MethodGet, path: "/v1/monitor/summary", wantStatus: http.StatusOK, wantCommand: "monitor.summary"},
 		"rest.project.list":              {method: http.MethodGet, path: "/v1/projects", wantStatus: http.StatusOK, wantCommand: "project.list"},
 		"rest.project.show":              {method: http.MethodGet, path: "/v1/projects/research", wantStatus: http.StatusOK, wantCommand: "project.show"},
 		"rest.project.board.show":        {method: http.MethodGet, path: "/v1/projects/research/board?note_display=card", wantStatus: http.StatusOK, wantCommand: "project.board.show"},
@@ -423,6 +501,11 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 		"rest.task.adopt.plan":           {method: http.MethodPost, path: "/v1/tasks/" + taskID + ":adopt-plan", wantStatus: http.StatusOK, wantCommand: "task.adopt"},
 		"rest.database.view.render":      {method: http.MethodGet, path: "/v1/database/views/" + viewName + ":render", wantStatus: http.StatusOK, wantCommand: "database.view.render"},
 		"rest.graph.summary":             {method: http.MethodGet, path: "/v1/graph/summary", wantStatus: http.StatusOK, wantCommand: "graph.summary"},
+		"rest.memory.list":               {method: http.MethodGet, path: "/v1/memory", wantStatus: http.StatusOK, wantCommand: "memory.list"},
+		"rest.memory.capture":            {method: http.MethodPost, path: "/v1/memory:capture?dry_run=true&type=fact&subject=pinax&object=api-memory", wantStatus: http.StatusOK, wantCommand: "memory.capture"},
+		"rest.memory.recall":             {method: http.MethodGet, path: "/v1/memory:recall?query=memory", wantStatus: http.StatusOK, wantCommand: "memory.recall"},
+		"rest.memory.context":            {method: http.MethodGet, path: "/v1/memory:context?task=memory", wantStatus: http.StatusOK, wantCommand: "memory.context"},
+		"rest.memory.stats":              {method: http.MethodGet, path: "/v1/memory:stats", wantStatus: http.StatusOK, wantCommand: "memory.stats"},
 		"rest.folder.list":               {method: http.MethodGet, path: "/v1/folders", wantStatus: http.StatusOK, wantCommand: "folder.list"},
 		"rest.folder.show":               {method: http.MethodGet, path: "/v1/folders/research", wantStatus: http.StatusOK, wantCommand: "folder.show"},
 		"rest.folder.create":             {method: http.MethodPost, path: "/v1/folders?path=api-created&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.create"},
@@ -496,6 +579,33 @@ func TestLocalAPIRootReturnsDiscoveryProjection(t *testing.T) {
 	data, ok := payload["data"].(map[string]any)
 	if !ok || data["capabilities_url"] != "/v1/capabilities" || data["routes_command"] != "pinax api routes --vault <vault> --json" {
 		t.Fatalf("root discovery data = %#v", payload["data"])
+	}
+}
+
+func TestLocalAPIWorkbenchPageExposesMemoryCapabilityAndExpandableInspector(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	readonly := NewServer(svc, root)
+	res := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/workbench", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("workbench response: status=%d content-type=%s body=%s", res.Code, res.Header().Get("Content-Type"), res.Body.String())
+	}
+	body := res.Body.String()
+	for _, want := range []string{"Vault Tree", "Projects", "Memory", "Capability Explorer", "Records", "Recall", "Context", "Stats", "right-rail", "openDetailsForHash", "data-allow-write=\"false\""} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("workbench page missing %q:\n%s", want, body)
+		}
+	}
+	writer := NewServerWithOptions(svc, root, ServerOptions{AllowWrite: true})
+	res = httptest.NewRecorder()
+	writer.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/workbench", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "data-allow-write=\"true\"") {
+		t.Fatalf("allow-write workbench should expose write state: status=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
@@ -590,6 +700,53 @@ func TestLocalRESTMethodAndRouteErrorsUseProjectionEnvelope(t *testing.T) {
 	routeRes := httptest.NewRecorder()
 	server.Handler().ServeHTTP(routeRes, httptest.NewRequest(http.MethodGet, "/v1/unknown", nil))
 	assertRESTErrorProjection(t, routeRes, http.StatusNotFound, "route_not_found")
+}
+
+// TestReleaseCoreWriteGateReturnsProjectionErrors is the canonical release
+// proof that the Local API cannot bypass the CLI proof loop: a readonly server
+// rejects writes with write_disabled, an allow-write server without yes=true
+// returns approval_required, and a snapshot-gated mutation without a fresh
+// snapshot returns snapshot_required. No vault file is modified in any case.
+func TestReleaseCoreWriteGateReturnsProjectionErrors(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Release Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+
+	// Readonly server: any write-capable route returns write_disabled and does
+	// not touch Markdown, .pinax/**, Git, provider, or remote state.
+	readonly := NewServer(svc, root)
+	writeDisabled := httptest.NewRecorder()
+	readonly.Handler().ServeHTTP(writeDisabled, httptest.NewRequest(http.MethodPost, "/v1/folders?path=spaces/release&purpose=notes&yes=true", nil))
+	assertRESTErrorProjection(t, writeDisabled, http.StatusForbidden, "write_disabled")
+	if fileExistsForAPITest(filepath.Join(root, "spaces", "release")) {
+		t.Fatalf("readonly server must not create folder on disk")
+	}
+
+	// Allow-write server without yes=true returns approval_required.
+	writer := NewServerWithOptions(svc, root, ServerOptions{AllowWrite: true})
+	approval := httptest.NewRecorder()
+	writer.Handler().ServeHTTP(approval, httptest.NewRequest(http.MethodPost, "/v1/folders?path=spaces/release&purpose=notes", nil))
+	assertRESTErrorProjection(t, approval, http.StatusBadRequest, "approval_required")
+	if fileExistsForAPITest(filepath.Join(root, "spaces", "release")) {
+		t.Fatalf("allow-write server must not create folder without approval")
+	}
+
+	// Create the folder so a snapshot-gated rename is reachable, then prove the
+	// rename without a fresh snapshot returns snapshot_required and stays inert.
+	createRes := httptest.NewRecorder()
+	writer.Handler().ServeHTTP(createRes, httptest.NewRequest(http.MethodPost, "/v1/folders?path=spaces/release&purpose=notes&yes=true", nil))
+	if createRes.Code != http.StatusOK {
+		t.Fatalf("folder create should succeed on allow-write server: %s", createRes.Body.String())
+	}
+	snapshotRequired := httptest.NewRecorder()
+	writer.Handler().ServeHTTP(snapshotRequired, httptest.NewRequest(http.MethodPost, "/v1/folders/spaces/release:rename?target_path=spaces/release-renamed&yes=true", nil))
+	assertRESTErrorProjection(t, snapshotRequired, http.StatusBadRequest, "snapshot_required")
+	if fileExistsForAPITest(filepath.Join(root, "spaces", "release-renamed")) {
+		t.Fatalf("snapshot-gated rename without fresh snapshot must not modify vault")
+	}
 }
 
 func TestLocalRESTRemoteWriteGatesDoNotModifyVaultAndStayRedacted(t *testing.T) {

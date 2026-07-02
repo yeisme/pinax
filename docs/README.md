@@ -18,7 +18,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 ## 当前状态
 
 - 当前阶段：本地优先 notebook workflow 已可通过 CLI 使用，适合外部开发者评估。
-- 当前实现边界：支持 local init、vault validate、daily/inbox/draft、note add/create/list/read/edit/rename/move/archive/delete/tag、共享 `NoteDisplay`、project workspace/board、task adoption plan、长期学习项目初始化、组织维度浏览、database saved views 的 table/board/list/calendar render、saved-view Markdown tabs、SQLite/GORM index、search、`pinax note links`/`pinax note backlinks`/`pinax note orphans`、`search --link-target`、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize plan/list/apply、version snapshot、asset manifest registration/validation/planning、read-only dashboard repair/database-tab views、read-only MCP、localhost REST/RPC projection adapter，以及 server/file/S3/rclone Cloud Sync transport。Obsidian-style vault compatibility 是 preview；Provider automation 和 briefing delivery 仍是 experimental。
+- 当前实现边界：支持 local init、vault validate、daily/inbox/draft、note add/create/list/read/edit/rename/move/archive/delete/tag、共享 `NoteDisplay`、project workspace/board、task adoption plan、长期学习项目初始化、组织维度浏览、database saved views 的 table/board/list/calendar render、saved-view Markdown tabs、SQLite/GORM index、search、`pinax note links`/`pinax note backlinks`/`pinax note orphans`、`search --link-target`、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize plan/list/apply、version snapshot、asset manifest registration/validation/planning、read-only dashboard repair/database-tab views、read-only MCP、localhost REST/RPC projection adapter，以及 server/file/S3/rclone Cloud Sync transport。Obsidian-style vault compatibility 是 preview。
 - 用户可见 note path 使用 vault-relative canonical path。默认普通 note 是根级 `foo.md`，子目录 note 是 `work/foo.md`；历史 `notes/foo.md` 只作为 resolver-compatible 输入，不是 CLI、JSON、agent、record、search 或 MCP 的主要输出。
 - 计划和实现跟踪放在 `openspec/`；外部贡献者先读 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
@@ -46,7 +46,6 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - `pinax database view save|render` 存储 query/view 配置，并返回 bounded table、board、list、calendar 或 database-tab projection。Markdown `pinax-database-view <name>` fences 由 app service 渲染，不让 client 解析 `.pinax/**`，也不持久化 result rows。
 - `pinax note read/show --display card|detail|context|body`、project board、dashboard、MCP、REST 和 RPC 共用同一个 `NoteDisplay` projection；默认 bounded display 不输出完整 body。
 - `pinax api routes`、`pinax api status`、`pinax api schema export` 和 `pinax api serve --readonly --port 0` 是 local REST/RPC projection adapter。服务默认绑定 `127.0.0.1`，不提供 public hosted API、CORS、TLS、多用户权限或 token auth。
-- [Pinax Web 开放设计](./product/web-open-design.md) 是未来独立客户端的合同设计，不表示当前 CLI 已包含 Web UI；对应 OpenSpec 是 `pinax-web-open-design-client-contracts`。
 - Client CLI parity 和 realtime sync 是同一边界下的两条链路：Remote API Mode 让 CLI client 和本地工具通过已注册 capability 操作一台服务端 vault；`pinax sync daemon` 让多个本地 vault 通过加密 Cloud Sync revision 收敛。详见 [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)。
 - `pinax prompt` 存储可复用的 `yeisme.prompt_asset.v1` prompt assets，解析 `pinax://prompt/<id>` 引用，记录 Pinax-owned lifecycle decision，并导入 Eikona 等工具的 metadata-only usage feedback。
 - Cloud Sync 是独立分布式同步设计：每台设备保留本地 vault，Cloud backend 协调 encrypted revision、blob 和 conflict。详见 [Cloud Sync Architecture](./architecture/cloud-sync-design.md)。
@@ -57,7 +56,6 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [文档设计](./overview/documentation-design.md)
 - [长期资料源笔记](./overview/durable-source-notes.md)
 - [产品定位](./overview/product-positioning.md)
-- [Pinax Web 开放设计](./product/web-open-design.md)
 - [架构边界](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
@@ -76,7 +74,6 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 
 - [命令地图](./commands/README.md)：说明每个 root command 所属工作流。
 - [prompt](./commands/prompt.md)：说明 prompt asset lifecycle、`pinax://prompt/<id>` 解析、跨项目边界和 feedback import。
-- [publish](./commands/publish.md)：说明安全的 GitHub Pages/Wiki 发布面、Hugo/theme 使用、deploy gate，以及为什么 vault 仍是真源。
 - [organize](./commands/organize.md)：说明整理流程、写入边界和 `pinax organize plan/list/apply` 的 snapshot 保护。
 - [version](./commands/version.md)、[asset](./commands/asset.md)、[index](./commands/index.md) 和其他 root commands 在 [命令手册](./commands/README.md) 中维护独立页面。
 

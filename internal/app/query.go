@@ -350,8 +350,16 @@ func (s *Service) ShowDatabaseView(ctx context.Context, req ViewRequest) (domain
 	return projection, err
 }
 
-func (s *Service) RenderDatabaseView(ctx context.Context, req ViewRequest) (domain.Projection, error) {
-	projection, err := s.ShowDatabaseView(ctx, req)
+func (s *Service) RenderDatabaseView(ctx context.Context, req ViewRequest) (projection domain.Projection, err error) {
+	root, cleanErr := cleanVaultPath(req.VaultPath)
+	if cleanErr == nil {
+		rec := startMonitorRun(root, "database.view.render", map[string]string{"view": req.Name})
+		defer func() {
+			runID, evidence := rec.Finish(projection.Status, err)
+			addMonitorProjectionFacts(&projection, runID, evidence)
+		}()
+	}
+	projection, err = s.ShowDatabaseView(ctx, req)
 	if err != nil {
 		projection.Command = "database.view.render"
 		return projection, err
@@ -547,37 +555,64 @@ func stableViewID(name string) string {
 	return "view_" + clean
 }
 
-func (s *Service) QueryRun(ctx context.Context, req QueryRequest) (domain.Projection, error) {
+func (s *Service) QueryRun(ctx context.Context, req QueryRequest) (projection domain.Projection, err error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("query.run", err), err
 	}
+	facts := monitorQueryFacts("source", req.SQL)
+	facts["lazy_index"] = fmt.Sprint(req.LazyIndex)
+	facts["limit"] = fmt.Sprint(req.Limit)
+	rec := startMonitorRun(root, "query.run", facts)
+	defer func() {
+		runID, evidence := rec.Finish(projection.Status, err)
+		addMonitorProjectionFacts(&projection, runID, evidence)
+	}()
+	endStep := rec.BeginStep("query.parse", nil)
 	ast, err := searchops.ParseSQL(req.SQL)
 	if err != nil {
+		endStep(err)
 		return errorProjection("query.run", err), err
 	}
-	return s.runQueryAST(ctx, "query.run", "Query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast)
+	endStep(nil)
+	return s.runQueryAST(ctx, "query.run", "Query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast, rec)
 }
 
-func (s *Service) DataviewRun(ctx context.Context, req DataviewRequest) (domain.Projection, error) {
+func (s *Service) DataviewRun(ctx context.Context, req DataviewRequest) (projection domain.Projection, err error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("dataview.run", err), err
 	}
+	facts := monitorQueryFacts("source", req.Query)
+	facts["lazy_index"] = fmt.Sprint(req.LazyIndex)
+	facts["limit"] = fmt.Sprint(req.Limit)
+	rec := startMonitorRun(root, "dataview.run", facts)
+	defer func() {
+		runID, evidence := rec.Finish(projection.Status, err)
+		addMonitorProjectionFacts(&projection, runID, evidence)
+	}()
+	endStep := rec.BeginStep("dataview.parse", nil)
 	ast, err := searchops.ParseDataview(req.Query)
 	if err != nil {
+		endStep(err)
 		return errorProjection("dataview.run", err), err
 	}
-	return s.runQueryAST(ctx, "dataview.run", "Dataview query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast)
+	endStep(nil)
+	return s.runQueryAST(ctx, "dataview.run", "Dataview query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast, rec)
 }
 
-func (s *Service) runQueryAST(ctx context.Context, command, summary, root string, lazyIndex bool, limit int, sort string, cursor string, ast domain.QueryAST) (domain.Projection, error) {
+func (s *Service) runQueryAST(ctx context.Context, command, summary, root string, lazyIndex bool, limit int, sort string, cursor string, ast domain.QueryAST, rec *monitorRecorder) (domain.Projection, error) {
+	endStep := rec.BeginStep("notes.scan", nil)
 	notes, err := scanNotes(root)
 	if err != nil {
+		endStep(err)
 		return errorProjection(command, err), err
 	}
 	notes = ordinaryNotes(notes)
+	endStep(nil)
+	endStep = rec.BeginStep("index.inspect", nil)
 	status, _ := noteindex.Inspect(root, notes)
+	endStep(nil)
 	indexLoaded := ""
 	if status.Status != "fresh" {
 		if !lazyIndex {
@@ -595,13 +630,20 @@ func (s *Service) runQueryAST(ctx context.Context, command, summary, root string
 			return errorProjection(command, ctx.Err()), ctx.Err()
 		default:
 		}
+		endStep = rec.BeginStep("index.lazy_rebuild", map[string]string{"index_status": status.Status})
 		if _, err := noteindex.Rebuild(root, notes); err != nil {
+			endStep(err)
 			return errorProjection(command, err), err
 		}
+		endStep(nil)
+		endStep = rec.BeginStep("index.inspect_after_lazy_rebuild", nil)
 		status, _ = noteindex.Inspect(root, notes)
+		endStep(nil)
 		indexLoaded = "lazy_rebuild"
 	}
+	endStep = rec.BeginStep("query.execute", map[string]string{"source": string(ast.Source)})
 	result := searchops.ExecuteQuery(notes, ast, searchops.QueryRequest{Limit: limit, Sort: sort, Cursor: cursor})
+	endStep(nil)
 	projection := domain.NewProjection(command, summary)
 	projection.Facts["engine"] = "planner"
 	projection.Facts["index_status"] = status.Status

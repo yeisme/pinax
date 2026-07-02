@@ -235,6 +235,29 @@ func TestIndexRefreshCreatesMissingAndSkipsUnchanged(t *testing.T) {
 	}
 }
 
+func TestRefreshChangedDeletesRemovedNoteProjection(t *testing.T) {
+	root := t.TempDir()
+	keep := domain.Note{ID: "note_b", Title: "B", Path: "notes/b.md", Body: "# B\nkeep\n"}
+	removed := domain.Note{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\nremove\n"}
+	if _, err := Rebuild(root, []domain.Note{removed, keep}); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	result, err := RefreshChanged(root, []domain.Note{keep}, []domain.ChangedPath{{Path: "notes/a.md", ChangeKind: "deleted", ObjectKind: domain.VaultObjectKindNote}}, RefreshOptions{})
+	if err != nil {
+		t.Fatalf("refresh changed delete: %v", err)
+	}
+	if result.Scanned != 1 || result.Deleted != 1 || result.Failed != 0 || result.IndexStatus != "fresh" {
+		t.Fatalf("refresh changed delete result = %#v", result)
+	}
+	if records := noteRecords(t, root, "notes/a.md"); len(records) != 0 {
+		t.Fatalf("deleted changed note projection remained: %#v", records)
+	}
+	if records := noteRecords(t, root, "notes/b.md"); len(records) != 1 {
+		t.Fatalf("unchanged note projection missing: %#v", records)
+	}
+}
+
 func BenchmarkIndexRefreshSkipsUnchanged(b *testing.B) {
 	root := b.TempDir()
 	notes := make([]domain.Note, 0, 200)

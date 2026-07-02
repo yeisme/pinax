@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -325,6 +326,189 @@ func TestTemplateListPackTemplateListUseCaseTemplateRecommendTemplateRecommendFa
 	if !strings.Contains(fallback, `"primary":"note.quick"`) && !strings.Contains(fallback, `"primary":"inbox.capture"`) {
 		t.Fatalf("template recommend fallback output = %s", fallback)
 	}
+}
+
+func TestTemplateRecommendWorkflowFields(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	out := runCLI(t, "template", "recommend", "--intent", "meeting", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("recommend json invalid: %v\n%s", err, out)
+	}
+	if envelope["command"] != "template.recommend" || envelope["status"] != "success" {
+		t.Fatalf("recommend envelope = %#v", envelope)
+	}
+	data := envelope["data"].(map[string]any)
+	recommendations := data["recommendations"].([]any)
+	if len(recommendations) == 0 || len(recommendations) > 4 {
+		t.Fatalf("recommendations length = %d: %#v", len(recommendations), recommendations)
+	}
+	primary := recommendations[0].(map[string]any)
+	for _, key := range []string{"scenario_id", "maturity", "pack", "fit_reason", "preview_command", "create_command", "proof_gate", "after_create_actions"} {
+		if _, ok := primary[key]; !ok {
+			t.Fatalf("primary recommendation missing %s: %#v", key, primary)
+		}
+	}
+	if primary["template"] != "meeting.notes" || primary["scenario_id"] != "meeting-decision" || !strings.Contains(primary["preview_command"].(string), "pinax template preview meeting.notes") || !strings.Contains(primary["create_command"].(string), "pinax note add") {
+		t.Fatalf("primary workflow recommendation = %#v", primary)
+	}
+	if _, ok := data["primary"]; !ok {
+		t.Fatalf("recommendation removed legacy primary field: %#v", data)
+	}
+
+	agent := runCLI(t, "template", "recommend", "--intent", "meeting", "--vault", root, "--agent")
+	for _, want := range []string{"command=template.recommend", "fact.primary=meeting.notes", "recommendation.0.template=meeting.notes", "recommendation.0.scenario_id=meeting-decision", "recommendation.0.proof_gate="} {
+		if !strings.Contains(agent, want) {
+			t.Fatalf("recommend agent missing %q:\n%s", want, agent)
+		}
+	}
+	assertMachineOutputClean(t, agent)
+}
+
+func TestTemplateInspectWorkflowFields(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	out := runCLI(t, "template", "inspect", "meeting.notes", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("inspect json invalid: %v\n%s", err, out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	for _, key := range []string{"template", "template_kind", "scenario_id", "maturity", "pack", "lifecycle", "source"} {
+		if facts[key] == "" || facts[key] == nil {
+			t.Fatalf("inspect facts missing %s: %#v", key, facts)
+		}
+	}
+	data := envelope["data"].(map[string]any)
+	workflow := data["workflow"].(map[string]any)
+	if workflow["scenario_id"] != "meeting-decision" || workflow["lifecycle"] != "published_executable" {
+		t.Fatalf("inspect workflow = %#v", workflow)
+	}
+	for _, key := range []string{"variable_schema", "output_policy", "proof_gate", "after_create_actions"} {
+		if _, ok := data[key]; !ok {
+			t.Fatalf("inspect data missing %s: %#v", key, data)
+		}
+	}
+}
+
+func TestTemplatePreviewWorkflowFields(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	before := listVaultFilesForTemplateTest(t, root)
+	out := runCLI(t, "template", "preview", "meeting.notes", "--title", "Client Meeting", "--vault", root, "--json")
+	after := listVaultFilesForTemplateTest(t, root)
+	if strings.Join(before, "\n") != strings.Join(after, "\n") {
+		t.Fatalf("template preview wrote files\nbefore=%#v\nafter=%#v", before, after)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("preview json invalid: %v\n%s", err, out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if facts["read_only"] != "true" || facts["writes"] != "false" || facts["scenario_id"] != "meeting-decision" {
+		t.Fatalf("preview facts = %#v", facts)
+	}
+	data := envelope["data"].(map[string]any)
+	for _, key := range []string{"workflow", "output_policy", "proof_gate", "write_impact", "body_exposure", "next_command"} {
+		if _, ok := data[key]; !ok {
+			t.Fatalf("preview data missing %s: %#v", key, data)
+		}
+	}
+	if !strings.Contains(data["next_command"].(string), "pinax note add") {
+		t.Fatalf("preview next command = %#v", data["next_command"])
+	}
+}
+
+func TestTemplatePackAndLifecycleCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	starter := runCLI(t, "template", "list", "--pack", "starter", "--vault", root, "--json")
+	if !strings.Contains(starter, `"pack":{"id":"starter"`) || !strings.Contains(starter, "sticky.capture") || strings.Contains(starter, "meeting.notes") {
+		t.Fatalf("starter pack output = %s", starter)
+	}
+
+	draft := strings.Join([]string{"---", "schema_version: pinax.template.v2", "kind: note_template", "name: meeting.draft", "title: Meeting Draft", "engine: go-template", "scenario_id: meeting-decision", "intents: [meeting]", "lifecycle: draft_design", "pack:", "  id: local-workflows", "  source: vault-local", "output:", "  path_pattern: drafts/{{ .Title }}.md", "defaults:", "  kind: meeting", "  status: draft", "---", "# {{ .Title }}"}, "\n")
+	runCLI(t, "template", "create", "meeting.draft", "--body", draft, "--vault", root, "--json")
+	out := runCLI(t, "template", "recommend", "--intent", "meeting", "--vault", root, "--json")
+	if strings.Contains(out, `"primary":{"name":"meeting.draft"`) || !strings.Contains(out, `"lifecycle":"draft_design"`) || !strings.Contains(out, `"executable":false`) {
+		t.Fatalf("draft lifecycle recommendation output = %s", out)
+	}
+
+	local := strings.Join([]string{"---", "schema_version: pinax.template.v2", "kind: note_template", "name: meeting.notes", "title: Local Meeting", "engine: go-template", "pack:", "  id: local-workflows", "  source: vault-local", "output:", "  path_pattern: local/{{ .Title }}.md", "defaults:", "  kind: meeting", "  status: active", "---", "# {{ .Title }}"}, "\n")
+	runCLI(t, "template", "create", "meeting.notes", "--body", local, "--overwrite", "--vault", root, "--json")
+	inspect := runCLI(t, "template", "inspect", "meeting.notes", "--vault", root, "--json")
+	if !strings.Contains(inspect, `"source":"vault-local"`) || !strings.Contains(inspect, `"lifecycle":"overridden"`) || !strings.Contains(inspect, `"pack":"local-workflows"`) {
+		t.Fatalf("local override inspect = %s", inspect)
+	}
+}
+
+func TestTemplateUseEvidence(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	out := runCLI(t, "note", "add", "Client Meeting", "--template", "meeting.notes", "--dir", "index", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("note add template json invalid: %v\n%s", err, out)
+	}
+	if envelope["command"] != "note.new" || envelope["status"] != "success" {
+		t.Fatalf("note add template envelope = %#v", envelope)
+	}
+	facts := envelope["facts"].(map[string]any)
+	for key, want := range map[string]string{
+		"template":          "meeting.notes",
+		"template_pack":     "focused",
+		"scenario_id":       "meeting-decision",
+		"proof_gate.status": "review_optional",
+	} {
+		if facts[key] != want {
+			t.Fatalf("fact %s = %#v, want %q; facts=%#v", key, facts[key], want, facts)
+		}
+	}
+	if facts["template_use_id"] == "" || facts["effective_path"] == "" {
+		t.Fatalf("template use facts missing id/path: %#v", facts)
+	}
+	data := envelope["data"].(map[string]any)
+	use, ok := data["template_use"].(map[string]any)
+	if !ok {
+		t.Fatalf("template_use missing from data: %#v", data)
+	}
+	for _, key := range []string{"template_use_id", "template", "template_pack", "scenario_id", "effective_path", "proof_gate", "next_actions"} {
+		if _, ok := use[key]; !ok {
+			t.Fatalf("template_use missing %s: %#v", key, use)
+		}
+	}
+	if strings.Contains(out, "raw prompt") || strings.Contains(out, "Authorization: Bearer") {
+		t.Fatalf("template use output leaked forbidden content:\n%s", out)
+	}
+}
+
+func listVaultFilesForTemplateTest(t *testing.T, root string) []string {
+	t.Helper()
+	files := []string{}
+	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		files = append(files, filepath.ToSlash(rel))
+		return nil
+	}); err != nil {
+		t.Fatalf("walk vault: %v", err)
+	}
+	sort.Strings(files)
+	return files
 }
 
 func TestTemplateCompletionJournalTemplateCompletionIndexTemplateCompletionNoteTemplateCompletion(t *testing.T) {

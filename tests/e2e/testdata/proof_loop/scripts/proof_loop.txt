@@ -167,3 +167,33 @@ exec sh -c 'pinax version history --vault vault --json > history.json'
 validate-json-envelope history.json
 validate-clean-stdout history.json
 grep '"command":"version.history"' history.json
+
+# ---------------------------------------------------------------------------
+# Stage 9: Restore — every apply is reversible. Take a protective snapshot of
+# the post-organize vault, deliberately corrupt one note, then restore it
+# through the CLI-authored restore plan path and apply. This closes the
+# five-minute proof loop: capture, retrieve, diagnose, plan, snapshot, apply,
+# and restore.
+# ---------------------------------------------------------------------------
+exec sh -c 'pinax version snapshot --vault vault --message "proof loop restore baseline" --json > snapshot_restore.json'
+validate-json-envelope snapshot_restore.json
+validate-clean-stdout snapshot_restore.json
+grep '"status":"success"' snapshot_restore.json
+
+# Corrupt the organized note so the restore has a real change to revert.
+exec sh -c 'echo "# corrupted by agent" > vault/notes/algorithms.md'
+
+exec sh -c 'REV=$(python3 -c "import json; print(json.load(open(\"snapshot_restore.json\"))[\"facts\"][\"snapshot_id\"])"); pinax version restore notes/algorithms.md --revision "$REV" --plan --vault vault --json > restore_plan.json'
+validate-json-envelope restore_plan.json
+validate-clean-stdout restore_plan.json
+grep '"command":"version.restore"' restore_plan.json
+grep '"plan_id"' restore_plan.json
+
+exec sh -c 'PLAN=$(python3 -c "import json; print(json.load(open(\"restore_plan.json\"))[\"facts\"][\"plan_id\"])"); pinax version restore apply --vault vault --plan "$PLAN" --yes --json > restore_apply.json'
+validate-json-envelope restore_apply.json
+validate-clean-stdout restore_apply.json
+grep '"command":"version.restore.apply"' restore_apply.json
+grep '"status":"success"' restore_apply.json
+
+# The corruption must be gone — the restore reverted the note to its snapshot content.
+! grep 'corrupted by agent' vault/notes/algorithms.md

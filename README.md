@@ -38,8 +38,6 @@ Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer fo
 | Local dashboard, read-only MCP, localhost REST/RPC adapter, and workspace/task/database/graph read projections | Supported |
 | Obsidian-style vault compatibility: wikilinks/backlinks, properties, daily managed blocks, templates, attachments, dataview blocks, `.obsidian/` ignore | Preview |
 | Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
-| Provider automation and briefing delivery | Experimental |
-| Dynamic plugin manifest, registry, permission, and runner contracts | Experimental |
 
 ## Installation
 
@@ -113,43 +111,6 @@ pinax search "First note" --vault ./my-notes --json
 
 See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
 
-### Static publishing
-
-Build Pages or Wiki output from the vault without making GitHub the source of truth:
-
-```bash
-pinax publish profile init public --target github-pages --renderer hugo --vault ./my-notes --json
-pinax publish plan --profile public --target github-pages --vault ./my-notes --json
-pinax publish build --profile public --target github-pages --out ./dist/site --vault ./my-notes --json
-pinax publish deploy --profile public --target github-pages --out ./dist/site --repo ../kb-pages --yes --vault ./my-notes --json
-
-pinax publish profile init wiki --target github-wiki --renderer none --vault ./my-notes --json
-pinax publish build --profile wiki --target github-wiki --out ./dist/wiki --vault ./my-notes --json
-pinax publish profile init gist --target github-gist --renderer none --vault ./my-notes --json
-pinax publish build --profile gist --target github-gist --out ./dist/gist --vault ./my-notes --json
-pinax publish deploy --profile gist --target github-gist --out ./dist/gist --yes --vault ./my-notes --json
-pinax publish profile init share --target http --renderer none --vault ./my-notes --json
-pinax publish build --profile share --target http --out ./dist/share --vault ./my-notes --json
-pinax publish deploy --profile share --target http --out ./dist/share --endpoint https://share.example.test/publish --yes --vault ./my-notes --json
-pinax publish serve --profile wiki --out ./dist/wiki --host 127.0.0.1 --port 4173 --vault ./my-notes
-```
-
-Use a separate Pages/Wiki repository, Gist, HTTP endpoint, or loopback preview, not the private vault repository. Deploy validates the build receipt, output hash and scan result before writing.
-
-### Dynamic plugins
-
-Validate and install local plugins without making them the source of truth:
-
-```bash
-pinax plugin validate ./plugins/project-dashboard --vault ./my-notes --json
-pinax plugin install ./plugins/project-dashboard --scope vault --vault ./my-notes --json
-pinax plugin enable project-dashboard --vault ./my-notes --yes --json
-pinax plugin permissions grant project-dashboard projection.read --capability render_dashboard --vault ./my-notes --yes --json
-pinax plugin run project-dashboard render_dashboard --vault ./my-notes --dry-run --json
-```
-
-Registry, lock, permission grants, and audit events are CLI-authored under `.pinax/plugins/` and `.pinax/events/`; do not hand-edit them. WASM is the preferred untrusted runtime direction. JavaScript, Python, and process plugins use external trusted runners and are not claimed to be a strong sandbox. See [Plugin Runtime](./docs/architecture/plugin-runtime.md) and [`pinax plugin`](./docs/commands/plugin.md).
-
 ## Five core workflows
 
 Pinax is built around one agent-safe proof loop. A user or agent drives a real Markdown vault through five stages, and every stage stays bounded — projections never dump full note bodies, and writes only happen through plan, snapshot, receipt and explicit apply.
@@ -176,6 +137,15 @@ pinax version restore notes/example.md --revision HEAD --plan --vault ./my-notes
 pinax version restore apply --vault ./my-notes --plan restore-<id> --yes   # local_write=true, remote_write=false
 ```
 
+Remove obsolete projects through the recoverable trash path, not by editing `.pinax/projects.json`:
+
+```bash
+pinax project delete history --vault ./my-notes --yes --json
+pinax trash list --vault ./my-notes --json
+pinax trash restore project/history --vault ./my-notes --json
+pinax trash purge project/history --dry-run --vault ./my-notes --json
+```
+
 ```bash
 pinax init ./my-notes --title "My Knowledge Base"
 pinax inbox capture "an idea" --vault ./my-notes
@@ -188,7 +158,7 @@ pinax version snapshot --vault ./my-notes --message "checkpoint"
 pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
 ```
 
-Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync, daily briefing, provider expansion and hosted platform capabilities are separate advanced workflows, not part of this local proof loop.
+Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync remains a transport boundary and is not required for the local proof loop.
 
 ## Workspace And Database Views
 

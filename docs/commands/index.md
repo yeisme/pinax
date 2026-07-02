@@ -28,9 +28,23 @@ pinax index rebuild --vault ./my-notes --json
 pinax index lookup diagram --scope all --vault ./my-notes --json
 ```
 
+Search can opt out of search-time index writes when a command must stay read-only:
+
+```bash
+pinax search "authentication" --lazy-index off --vault ./my-notes --json
+```
+
+Use index-only search when automation must fail instead of falling back to native Markdown scanning:
+
+```bash
+pinax search "authentication" --engine index --vault ./my-notes --json
+```
+
 ## SQLite Index and Review Index Pages
 
-The SQLite/GORM index managed by `pinax index` is a structured projection of each note, containing fields such as `status`, `lifecycle_status`, `kind`, and `folder`. `lifecycle_status` is derived from `status`:
+The SQLite/GORM index managed by `pinax index` is a structured projection of each note, containing fields such as `status`, `lifecycle_status`, `kind`, `folder`, and tokenized search terms. `pinax search --engine index` uses the ordinary SQLite `search_token_records` projection to select candidate notes, then loads note text only for returned snippets. It does not require `rg`, `fzf`, `bat`, or SQLite FTS extensions.
+
+`lifecycle_status` is derived from `status`:
 
 - `inbox`, `draft`, `active`, `archived`, and `discarded` map directly
 - `status: system` + `kind: index` → `system`
@@ -48,6 +62,6 @@ Built-in review index templates: `index.inbox`, `index.drafts`, `index.decisions
 
 ## Selection Rules
 
-- missing or stale: prefer `index refresh`.
+- missing or stale: prefer `index refresh`; use `pinax search <query> --lazy-index off --vault ./my-notes --json` when the search command must not write the index.
 - schema incompatible, corrupt, or unreadable: run `index doctor` first, and `index rebuild` if necessary.
 - Only checking candidate objects: use `index lookup`; do not inspect `.pinax/index` directly.

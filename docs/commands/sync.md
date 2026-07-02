@@ -4,6 +4,12 @@
 
 For `--target cloud`, the protocol is distributed: every device keeps a local vault, and the selected Cloud Sync transport coordinates encrypted blob, manifest, and revision exchange. The content manifest is selected by `.pinaxignore` and can include Markdown, scripts, assets, attachments, and other regular files. The transport can be Pinax Cloud Server, S3-compatible direct storage, rclone direct storage, or embedded Go API/local RPC. This differs from `pinax api serve`, which is centralized remote access to one server-side vault.
 
+Project and subproject deletions are represented as explicit encrypted delete markers in the manifest. A deletion is not inferred from a missing file entry. Push reports additive `delete_markers` and `trash_backup_blobs` facts, and `remote_write=true` is still emitted only after the selected transport commits the revision.
+
+When docs or operator notes use the phrase backup mirror, it means a CLI-side direct transport mirror of encrypted Cloud Sync objects under a user-controlled provider boundary. S3 direct and rclone direct do not become Pinax Cloud server-side storage: provider credentials own access, and Pinax does not provide server-side auth, audit, object lifecycle, tenant policy, or rate limiting for those writes. Pinax Cloud server transport is the path that owns server auth/audit/object lifecycle semantics.
+
+The backup mirror boundary also excludes realtime daemon and conflict policy changes. `pinax sync daemon` remains the local realtime automation layer, and conflict inspection/resolution remains under explicit `pinax sync conflicts` commands. New daemon lifecycle behavior, automatic merge behavior, conflict resolution semantics, or transport-specific push notifications need separate OpenSpec coverage before implementation.
+
 ## Subcommands
 
 | Command | Purpose | Writes/External effects |
@@ -62,6 +68,14 @@ pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace person
 pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
 pinax sync push --target cloud --vault ./device-a --yes --json
 pinax sync pull --target cloud --vault ./device-b --yes --json
+```
+
+Delete markers are produced by CLI-authored trash commands before sync:
+
+```bash
+pinax project delete history --vault ./device-a --yes --json
+pinax trash list --vault ./device-a --json
+pinax sync push --target cloud --vault ./device-a --yes --json
 ```
 
 Configure server and rclone backends; a push claims a completed write only after the selected transport commits a durable revision:
@@ -133,6 +147,8 @@ Conflict output and next actions must be consumable by humans and agents. Note b
 `sync` is the entry point for sync workflows. `cloud` configures the Cloud Sync transport state. `backend` manages provider profiles, capabilities, and object-store diagnostics.
 
 Pinax Cloud Server is one Cloud Sync transport and owns auth/device state, revision CAS, blob persistence, audit, and readiness. S3/rclone direct transports skip the remote Pinax Cloud service and use provider credentials as the access boundary. Embedded Go API/local RPC calls the same app service as the CLI and does not bypass approval, dry-run, snapshot, conflict, event, or redaction rules.
+
+S3 direct can serve as a backup mirror for encrypted Cloud Sync objects, but it remains a direct object-store transport. It must not be documented as Pinax Cloud server-side storage, and backup mirror wording must not promise daemon convergence or conflict resolution without a separate OpenSpec change.
 
 `pinax api serve` is not a Cloud Sync transport. It exposes one centralized vault through local REST/RPC and is useful for dashboards and local agents that intentionally operate against that vault.
 

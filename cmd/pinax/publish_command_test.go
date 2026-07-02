@@ -61,6 +61,45 @@ func TestPublishProfileInitValidateShowListCommands(t *testing.T) {
 	}
 }
 
+func TestPublishProfileInitAcceptsPinaxWebRenderer(t *testing.T) {
+	root := t.TempDir()
+
+	initOut := runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+	initEnvelope := parsePublishEnvelope(t, initOut)
+	facts := initEnvelope["facts"].(map[string]any)
+	if initEnvelope["command"] != "publish.profile.init" || initEnvelope["status"] != "success" || facts["renderer"] != "pinax-web" {
+		t.Fatalf("pinax-web init envelope = %#v", initEnvelope)
+	}
+
+	validateOut := runCLI(t, "publish", "profile", "validate", "public", "--vault", root, "--json")
+	validateEnvelope := parsePublishEnvelope(t, validateOut)
+	validateFacts := validateEnvelope["facts"].(map[string]any)
+	if validateEnvelope["status"] != "success" || validateFacts["renderer"] != "pinax-web" || validateFacts["migration.recommended"] != "false" {
+		t.Fatalf("pinax-web validate envelope = %#v", validateEnvelope)
+	}
+}
+
+func TestPublishProfileInitAcceptsStaticPlatformTargets(t *testing.T) {
+	root := t.TempDir()
+
+	for _, target := range []string{"local", "github-pages", "vercel", "cloudflare-pages"} {
+		name := strings.ReplaceAll(target, "-", "_")
+		out := runCLI(t, "publish", "profile", "init", name, "--target", target, "--renderer", "pinax-web", "--vault", root, "--json")
+		envelope := parsePublishEnvelope(t, out)
+		facts := envelope["facts"].(map[string]any)
+		if envelope["command"] != "publish.profile.init" || envelope["status"] != "success" || facts["target"] != target || facts["renderer"] != "pinax-web" {
+			t.Fatalf("target %s init envelope = %#v", target, envelope)
+		}
+
+		validateOut := runCLI(t, "publish", "profile", "validate", name, "--vault", root, "--json")
+		validateEnvelope := parsePublishEnvelope(t, validateOut)
+		validateFacts := validateEnvelope["facts"].(map[string]any)
+		if validateEnvelope["status"] != "success" || validateFacts["target"] != target || validateFacts["issues"] != "0" {
+			t.Fatalf("target %s validate envelope = %#v", target, validateEnvelope)
+		}
+	}
+}
+
 func publishVaultFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -148,6 +187,175 @@ func TestPublishServePreviewsBuiltOutputOnLoopback(t *testing.T) {
 	}
 	if strings.Contains(serveOut, root) {
 		t.Fatalf("serve output leaked local root:\n%s", serveOut)
+	}
+}
+
+func TestPublishServeLoopbackPinaxWebStaticSite(t *testing.T) {
+	root := publishVaultFixture(t)
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--json")
+
+	serveOut := runCLI(t, "publish", "serve", "--profile", "public", "--out", outDir, "--host", "127.0.0.1", "--port", "0", "--once", "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, serveOut)
+	facts := envelope["facts"].(map[string]any)
+	if envelope["command"] != "publish.serve" || facts["host"] != "127.0.0.1" || facts["served"] != "true" || facts["url"] == "" {
+		t.Fatalf("pinax-web serve envelope = %#v", envelope)
+	}
+	if strings.Contains(serveOut, root) {
+		t.Fatalf("pinax-web serve output leaked local root:\n%s", serveOut)
+	}
+}
+
+func TestPublishDevBuildsAndServesOnce(t *testing.T) {
+	root := publishVaultFixture(t)
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+
+	out := runCLI(t, "publish", "dev", "--profile", "public", "--out", outDir, "--host", "127.0.0.1", "--port", "0", "--once", "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, out)
+	facts := envelope["facts"].(map[string]any)
+	if envelope["command"] != "publish.dev" || envelope["status"] != "success" || facts["built"] != "true" || facts["served"] != "true" || facts["target"] != "local" || facts["url"] == "" {
+		t.Fatalf("publish dev envelope = %#v", envelope)
+	}
+	if !fileExists(filepath.Join(outDir, "index.html")) || !fileExists(filepath.Join(outDir, "pinax-data", "manifest.json")) {
+		t.Fatalf("publish dev did not build pinax-web output")
+	}
+	if strings.Contains(out, root) {
+		t.Fatalf("publish dev output leaked local root:\n%s", out)
+	}
+}
+
+func TestPublishPreviewCommandsEmitLiveEvents(t *testing.T) {
+	root := publishVaultFixture(t)
+	outDir := filepath.Join(root, "dist", "site")
+	initEventsOut := runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--events")
+	initEvents := parseNDJSONEvents(t, initEventsOut)
+	for _, want := range []string{"start", "profile_ready", "end"} {
+		if !hasEventType(initEvents, want) {
+			t.Fatalf("publish profile init events missing %q:\n%s", want, initEventsOut)
+		}
+	}
+	assertPublishEventsContract(t, initEvents, "publish.profile.init")
+
+	planEventsOut := runCLI(t, "publish", "plan", "--profile", "public", "--target", "local", "--vault", root, "--events")
+	planEvents := parseNDJSONEvents(t, planEventsOut)
+	for _, want := range []string{"start", "profile_ready", "plan_checked", "end"} {
+		if !hasEventType(planEvents, want) {
+			t.Fatalf("publish plan events missing %q:\n%s", want, planEventsOut)
+		}
+	}
+	assertPublishEventsContract(t, planEvents, "publish.plan")
+
+	buildEventsOut := runCLI(t, "publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--events")
+	buildEvents := parseNDJSONEvents(t, buildEventsOut)
+	for _, want := range []string{"start", "profile_ready", "plan_checked", "renderer_started", "renderer_completed", "scan_completed", "receipt_written", "end"} {
+		if !hasEventType(buildEvents, want) {
+			t.Fatalf("publish build events missing %q:\n%s", want, buildEventsOut)
+		}
+	}
+	assertPublishEventsContract(t, buildEvents, "publish.build")
+	if strings.Contains(buildEventsOut, root) || strings.Contains(buildEventsOut, "Public body") {
+		t.Fatalf("publish build events leaked local path or body:\n%s", buildEventsOut)
+	}
+
+	approveEventsOut := runCLI(t, "publish", "preview", "approve", "--profile", "public", "--out", outDir, "--vault", root, "--events")
+	approveEvents := parseNDJSONEvents(t, approveEventsOut)
+	for _, want := range []string{"start", "scan_completed", "preview_approved", "end"} {
+		if !hasEventType(approveEvents, want) {
+			t.Fatalf("publish preview approve events missing %q:\n%s", want, approveEventsOut)
+		}
+	}
+	assertPublishEventsContract(t, approveEvents, "publish.preview.approve")
+
+	devEventsOut := runCLI(t, "publish", "dev", "--profile", "public", "--out", outDir, "--host", "127.0.0.1", "--port", "0", "--once", "--vault", root, "--events")
+	devEvents := parseNDJSONEvents(t, devEventsOut)
+	for _, want := range []string{"start", "plan_checked", "renderer_started", "serve_ready", "smoke_completed", "end"} {
+		if !hasEventType(devEvents, want) {
+			t.Fatalf("publish dev events missing %q:\n%s", want, devEventsOut)
+		}
+	}
+	assertPublishEventsContract(t, devEvents, "publish.dev")
+	if !publishEventsContainLoopbackURL(devEvents) {
+		t.Fatalf("publish dev events missing loopback url: %#v", devEvents)
+	}
+}
+
+func TestPublishPreviewHumanLogsUseStderrAndMachineModesStayPure(t *testing.T) {
+	root := publishVaultFixture(t)
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+
+	stdout, stderr, err := runCLISeparate("publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root)
+	if err != nil {
+		t.Fatalf("publish build failed: %v\nstdout=%s\nstderr=%s", err, stdout, stderr)
+	}
+	for _, want := range []string{"plan_checked", "renderer_started", "scan_completed", "receipt_written"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("publish build stderr missing %q:\n%s", want, stderr)
+		}
+		if strings.Contains(stdout, want) {
+			t.Fatalf("publish build stdout mixed progress %q:\n%s", want, stdout)
+		}
+	}
+
+	jsonStdout, jsonStderr, err := runCLISeparate("publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--json")
+	if err != nil {
+		t.Fatalf("publish build --json failed: %v\nstdout=%s\nstderr=%s", err, jsonStdout, jsonStderr)
+	}
+	if strings.Contains(jsonStderr, "plan_checked") || strings.Contains(jsonStderr, "renderer_started") {
+		t.Fatalf("publish build --json wrote live progress to stderr:\n%s", jsonStderr)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(jsonStdout), &envelope); err != nil {
+		t.Fatalf("publish build --json stdout is not a pure JSON envelope: %v\n%s", err, jsonStdout)
+	}
+}
+
+func assertPublishEventsContract(t *testing.T, events []map[string]any, command string) {
+	t.Helper()
+	for i, event := range events {
+		if event["spec_version"] != "1.0" || event["mode"] != "events" || event["command"] != command || event["type"] == "" || event["status"] == "" {
+			t.Fatalf("event %d contract invalid: %#v", i, event)
+		}
+		if _, ok := event["seq"].(float64); !ok {
+			t.Fatalf("event %d missing numeric seq: %#v", i, event)
+		}
+	}
+}
+
+func publishEventsContainLoopbackURL(events []map[string]any) bool {
+	for _, event := range events {
+		if event["type"] == "serve_ready" && strings.HasPrefix(fmt.Sprint(event["url"]), "http://127.0.0.1:") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestPublishPreviewApproveWritesReceipt(t *testing.T) {
+	root := publishVaultFixture(t)
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+
+	missingOut, missingErr := runCLIExpectError("publish", "preview", "approve", "--profile", "public", "--out", outDir, "--vault", root, "--json")
+	if missingErr == nil || !strings.Contains(missingOut, "preview_build_required") {
+		t.Fatalf("preview approve should require matching build: out=%s err=%v", missingOut, missingErr)
+	}
+
+	runCLI(t, "publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--json")
+	approveOut := runCLI(t, "publish", "preview", "approve", "--profile", "public", "--out", outDir, "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, approveOut)
+	facts := envelope["facts"].(map[string]any)
+	if envelope["command"] != "publish.preview.approve" || envelope["status"] != "success" || facts["approved"] != "true" || facts["receipt"] == "" || facts["output_hash"] == "" {
+		t.Fatalf("preview approve envelope = %#v", envelope)
+	}
+	receipt := mustReadFile(t, filepath.Join(root, filepath.FromSlash(facts["receipt"].(string))))
+	if !strings.Contains(receipt, "preview_approved") || strings.Contains(receipt, "Public body") || strings.Contains(receipt, root) {
+		t.Fatalf("preview receipt invalid or leaked data:\n%s", receipt)
+	}
+	if strings.Contains(approveOut, root) {
+		t.Fatalf("preview approve output leaked local root:\n%s", approveOut)
 	}
 }
 
@@ -448,6 +656,74 @@ func TestPublishBuildGitHubWikiWritesMarkdownManifestAndReceipt(t *testing.T) {
 	}
 }
 
+func TestPublishBuildPinaxWebStaticSite(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--title", "Knowledge", "--vault", root, "--json")
+	writePublishNoteFixture(t, root, "notes/alpha.md", map[string]string{"note_id": "note_alpha", "title": "Alpha", "kind": "concept", "status": "active", "publish": "public", "tags": "alpha"}, "# Alpha\n\nPublic body.\n")
+	writePublishNoteFixture(t, root, "notes/private.md", map[string]string{"note_id": "note_private", "title": "Private", "kind": "concept", "status": "active", "publish": "public", "privacy": "private"}, "# Private\n\nPRIVATE BODY MUST NOT LEAK.\n")
+
+	out := runCLI(t, "publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, out)
+	if envelope["command"] != "publish.build" || envelope["status"] != "success" {
+		t.Fatalf("pinax-web build envelope = %#v", envelope)
+	}
+	facts := envelope["facts"].(map[string]any)
+	for key, want := range map[string]string{"target": "local", "renderer": "pinax-web", "selected_count": "1", "scan_findings": "0"} {
+		if facts[key] != want {
+			t.Fatalf("pinax-web build fact %s = %v want %s; facts=%#v", key, facts[key], want, facts)
+		}
+	}
+	if facts["output_hash"] == "" || facts["receipt"] == "" {
+		t.Fatalf("pinax-web build missing output_hash or receipt facts: %#v", facts)
+	}
+	for _, rel := range []string{"index.html", "notes/alpha/index.html", "tags/alpha/index.html", "pinax-data/manifest.json", "pinax-data/graph.json", "pinax-data/search-index.json"} {
+		if !fileExists(filepath.Join(outDir, filepath.FromSlash(rel))) {
+			t.Fatalf("missing pinax-web output %s", rel)
+		}
+	}
+	index := mustReadFile(t, filepath.Join(outDir, "index.html"))
+	alpha := mustReadFile(t, filepath.Join(outDir, "notes", "alpha", "index.html"))
+	manifest := mustReadFile(t, filepath.Join(outDir, "pinax-data", "manifest.json"))
+	if !strings.Contains(index, "Alpha") || !strings.Contains(alpha, "Public body") || !strings.Contains(manifest, "note_alpha") {
+		t.Fatalf("pinax-web output missing public note data")
+	}
+	receipt, ok := facts["receipt"].(string)
+	if !ok || receipt == "" {
+		t.Fatalf("pinax-web build missing receipt fact: %#v", facts)
+	}
+	if !fileExists(filepath.Join(root, filepath.FromSlash(receipt))) {
+		t.Fatalf("pinax-web receipt path does not exist: %#v", receipt)
+	}
+	if strings.Contains(out, root) {
+		t.Fatalf("pinax-web build output leaked local root:\n%s", out)
+	}
+	for _, forbidden := range []string{"PRIVATE BODY MUST NOT LEAK", root, ".pinax"} {
+		if strings.Contains(index, forbidden) || strings.Contains(alpha, forbidden) || strings.Contains(manifest, forbidden) {
+			t.Fatalf("pinax-web output leaked %q", forbidden)
+		}
+	}
+}
+
+func TestPublishBuildPinaxWebBlocksPlanViolations(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n\n![Raw](../assets/raw.exe)\n")
+	writeCLIFixture(t, filepath.Join(root, "assets", "raw.exe"), "not publishable")
+
+	out, err := runCLIExpectError("publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--json")
+	if err == nil {
+		t.Fatalf("expected pinax-web local build block, got %s", out)
+	}
+	if !strings.Contains(out, "publish_plan_blocked") || !strings.Contains(out, "asset_not_allowed") {
+		t.Fatalf("local build failure missing plan block/asset finding:\n%s", out)
+	}
+	if fileExists(filepath.Join(outDir, "index.html")) || fileExists(filepath.Join(outDir, "assets", "raw.exe")) || fileExists(filepath.Join(root, ".pinax", "publish", "runs")) {
+		t.Fatalf("blocked local build wrote output or success receipt")
+	}
+}
+
 func TestPublishBuildGitHubPagesUsesFakeHugoAndScansOutput(t *testing.T) {
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
@@ -601,7 +877,7 @@ func TestPublishBuildGitHubPagesRealHugoSmokeWhenAvailable(t *testing.T) {
 	}
 }
 
-func TestPublishDeployRequiresApprovalAndCommitsLocalRepo(t *testing.T) {
+func TestPublishDeployGitHubPagesRequiresPreviewApprovalAndCommitsLocalRepo(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git executable not available")
 	}
@@ -625,6 +901,15 @@ func TestPublishDeployRequiresApprovalAndCommitsLocalRepo(t *testing.T) {
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n")
 	runCLI(t, "publish", "build", "--profile", "pages", "--target", "github-pages", "--out", outDir, "--vault", root, "--json")
+	previewOut, previewErr := runCLIExpectError("publish", "deploy", "--profile", "pages", "--target", "github-pages", "--out", outDir, "--repo", repoDir, "--branch", "gh-pages", "--yes", "--vault", root, "--json")
+	if previewErr == nil || !strings.Contains(previewOut, "preview_required") || fileExists(repoDir) {
+		t.Fatalf("deploy should require preview approval before writing: out=%s err=%v", previewOut, previewErr)
+	}
+	unsafeOut, unsafeErr := runCLIExpectError("publish", "deploy", "--profile", "pages", "--target", "github-pages", "--out", outDir, "--repo", root, "--branch", "gh-pages", "--yes", "--vault", root, "--json")
+	if unsafeErr == nil || !strings.Contains(unsafeOut, "publish_deploy_policy_invalid") {
+		t.Fatalf("deploy to vault root should be rejected: out=%s err=%v", unsafeOut, unsafeErr)
+	}
+	runCLI(t, "publish", "preview", "approve", "--profile", "pages", "--out", outDir, "--vault", root, "--json")
 
 	out := runCLI(t, "publish", "deploy", "--profile", "pages", "--target", "github-pages", "--out", outDir, "--repo", repoDir, "--branch", "gh-pages", "--yes", "--vault", root, "--json")
 	envelope := parsePublishEnvelope(t, out)
@@ -646,6 +931,108 @@ func TestPublishDeployRequiresApprovalAndCommitsLocalRepo(t *testing.T) {
 	if strings.Contains(out, root) {
 		t.Fatalf("deploy output leaked local root:\n%s", out)
 	}
+}
+
+func TestPublishDeployVercelUsesFakeCLIAndRedactsOutput(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	fakeBin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "vercel.log")
+	fakeVercel := filepath.Join(fakeBin, "vercel")
+	if err := os.WriteFile(fakeVercel, []byte("#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$PINAX_TEST_VERCEL_LOG\"\necho 'https://RAW_VERCEL_TOKEN@vercel.example.invalid/deploy?token=RAW_VERCEL_QUERY'\necho 'Authorization: Bearer RAW_VERCEL_AUTH Cookie: session=RAW_VERCEL_COOKIE' >&2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PINAX_TEST_VERCEL_LOG", logPath)
+	preparePinaxWebPublishApproval(t, root, outDir, "public")
+
+	out := runCLI(t, "publish", "deploy", "--profile", "public", "--target", "vercel", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, out)
+	facts := envelope["facts"].(map[string]any)
+	if envelope["command"] != "publish.deploy" || envelope["status"] != "success" || facts["mode"] != "vercel" || facts["target"] != "vercel" || facts["project"] != "my-notes" || facts["files"] == "0" {
+		t.Fatalf("vercel deploy envelope = %#v", envelope)
+	}
+	log := mustReadFile(t, logPath)
+	for _, want := range []string{"deploy", outDir, "--yes", "--prod", "--name", "my-notes"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("vercel log missing %q: %s", want, log)
+		}
+	}
+	for _, forbidden := range []string{root, "RAW_VERCEL_TOKEN", "RAW_VERCEL_QUERY", "RAW_VERCEL_AUTH", "RAW_VERCEL_COOKIE", "Authorization:", "Cookie:"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("vercel deploy output leaked %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+func TestPublishDeployVercelMissingCLIIsActionable(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	t.Setenv("PATH", filepath.Join(root, "empty-bin"))
+
+	out, err := runCLIExpectError("publish", "deploy", "--profile", "public", "--target", "vercel", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
+	if err == nil || !strings.Contains(out, "publish_vercel_cli_missing") || strings.Contains(out, root) {
+		t.Fatalf("missing vercel CLI should be actionable and redacted: out=%s err=%v", out, err)
+	}
+}
+
+func TestPublishDeployCloudflarePagesUsesFakeWranglerAndRedactsOutput(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	fakeBin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(root, "wrangler.log")
+	fakeWrangler := filepath.Join(fakeBin, "wrangler")
+	if err := os.WriteFile(fakeWrangler, []byte("#!/bin/sh\nprintf '%s\n' \"$*\" >> \"$PINAX_TEST_WRANGLER_LOG\"\necho 'https://RAW_CF_TOKEN@pages.example.invalid/deploy?token=RAW_CF_QUERY'\necho 'Authorization: Bearer RAW_CF_AUTH Cookie: session=RAW_CF_COOKIE' >&2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("PINAX_TEST_WRANGLER_LOG", logPath)
+	preparePinaxWebPublishApproval(t, root, outDir, "public")
+
+	out := runCLI(t, "publish", "deploy", "--profile", "public", "--target", "cloudflare-pages", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, out)
+	facts := envelope["facts"].(map[string]any)
+	if envelope["command"] != "publish.deploy" || envelope["status"] != "success" || facts["mode"] != "cloudflare-pages" || facts["target"] != "cloudflare-pages" || facts["project"] != "my-notes" || facts["files"] == "0" {
+		t.Fatalf("cloudflare pages deploy envelope = %#v", envelope)
+	}
+	log := mustReadFile(t, logPath)
+	for _, want := range []string{"pages", "deploy", outDir, "--project-name", "my-notes"} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("wrangler log missing %q: %s", want, log)
+		}
+	}
+	for _, forbidden := range []string{root, "RAW_CF_TOKEN", "RAW_CF_QUERY", "RAW_CF_AUTH", "RAW_CF_COOKIE", "Authorization:", "Cookie:"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("cloudflare pages deploy output leaked %q:\n%s", forbidden, out)
+		}
+	}
+}
+
+func TestPublishDeployCloudflarePagesMissingCLIIsActionable(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	t.Setenv("PATH", filepath.Join(root, "empty-bin"))
+
+	out, err := runCLIExpectError("publish", "deploy", "--profile", "public", "--target", "cloudflare-pages", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
+	if err == nil || !strings.Contains(out, "publish_wrangler_cli_missing") || strings.Contains(out, root) {
+		t.Fatalf("missing wrangler CLI should be actionable and redacted: out=%s err=%v", out, err)
+	}
+}
+
+func preparePinaxWebPublishApproval(t *testing.T, root, outDir, profile string) {
+	t.Helper()
+	runCLI(t, "publish", "profile", "init", profile, "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public", "tags": "pages"}, "# Public\n\nSafe body for platform deploy.")
+	runCLI(t, "publish", "build", "--profile", profile, "--target", "local", "--out", outDir, "--vault", root, "--json")
+	runCLI(t, "publish", "preview", "approve", "--profile", profile, "--out", outDir, "--vault", root, "--json")
 }
 
 func TestPublishDeployRequiresReceiptAndCleanScan(t *testing.T) {
@@ -722,6 +1109,49 @@ func TestPublishDoctorDetectsFakeHugoAndProfile(t *testing.T) {
 		if facts[key] != want {
 			t.Fatalf("doctor fact %s = %v want %s; facts=%#v", key, facts[key], want, facts)
 		}
+	}
+	if strings.Contains(out, root) {
+		t.Fatalf("doctor output leaked local root:\n%s", out)
+	}
+}
+
+func TestPublishDoctorReportsPlatformReadinessReceiptAndScan(t *testing.T) {
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	fakeBin := filepath.Join(root, "bin")
+	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"vercel", "wrangler"} {
+		path := filepath.Join(fakeBin, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	preparePinaxWebPublishApproval(t, root, outDir, "public")
+
+	out := runCLI(t, "publish", "doctor", "--profile", "public", "--target", "vercel", "--out", outDir, "--vault", root, "--json")
+	envelope := parsePublishEnvelope(t, out)
+	facts := envelope["facts"].(map[string]any)
+	for key, want := range map[string]string{"profile": "public", "target": "vercel", "renderer": "pinax-web", "vercel_available": "true", "wrangler_available": "true", "out_safe": "true", "out_exists": "true", "scan_status": "clean", "scan_findings": "0", "latest_receipt": "true", "preview_approved": "true"} {
+		if facts[key] != want {
+			t.Fatalf("doctor fact %s = %v want %s; facts=%#v", key, facts[key], want, facts)
+		}
+	}
+	actions, ok := envelope["actions"].([]any)
+	if !ok || len(actions) < 2 {
+		t.Fatalf("doctor actions missing: %#v", envelope["actions"])
+	}
+	var deployAction string
+	for _, raw := range actions {
+		action, ok := raw.(map[string]any)
+		if ok && action["name"] == "deploy" {
+			deployAction, _ = action["command"].(string)
+		}
+	}
+	if !strings.Contains(deployAction, "pinax publish deploy") || !strings.Contains(deployAction, "--target vercel") || !strings.Contains(deployAction, "--project <project>") {
+		t.Fatalf("doctor deploy action invalid: %q actions=%#v", deployAction, actions)
 	}
 	if strings.Contains(out, root) {
 		t.Fatalf("doctor output leaked local root:\n%s", out)

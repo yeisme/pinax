@@ -6,7 +6,7 @@ Pinax documentation has one job: help a user or agent understand and operate the
 
 1. The Markdown vault is the source of truth.
 2. The Proof Loop protects every agent write.
-3. Share and Sync are surfaces, not sources: publish targets are generated artifacts, and Cloud Sync coordinates ciphertext only.
+3. Sync is a transport surface, not a source: Cloud Sync coordinates ciphertext only.
 
 ## Reader Paths
 
@@ -61,9 +61,9 @@ Every major document should preserve the same layered explanation:
 2. **What stays local**: Markdown content, SQLite/GORM projection, version evidence, CLI-authored metadata, and local tool execution.
 3. **What agents can see**: bounded projections by default; full bodies only through explicit local display mode.
 4. **How writes happen**: plan -> snapshot -> apply -> receipt -> restore.
-5. **What share and cloud do**: publish reviewed delivery artifacts; synchronize encrypted revisions and blobs; never replace the local vault as source of truth, store plaintext notes, or execute local tools on the server.
+5. **What cloud sync does**: synchronize encrypted revisions and blobs; never replace the local vault as source of truth, store plaintext notes, or execute local tools on the server.
 
-Avoid describing Pinax as a general notes app, hosted collaboration workspace, cloud notebook, web editor, or provider-specific automation product. Those descriptions blur the boundary that makes Pinax useful.
+Avoid describing Pinax as a general notes app, publishing platform, plugin runtime, hosted collaboration workspace, cloud notebook, web editor, briefing product, or provider-specific automation product. Those descriptions blur the boundary that makes Pinax useful.
 
 ## Command Documentation Pattern
 

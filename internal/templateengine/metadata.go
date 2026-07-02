@@ -12,24 +12,43 @@ import (
 const SchemaVersionV2 = "pinax.template.v2"
 
 type Metadata struct {
-	SchemaVersion string                              `yaml:"schema_version" json:"schema_version"`
-	Name          string                              `yaml:"name" json:"name,omitempty"`
-	Title         string                              `yaml:"title" json:"title,omitempty"`
-	UseCases      []string                            `yaml:"use_cases" json:"use_cases,omitempty"`
-	Aliases       []string                            `yaml:"aliases" json:"aliases,omitempty"`
-	Difficulty    string                              `yaml:"difficulty" json:"difficulty,omitempty"`
-	Starter       *bool                               `yaml:"starter" json:"starter,omitempty"`
-	Engine        string                              `yaml:"engine" json:"engine,omitempty"`
-	Kind          string                              `yaml:"kind" json:"kind,omitempty"`
-	Output        TemplateOutputMetadata              `yaml:"output" json:"output,omitempty"`
-	Variables     map[string]VariableMetadata         `yaml:"variables" json:"variables,omitempty"`
-	Defaults      map[string]string                   `yaml:"defaults" json:"defaults,omitempty"`
-	Example       Example                             `yaml:"example" json:"example,omitempty"`
-	Queries       map[string]TemplateQueryDeclaration `yaml:"queries" json:"queries,omitempty"`
+	SchemaVersion      string                              `yaml:"schema_version" json:"schema_version"`
+	Name               string                              `yaml:"name" json:"name,omitempty"`
+	Title              string                              `yaml:"title" json:"title,omitempty"`
+	TemplateKind       string                              `yaml:"template_kind" json:"template_kind,omitempty"`
+	ScenarioID         string                              `yaml:"scenario_id" json:"scenario_id,omitempty"`
+	Intents            []string                            `yaml:"intents" json:"intents,omitempty"`
+	UseCases           []string                            `yaml:"use_cases" json:"use_cases,omitempty"`
+	Aliases            []string                            `yaml:"aliases" json:"aliases,omitempty"`
+	Difficulty         string                              `yaml:"difficulty" json:"difficulty,omitempty"`
+	Starter            *bool                               `yaml:"starter" json:"starter,omitempty"`
+	Engine             string                              `yaml:"engine" json:"engine,omitempty"`
+	Kind               string                              `yaml:"kind" json:"kind,omitempty"`
+	Output             TemplateOutputMetadata              `yaml:"output" json:"output,omitempty"`
+	OutputPolicy       TemplateOutputPolicy                `yaml:"output_policy" json:"output_policy,omitempty"`
+	Variables          map[string]VariableMetadata         `yaml:"variables" json:"variables,omitempty"`
+	VariableSchema     map[string]VariableMetadata         `yaml:"variable_schema" json:"variable_schema,omitempty"`
+	Defaults           map[string]string                   `yaml:"defaults" json:"defaults,omitempty"`
+	Example            Example                             `yaml:"example" json:"example,omitempty"`
+	Queries            map[string]TemplateQueryDeclaration `yaml:"queries" json:"queries,omitempty"`
+	AfterCreateActions []TemplateActionMetadata            `yaml:"after_create_actions" json:"after_create_actions,omitempty"`
+	Maturity           string                              `yaml:"maturity" json:"maturity,omitempty"`
+	ProofGate          TemplateProofGate                   `yaml:"proof_gate" json:"proof_gate,omitempty"`
+	Pack               TemplatePackMetadata                `yaml:"pack" json:"pack,omitempty"`
+	Lifecycle          string                              `yaml:"lifecycle" json:"lifecycle,omitempty"`
+	Replacement        string                              `yaml:"replacement" json:"replacement,omitempty"`
+	Metrics            map[string]string                   `yaml:"metrics" json:"metrics,omitempty"`
 }
 
 type TemplateOutputMetadata struct {
 	PathPattern string `yaml:"path_pattern" json:"path_pattern,omitempty"`
+}
+
+type TemplateOutputPolicy struct {
+	PathPattern      string `yaml:"path_pattern" json:"path_pattern,omitempty"`
+	AllowOverride    bool   `yaml:"allow_override" json:"allow_override,omitempty"`
+	WriteBoundary    string `yaml:"write_boundary" json:"write_boundary,omitempty"`
+	LegacyCompatible bool   `yaml:"legacy_compatible" json:"legacy_compatible,omitempty"`
 }
 
 type VariableMetadata struct {
@@ -51,6 +70,26 @@ type TemplateQueryDeclaration struct {
 	Kind     string `yaml:"kind" json:"kind,omitempty"`
 	MaxRows  int    `yaml:"max_rows" json:"max_rows,omitempty"`
 	Required bool   `yaml:"required" json:"required,omitempty"`
+}
+
+type TemplateActionMetadata struct {
+	Name    string `yaml:"name" json:"name,omitempty"`
+	Command string `yaml:"command" json:"command,omitempty"`
+}
+
+type TemplateProofGate struct {
+	Status           string `yaml:"status" json:"status,omitempty"`
+	ManualReview     bool   `yaml:"manual_review" json:"manual_review,omitempty"`
+	SnapshotRequired bool   `yaml:"snapshot_required" json:"snapshot_required,omitempty"`
+	ReceiptRequired  bool   `yaml:"receipt_required" json:"receipt_required,omitempty"`
+	RestoreHint      string `yaml:"restore_hint" json:"restore_hint,omitempty"`
+}
+
+type TemplatePackMetadata struct {
+	ID        string `yaml:"id" json:"id,omitempty"`
+	Source    string `yaml:"source" json:"source,omitempty"`
+	Version   string `yaml:"version" json:"version,omitempty"`
+	Readiness string `yaml:"readiness" json:"readiness,omitempty"`
 }
 
 func ParseDocument(name, content string) (TemplateDocument, error) {

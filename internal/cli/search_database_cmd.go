@@ -17,10 +17,14 @@ func addSearchCommand(root *cobra.Command, ctx commandBuildContext) {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "note.search", "argument_required", "search requires a query", "pinax search <query> --vault <vault>")
 			}
-			projection, err := ctx.svc.SearchProjection(cmd.Context(), app.SearchRequest{VaultPath: *ctx.vaultPath, Query: args[0], Tags: splitCSV(*ctx.noteTags), Group: *ctx.noteGroup, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteStatus, CreatedAfter: *ctx.searchCreatedAfter, UpdatedAfter: *ctx.searchUpdatedAfter, LinkTarget: *ctx.searchLinkTarget, HasAttachment: *ctx.searchHasAttachment, Limit: *ctx.noteLimit, Sort: *ctx.noteListSort, AllowStale: *ctx.searchAllowStale, At: *ctx.searchAt, IncludeDirty: *ctx.searchIncludeDirty, ChangedSince: *ctx.searchChangedSince, Revision: *ctx.searchRevision})
+			projection, err := ctx.svc.SearchProjection(cmd.Context(), app.SearchRequest{VaultPath: *ctx.vaultPath, Query: args[0], Tags: splitCSV(*ctx.noteTags), Group: *ctx.noteGroup, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteStatus, CreatedAfter: *ctx.searchCreatedAfter, UpdatedAfter: *ctx.searchUpdatedAfter, LinkTarget: *ctx.searchLinkTarget, HasAttachment: *ctx.searchHasAttachment, Limit: *ctx.noteLimit, Sort: *ctx.noteListSort, AllowStale: *ctx.searchAllowStale, Engine: *ctx.searchEngine, LazyIndex: *ctx.searchLazyIndex, At: *ctx.searchAt, IncludeDirty: *ctx.searchIncludeDirty, ChangedSince: *ctx.searchChangedSince, Revision: *ctx.searchRevision})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
+	searchCmd.Flags().StringVar(ctx.searchEngine, "engine", "auto", "Search engine: auto, index, or native")
+	_ = searchCmd.RegisterFlagCompletionFunc("engine", staticCompletion("engine", "auto", "index", "native"))
+	searchCmd.Flags().StringVar(ctx.searchLazyIndex, "lazy-index", "auto", "Search-time index loading: auto, off, or sync")
+	_ = searchCmd.RegisterFlagCompletionFunc("lazy-index", staticCompletion("lazy-index", "auto", "off", "sync"))
 	searchCmd.Flags().StringVar(ctx.noteTags, "tag", "", "Filter by tag")
 	searchCmd.Flags().StringVar(ctx.noteGroup, "group", "", "Filter by group")
 	searchCmd.Flags().StringVar(ctx.noteFolder, "folder", "", "Filter by folder")

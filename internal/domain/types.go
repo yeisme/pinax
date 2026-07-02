@@ -6,6 +6,9 @@ type Action struct {
 }
 
 const AgentContextSchemaVersion = "pinax.agent_context.v1"
+const AgentBrainContextBundleSchemaVersion = "pinax.agent_brain.context_bundle.v1"
+const AgentBrainAnswerSchemaVersion = "pinax.agent_brain.answer.v1"
+const AgentBrainMaintenancePlanSchemaVersion = "pinax.agent_brain.maintenance_plan.v1"
 
 type AgentContext struct {
 	SchemaVersion string                `json:"schema_version"`
@@ -30,6 +33,86 @@ type AgentContextSnippet struct {
 	Kind   string `json:"kind"`
 	Text   string `json:"text"`
 	Source string `json:"source,omitempty"`
+}
+
+type AgentBrainContextBundle struct {
+	SchemaVersion string                 `json:"schema_version"`
+	Task          string                 `json:"task"`
+	Entities      []string               `json:"entities,omitempty"`
+	MemoryRefs    []AgentContextRef      `json:"memory_refs,omitempty"`
+	SemanticRefs  []AgentContextRef      `json:"semantic_refs,omitempty"`
+	GraphRefs     []AgentContextRef      `json:"graph_refs,omitempty"`
+	QueryRefs     []AgentContextRef      `json:"query_refs,omitempty"`
+	Receipts      []AgentBrainReceiptRef `json:"receipts,omitempty"`
+	Freshness     AgentBrainFreshness    `json:"freshness"`
+	BodyExposure  string                 `json:"body_exposure"`
+	NextActions   []Action               `json:"next_actions,omitempty"`
+}
+
+type AgentBrainReceiptRef struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Path   string `json:"path,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+type AgentBrainFreshness struct {
+	GeneratedFrom string `json:"generated_from"`
+	IndexStatus   string `json:"index_status,omitempty"`
+	CheckedAt     string `json:"checked_at,omitempty"`
+}
+
+type AgentBrainAnswer struct {
+	SchemaVersion string                  `json:"schema_version"`
+	Answer        string                  `json:"answer"`
+	Claims        []AgentBrainClaim       `json:"claims"`
+	Sources       []AgentBrainSource      `json:"sources"`
+	OpenQuestions []string                `json:"open_questions"`
+	NextActions   []Action                `json:"next_actions"`
+	Cost          AgentBrainCost          `json:"cost"`
+	BodyExposure  string                  `json:"body_exposure"`
+	ContextBundle AgentBrainContextBundle `json:"context_bundle"`
+}
+
+type AgentBrainClaim struct {
+	Text       string            `json:"text"`
+	Confidence string            `json:"confidence"`
+	Sources    []AgentContextRef `json:"sources"`
+}
+
+type AgentBrainSource struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Title string `json:"title,omitempty"`
+}
+
+type AgentBrainCost struct {
+	CostClass        string `json:"cost_class"`
+	ProviderID       string `json:"provider_id"`
+	Model            string `json:"model,omitempty"`
+	LocalOnly        bool   `json:"local_only"`
+	NetworkRequired  bool   `json:"network_required"`
+	CredentialSource string `json:"credential_source"`
+	DryRunAvailable  bool   `json:"dry_run_available"`
+}
+
+type AgentBrainMaintenancePlan struct {
+	SchemaVersion string                           `json:"schema_version"`
+	PlanID        string                           `json:"plan_id"`
+	Operations    []AgentBrainMaintenanceOperation `json:"operations"`
+	BodyExposure  string                           `json:"body_exposure"`
+	Writes        bool                             `json:"writes"`
+	NextActions   []Action                         `json:"next_actions"`
+	SavedPath     string                           `json:"saved_path,omitempty"`
+}
+
+type AgentBrainMaintenanceOperation struct {
+	Kind       string   `json:"kind"`
+	Risk       string   `json:"risk"`
+	Status     string   `json:"status"`
+	Evidence   []string `json:"evidence"`
+	NextAction Action   `json:"next_action"`
 }
 
 type StableErrorCode = string

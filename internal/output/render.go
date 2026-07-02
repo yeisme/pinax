@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -376,7 +377,7 @@ func renderSummaryFacts(w io.Writer, theme summaryTheme, facts map[string]string
 	for key := range facts {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	sortFactKeys(keys)
 	rows := make([][]string, 0, len(keys))
 	for _, key := range keys {
 		rows = append(rows, []string{summaryFactLabel(key), summaryFactValue(key, facts[key])})
@@ -385,6 +386,12 @@ func renderSummaryFacts(w io.Writer, theme summaryTheme, facts map[string]string
 }
 
 func summaryFactLabel(key string) string {
+	if label, ok := projectListFactLabel(key); ok {
+		return label
+	}
+	if label, ok := numberedProjectWorkspaceFactLabel(key); ok {
+		return label
+	}
 	labels := map[string]string{
 		"action_id":                "Action ID",
 		"adopted":                  "Adopted",
@@ -559,6 +566,7 @@ func summaryFactLabel(key string) string {
 		"source":                   "Source",
 		"source_decision":          "Source decision",
 		"source_path":              "Source path",
+		"subprojects":              "Subprojects",
 		"sources":                  "Sources",
 		"status":                   "Status",
 		"tags":                     "Tags",
@@ -601,6 +609,48 @@ func summaryFactLabel(key string) string {
 		return label
 	}
 	return strings.ReplaceAll(key, "_", " ")
+}
+
+func numberedProjectWorkspaceFactLabel(key string) (string, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 2 || parts[1] == "" || !isASCIIDigitString(parts[1]) {
+		return "", false
+	}
+	switch parts[0] {
+	case "subproject":
+		return "Subproject " + parts[1], true
+	case "workspace":
+		return "Workspace " + parts[1], true
+	default:
+		return "", false
+	}
+}
+
+func isASCIIDigitString(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if !isASCIIDigit(value[i]) {
+			return false
+		}
+	}
+	return value != ""
+}
+
+func projectListFactLabel(key string) (string, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 3 || parts[0] != "project" || parts[1] == "" {
+		return "", false
+	}
+	field := map[string]string{
+		"slug":         "slug",
+		"name":         "name",
+		"description":  "description",
+		"notes_prefix": "notes path prefix",
+		"created_at":   "created",
+	}[parts[2]]
+	if field == "" {
+		field = strings.ReplaceAll(parts[2], "_", " ")
+	}
+	return "Project " + parts[1] + " " + field, true
 }
 
 func summaryFactValue(key, value string) string {
@@ -719,6 +769,18 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummarySearchResults(w, theme, p.Data)
 	case "note.list":
 		return renderSummaryNoteList(w, theme, p.Data, "notes")
+	case "template.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"templates"}, []summaryListColumn{{Header: "Template", Path: "name", MaxWidth: 28}, {Header: "Source", Path: "source", MaxWidth: 16}, {Header: "Kind", Path: "kind", MaxWidth: 16}, {Header: "Pack", Path: "pack.id", MaxWidth: 16}, {Header: "Maturity", Path: "maturity", MaxWidth: 18}})
+	case "backend.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"registry", "backends"}, []summaryListColumn{{Header: "Backend", Path: "name", MaxWidth: 28}, {Header: "Kind", Path: "kind", MaxWidth: 12}, {Header: "Bucket", Path: "bucket", MaxWidth: 28}, {Header: "Region", Path: "region", MaxWidth: 18}, {Header: "Profile", Path: "profile", MaxWidth: 24}})
+	case "activity.list", "activity.tail":
+		return renderSummaryDataList(w, theme, p.Data, []string{"entries"}, []summaryListColumn{{Header: "Event ID", Path: "event_id", MaxWidth: 28}, {Header: "Source", Path: "source", MaxWidth: 18}, {Header: "Kind", Path: "kind", MaxWidth: 24}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Object", Path: "object_ref", MaxWidth: 28}, {Header: "Time", Path: "ts", MaxWidth: 22}})
+	case "monitor.runs", "monitor.tail":
+		return renderSummaryDataList(w, theme, p.Data, []string{"runs"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Command", Path: "command", MaxWidth: 30}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Duration", Path: "duration_ms", MaxWidth: 12}, {Header: "Started", Path: "started_at", MaxWidth: 22}})
+	case "sync.logs.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"runs"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Started", Path: "started_at", MaxWidth: 22}})
+	case "sync.logs.tail":
+		return renderSummaryDataList(w, theme, p.Data, []string{"events"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Time", Path: "ts", MaxWidth: 22}})
 	case "note.orphans":
 		return renderSummaryNoteList(w, theme, p.Data, "orphans")
 	case "note.links":
@@ -760,6 +822,90 @@ type summarySearchData struct {
 type summarySearchResult struct {
 	Note    domain.Note `json:"note"`
 	Snippet string      `json:"snippet"`
+}
+
+type summaryListColumn struct {
+	Header   string
+	Path     string
+	MaxWidth int
+}
+
+func renderSummaryDataList(w io.Writer, theme summaryTheme, data any, listPath []string, columns []summaryListColumn) error {
+	items := dataListMaps(data, listPath...)
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+	headers := make([]string, 0, len(columns))
+	for _, column := range columns {
+		headers = append(headers, column.Header)
+	}
+	rows := make([][]string, 0, limit)
+	for _, item := range items[:limit] {
+		row := make([]string, 0, len(columns))
+		for _, column := range columns {
+			row = append(row, summaryCell(dataPathString(item, column.Path), column.MaxWidth))
+		}
+		rows = append(rows, row)
+	}
+	return renderSummaryTable(w, theme, headers, rows)
+}
+
+func dataListMaps(data any, path ...string) []map[string]any {
+	if data == nil || len(path) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	var root any
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil
+	}
+	current := root
+	for _, part := range path {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = obj[part]
+	}
+	items, ok := current.([]any)
+	if !ok {
+		return nil
+	}
+	maps := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if obj, ok := item.(map[string]any); ok {
+			maps = append(maps, obj)
+		}
+	}
+	return maps
+}
+
+func dataPathString(item map[string]any, path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	var current any = item
+	for _, part := range strings.Split(path, ".") {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current = obj[part]
+		if current == nil {
+			return ""
+		}
+	}
+	return agentScalarValue(current)
 }
 
 func renderSummarySearchResults(w io.Writer, theme summaryTheme, data any) error {
@@ -1407,7 +1553,7 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 	for key := range p.Facts {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	sortFactKeys(keys)
 	for _, key := range keys {
 		lines = append(lines, "fact."+key+"="+quoteAgentValue(p.Facts[key]))
 	}
@@ -1445,7 +1591,22 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 				}
 			}
 		}
+		if recommendations := agentRecommendationMaps(data["recommendations"]); len(recommendations) > 0 {
+			for i, recommendation := range recommendations {
+				prefix := fmt.Sprintf("recommendation.%d.", i)
+				keys := make([]string, 0, len(recommendation))
+				for key := range recommendation {
+					keys = append(keys, key)
+				}
+				sortFactKeys(keys)
+				for _, key := range keys {
+					lines = append(lines, prefix+key+"="+quoteAgentValue(agentScalarValue(recommendation[key])))
+				}
+			}
+		}
 	}
+	lines = appendAgentDataListLines(lines, p)
+	lines = appendLearningProjectAgentLines(lines, p)
 	if report, ok := p.Data.(domain.VaultDoctorReport); ok {
 		for i, issue := range report.Issues {
 			prefix := fmt.Sprintf("issue.%d.", i+1)
@@ -1457,10 +1618,194 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 		}
 	}
 	for _, action := range p.Actions {
-		lines = append(lines, "action."+action.Name+"="+quoteAgentValue(action.Command))
+		lines = append(lines, "action."+action.Name+"="+quoteAgentValue(agentActionCommand(p.Command, action.Command)))
 	}
 	_, err := fmt.Fprintln(w, strings.Join(lines, "\n"))
 	return err
+}
+
+func agentRecommendationMaps(value any) []map[string]any {
+	if value == nil {
+		return nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var recommendations []map[string]any
+	if err := json.Unmarshal(payload, &recommendations); err != nil {
+		return nil
+	}
+	return recommendations
+}
+
+type agentListField struct {
+	Key   string
+	Paths []string
+}
+
+type agentListSpec struct {
+	Prefix string
+	Path   []string
+	Fields []agentListField
+}
+
+func appendAgentDataListLines(lines []string, p domain.Projection) []string {
+	for _, spec := range agentListSpecs() {
+		items := dataListMaps(p.Data, spec.Path...)
+		if len(items) == 0 {
+			continue
+		}
+		limit := len(items)
+		if limit > 10 {
+			limit = 10
+		}
+		for i, item := range items[:limit] {
+			prefix := fmt.Sprintf("%s.%d.", spec.Prefix, i+1)
+			for _, field := range spec.Fields {
+				value := firstDataPathString(item, field.Paths...)
+				if value == "" {
+					continue
+				}
+				lines = append(lines, prefix+field.Key+"="+quoteAgentValue(value))
+			}
+		}
+	}
+	return lines
+}
+
+func agentListSpecs() []agentListSpec {
+	return []agentListSpec{
+		{Prefix: "note", Path: []string{"notes"}, Fields: []agentListField{{"path", []string{"path"}}, {"title", []string{"title"}}, {"note_id", []string{"id", "note_id"}}, {"kind", []string{"kind"}}, {"status", []string{"status"}}, {"project", []string{"project"}}, {"updated_at", []string{"updated_at"}}}},
+		{Prefix: "result", Path: []string{"results"}, Fields: []agentListField{{"path", []string{"note.path", "path"}}, {"title", []string{"note.title", "title"}}, {"note_id", []string{"note.id", "note_id"}}, {"kind", []string{"note.kind", "kind"}}, {"status", []string{"note.status", "status"}}, {"snippet", []string{"snippet"}}, {"score", []string{"score"}}}},
+		{Prefix: "template", Path: []string{"templates"}, Fields: []agentListField{{"name", []string{"name"}}, {"source", []string{"source"}}, {"kind", []string{"kind"}}, {"scenario_id", []string{"scenario_id"}}, {"template_kind", []string{"template_kind"}}, {"maturity", []string{"maturity"}}, {"lifecycle", []string{"lifecycle"}}, {"pack", []string{"pack.id"}}, {"write_boundary", []string{"output_policy.write_boundary"}}}},
+		{Prefix: "entry", Path: []string{"entries"}, Fields: []agentListField{{"event_id", []string{"event_id"}}, {"source", []string{"source"}}, {"kind", []string{"kind"}}, {"status", []string{"status"}}, {"severity", []string{"severity"}}, {"object_ref", []string{"object_ref"}}, {"path", []string{"path"}}, {"run_id", []string{"run_id"}}, {"ts", []string{"ts", "timestamp"}}}},
+		{Prefix: "event", Path: []string{"events"}, Fields: []agentListField{{"type", []string{"type"}}, {"run_id", []string{"run_id"}}, {"direction", []string{"direction"}}, {"status", []string{"status"}}, {"backend_kind", []string{"backend_kind"}}, {"target", []string{"target"}}, {"ts", []string{"ts", "timestamp"}}}},
+		{Prefix: "run", Path: []string{"runs"}, Fields: []agentListField{{"run_id", []string{"run_id"}}, {"command", []string{"command"}}, {"direction", []string{"direction"}}, {"status", []string{"status"}}, {"backend_kind", []string{"backend_kind"}}, {"duration_ms", []string{"duration_ms"}}, {"started_at", []string{"started_at", "created_at"}}}},
+		{Prefix: "backend", Path: []string{"registry", "backends"}, Fields: []agentListField{{"name", []string{"name"}}, {"kind", []string{"kind"}}, {"bucket", []string{"bucket"}}, {"region", []string{"region"}}, {"prefix", []string{"prefix"}}, {"profile", []string{"profile"}}, {"credential_source", []string{"credential_source"}}, {"capabilities", []string{"capabilities"}}}},
+		{Prefix: "asset", Path: []string{"assets"}, Fields: []agentListField{{"path", []string{"path"}}, {"filename", []string{"filename"}}, {"media_type", []string{"media_type"}}, {"size_bytes", []string{"size_bytes"}}}},
+		{Prefix: "profile", Path: []string{"profiles"}, Fields: []agentListField{{"name", []string{"name"}}, {"endpoint", []string{"endpoint"}}, {"workspace", []string{"workspace"}}, {"device", []string{"device"}}}},
+		{Prefix: "provider", Path: []string{"providers"}, Fields: []agentListField{{"name", []string{"name"}}, {"model", []string{"model"}}, {"status", []string{"status"}}}},
+		{Prefix: "theme", Path: []string{"themes"}, Fields: []agentListField{{"name", []string{"name"}}, {"source", []string{"source"}}, {"contract", []string{"contract_version"}}}},
+		{Prefix: "route", Path: []string{"routes"}, Fields: []agentListField{{"id", []string{"id"}}, {"method", []string{"method"}}, {"path", []string{"path"}}, {"command", []string{"command"}}}},
+		{Prefix: "object", Path: []string{"objects"}, Fields: []agentListField{{"key", []string{"key"}}, {"path", []string{"path"}}, {"size_bytes", []string{"size_bytes"}}, {"updated_at", []string{"updated_at"}}}},
+		{Prefix: "subproject", Path: []string{"subprojects"}, Fields: []agentListField{{"slug", []string{"subproject", "slug"}}, {"title", []string{"title"}}, {"workspace_path", []string{"workspace_path"}}, {"status", []string{"status"}}}},
+		{Prefix: "item", Path: []string{"board", "items"}, Fields: []agentListField{{"item_id", []string{"item_id"}}, {"title", []string{"title"}}, {"column", []string{"column"}}, {"path", []string{"path"}}, {"project", []string{"project"}}, {"subproject", []string{"subproject"}}, {"workspace_path", []string{"workspace_path"}}, {"source_kind", []string{"source_kind"}}, {"source_status", []string{"source_status"}}, {"note_id", []string{"note_id"}}, {"status", []string{"status"}}, {"priority", []string{"priority"}}, {"labels", []string{"labels"}}, {"writable", []string{"writable"}}}},
+	}
+}
+
+func appendLearningProjectAgentLines(lines []string, p domain.Projection) []string {
+	data, ok := p.Data.(map[string]any)
+	if !ok {
+		return lines
+	}
+	learning, ok := dataMap(data["learning_project"])
+	if !ok {
+		return lines
+	}
+	for _, field := range []agentListField{
+		{"project", []string{"project"}},
+		{"subproject", []string{"subproject"}},
+		{"preset", []string{"preset"}},
+		{"workspace_path", []string{"workspace.workspace_path"}},
+		{"workspace_title", []string{"workspace.title"}},
+		{"workspace_status", []string{"workspace.status"}},
+	} {
+		value := firstDataPathString(learning, field.Paths...)
+		if value != "" {
+			lines = append(lines, "learning."+field.Key+"="+quoteAgentValue(value))
+		}
+	}
+	lines = appendAgentScalarListLines(lines, "learning.column", learning["columns"])
+	lines = appendAgentScalarListLines(lines, "learning.starter_note", learning["starter_notes"])
+	lines = appendAgentScalarListLines(lines, "learning.starter_item", learning["starter_items"])
+	return lines
+}
+
+func appendAgentScalarListLines(lines []string, prefix string, value any) []string {
+	items := agentScalarList(value)
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+	for i, item := range items[:limit] {
+		if item == "" {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("%s.%d=%s", prefix, i+1, quoteAgentValue(item)))
+	}
+	return lines
+}
+
+func agentScalarList(value any) []string {
+	if value == nil {
+		return nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var raw []any
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return nil
+	}
+	items := make([]string, 0, len(raw))
+	for _, item := range raw {
+		items = append(items, agentScalarValue(item))
+	}
+	return items
+}
+
+func dataMap(value any) (map[string]any, bool) {
+	if value == nil {
+		return nil, false
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var out map[string]any
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+func firstDataPathString(item map[string]any, paths ...string) string {
+	for _, path := range paths {
+		value := dataPathString(item, path)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func agentScalarValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return typed
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if value := agentScalarValue(item); value != "" {
+				items = append(items, value)
+			}
+		}
+		return strings.Join(items, ",")
+	case bool:
+		return fmt.Sprint(typed)
+	case float64:
+		return fmt.Sprint(typed)
+	default:
+		payload, err := json.Marshal(typed)
+		if err != nil {
+			return fmt.Sprint(typed)
+		}
+		return string(payload)
+	}
 }
 
 func renderEvents(w io.Writer, p domain.Projection) error {
@@ -1514,7 +1859,7 @@ func renderExplain(w io.Writer, p domain.Projection) error {
 		for key := range p.Facts {
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
+		sortFactKeys(keys)
 		for _, key := range keys {
 			evidence = append(evidence, key+"="+p.Facts[key])
 		}
@@ -1539,6 +1884,68 @@ func renderExplain(w io.Writer, p domain.Projection) error {
 	return err
 }
 
+func sortFactKeys(keys []string) {
+	sort.SliceStable(keys, func(i, j int) bool {
+		iRank := factKeyShapeRank(keys[i])
+		jRank := factKeyShapeRank(keys[j])
+		if iRank != jRank {
+			return iRank < jRank
+		}
+		return naturalKeyLess(keys[i], keys[j])
+	})
+}
+
+func factKeyShapeRank(key string) int {
+	if strings.Contains(key, ".") {
+		return 1
+	}
+	return 0
+}
+
+func naturalKeyLess(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		ad, bd := isASCIIDigit(a[i]), isASCIIDigit(b[j])
+		if ad && bd {
+			ai, bj := i, j
+			for i < len(a) && isASCIIDigit(a[i]) {
+				i++
+			}
+			for j < len(b) && isASCIIDigit(b[j]) {
+				j++
+			}
+			an := strings.TrimLeft(a[ai:i], "0")
+			bn := strings.TrimLeft(b[bj:j], "0")
+			if an == "" {
+				an = "0"
+			}
+			if bn == "" {
+				bn = "0"
+			}
+			if len(an) != len(bn) {
+				return len(an) < len(bn)
+			}
+			if an != bn {
+				return an < bn
+			}
+			if i-ai != j-bj {
+				return i-ai < j-bj
+			}
+			continue
+		}
+		if a[i] != b[j] {
+			return a[i] < b[j]
+		}
+		i++
+		j++
+	}
+	return len(a) < len(b)
+}
+
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
+}
+
 func quoteAgentValue(value string) string {
 	if strings.ContainsAny(value, " \t\n\"") {
 		b, _ := json.Marshal(value)
@@ -1548,6 +1955,15 @@ func quoteAgentValue(value string) string {
 		return quoted
 	}
 	return value
+}
+
+var agentVaultFlagPattern = regexp.MustCompile(`--vault\s+("[^"]+"|'[^']+'|\S+)`)
+
+func agentActionCommand(command, action string) string {
+	if strings.HasPrefix(command, "project.") {
+		return agentVaultFlagPattern.ReplaceAllString(action, "--vault <vault>")
+	}
+	return action
 }
 
 func defaultString(value, fallback string) string {

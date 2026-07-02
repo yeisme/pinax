@@ -26,7 +26,10 @@ type Request struct {
 	Limit         int
 	Sort          string
 	AllowStale    bool
+	Engine        string
+	LazyIndex     string
 	At            string
+	IncludeDirty  bool
 	ChangedSince  string
 	Revision      string
 }
@@ -43,6 +46,8 @@ type Result struct {
 	LinkTargetStatus     string                     `json:"link_target_status,omitempty"`
 	LinkTargetMatches    int                        `json:"link_target_matches,omitempty"`
 	LinkTargetCandidates []domain.NoteLinkCandidate `json:"link_target_candidates,omitempty"`
+	LazyIndex            string                     `json:"lazy_index,omitempty"`
+	LazyIndexDeferred    bool                       `json:"lazy_index_deferred,omitempty"`
 }
 
 type LinkGraphBuilder func([]domain.Note) map[string][]domain.NoteLink
@@ -86,6 +91,9 @@ func ValidateDateFilters(req Request) error {
 }
 
 func LazyIndexAllowed(req Request, status noteindex.Status, notes []domain.Note) bool {
+	if NormalizedLazyIndex(req.LazyIndex) == "off" {
+		return false
+	}
 	if req.AllowStale {
 		return false
 	}
@@ -94,6 +102,28 @@ func LazyIndexAllowed(req Request, status noteindex.Status, notes []domain.Note)
 	}
 	const lazyIndexNoteBudget = 10000
 	return len(notes) <= lazyIndexNoteBudget
+}
+
+func NormalizedEngine(engine string) string {
+	switch strings.TrimSpace(engine) {
+	case "", "auto":
+		return "auto"
+	case "index", "native":
+		return strings.TrimSpace(engine)
+	default:
+		return "auto"
+	}
+}
+
+func NormalizedLazyIndex(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "", "auto":
+		return "auto"
+	case "off", "sync":
+		return strings.TrimSpace(mode)
+	default:
+		return "auto"
+	}
 }
 
 func BuildIndexRequest(req Request, linkFilter LinkTargetFilter) noteindex.SearchRequest {
@@ -117,7 +147,7 @@ func ResultFromIndex(req Request, indexLoaded string, result noteindex.SearchRes
 	for _, item := range result.Results {
 		resultNotes = append(resultNotes, item.Note)
 	}
-	return Result{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: result.Total, Returned: result.Returned, Notes: resultNotes, Results: result.Results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates}
+	return Result{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: result.Total, Returned: result.Returned, Notes: resultNotes, Results: result.Results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex)}
 }
 
 func ResultFromFallback(req Request, engine string, notes []domain.Note, indexStatus string, linkFilter LinkTargetFilter) Result {
@@ -135,7 +165,7 @@ func ResultFromFallback(req Request, engine string, notes []domain.Note, indexSt
 	for _, note := range filtered {
 		items = append(items, noteindex.ResultItem{Note: note, Score: 1, MatchedFields: []string{engine}, Snippet: FirstSnippet(note.Body, req.Query)})
 	}
-	return Result{Engine: engine, IndexStatus: indexStatus, Total: total, Returned: len(items), Notes: filtered, Results: items, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates}
+	return Result{Engine: engine, IndexStatus: indexStatus, Total: total, Returned: len(items), Notes: filtered, Results: items, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex)}
 }
 
 func Projection(req Request, result Result, shellQuote func(string) string) domain.Projection {
@@ -144,7 +174,12 @@ func Projection(req Request, result Result, shellQuote func(string) string) doma
 	projection.Facts["total"] = fmt.Sprint(result.Total)
 	projection.Facts["returned"] = fmt.Sprint(result.Returned)
 	projection.Facts["engine"] = result.Engine
+	projection.Facts["engine_requested"] = NormalizedEngine(req.Engine)
+	projection.Facts["lazy_index"] = NormalizedLazyIndex(req.LazyIndex)
 	projection.Facts["sort"] = NormalizedSort(req.Sort)
+	if result.LazyIndexDeferred {
+		projection.Facts["lazy_index.deferred"] = "true"
+	}
 	if result.IndexStatus != "" {
 		projection.Facts["index_status"] = result.IndexStatus
 	}

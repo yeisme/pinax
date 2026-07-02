@@ -67,8 +67,9 @@ type Revision struct {
 }
 
 type Manifest struct {
-	SchemaVersion string          `json:"schema_version"`
-	Entries       []ManifestEntry `json:"entries"`
+	SchemaVersion string           `json:"schema_version"`
+	Entries       []ManifestEntry  `json:"entries"`
+	Deletes       []ManifestDelete `json:"deletes,omitempty"`
 }
 
 type ManifestEntry struct {
@@ -77,6 +78,15 @@ type ManifestEntry struct {
 	PlainSHA256 string `json:"plain_sha256"`
 	Size        int64  `json:"size"`
 	UpdatedAt   string `json:"updated_at"`
+}
+
+type ManifestDelete struct {
+	PathHash    string `json:"path_hash"`
+	ObjectKind  string `json:"object_kind"`
+	ObjectID    string `json:"object_id,omitempty"`
+	TombstoneID string `json:"tombstone_id"`
+	DeletedAt   string `json:"deleted_at,omitempty"`
+	TrashBlobID string `json:"trash_blob_id,omitempty"`
 }
 
 func (m Manifest) Validate() error {
@@ -88,13 +98,26 @@ func (m Manifest) Validate() error {
 			return fmt.Errorf("invalid_manifest")
 		}
 	}
+	for _, deleteMarker := range m.Deletes {
+		if strings.TrimSpace(deleteMarker.PathHash) == "" || unsafePlaintextToken(deleteMarker.PathHash) || strings.TrimSpace(deleteMarker.ObjectKind) == "" || strings.TrimSpace(deleteMarker.TombstoneID) == "" || unsafePlaintextToken(deleteMarker.TombstoneID) {
+			return fmt.Errorf("invalid_manifest")
+		}
+		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" && unsafePlaintextToken(deleteMarker.TrashBlobID) {
+			return fmt.Errorf("invalid_manifest")
+		}
+	}
 	return nil
 }
 
 func (m Manifest) BlobIDs() []string {
-	ids := make([]string, 0, len(m.Entries))
+	ids := make([]string, 0, len(m.Entries)+len(m.Deletes))
 	for _, entry := range m.Entries {
 		ids = append(ids, entry.BlobID)
+	}
+	for _, deleteMarker := range m.Deletes {
+		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" {
+			ids = append(ids, deleteMarker.TrashBlobID)
+		}
 	}
 	return ids
 }
@@ -193,7 +216,7 @@ func shardedKey(prefix, group, id, suffix string) string {
 
 func unsafePlaintextToken(value string) bool {
 	lowered := strings.ToLower(strings.TrimSpace(value))
-	return strings.Contains(lowered, "path=") || strings.Contains(lowered, "notes/") || strings.Contains(lowered, ".md") || strings.Contains(lowered, "authorization") || strings.Contains(lowered, "token") || strings.Contains(lowered, "cookie")
+	return strings.Contains(lowered, "path=") || strings.Contains(lowered, "notes/") || strings.Contains(lowered, ".pinax/trash") || strings.Contains(lowered, ".md") || strings.Contains(lowered, "authorization") || strings.Contains(lowered, "token") || strings.Contains(lowered, "cookie")
 }
 
 func safeID(value string) string {

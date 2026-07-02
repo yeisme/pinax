@@ -61,6 +61,9 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 	draftCreateCmd.Flags().StringVar(ctx.noteTemplate, "template", "", "Creation template")
 	draftCreateCmd.Flags().BoolVar(ctx.noteDryRun, "dry-run", false, "Preview the draft creation without modifying files")
 	draftCreateCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm remote draft creation when using --api-url")
+	_ = draftCreateCmd.RegisterFlagCompletionFunc("folder", folderPathCompletion(func() string { return *ctx.vaultPath }))
+	_ = draftCreateCmd.RegisterFlagCompletionFunc("kind", staticCompletion("kind", "fleeting", "reference", "project", "daily", "draft"))
+	_ = draftCreateCmd.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "note_template", true, true))
 	draftCmd.AddCommand(draftCreateCmd)
 
 	// 2. draft list
@@ -76,8 +79,9 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	// 3. draft show <note>
 	draftShowCmd := &cobra.Command{
-		Use:   "show <note>",
-		Short: "Show the specified draft note content",
+		Use:               "show <note>",
+		Short:             "Show the specified draft note content",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "draft.show", "argument_required", "draft show requires a note reference", "pinax draft show <note> --vault <vault>")
@@ -93,13 +97,16 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	draftShowCmd.Flags().StringVar(ctx.noteView, "view", "source", "View mode: source or rendered")
 	draftShowCmd.Flags().StringVar(ctx.noteDisplay, "display", "", "Display style: card, detail, context, or body")
+	_ = draftShowCmd.RegisterFlagCompletionFunc("view", staticCompletion("view", "source", "rendered"))
+	_ = draftShowCmd.RegisterFlagCompletionFunc("display", staticCompletion("display", "card", "detail", "context", "body"))
 	draftCmd.AddCommand(draftShowCmd)
 
 	// 4. draft promote <note> --status active --folder folder --kind kind
 	var promoteStatus string
 	draftPromoteCmd := &cobra.Command{
-		Use:   "promote <note>",
-		Short: "Promote a draft note to active, archived, or discarded",
+		Use:               "promote <note>",
+		Short:             "Promote a draft note to active, archived, or discarded",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "draft.promote", "argument_required", "draft promote requires a note reference", "pinax draft promote <note> --vault <vault>")
@@ -121,12 +128,16 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 	draftPromoteCmd.Flags().StringVar(ctx.noteKind, "kind", "", "Target kind")
 	draftPromoteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm the status transition")
 	draftPromoteCmd.Flags().BoolVar(ctx.noteDryRun, "dry-run", false, "Preview the status transition without modifying files")
+	_ = draftPromoteCmd.RegisterFlagCompletionFunc("status", staticCompletion("status", "active", "archived", "discarded"))
+	_ = draftPromoteCmd.RegisterFlagCompletionFunc("folder", folderPathCompletion(func() string { return *ctx.vaultPath }))
+	_ = draftPromoteCmd.RegisterFlagCompletionFunc("kind", staticCompletion("kind", "fleeting", "reference", "project", "daily", "draft"))
 	draftCmd.AddCommand(draftPromoteCmd)
 
 	// 5. draft archive <note>
 	draftArchiveCmd := &cobra.Command{
-		Use:   "archive <note>",
-		Short: "Archive a draft",
+		Use:               "archive <note>",
+		Short:             "Archive a draft",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "draft.archive", "argument_required", "draft archive requires a note reference", "pinax draft archive <note> --vault <vault>")
@@ -146,8 +157,9 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	// 6. draft discard <note>
 	draftDiscardCmd := &cobra.Command{
-		Use:   "discard <note>",
-		Short: "Discard a draft",
+		Use:               "discard <note>",
+		Short:             "Discard a draft",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "draft.discard", "argument_required", "draft discard requires a note reference", "pinax draft discard <note> --vault <vault>")
@@ -228,6 +240,7 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	for _, c := range []*cobra.Command{draftIndexPreviewCmd, draftIndexCreateCmd, draftIndexRefreshCmd} {
 		c.Flags().StringVar(&indexTemplate, "template", "index.drafts", "Custom review index page template")
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true, true))
 		draftIndexCmd.AddCommand(c)
 	}
 	draftCmd.AddCommand(draftIndexCmd)

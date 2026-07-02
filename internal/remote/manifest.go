@@ -3,6 +3,7 @@ package remote
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io/fs"
 	"mime"
 	"os"
@@ -19,10 +20,11 @@ const ManifestSchemaVersion = "pinax.cloud.manifest.v1"
 const MaxManifestFileBytes = 100 * 1024 * 1024
 
 type Manifest struct {
-	SchemaVersion string          `json:"schema_version"`
-	GeneratedAt   string          `json:"generated_at"`
-	EntryCount    int             `json:"entry_count"`
-	Entries       []ManifestEntry `json:"entries"`
+	SchemaVersion string           `json:"schema_version"`
+	GeneratedAt   string           `json:"generated_at"`
+	EntryCount    int              `json:"entry_count"`
+	Entries       []ManifestEntry  `json:"entries"`
+	Deletes       []ManifestDelete `json:"deletes,omitempty"`
 }
 
 type ManifestEntry struct {
@@ -34,6 +36,15 @@ type ManifestEntry struct {
 	ObjectKind string `json:"object_kind,omitempty"`
 	Mode       uint32 `json:"mode,omitempty"`
 	MediaType  string `json:"media_type,omitempty"`
+}
+
+type ManifestDelete struct {
+	PathHash    string `json:"path_hash"`
+	ObjectKind  string `json:"object_kind"`
+	ObjectID    string `json:"object_id,omitempty"`
+	TombstoneID string `json:"tombstone_id"`
+	DeletedAt   string `json:"deleted_at,omitempty"`
+	TrashBlobID string `json:"trash_blob_id,omitempty"`
 }
 
 func BuildManifest(root string) (Manifest, error) {
@@ -93,7 +104,11 @@ func BuildManifest(root string) (Manifest, error) {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].PathHash < entries[j].PathHash
 	})
-	return Manifest{SchemaVersion: ManifestSchemaVersion, GeneratedAt: time.Now().UTC().Format(time.RFC3339), EntryCount: len(entries), Entries: entries}, nil
+	deletes, err := buildManifestDeletes(root)
+	if err != nil {
+		return Manifest{}, err
+	}
+	return Manifest{SchemaVersion: ManifestSchemaVersion, GeneratedAt: time.Now().UTC().Format(time.RFC3339), EntryCount: len(entries), Entries: entries, Deletes: deletes}, nil
 }
 
 type ManifestFileTooLargeError struct {
@@ -146,6 +161,84 @@ func mediaType(rel string) string {
 	}
 	return "application/octet-stream"
 }
+
+func buildManifestDeletes(root string) ([]ManifestDelete, error) {
+	path := filepath.Join(root, ".pinax", "records", "tombstones.json")
+	payload, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	tombstones := map[string]struct {
+		ObjectKind  string `json:"object_kind"`
+		ObjectID    string `json:"object_id"`
+		TombstoneID string `json:"tombstone_id"`
+		OldPath     string `json:"old_path"`
+		TrashPath   string `json:"trash_path"`
+		DeletedAt   string `json:"deleted_at"`
+	}{}
+	if err := json.Unmarshal(payload, &tombstones); err != nil {
+		return nil, err
+	}
+	deletes := make([]ManifestDelete, 0, len(tombstones))
+	for key, tombstone := range tombstones {
+		objectID := strings.TrimSpace(tombstone.ObjectID)
+		if objectID == "" {
+			objectID = key
+		}
+		objectKind := strings.TrimSpace(tombstone.ObjectKind)
+		if objectKind == "" {
+			objectKind = "note"
+		}
+		tombstoneID := strings.TrimSpace(tombstone.TombstoneID)
+		if tombstoneID == "" {
+			tombstoneID = "trash_" + strings.TrimPrefix(PathHash(objectID), "path_")[:12]
+		}
+		pathHashSource := objectID
+		if strings.TrimSpace(tombstone.OldPath) != "" && objectKind == "note" {
+			pathHashSource = tombstone.OldPath
+		}
+		deleteMarker := ManifestDelete{PathHash: PathHash(pathHashSource), ObjectKind: objectKind, ObjectID: objectID, TombstoneID: tombstoneID, DeletedAt: tombstone.DeletedAt}
+		if strings.TrimSpace(tombstone.TrashPath) != "" {
+			trashPath, joinErr := safeManifestJoin(root, tombstone.TrashPath)
+			if joinErr != nil {
+				return nil, joinErr
+			}
+			if info, statErr := os.Stat(trashPath); statErr == nil && !info.IsDir() {
+				content, readErr := os.ReadFile(trashPath)
+				if readErr != nil {
+					return nil, readErr
+				}
+				deleteMarker.TrashBlobID = BlobID(content)
+				if err := writeBlobCache(root, deleteMarker.TrashBlobID, content); err != nil {
+					return nil, err
+				}
+			} else if statErr == nil && info.IsDir() {
+				deleteMarker.TrashBlobID = PathHash(tombstone.TrashPath)
+			}
+		}
+		deletes = append(deletes, deleteMarker)
+	}
+	sort.Slice(deletes, func(i, j int) bool { return deletes[i].PathHash < deletes[j].PathHash })
+	return deletes, nil
+}
+
+func safeManifestJoin(root, rel string) (string, error) {
+	if filepath.IsAbs(rel) || strings.Contains(filepath.ToSlash(rel), "../") || strings.HasPrefix(filepath.ToSlash(rel), "..") {
+		return "", &ManifestUnsafePathError{Path: rel}
+	}
+	path := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
+	if path != root && !strings.HasPrefix(path, root+string(os.PathSeparator)) {
+		return "", &ManifestUnsafePathError{Path: rel}
+	}
+	return path, nil
+}
+
+type ManifestUnsafePathError struct{ Path string }
+
+func (e *ManifestUnsafePathError) Error() string { return "unsafe_manifest_path: " + e.Path }
 
 func writeBlobCache(root, blobID string, content []byte) error {
 	path := filepath.Join(root, ".pinax", "cloud", "blob-cache", blobID)

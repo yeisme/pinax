@@ -17,10 +17,10 @@ func ValidateProfile(profile domain.PublishProfile) []domain.PublishValidationIs
 	if profile.SchemaVersion != "" && profile.SchemaVersion != domain.PublishProfileSchemaVersion {
 		issues = appendIssue(issues, "publish_schema_version_invalid", "schema_version")
 	}
-	if profile.Target != domain.PublishTargetGitHubPages && profile.Target != domain.PublishTargetGitHubWiki && profile.Target != domain.PublishTargetGitHubGist && profile.Target != domain.PublishTargetHTTP {
+	if profile.Target != domain.PublishTargetLocal && profile.Target != domain.PublishTargetGitHubPages && profile.Target != domain.PublishTargetVercel && profile.Target != domain.PublishTargetCloudflare && profile.Target != domain.PublishTargetGitHubWiki && profile.Target != domain.PublishTargetGitHubGist && profile.Target != domain.PublishTargetHTTP {
 		issues = appendIssue(issues, "publish_target_invalid", "target")
 	}
-	if profile.Renderer != domain.PublishRendererHugo && profile.Renderer != domain.PublishRendererNone {
+	if profile.Renderer != domain.PublishRendererPinaxWeb && profile.Renderer != domain.PublishRendererHugo && profile.Renderer != domain.PublishRendererNone {
 		issues = appendIssue(issues, "publish_renderer_invalid", "renderer")
 	}
 	if profile.BodyPolicy != domain.PublishBodyPolicyPublishedNotesOnly {

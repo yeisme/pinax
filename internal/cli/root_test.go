@@ -200,6 +200,72 @@ func TestRemoteModeMapsCreateApprovalPreviewFlags(t *testing.T) {
 	}
 }
 
+func TestRemoteModeMapsMemoryCommands(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	seen := map[string]map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rpc" || r.Method != http.MethodPost {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		var rpc struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+			t.Fatalf("decode rpc: %v", err)
+		}
+		seen[rpc.Method] = rpc.Params
+		command := "memory.list"
+		switch rpc.Method {
+		case "Pinax.Memory.Capture":
+			command = "memory.capture"
+		case "Pinax.Memory.Recall":
+			command = "memory.recall"
+		case "Pinax.Memory.Context":
+			command = "memory.context"
+		case "Pinax.Memory.Stats":
+			command = "memory.stats"
+		}
+		_ = json.NewEncoder(w).Encode(domain.NewProjection(command, "remote memory"))
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+	t.Setenv("NO_COLOR", "")
+
+	commands := [][]string{
+		{"memory", "capture", "--type", "fact", "--subject", "pinax", "--predicate", "memory_capture_usage", "--object", "Use --body or --subject and --object", "--source", "cli-test", "--entity", "pinax", "--dry-run", "--json"},
+		{"memory", "list", "--type", "fact", "--entity", "pinax", "--limit", "5", "--include-draft", "--json"},
+		{"memory", "recall", "memory capture", "--entity", "pinax", "--limit", "7", "--json"},
+		{"memory", "context", "pinax memory usage", "--entity", "pinax", "--limit", "12", "--json"},
+		{"memory", "stats", "--json"},
+	}
+	for _, args := range commands {
+		cmd := NewRootCommand("test")
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("remote %s: %v", strings.Join(args, " "), err)
+		}
+	}
+	if seen["Pinax.Memory.Capture"]["type"] != "fact" || seen["Pinax.Memory.Capture"]["subject"] != "pinax" || seen["Pinax.Memory.Capture"]["predicate"] != "memory_capture_usage" || seen["Pinax.Memory.Capture"]["dry_run"] != true {
+		t.Fatalf("memory capture params = %#v", seen["Pinax.Memory.Capture"])
+	}
+	entities, ok := seen["Pinax.Memory.Capture"]["entities"].([]any)
+	if !ok || len(entities) != 1 || entities[0] != "pinax" {
+		t.Fatalf("memory capture entities = %#v", seen["Pinax.Memory.Capture"]["entities"])
+	}
+	if seen["Pinax.Memory.List"]["type"] != "fact" || seen["Pinax.Memory.List"]["include_draft"] != true || seen["Pinax.Memory.List"]["limit"] != float64(5) {
+		t.Fatalf("memory list params = %#v", seen["Pinax.Memory.List"])
+	}
+	_, statsSeen := seen["Pinax.Memory.Stats"]
+	if seen["Pinax.Memory.Recall"]["query"] != "memory capture" || seen["Pinax.Memory.Context"]["task"] != "pinax memory usage" || !statsSeen {
+		t.Fatalf("memory recall/context/stats params = %#v", seen)
+	}
+}
+
 func TestConfiguredRemoteModeLeavesConfigCommandLocal(t *testing.T) {
 	root := t.TempDir()
 	xdg := filepath.Join(root, "xdg")
@@ -337,6 +403,9 @@ func TestRemoteCommandCoverageClassifiesEveryVisibleRunnableCommand(t *testing.T
 		status string
 	}{
 		{path: "pinax folder list", status: "remote_supported"},
+		{path: "pinax memory capture", status: "remote_supported"},
+		{path: "pinax memory stats", status: "remote_supported"},
+		{path: "pinax memory link", status: "unsupported"},
 		{path: "pinax note tags", status: "unsupported"},
 		{path: "pinax config get", status: "local_only"},
 		{path: "pinax sync init", status: "local_only"},

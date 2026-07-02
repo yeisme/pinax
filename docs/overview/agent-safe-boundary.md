@@ -41,6 +41,8 @@ pinax graph query --kind technique --match storyboard --vault ./my-notes --json
 pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json
 ```
 
+The bounded context bundle schema is `pinax.agent_brain.context_bundle.v1`. It carries `task`, `entities`, `memory_refs`, `semantic_refs`, `graph_refs`, `query_refs`, `receipts`, `freshness`, `body_exposure`, and `next_actions`. The bundle is assembled from existing projections and copies only bounded references plus real follow-up commands. It does not copy full note bodies, raw snippets, raw evidence text, provider payloads, prompts, credentials, or private tool arguments.
+
 Any future `answer` or `synthesis` projection must obey these rules:
 
 | Rule | Boundary |
@@ -53,6 +55,14 @@ Any future `answer` or `synthesis` projection must obey these rules:
 | Agent command preview | Next steps are real commands a user can run directly, such as `pinax proof loop run --vault ./my-notes --json`. |
 
 This is the main difference between Pinax and a generic hosted brain: Pinax may synthesize answers for agents, but the authority remains local evidence plus reviewable service actions.
+
+## Team/company KB permission boundary
+
+Current Pinax Agent Brain mode is single-user local. Team/company KB, HTTP MCP, OAuth, organization ACLs, and rate limit enforcement are planned future-owner surfaces, not current CLI backend features.
+
+Any future team/company projection must include explicit permission context before returning cross-user evidence: `principal`, `workspace`, `source_acl`, `visibility`, `redaction_policy`, and `audit_ref`. If ACL proof is missing or the future owner is not configured, Agent Brain should return `permission_unknown`, `scope_required`, `insufficient_scope`, or a local-only answer boundary rather than combining private notes into company knowledge.
+
+Local direct transports such as S3/rclone Cloud Sync do not provide server-side auth, organization policy, or rate limiting. They cannot be used as permission proof for team answer synthesis.
 
 ## Cloud no-exec / no-plaintext invariant
 

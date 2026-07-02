@@ -38,6 +38,42 @@ pinax note add "仓位风险" --template learning.stock.risk_rule --project inve
 pinax index page create ideas --template index.ideas --vault ./my-notes --json
 ```
 
+## Workflow Catalog
+
+模板 catalog 现在把可执行模板视为本地 workflow starter。`template recommend` 只读取本地内置模板和 vault-local 模板 metadata，不调用 provider、不访问网络、不执行 SQL、不写 Markdown、`.pinax` 或 Git 状态。
+
+```bash
+pinax template recommend --intent "meeting" --vault ./my-notes --json
+pinax template recommend --intent "便签" --vault ./my-notes --agent
+pinax template list --pack starter --vault ./my-notes --json
+```
+
+`--json` 输出继续保留既有 `data.primary` 和 `data.templates`，并追加 `data.recommendations[]`。每条 recommendation 可以包含 `scenario_id`、`maturity`、`pack`、`fit_reason`、`preview_command`、`create_command`、`evidence_path`、`proof_gate`、`after_create_actions`、`lifecycle` 和 `executable`。`--agent` 追加稳定 key，例如 `recommendation.0.template`、`recommendation.0.scenario_id` 和 `recommendation.0.proof_gate`。
+
+`template inspect` 和 `template preview` 暴露相同的 workflow metadata，便于在写入前审查变量、路径策略和 proof gate：
+
+```bash
+pinax template inspect meeting.notes --vault ./my-notes --json
+pinax template preview meeting.notes --title "Client Meeting" --vault ./my-notes --json
+```
+
+`template preview` 是只读投影，输出 `read_only=true`、`writes=false`、`output_policy`、`proof_gate`、`write_impact`、`body_exposure` 和下一条真实 `pinax note add ... --template ...` 命令；它不会创建 note、receipt、`.pinax` state、Git snapshot 或 provider side effect。
+
+当用户执行 `pinax note add "Client Meeting" --template meeting.notes --dir index --vault ./my-notes --json` 时，note 创建 projection 会追加模板使用证据字段，而不改变既有 envelope 顶层：`template_use_id`、`template`、`template_pack`、`scenario_id`、`effective_path`、`proof_gate.status` 和 `data.template_use.next_actions[]`。这些字段用于后续 proof loop、搜索和 handoff；事件摘要由 app service 写入，preview/dry-run 路径不写 receipt、Markdown、Git 或 provider state。
+
+模板 lifecycle 影响推荐：`draft_design` 不会成为 primary executable recommendation，`deprecated` 保留可 inspect/preview 并可声明 replacement，vault-local 同名模板会在 inspect 中标记为 `source=vault-local` 和 `lifecycle=overridden`。
+
+## Scenario Matrix
+
+| scenario_id | Target user | Job-to-be-done | Required artifacts | Gate/review checks | Evidence path | Export/handoff path | Validation command | Readiness |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `capture-sticky` | 快速记录用户 | 把临时线索放入 inbox，后续分拣。 | `sticky.capture` note、template use projection。 | `template preview` read-only；写入后进入 inbox/index。 | `template_use_id`、note path、command JSON。 | `pinax search`、`pinax proof loop run`。 | `go test ./cmd/pinax -run TestTemplateRecommend -count=1` | mature |
+| `idea-research-seed` | 内容研究者 | 把以后调查的想法停放为 parked idea。 | `idea.research_seed` note、`index.ideas`。 | 不自动创建 task/board item。 | note path + recommendation evidence。 | ideas index/search。 | `go test ./cmd/pinax -run TestTemplateRecommend -count=1` | first-support |
+| `meeting-decision` | 项目协作者 | 创建会议/决策记录并生成后续 action。 | `meeting.notes`、`decision.record`。 | proof gate manual review；after-create action 可见。 | `template_use_id` + note id。 | project board/proof loop。 | `go test ./cmd/pinax -run TestTemplatePreview -count=1` | mature |
+| `learning-pack` | 长期学习用户 | 初始化长期学习资料、术语、复盘模板。 | learning templates、project workspace refs。 | project workspace preview/dry-run。 | template use projection + board projection。 | project board/export。 | `go test ./cmd/pinax -run 'TestTemplate|TestProject' -count=1` | first-support |
+| `stock-learning` | 金融学习用户 | 记录学习、模拟、风险规则，避免投资建议。 | `learning.stock.*` templates。 | safety copy and no-advice assertions。 | template use projection + risk disclaimer evidence。 | learning project workspace。 | `go test ./cmd/pinax -run 'Stock|Template' -count=1` | exploratory |
+| `index-page` | vault 维护用户 | 用 index template 创建/刷新托管索引页。 | `index.*` template、managed block。 | preview before create/refresh。 | managed index receipt。 | local index/search。 | `go test ./cmd/pinax -run TestIndexPage -count=1` | mature |
+
 ## Obsidian Compatibility
 
 Daily notes use `journal.daily`, which writes to `daily/{{ .Date }}.md` and keeps Pinax automation inside managed blocks only:

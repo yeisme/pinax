@@ -22,3 +22,16 @@ pinax import markdown ./source/beta.md --conflict overwrite --yes --vault ./my-n
 ## Write Boundaries
 
 `--dry-run` does not write notes, receipts, Git state, or provider state. A real import must explicitly use `--yes`, and writes `.pinax/receipts/import-*.json` through the service.
+
+## Agent Brain Ingest Contract
+
+All Agent Brain ingest paths must enter through service-owned commands before they become searchable context. The current contract is:
+
+| Source | Current entry point | First step | Confirmed write evidence | Body exposure |
+| --- | --- | --- | --- | --- |
+| Markdown file or directory | `pinax import markdown ./source --dry-run --vault ./my-notes --json` | Dry-run import plan. | `.pinax/receipts/import-*.json` after `--yes`. | Bounded projection; source body is not echoed in machine output. |
+| Inbox capture | `pinax inbox capture <title> --vault ./my-notes --json` | Explicit capture command. | Service-authored Markdown note metadata. | Caller-provided body is written to the note, not repeated as raw evidence. |
+| Journal/briefing | `pinax journal ...` and `pinax briefing run --dry-run --vault ./my-notes --json` | Preview or dry-run where available. | Service-authored note, receipt, or delivery evidence after explicit confirmation. | Provider/webhook payloads and tokens are redacted. |
+| Future email/calendar/webhook/shortcut/Zapier intake | No current production command. | Must add dry-run or preview first. | Must write normalized Markdown/assets and redacted receipts through the application service. | Raw external payloads, email headers with secrets, webhook tokens, provider stderr, and API payloads must not enter stdout/stderr/evidence. |
+
+Source identity should include source kind, source path or provider-neutral external id, import time, conflict/dedupe outcome, and receipt id when available. Dedupe decisions must appear as plan facts before writes; unresolved future connectors stay planned until their owner implements fake-fixture tests and redacted evidence.

@@ -343,7 +343,8 @@ func (s *Service) SyncLogsList(_ context.Context, req SyncLogsRequest) (domain.P
 	}
 	projection := domain.NewProjection("sync.logs.list", "Sync run logs listed.")
 	projection.Facts["runs"] = fmt.Sprint(len(records))
-	projection.Data = map[string]any{"schema_version": syncRunSchemaVersion, "runs": receiptSummaries(records)}
+	projection.Facts["limit"] = fmt.Sprint(limit)
+	projection.Data = map[string]any{"schema_version": syncRunSchemaVersion, "runs": receiptSummaries(records), "limit": limit}
 	if len(records) > 0 {
 		projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", records[0].Receipt.RunID, shellQuote(root))}}
 	}
@@ -384,12 +385,13 @@ func (s *Service) SyncLogsTail(_ context.Context, req SyncLogsRequest) (domain.P
 	}
 	projection := domain.NewProjection("sync.logs.tail", "Sync event timeline read.")
 	projection.Facts["events"] = fmt.Sprint(len(events))
+	projection.Facts["limit"] = fmt.Sprint(limit)
 	if len(events) > 0 {
 		if runID, _ := events[len(events)-1]["run_id"].(string); runID != "" {
 			projection.Facts["run_id"] = runID
 		}
 	}
-	projection.Data = map[string]any{"events": events}
+	projection.Data = map[string]any{"events": events, "limit": limit}
 	return projection, nil
 }
 

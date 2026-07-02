@@ -52,6 +52,22 @@ tasks:
       - python3 -m compileall tools/pinax-lancedb-sidecar
       - PYTHONPATH=tools/pinax-lancedb-sidecar/src python3 -m unittest tools/pinax-lancedb-sidecar/tests/test_protocol_offline.py
 
+  publish:renderer:test:
+    desc: Run the Pinax web renderer Vitest suite.
+    dir: web/pinax-web-renderer
+    cmds:
+      - bun run test
+
+  publish:renderer:build:
+    desc: Build the Pinax web renderer package.
+    dir: web/pinax-web-renderer
+    cmds:
+      - bun run build
+
+  publish:smoke:
+    desc: Run Pinax static publish renderer smoke checks.
+    deps: [publish:renderer:test, publish:renderer:build]
+
   build:
     desc: Build the Pinax CLI.
     deps: [fmt-check]
@@ -311,7 +327,7 @@ tasks:
 
   check:
     desc: Run the local Pinax quality gate.
-    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:protocol]
+    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:protocol, publish:smoke]
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.

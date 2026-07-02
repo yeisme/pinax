@@ -33,7 +33,14 @@ type RouteInfo struct {
 // routeGroupMap maps URL path patterns to route groups.
 var routeGroupMap = map[string]RouteInfo{
 	"/":                       {Group: "capabilities", Method: "GET", Readonly: true},
+	"/workbench":              {Group: "capabilities", Method: "GET", Action: "workbench.ui", Readonly: true},
 	"/v1/capabilities":        {Group: "capabilities", Method: "GET", Readonly: true},
+	"/v1/workbench/status":    {Group: "capabilities", Method: "GET", Action: "workbench.status", Readonly: true},
+	"/v1/workbench/activity":  {Group: "capabilities", Method: "GET", Action: "activity.list", Readonly: true},
+	"/v1/workbench/activity/": {Group: "capabilities", Method: "GET", Action: "activity.show", Readonly: true},
+	"/v1/monitor/runs":        {Group: "capabilities", Method: "GET", Action: "monitor.runs", Readonly: true},
+	"/v1/monitor/runs/":       {Group: "capabilities", Method: "GET", Action: "monitor.show", Readonly: true},
+	"/v1/monitor/summary":     {Group: "capabilities", Method: "GET", Action: "monitor.summary", Readonly: true},
 	"/v1/folders":             {Group: "folders", Method: "GET", Readonly: true},
 	"/v1/folders/":            {Group: "folders", Method: "GET", Readonly: false},
 	"/v1/folders:repair-plan": {Group: "folders", Method: "POST", Action: "folder.repair", Readonly: true},
@@ -47,6 +54,11 @@ var routeGroupMap = map[string]RouteInfo{
 	"/v1/tasks/":              {Group: "tasks", Method: "POST", Action: "task.adopt", Readonly: true},
 	"/v1/database/views/":     {Group: "database", Method: "GET", Action: "database.view.render", Readonly: true},
 	"/v1/graph/summary":       {Group: "graph", Method: "GET", Action: "graph.summary", Readonly: true},
+	"/v1/memory":              {Group: "memory", Method: "GET", Action: "memory.list", Readonly: true},
+	"/v1/memory:capture":      {Group: "memory", Method: "POST", Action: "memory.capture", Readonly: false},
+	"/v1/memory:recall":       {Group: "memory", Method: "GET", Action: "memory.recall", Readonly: true},
+	"/v1/memory:context":      {Group: "memory", Method: "GET", Action: "memory.context", Readonly: true},
+	"/v1/memory:stats":        {Group: "memory", Method: "GET", Action: "memory.stats", Readonly: true},
 	"/v1/projects/":           {Group: "projects", Method: "GET", Readonly: true},
 }
 
@@ -125,6 +137,12 @@ func lookupRouteInfo(path string, method string) (RouteInfo, bool) {
 	}
 	if strings.HasPrefix(path, "/v1/database/views/") {
 		return routeGroupMap["/v1/database/views/"], true
+	}
+	if strings.HasPrefix(path, "/v1/workbench/activity/") {
+		return routeGroupMap["/v1/workbench/activity/"], true
+	}
+	if strings.HasPrefix(path, "/v1/monitor/runs/") {
+		return routeGroupMap["/v1/monitor/runs/"], true
 	}
 	if strings.HasPrefix(path, "/v1/projects/") {
 		return routeGroupMap["/v1/projects/"], true

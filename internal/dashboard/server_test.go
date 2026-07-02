@@ -155,6 +155,72 @@ func TestReadonlyDashboardServesRepairPlans(t *testing.T) {
 	}
 }
 
+func TestReadonlyDashboardServesAllNotesWithPublishVisibility(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeDashboardFixture(t, filepath.Join(root, "notes", "public.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_public\ntitle: Public Note\nkind: concept\nstatus: active\npublish: public\ntags: [publish]\n---\n\nPUBLIC_BODY_SENTINEL\n")
+	writeDashboardFixture(t, filepath.Join(root, "notes", "private.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_private\ntitle: Private Note\nkind: concept\nstatus: active\npublish: public\nprivacy: private\n---\n\nPRIVATE_BODY_SENTINEL\n")
+	writeDashboardFixture(t, filepath.Join(root, "notes", "internal.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_internal\ntitle: Internal Note\nkind: reference\nstatus: draft\n---\n\nINTERNAL_BODY_SENTINEL\n")
+
+	server := NewServer(svc, root)
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/notes", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("notes status = %d body=%s", res.Code, res.Body.String())
+	}
+	body := res.Body.String()
+	for _, forbidden := range []string{"PUBLIC_BODY_SENTINEL", "PRIVATE_BODY_SENTINEL", "INTERNAL_BODY_SENTINEL", `"body"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("notes endpoint leaked body material %q:\n%s", forbidden, body)
+		}
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("notes json invalid: %v\n%s", err, body)
+	}
+	if payload["command"] != "dashboard.notes" || payload["status"] != "success" {
+		t.Fatalf("notes payload = %#v", payload)
+	}
+	facts := payload["facts"].(map[string]any)
+	if facts["notes"] != "3" || facts["public"] != "1" || facts["private"] != "1" || facts["internal"] != "1" {
+		t.Fatalf("notes facts = %#v", facts)
+	}
+	data := payload["data"].(map[string]any)
+	notes := data["notes"].([]any)
+	visibilityByID := map[string]string{}
+	for _, raw := range notes {
+		note := raw.(map[string]any)
+		visibilityByID[note["id"].(string)] = note["visibility"].(string)
+	}
+	if visibilityByID["note_public"] != "public" || visibilityByID["note_private"] != "private" || visibilityByID["note_internal"] != "internal" {
+		t.Fatalf("visibility map = %#v", visibilityByID)
+	}
+
+	index := httptest.NewRecorder()
+	server.Handler().ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/", nil))
+	indexBody := index.Body.String()
+	for _, want := range []string{"All notes", "Public Note", "Private Note", "Internal Note", "public", "private", "internal", "/api/notes"} {
+		if !strings.Contains(indexBody, want) {
+			t.Fatalf("dashboard index missing %q:\n%s", want, indexBody)
+		}
+	}
+	for _, forbidden := range []string{"PUBLIC_BODY_SENTINEL", "PRIVATE_BODY_SENTINEL", "INTERNAL_BODY_SENTINEL"} {
+		if strings.Contains(indexBody, forbidden) {
+			t.Fatalf("dashboard index leaked body material %q:\n%s", forbidden, indexBody)
+		}
+	}
+
+	res = httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/notes", nil))
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("notes write-like method status = %d", res.Code)
+	}
+}
+
 func TestReadonlyDashboardServesProjectBoard(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

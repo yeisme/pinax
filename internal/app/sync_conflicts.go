@@ -360,6 +360,13 @@ func syncConflictActions(root string, conflicts []domain.SyncConflictEntry) []do
 	if len(conflicts) > 0 && strings.TrimSpace(conflicts[0].File) != "" {
 		file = conflicts[0].File
 	}
+	if file != "<file>" && !strings.HasSuffix(file, ".conflict.md") {
+		actions = append(actions, domain.Action{Name: "trash_list", Command: fmt.Sprintf("pinax trash list --vault %s --json", shellQuote(root))})
+		if len(conflicts) > 0 && (strings.HasPrefix(conflicts[0].MainPath, "project/") || strings.HasPrefix(conflicts[0].MainPath, "subproject/")) {
+			actions = append(actions, domain.Action{Name: "restore", Command: fmt.Sprintf("pinax trash restore %s --vault %s --json", shellQuote(conflicts[0].MainPath), shellQuote(root))})
+		}
+		return actions
+	}
 	diffFile := shellQuote(file)
 	resolveFile := shellQuote(file)
 	if file == "<file>" {

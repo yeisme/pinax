@@ -198,7 +198,7 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	_ = noteShowCmd.RegisterFlagCompletionFunc("view", staticCompletion("view", "source", "rendered"))
 	_ = noteShowCmd.RegisterFlagCompletionFunc("display", staticCompletion("display", "card", "detail", "context", "body"))
 	_ = noteShowCmd.RegisterFlagCompletionFunc("snapshot", noteRenderRunCompletion(func() string { return *ctx.vaultPath }))
-	noteReadCmd := &cobra.Command{Use: "read <note>", Short: "Read a local note", RunE: noteShowRun("note.show", "")}
+	noteReadCmd := &cobra.Command{Use: "read <note>", Short: "Read a local note", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: noteShowRun("note.show", "")}
 	noteReadCmd.Flags().StringVar(ctx.noteView, "view", "", "View: source or rendered")
 	noteReadCmd.Flags().StringVar(ctx.noteDisplay, "display", "", "Information display level: card, detail, context, or body")
 	noteReadCmd.Flags().StringVar(ctx.noteSnapshot, "snapshot", "", "Read rendered snapshot: run id, alias, or latest")
@@ -210,7 +210,7 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	notePreviewCmd := &cobra.Command{Use: "preview <note>", Short: "Read-only rendered note preview", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: noteShowRun("note.preview", "rendered")}
 	addPreviewFlags(notePreviewCmd)
 	noteCmd.AddCommand(noteShowCmd, noteReadCmd, notePreviewCmd)
-	noteRefreshCmd := &cobra.Command{Use: "refresh <note>", Short: "Refresh note rendered managed blocks", RunE: func(cmd *cobra.Command, args []string) error {
+	noteRefreshCmd := &cobra.Command{Use: "refresh <note>", Short: "Refresh note rendered managed blocks", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.refresh", "argument_required", "note refresh requires a note reference", "pinax note refresh <note> --rendered --vault <vault> --yes")
 		}
@@ -226,20 +226,22 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	_ = noteRefreshCmd.RegisterFlagCompletionFunc("snapshot", noteRenderRunCompletion(func() string { return *ctx.vaultPath }))
 	noteRefreshCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm writing back to Markdown")
 	noteCmd.AddCommand(noteRefreshCmd)
-	noteCmd.AddCommand(&cobra.Command{Use: "links <note>", Short: "List note outgoing links", RunE: func(cmd *cobra.Command, args []string) error {
+	noteLinksCmd := &cobra.Command{Use: "links <note>", Short: "List note outgoing links", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.links", "argument_required", "note links requires a note reference", "pinax note links <note> --vault <vault>")
 		}
 		projection, err := ctx.svc.NoteLinks(cmd.Context(), app.NoteLinkRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
-	noteCmd.AddCommand(&cobra.Command{Use: "backlinks <note>", Short: "List note backlinks", RunE: func(cmd *cobra.Command, args []string) error {
+	}}
+	noteCmd.AddCommand(noteLinksCmd)
+	noteBacklinksCmd := &cobra.Command{Use: "backlinks <note>", Short: "List note backlinks", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.backlinks", "argument_required", "note backlinks requires a note reference", "pinax note backlinks <note> --vault <vault>")
 		}
 		projection, err := ctx.svc.NoteBacklinks(cmd.Context(), app.NoteLinkRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
+	}}
+	noteCmd.AddCommand(noteBacklinksCmd)
 	noteCmd.AddCommand(&cobra.Command{Use: "orphans", Short: "List notes with no incoming or outgoing links", RunE: func(cmd *cobra.Command, args []string) error {
 		projection, err := ctx.svc.NoteOrphans(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
 		return ctx.renderProjection(cmd, projection, err)
@@ -268,7 +270,7 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	noteCmd.AddCommand(attachCmd)
 	var attachmentsPathStyle string
 	var attachmentsIncludePaths bool
-	attachmentsCmd := &cobra.Command{Use: "attachments <note>", Short: "List note attachment references", RunE: func(cmd *cobra.Command, args []string) error {
+	attachmentsCmd := &cobra.Command{Use: "attachments <note>", Short: "List note attachment references", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.attachments", "argument_required", "note attachments requires a note reference", "pinax note attachments <note> --vault <vault>")
 		}
@@ -287,34 +289,37 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.EditNote(cmd.Context(), app.NoteEditRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], Editor: *ctx.noteEditor})
 		return ctx.renderProjection(cmd, projection, err)
 	}
-	noteEditCmd := &cobra.Command{Use: "edit <note>", Short: "Open a note in an editor", RunE: noteEditRun}
+	noteEditCmd := &cobra.Command{Use: "edit <note>", Short: "Open a note in an editor", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: noteEditRun}
 	noteEditCmd.Flags().StringVar(ctx.noteEditor, "editor", "", "Editor command; defaults to EDITOR")
-	noteOpenCmd := &cobra.Command{Use: "open <note>", Short: "Open a note in an editor", RunE: noteEditRun}
+	noteOpenCmd := &cobra.Command{Use: "open <note>", Short: "Open a note in an editor", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: noteEditRun}
 	noteOpenCmd.Flags().StringVar(ctx.noteEditor, "editor", "", "Editor command; defaults to EDITOR")
 	noteCmd.AddCommand(noteEditCmd, noteOpenCmd)
 
-	noteCmd.AddCommand(&cobra.Command{Use: "rename <note> <title>", Short: "Rename a note", RunE: func(cmd *cobra.Command, args []string) error {
+	noteRenameCmd := &cobra.Command{Use: "rename <note> <title>", Short: "Rename a note", ValidArgsFunction: firstNoteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.rename", "argument_required", "note rename requires a note and new title", "pinax note rename <note> <title> --vault <vault>")
 		}
 		projection, err := ctx.svc.RenameNote(cmd.Context(), app.NoteMutationRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], Title: args[1]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
-	noteCmd.AddCommand(&cobra.Command{Use: "move <note> <dir>", Short: "Move a note to a directory under notes/", RunE: func(cmd *cobra.Command, args []string) error {
+	}}
+	noteCmd.AddCommand(noteRenameCmd)
+	noteMoveCmd := &cobra.Command{Use: "move <note> <dir>", Short: "Move a note to a directory under notes/", ValidArgsFunction: firstNoteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.move", "argument_required", "note move requires a note and folder", "pinax note move <note> <dir> --vault <vault>")
 		}
 		projection, err := ctx.svc.MoveNote(cmd.Context(), app.NoteMutationRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], TargetDir: args[1]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
-	noteCmd.AddCommand(&cobra.Command{Use: "archive <note>", Short: "Archive a note", RunE: func(cmd *cobra.Command, args []string) error {
+	}}
+	noteCmd.AddCommand(noteMoveCmd)
+	noteArchiveCmd := &cobra.Command{Use: "archive <note>", Short: "Archive a note", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.archive", "argument_required", "note archive requires a note", "pinax note archive <note> --vault <vault>")
 		}
 		projection, err := ctx.svc.ArchiveNote(cmd.Context(), app.NoteMutationRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
-	noteDeleteCmd := &cobra.Command{Use: "delete <note>", Short: "Delete or move to trash", RunE: func(cmd *cobra.Command, args []string) error {
+	}}
+	noteCmd.AddCommand(noteArchiveCmd)
+	noteDeleteCmd := &cobra.Command{Use: "delete <note>", Short: "Delete or move to trash", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.delete", "argument_required", "note delete requires a note", "pinax note delete <note> --vault <vault> --yes")
 		}
@@ -338,32 +343,35 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	noteCmd.AddCommand(noteDeleteCmd)
 
 	notePropertyCmd := &cobra.Command{Use: "property", Short: "Manage note frontmatter properties"}
-	notePropertyCmd.AddCommand(&cobra.Command{Use: "set <note> <property> <value>", Short: "Set a note property", RunE: func(cmd *cobra.Command, args []string) error {
+	notePropertySetCmd := &cobra.Command{Use: "set <note> <property> <value>", Short: "Set a note property", ValidArgsFunction: firstNoteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 3 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.property", "argument_required", "note property set requires note, property, and value", "pinax note property set <note> <property> <value> --vault <vault>")
 		}
 		projection, err := ctx.svc.PatchNoteProperty(cmd.Context(), app.NotePropertyRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], Operation: "set", Key: args[1], Value: args[2]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
-	notePropertyCmd.AddCommand(&cobra.Command{Use: "remove <note> <property>", Short: "Remove a note property", RunE: func(cmd *cobra.Command, args []string) error {
+	}}
+	notePropertyCmd.AddCommand(notePropertySetCmd)
+	notePropertyRemoveCmd := &cobra.Command{Use: "remove <note> <property>", Short: "Remove a note property", ValidArgsFunction: firstNoteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "note.property", "argument_required", "note property remove requires note and property", "pinax note property remove <note> <property> --vault <vault>")
 		}
 		projection, err := ctx.svc.PatchNoteProperty(cmd.Context(), app.NotePropertyRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], Operation: "remove", Key: args[1]})
 		return ctx.renderProjection(cmd, projection, err)
-	}})
+	}}
+	notePropertyCmd.AddCommand(notePropertyRemoveCmd)
 	noteCmd.AddCommand(notePropertyCmd)
 
 	noteTagCmd := &cobra.Command{Use: "tag", Short: "Manage note tags"}
 	for _, op := range []string{"add", "remove", "set"} {
 		operation := op
-		noteTagCmd.AddCommand(&cobra.Command{Use: operation + " <note> <tag>...", Short: "Update note tags", RunE: func(cmd *cobra.Command, args []string) error {
+		noteTagOperationCmd := &cobra.Command{Use: operation + " <note> <tag>...", Short: "Update note tags", ValidArgsFunction: firstNoteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 2 {
 				return renderCommandError(cmd, ctx.outputMode(), "note.tag", "argument_required", "note tag requires a note and at least one tag", "pinax note tag "+operation+" <note> <tag> --vault <vault>")
 			}
 			projection, err := ctx.svc.TagNote(cmd.Context(), app.NoteTagRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], Operation: operation, Tags: args[1:]})
 			return ctx.renderProjection(cmd, projection, err)
-		}})
+		}}
+		noteTagCmd.AddCommand(noteTagOperationCmd)
 	}
 	noteCmd.AddCommand(noteTagCmd)
 	root.AddCommand(noteCmd)

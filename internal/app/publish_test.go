@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
 )
@@ -42,6 +43,38 @@ func TestPublishProfileFacadeWritesAndValidatesProfile(t *testing.T) {
 	}
 	if listProjection.Command != "publish.profile.list" || listProjection.Facts["profiles"] != "1" {
 		t.Fatalf("list projection = %#v", listProjection)
+	}
+}
+
+func TestPublishProfileValidateExposesLegacyRendererMigrationPlan(t *testing.T) {
+	svc := NewService()
+	ctx := context.Background()
+	root := t.TempDir()
+
+	if _, err := svc.PublishProfileInit(ctx, PublishRequest{VaultPath: root, Profile: "legacy", Target: "github-pages", Renderer: "hugo"}); err != nil {
+		t.Fatalf("legacy profile init: %v", err)
+	}
+
+	projection, err := svc.PublishProfileValidate(ctx, PublishRequest{VaultPath: root, Profile: "legacy"})
+	if err != nil {
+		t.Fatalf("legacy profile should remain valid: %v", err)
+	}
+	if projection.Facts["renderer"] != "hugo" || projection.Facts["migration.recommended"] != "true" {
+		t.Fatalf("legacy migration facts = %#v", projection.Facts)
+	}
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("projection data = %#v", projection.Data)
+	}
+	plan, ok := data["migration_plan"].(domain.PublishProfileMigrationPlan)
+	if !ok {
+		t.Fatalf("migration plan missing from data: %#v", data)
+	}
+	if !plan.Recommended || plan.FromRenderer != domain.PublishRendererHugo || plan.ToRenderer != domain.PublishRendererPinaxWeb {
+		t.Fatalf("migration plan = %#v", plan)
+	}
+	if !strings.Contains(plan.Command, "pinax publish profile init legacy --target github-pages --renderer pinax-web") {
+		t.Fatalf("migration command = %q", plan.Command)
 	}
 }
 
@@ -140,6 +173,42 @@ func TestPublishDeployFacadeExposesStableMissingProfileError(t *testing.T) {
 	}
 }
 
+func TestPublishDevWatchOnceRebuildsAfterVaultMarkdownChange(t *testing.T) {
+	svc := NewService()
+	root := t.TempDir()
+	outDir := filepath.Join(root, "dist", "site")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, err := svc.PublishProfileInit(ctx, PublishRequest{VaultPath: root, Profile: "public", Target: "github-pages", Renderer: "pinax-web"}); err != nil {
+		t.Fatalf("profile init: %v", err)
+	}
+	writeAppPublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n\nFirst body.\n")
+
+	result := make(chan domain.Projection, 1)
+	errs := make(chan error, 1)
+	go func() {
+		projection, err := svc.PublishDev(ctx, PublishRequest{VaultPath: root, Profile: "public", Out: outDir, Host: "127.0.0.1", Port: 0, Watch: true, Once: true})
+		result <- projection
+		errs <- err
+	}()
+
+	waitForFile(t, filepath.Join(outDir, "index.html"), 10*time.Second)
+	time.Sleep(300 * time.Millisecond)
+	writeAppPublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n\nSecond body.\n")
+
+	select {
+	case projection := <-result:
+		if err := <-errs; err != nil {
+			t.Fatalf("publish dev watch: %v projection=%#v", err, projection)
+		}
+		if projection.Command != "publish.dev" || projection.Facts["watched"] != "true" || projection.Facts["rebuilds"] != "1" || projection.Facts["served"] != "true" {
+			t.Fatalf("watch projection = %#v", projection)
+		}
+	case <-ctx.Done():
+		t.Fatalf("publish dev watch did not rebuild before timeout: %v", ctx.Err())
+	}
+}
+
 func writeAppPublishNoteFixture(t *testing.T, root, rel string, meta map[string]string, body string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))
@@ -167,4 +236,16 @@ func writeAppPublishFileFixture(t *testing.T, root, rel, body string) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", path)
 }

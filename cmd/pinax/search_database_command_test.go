@@ -500,6 +500,42 @@ func TestIndexSearchDatabaseAndFiltersCLI(t *testing.T) {
 	}
 }
 
+func TestSearchEngineNativeAndLazyIndexOffCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "native.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_native\ntitle: Native Search\ntags: [search]\nkind: reference\nstatus: active\n---\n\n# Native Search\n\nNeedle appears in body.\n")
+	if err := os.Remove(filepath.Join(root, ".pinax", "index.sqlite")); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove index: %v", err)
+	}
+
+	out := runCLI(t, "search", "Needle", "--engine", "native", "--lazy-index", "off", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+		t.Fatalf("native search json invalid: %v\n%s", err, out)
+	}
+	facts := envelope["facts"].(map[string]any)
+	if facts["engine_requested"] != "native" || facts["engine"] != "native" || facts["lazy_index"] != "off" || facts["returned"] != "1" {
+		t.Fatalf("native search facts = %#v", facts)
+	}
+	if fileExists(filepath.Join(root, ".pinax", "index.sqlite")) {
+		t.Fatalf("native search with lazy-index off created index.sqlite")
+	}
+}
+
+func TestSearchEngineIndexRejectsMissingIndexCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "index-only.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_index_only\ntitle: Index Only\n---\n\n# Index Only\n\nbody\n")
+	if err := os.Remove(filepath.Join(root, ".pinax", "index.sqlite")); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("remove index: %v", err)
+	}
+
+	out, err := runCLIExpectError("search", "body", "--engine", "index", "--vault", root, "--json")
+	if err == nil || !strings.Contains(out, "search_index_unavailable") || !strings.Contains(out, "pinax index refresh --vault") {
+		t.Fatalf("index-only missing index err=%v out=%s", err, out)
+	}
+}
+
 func TestIndexLookupContractsCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

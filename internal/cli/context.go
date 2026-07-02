@@ -111,6 +111,8 @@ type commandBuildContext struct {
 	searchCreatedAfter       *string
 	searchUpdatedAfter       *string
 	searchAllowStale         *bool
+	searchEngine             *string
+	searchLazyIndex          *string
 	searchAt                 *string
 	searchChangedSince       *string
 	searchRevision           *string

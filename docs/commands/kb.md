@@ -54,7 +54,11 @@ Providers create embeddings. Backends store and search vectors. They are configu
 
 ## Multi-Device Rule
 
-Cloud Sync synchronizes encrypted vault revisions only. Do not sync `.pinax/kb/lancedb/`; each device should run `pinax kb refresh --vault <vault>` after pulling changes.
+Cloud Sync synchronizes encrypted vault revisions only. Do not sync `.pinax/kb/lancedb/`, `.pinax/kb/fake/`, raw vectors, raw provider payloads, or provider credentials; each device should run `pinax kb refresh --vault <vault>` after pulling changes. KB/LanceDB is a local rebuildable projection, not a source of truth.
+
+## Agent Brain Role
+
+`pinax kb context` is one current building block for staged Agent Brain context. It contributes bounded semantic refs, provider/model/source type, local-only or network-backed status, and safe next actions such as `pinax kb provider doctor openai --vault ./my-notes --json`. It does not produce citation-first answer synthesis by itself. `pinax brain answer ...` currently provides extractive preview with `cost_class=none`; future provider-backed synthesis must keep provider/cost metadata visible and must not hide metered or network-backed work.
 
 ## Provider Notes
 

@@ -2,6 +2,8 @@
 
 `pinax api` manages the local REST/RPC projection adapter. It exposes controlled Pinax capabilities from one local vault; it is Remote API Mode, not Cloud Sync.
 
+Use [`share`](./share.md) for explicit LAN read-only review surfaces. `api serve` remains the local REST/RPC adapter for clients and tools; `share start` owns LAN-facing Web/API preview gates.
+
 ## Subcommands
 
 | Command | Purpose | Writes/External effects |
@@ -23,14 +25,34 @@ pinax api schema export --format openapi --vault ./my-notes --json
 
 `api routes --json` includes optional Web-facing metadata on each capability and route: `ui_group`, `body_exposure_default`, `write_gate`, `copy_command`, and `local_only_reason`. These fields help future clients group workbench screens, show body exposure defaults, preview approval/snapshot gates, and display copyable Pinax command templates without changing the existing projection envelope.
 
-Planned client-only areas may appear in discovery without a matching CLI editing command. For example, `canvas.layout.metadata` uses `ui_group=canvas.view` and `local_only_reason=future-client-only` to document the future canvas layout boundary. It is not a `pinax canvas` command; clients must keep using service-owned projections and must not write `.pinax/canvases/*.json` directly.
+Planned client-only or staged contract areas may appear in discovery without a matching REST/RPC route. For example, `canvas.layout.metadata` uses `ui_group=canvas.view` and `local_only_reason=future-client-only` to document the future canvas layout boundary. Agent Brain planned capabilities such as `brain.context.bundle`, `brain.answer.preview`, `brain.sources.list`, `brain.maintenance.plan`, and `brain.provider.cost_status` use `ui_group=agent.brain` and `local_only_reason=future-contract`. These entries are discovery metadata only until their owning implementation tasks land. OpenAPI export must include only real REST paths; it must not fabricate `/brain` paths for planned capabilities.
 
 `api status --json` returns the `workbench.status` projection with bounded facts such as `vault_root`, `index_status`, `write_mode`, `body_exposure_default`, `profile_status`, `token_status`, and a safe index refresh next action when the local index is missing or stale.
+
+Use the API server as the future `client/yeisme-workbench` Pinax module source contract:
+
+```bash
+pinax api serve --vault ./my-notes --readonly --port 8787
+```
+
+The future Workbench module should consume `/v1/capabilities` and Pinax API projections rather than relying on a Pinax-owned standalone page. Confirmed memory writes are disabled unless the server is started with `--allow-write`; dry-run previews remain non-persistent.
 
 Start a read-only loopback server:
 
 ```bash
 pinax api serve --vault ./my-notes --readonly --port 8787
+```
+
+Call memory routes through REST or RPC:
+
+```bash
+curl 'http://127.0.0.1:8787/v1/memory?entity=pinax'
+curl -X POST 'http://127.0.0.1:8787/v1/memory:capture?dry_run=true' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"fact","subject":"pinax","predicate":"memory_capture_usage","object":"Use --body or --subject and --object","source":"cli-help"}'
+curl -X POST 'http://127.0.0.1:8787/v1/rpc' \
+  -H 'Content-Type: application/json' \
+  -d '{"method":"Pinax.Memory.Context","params":{"task":"pinax memory usage","entity":"pinax","limit":12}}'
 ```
 
 Use a token file when auth is required:
@@ -53,4 +75,4 @@ Cloud Sync is separate. Use [`cloud`](./cloud.md) and [`sync`](./sync.md) for di
 
 `pinax api serve` should default to loopback and read-only mode. Use `--allow-write` only when the operator understands the remote mutation boundary and has approval. Do not put raw bearer tokens in repository files, docs, logs, events, screenshots, fixtures, or run evidence.
 
-See also [`token`](./token.md), [`profile`](./profile.md), [`config`](./config.md), and [`mcp`](./mcp.md).
+See also [`share`](./share.md), [`token`](./token.md), [`profile`](./profile.md), [`config`](./config.md), and [`mcp`](./mcp.md).

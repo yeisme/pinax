@@ -92,6 +92,14 @@ func addGraphCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	})
+	graphCmd.AddCommand(&cobra.Command{
+		Use:   "summary",
+		Short: "Summarize the local note link graph",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.GraphSummaryProjection(cmd.Context(), *ctx.vaultPath)
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	})
 
 	queryCmd := &cobra.Command{
 		Use:   "query",

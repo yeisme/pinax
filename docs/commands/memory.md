@@ -25,6 +25,18 @@ pinax memory context "prepare next release" --entity pinax --limit 12 --vault ./
 pinax memory stats --vault ./my-notes --json
 ```
 
+The same stable commands can be forwarded through Local API Remote Mode when the server exposes the corresponding capability:
+
+```bash
+pinax --api-url http://127.0.0.1:8787 memory list --entity pinax --json
+pinax --api-url http://127.0.0.1:8787 memory recall "memory capture" --entity pinax --json
+pinax --api-url http://127.0.0.1:8787 memory context "pinax memory usage" --entity pinax --limit 12 --agent
+pinax --api-url http://127.0.0.1:8787 memory stats --json
+pinax --api-url http://127.0.0.1:8787 memory capture --type fact --subject pinax --predicate memory_capture_usage --object "Use --body or --subject and --object" --source cli-help --dry-run --json
+```
+
+Confirmed remote capture requires `pinax api serve --allow-write` on the server and `yes=true` at the API layer. CLI Remote API Mode currently forwards `--dry-run` for safe previews; direct REST/RPC clients pass `yes=true` when confirming a write.
+
 ## Recall Ranking
 
 `memory recall` and `memory context` use deterministic non-vector ranking. The scorer combines keyword matches, source authority, confidence, freshness, and task fitness, then orders ties by score, source authority, creation time, and record id. Default recall includes only confirmed records, hides records superseded by newer entries, and collapses duplicate confirmed records with the same `subject` + `predicate` to the highest-ranked hit.
@@ -70,9 +82,14 @@ Agent output stays compact and low-token. `memory context --agent` emits facts s
 - `pinax kb` is semantic search over note chunks through a vector backend such as LanceDB.
 - Use `memory` when the agent needs stable project context or prior decisions. Use `kb` when the agent needs fuzzy semantic retrieval over larger note bodies.
 
+## Agent Brain Role
+
+`pinax memory context` is one current building block for the staged Agent Brain context bundle. It contributes structured `memory_refs`, lifecycle state, confidence/freshness signals, supersession information, and source citations. It is not answer synthesis by itself; future `pinax brain answer ...` remains planned and must cite memory records as evidence rather than copying full private memory bodies.
+
 ## Safety Boundaries
 
 - `.pinax/memory/` is a CLI-authored structured asset. Do not edit the SQLite files directly.
 - `capture --dry-run` is read-only and does not create the ledger database.
+- Local REST/RPC exposes `GET /v1/memory`, `POST /v1/memory:capture`, `GET /v1/memory:recall`, `GET /v1/memory:context`, `GET /v1/memory:stats`, and `Pinax.Memory.*` RPC methods. Real capture writes require API write mode and explicit confirmation.
 - `memory recall --json` and `memory context --agent` omit full private memory bodies. They may include bounded `object`, ranking `signals`, `score`, and `recall_reason`, but must not include raw prompts, provider payloads, Authorization headers, cookies, or secrets.
-- Cloud Sync should treat the memory ledger as a local rebuildable projection, not as authoritative cross-device state.
+- Cloud Sync should treat the memory ledger as local service-owned memory evidence, not as plaintext cross-device content. Source notes and receipts remain the portable authority; any future cross-device memory sync needs an explicit encrypted contract instead of uploading raw ledger state.
