@@ -30,28 +30,40 @@ import (
 )
 
 type PublishRequest struct {
-	VaultPath  string
-	Profile    string
-	Target     string
-	Renderer   string
-	Title      string
-	BaseURL    string
-	Theme      string
-	Out        string
-	Repo       string
-	Branch     string
-	Endpoint   string
-	Method     string
-	SecretRef  string
-	GistID     string
-	Visibility string
-	Project    string
-	Host       string
-	Port       int
-	Once       bool
-	Watch      bool
-	Yes        bool
-	LiveEvents PublishEventSink
+	VaultPath   string
+	Profile     string
+	Target      string
+	Note        string
+	PackageID   string
+	Workspace   string
+	ParentPage  string
+	Space       string
+	Folder      string
+	ExternalURL string
+	As          string
+	Layout      string
+	Template    string
+	IndexPage   bool
+	DryRun      bool
+	Renderer    string
+	Title       string
+	BaseURL     string
+	Theme       string
+	Out         string
+	Repo        string
+	Branch      string
+	Endpoint    string
+	Method      string
+	SecretRef   string
+	GistID      string
+	Visibility  string
+	Project     string
+	Host        string
+	Port        int
+	Once        bool
+	Watch       bool
+	Yes         bool
+	LiveEvents  PublishEventSink
 }
 
 type PublishEventSink func(PublishEvent)

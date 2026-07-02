@@ -72,6 +72,53 @@ pinax publish deploy --profile public --target vercel --out ./dist/site --projec
 pinax publish deploy --profile public --target cloudflare-pages --out ./dist/site --project my-notes --yes --vault ./my-notes --json
 ```
 
+
+## Document Publish Maintenance
+
+`pinax publish doc` maintains the relationship between local notes and external collaborative document copies. The Markdown vault remains the source of truth; Notion pages and Feishu Docs/files are publish copies. Pinax owns prepare, dry-run, push, status, list, link, unlink, mapping and receipt state. It does not own platform-native comments, annotations, permissions, collaborators, approvals or notification workflows.
+
+Initial targets are `notion-page` and `lark-doc`:
+
+```bash
+pinax publish doc provider list --vault ./my-notes --json
+pinax publish doc profile set notion-page --workspace <workspace-id> --parent-page <page-id> --vault ./my-notes --json
+pinax publish doc profile set lark-doc --folder <folder-token-or-url> --as user --layout mirror --template vault --index-page --vault ./my-notes --json
+pinax publish doc provider doctor --target lark-doc --vault ./my-notes --json
+```
+
+The normal agent-safe flow is prepare, dry-run, then push:
+
+```bash
+pinax publish doc prepare --note <note-id> --target lark-doc --vault ./my-notes --json
+pinax publish doc push --package <package-id> --target lark-doc --vault ./my-notes --dry-run --json
+pinax publish doc push --package <package-id> --target lark-doc --vault ./my-notes --json
+pinax publish doc status --note <note-id> --vault ./my-notes --json
+pinax publish doc list --target lark-doc --vault ./my-notes --json
+```
+
+`lark-doc --as user|bot|auto` selects an already configured `lark-cli` identity. Pinax stores only the selector, not Feishu tokens, cookies or raw auth payloads. For user-owned Feishu folders, prefer `--as user`; `provider doctor` verifies that the selected identity is available before publish.
+
+For Feishu, the recommended cloud-vault profile is `--layout mirror --template vault --index-page`. `mirror` creates or reuses remote folders that match the local note path, such as `notes/index/`. The `vault` template adds a compact Pinax overview block before the note body and removes duplicate top-level titles. `--index-page` keeps `_Pinax Vault Index.md` in the target folder, linking to every published note and showing publish status.
+
+For existing external documents, use `link` and `unlink` to maintain local mapping state without mutating the remote document:
+
+```bash
+pinax publish doc link --note <note-id> --target lark-doc --external-url <url> --vault ./my-notes --json
+pinax publish doc unlink --note <note-id> --target lark-doc --vault ./my-notes --json
+```
+
+After `status` returns an external URL or id, agents should call the native provider CLI for platform-specific follow-up. These actions are outside Pinax publish mapping state:
+
+```bash
+pinax publish doc status --note <note-id> --vault ./my-notes --json
+lark-cli doc comment add --doc <doc-token> --text "Ready for review" --json
+```
+
+```bash
+pinax publish doc status --note <note-id> --vault ./my-notes --json
+notion page comment add --page <page-id> --text "Ready for review" --json
+```
+
 ## Renderer Contract
 
 `pinax-web` is the canonical static HTML renderer. It emits ordinary publish files:

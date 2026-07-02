@@ -1,0 +1,93 @@
+# Document publish maintenance uses CLI-authored assets and fake provider CLIs.
+exec mkdir -p vault/notes/index
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_alpha" "title: Alpha Doc" "kind: concept" "status: active" "publish: public" "---" "" "# Alpha Doc" "PUBLIC_ALPHA_BODY" > vault/notes/index/alpha.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_beta" "title: Beta Page" "kind: concept" "status: active" "publish: public" "---" "" "# Beta Page" "PUBLIC_BETA_BODY" > vault/notes/index/beta.md'
+
+exec sh -c 'pinax publish doc provider list --vault vault --json > providers.json'
+validate-json-envelope providers.json
+validate-clean-stdout providers.json
+exec grep -q '"command":"publish.doc.provider.list"' providers.json
+exec grep -q '"providers":"2"' providers.json
+
+exec sh -c 'pinax publish doc profile set lark-doc --folder fld_test --as user --vault vault --json > lark-profile.json'
+validate-json-envelope lark-profile.json
+validate-clean-stdout lark-profile.json
+exec grep -q '"command":"publish.doc.profile.set"' lark-profile.json
+exec grep -q '"as":"user"' lark-profile.json
+exec grep -q '"layout":"mirror"' lark-profile.json
+exec grep -q '"template":"vault"' lark-profile.json
+exec grep -q '"index_page":"true"' lark-profile.json
+exists vault/.pinax/publish/doc/profiles/lark-doc.yaml
+
+exec sh -c 'pinax publish doc provider doctor --target lark-doc --vault vault --json > lark-doctor.json'
+validate-json-envelope lark-doctor.json
+validate-clean-stdout lark-doctor.json
+exec grep -q '"command":"publish.doc.provider.doctor"' lark-doctor.json
+exec grep -q '"as":"user"' lark-doctor.json
+
+exec sh -c 'pinax publish doc prepare --note note_alpha --target lark-doc --vault vault --json > lark-prepare.json'
+validate-json-envelope lark-prepare.json
+validate-clean-stdout lark-prepare.json
+exec grep -q '"command":"publish.doc.prepare"' lark-prepare.json
+exec grep -q '"note_id":"note_alpha"' lark-prepare.json
+exec sh -c 'for f in vault/.pinax/publish/doc/packages/pubdoc_note_alpha_lark_doc_*.json; do basename "$f" .json; done > lark-package.txt'
+exec sh -c 'grep -q "Published from Pinax" vault/.pinax/publish/doc/packages/*.json'
+exec grep -q '"remote_path":"notes/index/Alpha Doc.md"' lark-prepare.json
+
+exec sh -c 'pinax publish doc push --package "$(cat lark-package.txt)" --target lark-doc --vault vault --dry-run --json > lark-dry-run.json'
+validate-json-envelope lark-dry-run.json
+validate-clean-stdout lark-dry-run.json
+exec grep -q '"publish_status":"dry_run_verified"' lark-dry-run.json
+
+exec sh -c 'pinax publish doc push --package "$(cat lark-package.txt)" --target lark-doc --vault vault --json > lark-push.json'
+validate-json-envelope lark-push.json
+validate-clean-stdout lark-push.json
+exec grep -q '"publish_status":"published"' lark-push.json
+exec grep -q 'https://example.test/lark/fake_lark_doc' lark-push.json
+exists vault/.pinax/publish/doc/mappings/note_alpha/lark-doc.json
+exists vault/.pinax/publish/doc/folders/lark-doc/notes.json
+exists vault/.pinax/publish/doc/folders/lark-doc/notes_index.json
+exec grep -q 'index_object:' vault/.pinax/publish/doc/profiles/lark-doc.yaml
+
+exec sh -c 'pinax publish doc status --note note_alpha --vault vault --json > lark-status.json'
+validate-json-envelope lark-status.json
+validate-clean-stdout lark-status.json
+exec grep -q '"publish_status":"published"' lark-status.json
+exec sh -c 'pinax publish doc list --target lark-doc --vault vault --json > lark-list.json'
+validate-json-envelope lark-list.json
+validate-clean-stdout lark-list.json
+exec grep -q '"mappings":"1"' lark-list.json
+
+exec sh -c 'pinax publish doc profile set notion-page --workspace ws_test --parent-page pg_parent --vault vault --json > notion-profile.json'
+validate-json-envelope notion-profile.json
+validate-clean-stdout notion-profile.json
+exists vault/.pinax/publish/doc/profiles/notion-page.yaml
+exec sh -c 'pinax publish doc provider doctor --target notion-page --vault vault --json > notion-doctor.json'
+validate-json-envelope notion-doctor.json
+validate-clean-stdout notion-doctor.json
+exec grep -q '"provider":"notion"' notion-doctor.json
+exec sh -c 'pinax publish doc prepare --note note_beta --target notion-page --vault vault --json > notion-prepare.json'
+validate-json-envelope notion-prepare.json
+validate-clean-stdout notion-prepare.json
+exec sh -c 'for f in vault/.pinax/publish/doc/packages/pubdoc_note_beta_notion_page_*.json; do basename "$f" .json; done > notion-package.txt'
+exec sh -c 'pinax publish doc push --package "$(cat notion-package.txt)" --target notion-page --vault vault --dry-run --json > notion-dry-run.json'
+validate-json-envelope notion-dry-run.json
+validate-clean-stdout notion-dry-run.json
+exec grep -q '"publish_status":"dry_run_verified"' notion-dry-run.json
+exec sh -c 'pinax publish doc push --package "$(cat notion-package.txt)" --target notion-page --vault vault --json > notion-push.json'
+validate-json-envelope notion-push.json
+validate-clean-stdout notion-push.json
+exec grep -q '"publish_status":"published"' notion-push.json
+exec grep -q 'https://example.test/notion/fake_notion_page' notion-push.json
+exists vault/.pinax/publish/doc/mappings/note_beta/notion-page.json
+
+exec sh -c 'pinax publish doc status --note note_beta --vault vault --json > notion-status.json'
+validate-json-envelope notion-status.json
+validate-clean-stdout notion-status.json
+exec grep -q '"publish_status":"published"' notion-status.json
+exec sh -c 'pinax publish doc list --target notion-page --vault vault --json > notion-list.json'
+validate-json-envelope notion-list.json
+validate-clean-stdout notion-list.json
+exec grep -q '"mappings":"1"' notion-list.json
+
+! exec grep -R -q 'PUBLIC_ALPHA_BODY\|PUBLIC_BETA_BODY' *.json *.agent 2>/dev/null
