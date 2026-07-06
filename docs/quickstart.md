@@ -21,12 +21,12 @@ go install github.com/yeisme/pinax/cmd/pinax@latest
 
 **方式 B：下载 GitHub Release archive（无需 Go）**
 
-从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.2_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
+从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.5_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
 
 ```bash
 # 示例：Linux x86_64
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.2/pinax_0.1.2_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.2/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.5/pinax_0.1.5_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.5/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz pinax
 chmod +x pinax
