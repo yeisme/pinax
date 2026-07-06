@@ -53,6 +53,8 @@ Pinax 是本地优先的统一笔记 Agent CLI：Markdown vault 是用户知识�
 - [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)
 - [命令手册](./commands/README.md)
 - [本地开发运行手册](./operations/local-development.md)
+- [模块审查与 TDD 手册](./operations/module-review-tdd.md)
+- [完整使用样例](./usage/full-example.md)
 - [贡献指南](../CONTRIBUTING.zh-CN.md)
 - [安全策略](../SECURITY.zh-CN.md)
 

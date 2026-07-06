@@ -101,6 +101,28 @@ func backendNameCompletion(vaultPathValue func() string) func(*cobra.Command, []
 	}
 }
 
+func backendObjectCompletion(vaultPathValue func() string, notesOnly bool, prefixesOnly bool) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		root := completionVaultRoot(vaultPathValue())
+		switch len(args) {
+		case 0:
+			items, err := backendCompletionItems(root)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
+		case 1:
+			items, err := backendObjectCompletionItems(cmd.Context(), root, args[0], toComplete, notesOnly, prefixesOnly)
+			if err != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
+		default:
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+	}
+}
+
 func backendKindCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -260,6 +282,94 @@ func backendCompletionItems(root string) ([]string, error) {
 	}
 	sort.Strings(items)
 	return items, nil
+}
+
+func backendObjectCompletionItems(ctx context.Context, root, backendName, prefix string, notesOnly bool, prefixesOnly bool) ([]string, error) {
+	service := app.NewService()
+	var projection domain.Projection
+	var err error
+	if notesOnly {
+		projection, err = service.BackendNotesList(ctx, app.BackendNotesRequest{VaultPath: root, Name: backendName, Prefix: prefix})
+	} else {
+		projection, err = service.BackendObjectList(ctx, app.BackendObjectListRequest{VaultPath: root, Name: backendName, Prefix: prefix})
+	}
+	if err != nil {
+		return nil, err
+	}
+	keys := backendCompletionKeysFromProjection(projection, notesOnly)
+	if prefixesOnly {
+		return backendPrefixCompletionItems(keys), nil
+	}
+	description := "object"
+	if notesOnly {
+		description = "note"
+	}
+	items := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		items = append(items, key+"\t"+description)
+	}
+	sort.Strings(items)
+	return items, nil
+}
+
+func backendCompletionKeysFromProjection(projection domain.Projection, notesOnly bool) []string {
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	listKey := "objects"
+	pathKey := "key"
+	if notesOnly {
+		listKey = "notes"
+		pathKey = "path"
+	}
+	items, ok := data[listKey].([]map[string]any)
+	if !ok {
+		payload, err := json.Marshal(data[listKey])
+		if err != nil {
+			return nil
+		}
+		var decoded []map[string]any
+		if err := json.Unmarshal(payload, &decoded); err != nil {
+			return nil
+		}
+		items = decoded
+	}
+	keys := make([]string, 0, len(items))
+	for _, item := range items {
+		key := strings.TrimSpace(fmt.Sprint(item[pathKey]))
+		if key == "" || key == "<nil>" {
+			key = strings.TrimSpace(fmt.Sprint(item["key"]))
+		}
+		if key == "" || key == "<nil>" {
+			continue
+		}
+		keys = append(keys, filepath.ToSlash(key))
+	}
+	return keys
+}
+
+func backendPrefixCompletionItems(keys []string) []string {
+	seen := map[string]struct{}{}
+	for _, key := range keys {
+		parts := strings.Split(filepath.ToSlash(key), "/")
+		if len(parts) <= 1 {
+			continue
+		}
+		for i := 1; i < len(parts); i++ {
+			prefix := strings.Join(parts[:i], "/") + "/"
+			seen[prefix] = struct{}{}
+		}
+	}
+	items := make([]string, 0, len(seen))
+	for prefix := range seen {
+		items = append(items, prefix+"\tprefix")
+	}
+	sort.Strings(items)
+	return items
 }
 
 func promptAssetCompletionItems(root string) ([]string, error) {

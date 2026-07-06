@@ -56,13 +56,22 @@ func TestAPIServeLifecycleOutput(t *testing.T) {
 func TestAPIRoutesHumanOutputListsEndpointsCLI(t *testing.T) {
 	root := t.TempDir()
 	out := runCLI(t, "api", "routes", "--vault", root)
-	for _, want := range []string{"GET /v1/projects/{slug}/board", "CALL Pinax.Note.Read", "project.board.show"} {
+	for _, want := range []string{"API routes", "Method", "Endpoint", "Command", "Surface", "GET", "/v1/projects/{slug}/board", "CALL", "Pinax.Note.Read", "project.board.show"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("api routes human output missing %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "Evidence") {
+		t.Fatalf("api routes human output should render endpoint rows instead of evidence dump:\n%s", out)
+	}
 	if strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Fatalf("api routes human output should not be JSON:\n%s", out)
+	}
+	agentOut := runCLI(t, "api", "routes", "--vault", root, "--agent")
+	for _, want := range []string{"command=api.routes", "fact.routes=", "route.1.method=GET", "route.1.path=/v1/workbench/status", "route.1.command=workbench.status"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("api routes agent output missing %q:\n%s", want, agentOut)
+		}
 	}
 }
 

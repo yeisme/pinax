@@ -45,6 +45,7 @@ type PublishRequest struct {
 	Template    string
 	IndexPage   bool
 	DryRun      bool
+	All         bool
 	Renderer    string
 	Title       string
 	BaseURL     string

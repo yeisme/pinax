@@ -52,6 +52,20 @@ func TestTemplateAuthoringCLIJSON(t *testing.T) {
 		}
 	}
 
+	runCLI(t, "template", "create", "broken", "--body", "```go\nfmt.Println(1)\n", "--vault", root, "--json")
+	brokenHuman := runCLI(t, "template", "validate", "broken", "--vault", root)
+	for _, want := range []string{"Template issues", "Code", "Message", "template_fence_unclosed", "Markdown code fence is unclosed"} {
+		if !strings.Contains(brokenHuman, want) {
+			t.Fatalf("broken template human output missing %q:\n%s", want, brokenHuman)
+		}
+	}
+	brokenAgent := runCLI(t, "template", "validate", "broken", "--vault", root, "--agent")
+	for _, want := range []string{"command=template.validate", "status=partial", "fact.issues=1", "issue.1.code=template_fence_unclosed", `issue.1.message="Markdown code fence is unclosed"`} {
+		if !strings.Contains(brokenAgent, want) {
+			t.Fatalf("broken template agent output missing %q:\n%s", want, brokenAgent)
+		}
+	}
+
 	noteOut := runCLI(t, "note", "new", "客户会议", "--template", "meeting", "--var", "client=Acme", "--tags", "meeting,client", "--vault", root, "--json")
 	if !strings.Contains(noteOut, "note.new") {
 		t.Fatalf("note output = %s", noteOut)
@@ -258,6 +272,18 @@ func TestRenderRunSnapshotAndPruneCLI(t *testing.T) {
 	pruneDry := runCLI(t, "template", "runs", "prune", "study", "--keep", "0", "--dry-run", "--vault", root, "--json")
 	if !strings.Contains(pruneDry, `"dry_run":"true"`) || !strings.Contains(pruneDry, `"delete_candidates":"`) {
 		t.Fatalf("prune dry = %s", pruneDry)
+	}
+	pruneHuman := runCLI(t, "template", "runs", "prune", "study", "--keep", "0", "--dry-run", "--vault", root)
+	for _, want := range []string{"Render runs to delete", "Run ID", "Command", "Template", "Created", "template.render", "study"} {
+		if !strings.Contains(pruneHuman, want) {
+			t.Fatalf("prune human output missing %q:\n%s", want, pruneHuman)
+		}
+	}
+	pruneAgent := runCLI(t, "template", "runs", "prune", "study", "--keep", "0", "--dry-run", "--vault", root, "--agent")
+	for _, want := range []string{"command=template.runs.prune", "fact.delete_candidates=1", "delete_candidate.1.run_id=", "delete_candidate.1.command=template.render", "delete_candidate.1.template=study"} {
+		if !strings.Contains(pruneAgent, want) {
+			t.Fatalf("prune agent output missing %q:\n%s", want, pruneAgent)
+		}
 	}
 	repairOut := runCLI(t, "template", "runs", "repair", "--vault", root, "--json")
 	if !strings.Contains(repairOut, "template.runs.repair") {

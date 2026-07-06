@@ -56,6 +56,32 @@ func TestMonitorCommandOutputContracts(t *testing.T) {
 	}
 }
 
+func TestMonitorCommandPartialWarningsOutput(t *testing.T) {
+	root := t.TempDir()
+	writeCLIFixture(t, filepath.Join(root, ".pinax", "monitor", "runs", "bad.json"), "{\n")
+
+	jsonOut := runCLI(t, "monitor", "runs", "--vault", root, "--json")
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(jsonOut), &envelope); err != nil {
+		t.Fatalf("monitor partial json invalid: %v\n%s", err, jsonOut)
+	}
+	if envelope["status"] != "partial" || envelope["facts"].(map[string]any)["warnings"] != "1" {
+		t.Fatalf("monitor partial envelope = %#v", envelope)
+	}
+	humanOut := runCLI(t, "monitor", "runs", "--vault", root)
+	for _, want := range []string{"Monitor warnings", "Source", "Path", "Message", "monitor_runs", ".pinax/monitor/runs/bad.json"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("monitor partial human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut := runCLI(t, "monitor", "runs", "--vault", root, "--agent")
+	for _, want := range []string{"command=monitor.runs", "status=partial", "fact.warnings=1", "warning.1.source=monitor_runs", "warning.1.path=.pinax/monitor/runs/bad.json"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("monitor partial agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+}
+
 func TestMonitorAndActivityShowCompletionCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

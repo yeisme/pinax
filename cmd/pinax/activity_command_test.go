@@ -73,4 +73,16 @@ func TestActivityCommandPartialOnCorruptOptionalSource(t *testing.T) {
 	if facts := envelope["facts"].(map[string]any); facts["warnings"] != "1" {
 		t.Fatalf("facts = %#v", facts)
 	}
+	humanOut := runCLI(t, "activity", "list", "--vault", root)
+	for _, want := range []string{"Activity warnings", "Source", "Path", "Line", "Message", "vault_events", ".pinax/events.jsonl"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("activity partial human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut := runCLI(t, "activity", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=activity.list", "status=partial", "fact.warnings=1", "warning.1.source=vault_events", "warning.1.path=.pinax/events.jsonl"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("activity partial agent output missing %q:\n%s", want, agentOut)
+		}
+	}
 }

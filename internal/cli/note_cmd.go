@@ -226,13 +226,34 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	_ = noteRefreshCmd.RegisterFlagCompletionFunc("snapshot", noteRenderRunCompletion(func() string { return *ctx.vaultPath }))
 	noteRefreshCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm writing back to Markdown")
 	noteCmd.AddCommand(noteRefreshCmd)
-	noteLinksCmd := &cobra.Command{Use: "links <note>", Short: "List note outgoing links", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return renderCommandError(cmd, ctx.outputMode(), "note.links", "argument_required", "note links requires a note reference", "pinax note links <note> --vault <vault>")
+	var noteLinksAll bool
+	var noteLinksBrokenOnly bool
+	var noteLinksKind string
+	var noteLinksStatus string
+	var noteLinksIncludeIgnored bool
+	var noteLinksLimit int
+	noteLinksCmd := &cobra.Command{Use: "links [note]", Short: "List note outgoing links", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
+		if !noteLinksAll && len(args) != 1 {
+			return renderCommandError(cmd, ctx.outputMode(), "note.links", "argument_required", "note links requires a note reference unless --all is set", "pinax note links <note> --vault <vault>")
 		}
-		projection, err := ctx.svc.NoteLinks(cmd.Context(), app.NoteLinkRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0]})
+		if noteLinksAll && len(args) > 0 {
+			return renderCommandError(cmd, ctx.outputMode(), "note.links", "argument_conflict", "note links --all does not accept a note argument", "pinax note links --all --vault <vault>")
+		}
+		noteRef := ""
+		if len(args) == 1 {
+			noteRef = args[0]
+		}
+		projection, err := ctx.svc.NoteLinks(cmd.Context(), app.NoteLinkRequest{VaultPath: *ctx.vaultPath, NoteRef: noteRef, All: noteLinksAll, BrokenOnly: noteLinksBrokenOnly, Kind: noteLinksKind, Status: noteLinksStatus, IncludeIgnored: noteLinksIncludeIgnored, Limit: noteLinksLimit})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	noteLinksCmd.Flags().BoolVar(&noteLinksAll, "all", false, "List outgoing links for every note in the vault")
+	noteLinksCmd.Flags().BoolVar(&noteLinksBrokenOnly, "broken-only", false, "Only list broken links")
+	noteLinksCmd.Flags().StringVar(&noteLinksKind, "kind", "", "Filter by link kind: wiki or markdown")
+	noteLinksCmd.Flags().StringVar(&noteLinksStatus, "status", "", "Filter by link status: resolved, broken, ambiguous, external, or ignored")
+	noteLinksCmd.Flags().BoolVar(&noteLinksIncludeIgnored, "include-ignored", false, "Include ignored or external links")
+	noteLinksCmd.Flags().IntVar(&noteLinksLimit, "limit", 0, "Maximum links to return")
+	_ = noteLinksCmd.RegisterFlagCompletionFunc("kind", staticCompletion("kind", "wiki", "markdown"))
+	_ = noteLinksCmd.RegisterFlagCompletionFunc("status", staticCompletion("status", "resolved", "broken", "ambiguous", "external", "ignored"))
 	noteCmd.AddCommand(noteLinksCmd)
 	noteBacklinksCmd := &cobra.Command{Use: "backlinks <note>", Short: "List note backlinks", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {

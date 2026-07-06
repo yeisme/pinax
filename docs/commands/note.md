@@ -64,11 +64,15 @@ pinax note add "iptv-org/iptv" --template source.github --var url=https://github
 
 ```bash
 pinax note links "Authentication Plan" --vault ./my-notes --json
+pinax note links --all --kind wiki --status ambiguous --vault ./my-notes --json
+pinax note links --all --kind wiki --status broken --vault ./my-notes --json
 pinax note backlinks "Authentication Plan" --vault ./my-notes --json
 pinax note orphans --vault ./my-notes --json
 pinax note attach "Authentication Plan" ./diagram.png --placement note-folder --embed --vault ./my-notes --json
 pinax note attachments "Authentication Plan" --vault ./my-notes --json
 ```
+
+`note links --all` scans the whole vault. Use `--kind wiki --status ambiguous` to review `[[...]]` links that match multiple notes, and `--kind wiki --status broken` to review wikilinks that cannot resolve. Single-note inspection supports the same filters, for example `pinax note links "Authentication Plan" --kind wiki --status ambiguous --vault ./my-notes --json`.
 
 ## Selection Rules
 

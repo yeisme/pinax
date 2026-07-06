@@ -153,6 +153,9 @@ func addPublishCommands(root *cobra.Command, ctx commandBuildContext) {
 	var docTemplate string
 	var docIndexPage bool
 	var docDryRun bool
+	var docAll bool
+	var docYes bool
+	var docRenderer string
 
 	publishCmd := &cobra.Command{
 		Use:   "publish",
@@ -387,7 +390,7 @@ func addPublishCommands(root *cobra.Command, ctx commandBuildContext) {
 		Short: "Create or update a document publish profile",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.PublishDocProfileSet(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, Target: args[0], Workspace: docWorkspace, ParentPage: docParentPage, Space: docSpace, Folder: docFolder, As: docAs, Layout: docLayout, Template: docTemplate, IndexPage: docIndexPage})
+			projection, err := ctx.svc.PublishDocProfileSet(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, Target: args[0], Workspace: docWorkspace, ParentPage: docParentPage, Space: docSpace, Folder: docFolder, As: docAs, Layout: docLayout, Template: docTemplate, IndexPage: docIndexPage, Renderer: docRenderer})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -399,6 +402,7 @@ func addPublishCommands(root *cobra.Command, ctx commandBuildContext) {
 	docProfileSetCmd.Flags().StringVar(&docLayout, "layout", "", "Remote document layout: flat or mirror")
 	docProfileSetCmd.Flags().StringVar(&docTemplate, "template", "", "Document render template: plain or vault")
 	docProfileSetCmd.Flags().BoolVar(&docIndexPage, "index-page", false, "Maintain a Pinax Cloud Vault index page")
+	docProfileSetCmd.Flags().StringVar(&docRenderer, "renderer", "", "lark-doc renderer: native-docx (default) or markdown-file (legacy fallback)")
 	docProfileCmd.AddCommand(docProfileSetCmd)
 	docCmd.AddCommand(docProfileCmd)
 
@@ -406,12 +410,13 @@ func addPublishCommands(root *cobra.Command, ctx commandBuildContext) {
 		Use:   "prepare",
 		Short: "Prepare a document publish package",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.PublishDocPrepare(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, Note: docNote, Target: docTarget})
+			projection, err := ctx.svc.PublishDocPrepare(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, Note: docNote, Target: docTarget, All: docAll})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	docPrepareCmd.Flags().StringVar(&docNote, "note", "", "Note id, title, or path to publish")
 	docPrepareCmd.Flags().StringVar(&docTarget, "target", "", "Document publish target: notion-page or lark-doc")
+	docPrepareCmd.Flags().BoolVar(&docAll, "all", false, "Prepare document publish packages for every note in the vault")
 	docCmd.AddCommand(docPrepareCmd)
 
 	docPushCmd := &cobra.Command{
@@ -420,13 +425,15 @@ func addPublishCommands(root *cobra.Command, ctx commandBuildContext) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return renderPublishCommand(cmd, ctx, "publish.doc.push", func(sink app.PublishEventSink) (domain.Projection, error) {
 				_ = sink
-				return ctx.svc.PublishDocPush(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, PackageID: docPackage, Target: docTarget, DryRun: docDryRun})
+				return ctx.svc.PublishDocPush(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, PackageID: docPackage, Target: docTarget, DryRun: docDryRun, All: docAll, Yes: docYes})
 			})
 		},
 	}
 	docPushCmd.Flags().StringVar(&docPackage, "package", "", "Document publish package id")
 	docPushCmd.Flags().StringVar(&docTarget, "target", "", "Document publish target: notion-page or lark-doc")
 	docPushCmd.Flags().BoolVar(&docDryRun, "dry-run", false, "Validate provider readiness without remote writes")
+	docPushCmd.Flags().BoolVar(&docAll, "all", false, "Prepare and push every note in the vault")
+	docPushCmd.Flags().BoolVar(&docYes, "yes", false, "Approve vault-wide document writes")
 	docCmd.AddCommand(docPushCmd)
 
 	docStatusCmd := &cobra.Command{
@@ -469,12 +476,13 @@ func addPublishCommands(root *cobra.Command, ctx commandBuildContext) {
 		Use:   "unlink",
 		Short: "Detach a note from an external document mapping",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.PublishDocUnlink(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, Note: docNote, Target: docTarget})
+			projection, err := ctx.svc.PublishDocUnlink(cmd.Context(), app.PublishRequest{VaultPath: *ctx.vaultPath, Note: docNote, Target: docTarget, All: docAll})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	docUnlinkCmd.Flags().StringVar(&docNote, "note", "", "Note id, title, or path")
 	docUnlinkCmd.Flags().StringVar(&docTarget, "target", "", "Document publish target: notion-page or lark-doc")
+	docUnlinkCmd.Flags().BoolVar(&docAll, "all", false, "Detach document publish mappings for every note in the vault")
 	docCmd.AddCommand(docUnlinkCmd)
 
 	publishCmd.AddCommand(docCmd)

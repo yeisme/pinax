@@ -99,30 +99,35 @@ func TestSummaryRendersEnglishFactKeysAndCommonValues(t *testing.T) {
 	}
 }
 
-func TestSummaryRendersProjectListFactLabels(t *testing.T) {
+func TestSummaryRendersProjectListAsTable(t *testing.T) {
 	projection := domain.NewProjection("project.list", "Project list read.")
+	projection.Facts["current_project"] = "history"
+	projection.Facts["projects"] = "1"
 	projection.Facts["project.1.slug"] = "history"
 	projection.Facts["project.1.name"] = "History"
 	projection.Facts["project.1.notes_prefix"] = "notes/history"
 	projection.Facts["project.1.created_at"] = "2026-06-27T06:07:55Z"
+	projection.Data = map[string]any{"registry": domain.ProjectRegistry{CurrentProject: "history", Projects: []domain.Project{{Slug: "history", Name: "History", Description: "Past work", NotesPrefix: "notes/history", CreatedAt: "2026-06-27T06:07:55Z"}}}}
 
 	var summary bytes.Buffer
 	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
 		t.Fatalf("render summary: %v", err)
 	}
 	got := summary.String()
-	for _, want := range []string{"Project 1 slug", "Project 1 name", "Project 1 notes path prefix", "Project 1 created"} {
+	for _, want := range []string{"Slug", "Name", "Notes prefix", "Description", "history", "History", "notes/history", "Past work", "Current project"} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("summary missing project fact label %q:\n%s", want, got)
+			t.Fatalf("summary missing project table value %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "project.1") || strings.Contains(got, "notes_prefix") || strings.Contains(got, "created_at") {
-		t.Fatalf("summary leaked raw project fact keys:\n%s", got)
+	for _, unwanted := range []string{"Project 1 slug", "Project 1 notes path prefix", "project.1", "notes_prefix", "created_at"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("summary leaked raw project fact key %q:\n%s", unwanted, got)
+		}
 	}
 }
 
 func TestFactKeyRenderingUsesNaturalNumericOrder(t *testing.T) {
-	projection := domain.NewProjection("project.subproject.list", "Project subprojects listed.")
+	projection := domain.NewProjection("test.summary", "Project subprojects listed.")
 	projection.Facts["subprojects"] = "10"
 	projection.Facts["subproject.10"] = "ten"
 	projection.Facts["subproject.2"] = "two"
@@ -477,5 +482,83 @@ func TestProjectionActionsAgentActionsJSONActions(t *testing.T) {
 	}
 	if !strings.Contains(agent.String(), "action.primary=") {
 		t.Fatalf("agent missing action:\n%s", agent.String())
+	}
+}
+
+func TestSummaryAndAgentRenderProjectItemDetails(t *testing.T) {
+	projection := domain.NewProjection("project.item.show", "Project item read.")
+	projection.Facts["item_id"] = "item_123"
+	projection.Facts["column"] = "next"
+	projection.Data = map[string]any{"item": map[string]any{
+		"item_id":     "item_123",
+		"title":       "Implement board projection",
+		"column":      "next",
+		"source_kind": "note",
+		"note_id":     "note_123",
+		"path":        "research/implement-board-projection.md",
+		"project":     "research",
+		"status":      "active",
+		"writable":    true,
+	}}
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render project item summary: %v", err)
+	}
+	for _, want := range []string{"Project item", "Item ID", "Title", "Column", "Path", "item_123", "Implement board projection", "next", "research/implement-board-projection.md", "yes"} {
+		if !strings.Contains(summary.String(), want) {
+			t.Fatalf("project item summary missing %q:\n%s", want, summary.String())
+		}
+	}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render project item agent: %v", err)
+	}
+	for _, want := range []string{"project_item.item_id=item_123", `project_item.title="Implement board projection"`, "project_item.column=next", "project_item.path=research/implement-board-projection.md", "project_item.writable=true"} {
+		if !strings.Contains(agent.String(), want) {
+			t.Fatalf("project item agent missing %q:\n%s", want, agent.String())
+		}
+	}
+}
+
+func TestSummaryAndAgentRenderFolderPlanEffects(t *testing.T) {
+	projection := domain.NewProjection("folder.create", "Folder create plan generated.")
+	projection.Facts["folder_path"] = "spaces/research"
+	projection.Facts["dry_run"] = "true"
+	projection.Data = map[string]any{"plan": map[string]any{
+		"operation": "create",
+		"path":      "spaces/research",
+		"dry_run":   true,
+		"writes":    false,
+		"effects": []map[string]any{{
+			"kind":   "mkdir",
+			"path":   "spaces/research",
+			"reason": "Create directory inside the vault",
+			"status": "planned",
+		}},
+	}}
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render folder summary: %v", err)
+	}
+	for _, want := range []string{"Folder effects", "Kind", "Path", "Status", "mkdir", "spaces/research", "planned"} {
+		if !strings.Contains(summary.String(), want) {
+			t.Fatalf("folder summary missing %q:\n%s", want, summary.String())
+		}
+	}
+	if strings.Contains(summary.String(), "Create directory inside the vault") {
+		t.Fatalf("folder summary should not include verbose reason:\n%s", summary.String())
+	}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render folder agent: %v", err)
+	}
+	for _, want := range []string{"folder_effect.1.kind=mkdir", "folder_effect.1.path=spaces/research", `folder_effect.1.reason="Create directory inside the vault"`, "folder_effect.1.status=planned"} {
+		if !strings.Contains(agent.String(), want) {
+			t.Fatalf("folder agent missing %q:\n%s", want, agent.String())
+		}
 	}
 }

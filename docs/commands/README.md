@@ -5,6 +5,7 @@ This directory manages Pinax CLI command documentation. The root README keeps on
 ## How to Read
 
 - If you do not know where to start: first read the five core workflows below, then the command map.
+- If you want one runnable end-to-end path across local vault, proof loop, project/database, API, sync, backend, publish, and plugin dry-run, see [Full Usage Example](../usage/full-example.md).
 - To organize your note structure: see [organize](./organize.md).
 - If you only want to look up parameters for a specific command: run `pinax <command> --help`; help is the source of truth for the current binary.
 

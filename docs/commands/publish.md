@@ -13,7 +13,7 @@ pinax publish preview approve --profile public --out ./dist/site --vault ./my-no
 pinax publish deploy --profile public --target github-pages --out ./dist/site --repo ../kb-pages --yes --vault ./my-notes --json
 ```
 
-For a rebuild-on-change local preview, use watch mode on loopback. In CI, combine `--watch` with `--once` to build, serve, wait for one approved change, rebuild, smoke the preview, and exit:
+For a rebuild-on-change local preview, use watch mode on loopback. `publish serve` and `publish dev` bind to `127.0.0.1` by default and reject public bind addresses such as `0.0.0.0`; use `pinax share` for bounded LAN visibility. In CI, combine `--watch` with `--once` to build, serve, wait for one approved change, rebuild, smoke the preview, and exit:
 
 ```bash
 pinax publish dev --profile public --out ./dist/site --host 127.0.0.1 --port 4173 --watch --vault ./my-notes
@@ -82,23 +82,47 @@ Initial targets are `notion-page` and `lark-doc`:
 ```bash
 pinax publish doc provider list --vault ./my-notes --json
 pinax publish doc profile set notion-page --workspace <workspace-id> --parent-page <page-id> --vault ./my-notes --json
-pinax publish doc profile set lark-doc --folder <folder-token-or-url> --as user --layout mirror --template vault --index-page --vault ./my-notes --json
+pinax publish doc profile set lark-doc --folder <folder-token-or-url> --as user --renderer native-docx --layout mirror --template vault --index-page --vault ./my-notes --json
 pinax publish doc provider doctor --target lark-doc --vault ./my-notes --json
 ```
 
-The normal agent-safe flow is prepare, dry-run, then push:
+The normal agent-safe flow for a vault is prepare, dry-run, then approved push:
+
+```bash
+pinax publish doc prepare --all --target lark-doc --vault ./my-notes --json
+pinax publish doc push --all --target lark-doc --vault ./my-notes --dry-run --json
+pinax publish doc push --all --target lark-doc --vault ./my-notes --yes --json
+pinax publish doc list --target lark-doc --vault ./my-notes --json
+```
+
+For a narrow local update, the single-note flow is still available:
 
 ```bash
 pinax publish doc prepare --note <note-id> --target lark-doc --vault ./my-notes --json
 pinax publish doc push --package <package-id> --target lark-doc --vault ./my-notes --dry-run --json
 pinax publish doc push --package <package-id> --target lark-doc --vault ./my-notes --json
 pinax publish doc status --note <note-id> --vault ./my-notes --json
-pinax publish doc list --target lark-doc --vault ./my-notes --json
 ```
 
 `lark-doc --as user|bot|auto` selects an already configured `lark-cli` identity. Pinax stores only the selector, not Feishu tokens, cookies or raw auth payloads. For user-owned Feishu folders, prefer `--as user`; `provider doctor` verifies that the selected identity is available before publish.
 
-For Feishu, the recommended cloud-vault profile is `--layout mirror --template vault --index-page`. `mirror` creates or reuses remote folders that match the local note path, such as `notes/index/`. The `vault` template adds a compact Pinax overview block before the note body and removes duplicate top-level titles. `--index-page` keeps `_Pinax Vault Index.md` in the target folder, linking to every published note and showing publish status.
+For Feishu, the recommended cloud-vault profile is `--renderer native-docx --layout mirror --template vault --index-page`. `native-docx` is the default renderer for new `lark-doc` profiles: it converts the note Markdown into Feishu native Docs/Docx blocks (headings, paragraphs, lists, tables, code blocks, callouts) instead of uploading a `.md` file, so Feishu renders the content as a readable native document with comments and block-level collaboration. Assets are rendered as native blocks: local images are uploaded as image blocks with auto-detected dimensions (`lark-cli docs +media-insert --caption`); Mermaid diagrams and inline/`.svg`-file SVG content are rendered server-side into native Feishu whiteboards (`lark-cli whiteboard +update --input_format mermaid|svg`); remote image/SVG URLs are downloaded over HTTPS only with private, loopback, link-local, multicast and redirect-to-private targets rejected (10 MB cap), then rendered the same way; non-image file links like `[report](assets/report.pdf)` are uploaded as file blocks with preview cards. If a single asset fails to download or render, the publish still succeeds but records a `mermaid_render_unavailable`, `svg_render_unavailable`, `image_upload_failed`, `attachment_upload_failed` or `remote_image_download_failed` warning for that asset; repeated pushes are idempotent (stale whiteboard/image/figure blocks are cleared before re-insertion). `mirror` creates or reuses remote folders that match the local note path, such as `notes/index/`. The `vault` template adds a compact Pinax overview block before the note body and removes duplicate top-level titles. `--index-page` maintains a native Feishu index document listing every published note with folder, title, status, renderer and link.
+
+`--renderer markdown-file` is a legacy fallback: it keeps the original Drive `.md` file upload behavior (`lark-cli markdown +create/+overwrite`) and produces a `file` object, not a native document. Use it only when the configured `lark-cli` lacks native document support or when you explicitly need the Markdown source file. If `renderer=native-docx` is selected but `lark-cli` does not expose the native document capability, Pinax fails with `provider_capability_missing` and does not silently fall back to Markdown file upload; either upgrade `lark-cli` or switch the profile to `--renderer markdown-file`.
+
+An existing mapping that points to a Drive `file` is not retyped in place when the profile switches to `native-docx`. For a vault migration, detach the old local mappings once and publish the vault again:
+
+```bash
+pinax publish doc unlink --all --target lark-doc --vault ./my-notes --json
+pinax publish doc prepare --all --target lark-doc --vault ./my-notes --json
+pinax publish doc push --all --target lark-doc --vault ./my-notes --yes --json
+```
+
+Use `unlink --note <note-id>` only when migrating one document.
+
+**Cross-document references**: when a note references another note via `[[wikilink]]` or `[label](relative/note.md)`, Pinax resolves the target through the same note-link resolver used by local backlinks. During native `lark-doc` prepare, resolved targets that already have a same-target Feishu document URL are rewritten as normal Markdown links, such as `[[Beta]]` -> `[Beta](https://.../docx/...)` and `[text](b.md)` -> `[text](https://.../docx/...)`. `prepare --all` reports `cross_doc_links`, `cross_doc_unpublished`, `cross_doc_ambiguous`, `cross_doc_broken` and `cross_doc_self` facts for the whole vault. Before publishing, inspect wikilink conflicts with `pinax note links --all --kind wiki --status ambiguous --vault ./my-notes --json` and broken wikilinks with `pinax note links --all --kind wiki --status broken --vault ./my-notes --json`. `push --all --yes` uses two passes for native Feishu documents: the first pass creates or updates every document mapping, and the second pass prepares and pushes again so links to documents created in the same run become clickable Feishu document links. Ambiguous, broken, unpublished and self links are preserved in the local form instead of being guessed.
+
+The `status`, `list` and `push` outputs include `renderer`, `external_object_type` (`docx`, `doc` or `file`) and `render_warnings` facts so consumers can tell native documents apart from legacy Markdown files.
 
 For existing external documents, use `link` and `unlink` to maintain local mapping state without mutating the remote document:
 

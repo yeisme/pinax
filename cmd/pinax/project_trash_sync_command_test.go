@@ -49,6 +49,22 @@ func TestProjectDeleteTrashRestoreCLIContract(t *testing.T) {
 			t.Fatalf("trash agent output missing %q:\n%s", want, trashAgent)
 		}
 	}
+	for _, want := range []string{"trash.1.object_kind=project", "trash.1.object_id=project/history", "trash.1.trash_path=", "trash.1.deleted_at="} {
+		if !strings.Contains(trashAgent, want) {
+			t.Fatalf("trash agent output missing entry row %q:\n%s", want, trashAgent)
+		}
+	}
+	trashDefault := runCLI(t, "trash", "list", "--vault", root)
+	for _, want := range []string{"Trash entries", "Kind", "Object", "Trash path", "Deleted", "project", "project/history"} {
+		if !strings.Contains(trashDefault, want) {
+			t.Fatalf("trash default output missing %q:\n%s", want, trashDefault)
+		}
+	}
+	for _, unwanted := range []string{"Entry 1", "entry.1", "secret-token"} {
+		if strings.Contains(trashDefault, unwanted) {
+			t.Fatalf("trash default output should render a bounded table, found %q:\n%s", unwanted, trashDefault)
+		}
+	}
 
 	showDeleted, err := runCLIExpectError("project", "show", "history", "--vault", root, "--json")
 	if err == nil {

@@ -43,6 +43,18 @@ func TestServiceBackedCommandTreeGapsCLI(t *testing.T) {
 	if !strings.Contains(repairList, "\"plans\":\"1\"") {
 		t.Fatalf("repair list missing saved plan:\n%s", repairList)
 	}
+	repairDefault := runCLI(t, "repair", "list", "--vault", root)
+	for _, want := range []string{"Repair plans", "Plan ID", "Status", "Operations", "Expires", "repair-"} {
+		if !strings.Contains(repairDefault, want) {
+			t.Fatalf("repair list default output missing %q:\n%s", want, repairDefault)
+		}
+	}
+	repairAgent := runCLI(t, "repair", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=repair.list", "fact.plans=1", "repair_plan.1.plan_id=repair-", "repair_plan.1.status=planned", "repair_plan.1.operations="} {
+		if !strings.Contains(repairAgent, want) {
+			t.Fatalf("repair list agent missing %q:\n%s", want, repairAgent)
+		}
+	}
 
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alpha\ntitle: Alpha\n---\n\n# Alpha\n\n[[Missing]]\n")
 	graphSummary := runCLI(t, "graph", "summary", "--vault", root, "--json")

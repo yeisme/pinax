@@ -35,11 +35,29 @@ func TestMemoryCaptureListRecallAndContext(t *testing.T) {
 	if !strings.Contains(listOut, recordID) || !strings.Contains(listOut, "release_workflow") {
 		t.Fatalf("memory list missing captured record:\n%s", listOut)
 	}
+	listDefaultOut := runCLI(t, "memory", "list", "--type", "fact", "--entity", "pinax", "--vault", root)
+	for _, want := range []string{"Memory records", "Record ID", "Type", "Subject", "Predicate", "Object", "Status", recordID, "fact", "pinax", "release_workflow", "tag push triggers GitHub Actions", "confirmed"} {
+		if !strings.Contains(listDefaultOut, want) {
+			t.Fatalf("memory list default output missing %q:\n%s", want, listDefaultOut)
+		}
+	}
+	listAgentOut := runCLI(t, "memory", "list", "--type", "fact", "--entity", "pinax", "--vault", root, "--agent")
+	for _, want := range []string{"command=memory.list", "fact.records=1", "memory_record.1.id=", "memory_record.1.type=fact", "memory_record.1.subject=pinax", "memory_record.1.predicate=release_workflow", "memory_record.1.status=confirmed"} {
+		if !strings.Contains(listAgentOut, want) {
+			t.Fatalf("memory list agent output missing %q:\n%s", want, listAgentOut)
+		}
+	}
 
 	recallOut := runCLI(t, "memory", "recall", "release workflow", "--entity", "pinax", "--vault", root, "--json")
 	assertJSONCommandStatus(t, recallOut, "memory.recall", "success")
 	if !strings.Contains(recallOut, "recall_reason") || !strings.Contains(recallOut, "entity_match:pinax") || !strings.Contains(recallOut, `"signals"`) || !strings.Contains(recallOut, `"source_kind":"docs"`) {
 		t.Fatalf("memory recall missing explainable reason:\n%s", recallOut)
+	}
+	recallDefaultOut := runCLI(t, "memory", "recall", "release workflow", "--entity", "pinax", "--vault", root)
+	for _, want := range []string{"Memory matches", "Record ID", "Score", "Reason", recordID, "entity_match:pinax"} {
+		if !strings.Contains(recallDefaultOut, want) {
+			t.Fatalf("memory recall default output missing %q:\n%s", want, recallDefaultOut)
+		}
 	}
 
 	contextOut := runCLI(t, "memory", "context", "prepare next release", "--entity", "pinax", "--limit", "12", "--vault", root, "--agent")

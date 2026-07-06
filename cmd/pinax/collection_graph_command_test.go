@@ -21,6 +21,18 @@ func TestCollectionImportDiffDoctorExportAndGraphCommands(t *testing.T) {
 	if dryFacts["items"] != "3" || dryFacts["complete_items"] != "2" || dryFacts["missing_prompt_items"] != "1" || dryFacts["local_write"] != "false" {
 		t.Fatalf("dry-run facts = %#v", dryFacts)
 	}
+	dryHuman := runCLI(t, "collection", "import", "--from", bundle, "--dry-run", "--vault", root)
+	for _, want := range []string{"Collection items", "Item ID", "Title", "Note", "Prompt", "Prompt status", "upma-case-001", "Storyboard Case", "upma-image-prompts_upma-case-001"} {
+		if !strings.Contains(dryHuman, want) {
+			t.Fatalf("collection import dry-run human output missing %q:\n%s", want, dryHuman)
+		}
+	}
+	dryAgent := runCLI(t, "collection", "import", "--from", bundle, "--dry-run", "--vault", root, "--agent")
+	for _, want := range []string{"command=collection.import", "fact.items=3", "collection_item.1.item_id=upma-case-001", `collection_item.1.title="Storyboard Case"`, "collection_item.1.note_path=notes/collections/upma-image-prompts/upma-case-001.md", "collection_item.1.prompt_asset_id=upma-image-prompts_upma-case-001"} {
+		if !strings.Contains(dryAgent, want) {
+			t.Fatalf("collection import dry-run agent output missing %q:\n%s", want, dryAgent)
+		}
+	}
 	if fileExists(filepath.Join(root, "notes", "collections", "upma-image-prompts", "upma-case-001.md")) {
 		t.Fatalf("dry-run wrote collection notes")
 	}
@@ -54,6 +66,18 @@ func TestCollectionImportDiffDoctorExportAndGraphCommands(t *testing.T) {
 	diffFacts := diff["facts"].(map[string]any)
 	if diffFacts["new_items"] != "0" || diffFacts["existing_items"] != "3" || diffFacts["missing_prompt_items"] != "1" {
 		t.Fatalf("diff facts = %#v", diffFacts)
+	}
+	diffHuman := runCLI(t, "collection", "diff", "--from", bundle, "--vault", root)
+	for _, want := range []string{"Collection items", "Item ID", "Title", "Note", "Prompt", "upma-case-003", "Unavailable Case", "missing_prompt"} {
+		if !strings.Contains(diffHuman, want) {
+			t.Fatalf("collection diff human output missing %q:\n%s", want, diffHuman)
+		}
+	}
+	diffAgent := runCLI(t, "collection", "diff", "--from", bundle, "--vault", root, "--agent")
+	for _, want := range []string{"command=collection.diff", "collection_item.3.item_id=upma-case-003", `collection_item.3.title="Unavailable Case"`, "collection_item.3.prompt_status=missing_prompt"} {
+		if !strings.Contains(diffAgent, want) {
+			t.Fatalf("collection diff agent output missing %q:\n%s", want, diffAgent)
+		}
 	}
 
 	doctorOut := runCLI(t, "collection", "doctor", "--from", bundle, "--vault", root, "--json")
@@ -102,9 +126,18 @@ func TestCollectionImportDiffDoctorExportAndGraphCommands(t *testing.T) {
 	if strings.Contains(queryOut, "wide cinematic storyboard panel") {
 		t.Fatalf("graph query leaked full prompt body:\n%s", queryOut)
 	}
+	queryHuman := runCLI(t, "graph", "query", "--kind", "technique", "--match", "storyboard", "--vault", root)
+	for _, want := range []string{"Graph results", "Prompt ID", "Title", "upma-image-prompts_upma-case-001", "Storyboard Case"} {
+		if !strings.Contains(queryHuman, want) {
+			t.Fatalf("graph query human output missing %q:\n%s", want, queryHuman)
+		}
+	}
+	if strings.Contains(queryHuman, "wide cinematic storyboard panel") {
+		t.Fatalf("graph query human output leaked full prompt body:\n%s", queryHuman)
+	}
 
 	agentOut := runCLI(t, "graph", "query", "--kind", "category", "--match", "poster", "--vault", root, "--agent")
-	for _, want := range []string{"command=graph.query", "fact.results=1", "fact.graph_engine=prompt_graph"} {
+	for _, want := range []string{"command=graph.query", "fact.results=1", "fact.graph_engine=prompt_graph", "result.1.prompt_asset_id=upma-image-prompts_upma-case-002", `result.1.title="Poster Case"`} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("agent graph output missing %q:\n%s", want, agentOut)
 		}

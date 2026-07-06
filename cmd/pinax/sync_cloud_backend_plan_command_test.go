@@ -86,6 +86,18 @@ func TestBackendProviderCLI(t *testing.T) {
 	if statusEnvelope["command"] != "backend.show" {
 		t.Fatalf("backend show envelope = %#v", statusEnvelope)
 	}
+	statusHuman := runCLI(t, "backend", "show", "work-s3", "--vault", root)
+	for _, want := range []string{"Backend details", "Name", "Kind", "Bucket", "Region", "Credential", "work-s3", "notes", "us-east-1", "aws_profile:work"} {
+		if !strings.Contains(statusHuman, want) {
+			t.Fatalf("backend show human output missing %q:\n%s", want, statusHuman)
+		}
+	}
+	statusAgent := runCLI(t, "backend", "show", "work-s3", "--vault", root, "--agent")
+	for _, want := range []string{"command=backend.show", "backend_detail.name=work-s3", "backend_detail.kind=s3", "backend_detail.bucket=notes", "backend_detail.region=us-east-1", "backend_detail.credential_source=aws_profile:work"} {
+		if !strings.Contains(statusAgent, want) {
+			t.Fatalf("backend show agent output missing %q:\n%s", want, statusAgent)
+		}
+	}
 
 	// backend doctor
 	doctorOut := runCLI(t, "backend", "doctor", "work-s3", "--vault", root, "--json")
@@ -98,8 +110,14 @@ func TestBackendProviderCLI(t *testing.T) {
 	}
 
 	// backend capabilities
+	capHuman := runCLI(t, "backend", "capabilities", "work-s3", "--vault", root)
+	for _, want := range []string{"Backend capabilities", "Capability", "Supported", "list", "dry_run", "true"} {
+		if !strings.Contains(capHuman, want) {
+			t.Fatalf("backend capabilities human output missing %q:\n%s", want, capHuman)
+		}
+	}
 	capOut := runCLI(t, "backend", "capabilities", "work-s3", "--vault", root, "--agent")
-	for _, want := range []string{"command=backend.capabilities", "status=success", "fact.name=work-s3", "fact.kind=s3"} {
+	for _, want := range []string{"command=backend.capabilities", "status=success", "fact.name=work-s3", "fact.kind=s3", "capability.1.name=list", "capability.1.supported=true"} {
 		if !strings.Contains(capOut, want) {
 			t.Fatalf("backend capabilities agent output missing %q:\n%s", want, capOut)
 		}
@@ -179,6 +197,25 @@ func TestBackendProviderCLI(t *testing.T) {
 	}
 }
 
+func TestBackendDoctorIssueOutputCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, ".pinax", "backends.json"), `{"schema_version":"pinax.backends.v1","default_backend":"broken-s3","backends":[{"name":"broken-s3","kind":"s3","bucket":"notes","capabilities":["doctor"]}]}`)
+
+	humanOut := runCLI(t, "backend", "doctor", "broken-s3", "--vault", root)
+	for _, want := range []string{"Backend issues", "Code", "Path", "Message", "missing_region", ".pinax/backends.json", "S3 backend is missing region"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("backend doctor human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut := runCLI(t, "backend", "doctor", "broken-s3", "--vault", root, "--agent")
+	for _, want := range []string{"command=backend.doctor", "status=partial", "fact.issues=1", "issue.1.code=missing_region", "issue.1.path=.pinax/backends.json", `issue.1.message="S3 backend is missing region"`} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("backend doctor agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+}
+
 func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
 	installFakeTaskBridgeCLI(t)
@@ -196,6 +233,18 @@ func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
 	dryFacts := dryEnvelope["facts"].(map[string]any)
 	if dryFacts["source"] != "taskbridge" || dryFacts["captured_at"] != "2026-06-21T15:30:00Z" || dryFacts["target_note"] != "daily/2026-06-21.md" {
 		t.Fatalf("dry-run facts = %#v", dryFacts)
+	}
+	dailySummary := runCLI(t, "plan", "daily", "--taskbridge", "--dry-run", "--vault", root)
+	for _, want := range []string{"Planning selected tasks", "Task ID", "Title", "Section", "task_cli_1", "CLI task", "task_cli_2", "CLI deferred task"} {
+		if !strings.Contains(dailySummary, want) {
+			t.Fatalf("plan daily taskbridge summary missing %q:\n%s", want, dailySummary)
+		}
+	}
+	dailyAgent := runCLI(t, "plan", "daily", "--taskbridge", "--dry-run", "--vault", root, "--agent")
+	for _, want := range []string{"plan_task.1.task_id=task_cli_1", `plan_task.1.title="CLI task"`, "plan_task.1.section_id=must_do", "plan_task.2.task_id=task_cli_2", `plan_task.2.title="CLI deferred task"`, "plan_task.2.section_id=at_risk"} {
+		if !strings.Contains(dailyAgent, want) {
+			t.Fatalf("plan daily taskbridge agent output missing %q:\n%s", want, dailyAgent)
+		}
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "daily", "2026-06-21.md")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("dry-run should not create daily note, stat=%v", statErr)
@@ -225,6 +274,18 @@ func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
 	actionsFacts := actionsEnvelope["facts"].(map[string]any)
 	if actionsFacts["source"] != "taskbridge" || actionsFacts["tasks"] != "1" || actionsFacts["saved_path"] == "" {
 		t.Fatalf("taskbridge actions facts = %#v", actionsFacts)
+	}
+	actionsSummary := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--vault", root)
+	for _, want := range []string{"Action draft tasks", "Task ID", "Kind", "Reason", "task_cli_2", "defer", "selected 2 TaskBridge commitments"} {
+		if !strings.Contains(actionsSummary, want) {
+			t.Fatalf("plan actions taskbridge summary missing %q:\n%s", want, actionsSummary)
+		}
+	}
+	actionsAgent := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--vault", root, "--agent")
+	for _, want := range []string{"action_task.1.task_id=task_cli_2", "action_task.1.kind=defer", `action_task.1.reason="selected 2 TaskBridge commitments for today's plan"`, "action_task.1.requires_confirmation=true"} {
+		if !strings.Contains(actionsAgent, want) {
+			t.Fatalf("plan actions taskbridge agent output missing %q:\n%s", want, actionsAgent)
+		}
 	}
 	draft := readCLIFile(t, filepath.Join(root, actionsFacts["saved_path"].(string)))
 	if !strings.Contains(draft, `"task_id": "task_cli_2"`) || strings.Contains(draft, "--confirm") {
@@ -424,6 +485,18 @@ func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
 	if !strings.Contains(preview, "\"dry_run\":true") || !strings.Contains(preview, "delete_candidates") {
 		t.Fatalf("prune preview invalid:\n%s", preview)
 	}
+	previewHuman := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--vault", root)
+	for _, want := range []string{"Delete candidates", "Run ID", "Command", "Status", "Created", "sync.push"} {
+		if !strings.Contains(previewHuman, want) {
+			t.Fatalf("prune preview human output missing %q:\n%s", want, previewHuman)
+		}
+	}
+	previewAgent := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--vault", root, "--agent")
+	for _, want := range []string{"command=sync.logs.prune", "fact.delete_candidates=2", "delete_candidate.1.command=sync.push", "delete_candidate.1.status="} {
+		if !strings.Contains(previewAgent, want) {
+			t.Fatalf("prune preview agent output missing %q:\n%s", want, previewAgent)
+		}
+	}
 	pruned := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--yes", "--vault", root, "--json")
 	if !strings.Contains(pruned, "\"deleted\":") {
 		t.Fatalf("prune apply invalid:\n%s", pruned)
@@ -495,7 +568,13 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 		case r.Method == http.MethodGet && strings.HasSuffix(workspacePath, "/head"):
 			writeServerJSON(w, http.StatusOK, map[string]any{"revision_id": serverRevision, "manifest_blob_id": "manifest_initial"})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:batch-check"):
-			writeServerJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": []string{"blob_"}})
+			var req struct {
+				BlobIDs []string `json:"blob_ids"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode batch-check request: %v", err)
+			}
+			writeServerJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": req.BlobIDs})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:sign-upload"):
 			var req struct {
 				BlobID   string `json:"blob_id"`
@@ -528,6 +607,21 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 	assertJSONCommandStatus(t, diffOut, "sync.diff", "success")
 	if !strings.Contains(diffOut, "\"dry_run\":\"true\"") || !strings.Contains(diffOut, "upload_blob") {
 		t.Fatalf("sync diff missing dry-run plan:\n%s", diffOut)
+	}
+	diffHuman := runCLI(t, "sync", "diff", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root)
+	for _, want := range []string{"Sync operations", "Kind", "Path", "Status", "upload_blob", "notes/alpha.md", "planned"} {
+		if !strings.Contains(diffHuman, want) {
+			t.Fatalf("sync diff human output missing %q:\n%s", want, diffHuman)
+		}
+	}
+	diffAgent := runCLI(t, "sync", "diff", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root, "--agent")
+	for _, want := range []string{"command=sync.diff", "operation.1.kind=upload_blob", "operation.1.status=planned"} {
+		if !strings.Contains(diffAgent, want) {
+			t.Fatalf("sync diff agent output missing %q:\n%s", want, diffAgent)
+		}
+	}
+	if !strings.Contains(diffAgent, "operation.3.path=notes/alpha.md") {
+		t.Fatalf("sync diff agent output missing alpha operation:\n%s", diffAgent)
 	}
 	pushDryRun := runCLI(t, "sync", "push", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root, "--json")
 	assertJSONCommandStatus(t, pushDryRun, "sync.push", "success")
@@ -673,6 +767,39 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 		if !strings.Contains(doctor, want) {
 			t.Fatalf("cloud doctor missing direct boundary %q:\n%s", want, doctor)
 		}
+	}
+}
+
+func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	out := runCLI(t, "cloud", "backend", "set", "s3", "--bucket", "pinax-note-1322128555", "--region", "ap-guangzhou", "--prefix", "pinax-sync/", "--endpoint", "https://cos.ap-guangzhou.myqcloud.com", "--profile", "tencent-cos-pinax", "--workspace", "yeisme-notes", "--device", "windows-pc", "--vault", root, "--json")
+	assertJSONCommandStatus(t, out, "cloud.backend.set", "success")
+	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "cos.ap-guangzhou.myqcloud.com", "\"path_style\":\"false\""} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("cloud backend set s3 missing %q:\n%s", want, out)
+		}
+	}
+	configYAML := readCLIFile(t, filepath.Join(root, ".pinax", "cloud", "config.yaml"))
+	if strings.Contains(configYAML, "path_style: true") {
+		t.Fatalf("Tencent COS config should not force path-style:\n%s", configYAML)
+	}
+	if !strings.Contains(configYAML, "endpoint: https://cos.ap-guangzhou.myqcloud.com") {
+		t.Fatalf("cloud yaml config missing COS endpoint:\n%s", configYAML)
+	}
+}
+
+func TestCloudBackendSetS3ExplicitVirtualHostedStyleCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	out := runCLI(t, "cloud", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--addressing-style", "virtual-hosted", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
+	assertJSONCommandStatus(t, out, "cloud.backend.set", "success")
+	if !strings.Contains(out, "\"addressing_style\":\"virtual-hosted\"") || !strings.Contains(out, "\"path_style\":\"false\"") {
+		t.Fatalf("cloud backend set s3 did not report virtual-hosted style:\n%s", out)
+	}
+	configYAML := readCLIFile(t, filepath.Join(root, ".pinax", "cloud", "config.yaml"))
+	if !strings.Contains(configYAML, "addressing_style: virtual-hosted") || strings.Contains(configYAML, "path_style: true") {
+		t.Fatalf("cloud yaml config did not persist virtual-hosted style:\n%s", configYAML)
 	}
 }
 
@@ -1002,5 +1129,100 @@ func TestBackendObjectListAndStatCommandsReadLocalBlobStore(t *testing.T) {
 	}
 	if statEnvelope["command"] != "backend.object.stat" || !strings.Contains(statOut, "revision") {
 		t.Fatalf("backend object stat did not include revision: %#v\n%s", statEnvelope, statOut)
+	}
+}
+
+func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
+	root := t.TempDir()
+	backendRoot := filepath.Join(root, "backend-store")
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "backend", "add", "local", "work-local", "--root", backendRoot, "--vault", root, "--json")
+	if err := os.MkdirAll(filepath.Join(backendRoot, "notes"), 0o700); err != nil {
+		t.Fatalf("mkdir backend fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendRoot, "notes", "cloud-sync.md"), []byte("# Cloud Sync\n"), 0o600); err != nil {
+		t.Fatalf("write note fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendRoot, "notes", "raw.txt"), []byte("raw"), 0o600); err != nil {
+		t.Fatalf("write raw fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(backendRoot, "pinax"), 0o700); err != nil {
+		t.Fatalf("mkdir object fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendRoot, "pinax", "manifest.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write object fixture: %v", err)
+	}
+
+	summaryOut := runCLI(t, "backend", "notes", "summary", "work-local", "--vault", root, "--json")
+	var summaryEnvelope map[string]any
+	if err := json.Unmarshal([]byte(summaryOut), &summaryEnvelope); err != nil {
+		t.Fatalf("backend notes summary json invalid: %v\n%s", err, summaryOut)
+	}
+	if summaryEnvelope["command"] != "backend.notes.summary" {
+		t.Fatalf("backend notes summary envelope = %#v", summaryEnvelope)
+	}
+	summaryFacts := summaryEnvelope["facts"].(map[string]any)
+	if summaryFacts["notes"] != "1" || summaryFacts["objects"] != "3" {
+		t.Fatalf("backend notes summary facts = %#v\n%s", summaryFacts, summaryOut)
+	}
+	defaultSummaryOut := runCLI(t, "backend", "notes", "summary", "--vault", root, "--json")
+	var defaultSummaryEnvelope map[string]any
+	if err := json.Unmarshal([]byte(defaultSummaryOut), &defaultSummaryEnvelope); err != nil {
+		t.Fatalf("default backend notes summary json invalid: %v\n%s", err, defaultSummaryOut)
+	}
+	defaultSummaryFacts := defaultSummaryEnvelope["facts"].(map[string]any)
+	if defaultSummaryEnvelope["command"] != "backend.notes.summary" || defaultSummaryFacts["backend"] != "work-local" || defaultSummaryFacts["notes"] != "1" {
+		t.Fatalf("default backend notes summary invalid: %#v\n%s", defaultSummaryEnvelope, defaultSummaryOut)
+	}
+
+	listOut := runCLI(t, "backend", "notes", "list", "work-local", "--vault", root, "--json")
+	var listEnvelope map[string]any
+	if err := json.Unmarshal([]byte(listOut), &listEnvelope); err != nil {
+		t.Fatalf("backend notes list json invalid: %v\n%s", err, listOut)
+	}
+	if listEnvelope["command"] != "backend.notes.list" || !strings.Contains(listOut, "notes/cloud-sync.md") || strings.Contains(listOut, "raw.txt") {
+		t.Fatalf("backend notes list did not filter note objects: %#v\n%s", listEnvelope, listOut)
+	}
+	defaultListOut := runCLI(t, "backend", "notes", "list", "--vault", root, "--json")
+	if !strings.Contains(defaultListOut, "notes/cloud-sync.md") || strings.Contains(defaultListOut, "raw.txt") {
+		t.Fatalf("default backend notes list invalid:\n%s", defaultListOut)
+	}
+
+	statOut := runCLI(t, "backend", "notes", "stat", "work-local", "notes/cloud-sync.md", "--vault", root, "--json")
+	var statEnvelope map[string]any
+	if err := json.Unmarshal([]byte(statOut), &statEnvelope); err != nil {
+		t.Fatalf("backend notes stat json invalid: %v\n%s", err, statOut)
+	}
+	if statEnvelope["command"] != "backend.notes.stat" || !strings.Contains(statOut, "notes/cloud-sync.md") {
+		t.Fatalf("backend notes stat did not include note path: %#v\n%s", statEnvelope, statOut)
+	}
+
+	agentOut := runCLI(t, "backend", "notes", "list", "work-local", "--vault", root, "--agent")
+	for _, want := range []string{"command=backend.notes.list", "status=success", "fact.notes=1", "note.1.path=notes/cloud-sync.md"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("backend notes agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+
+	summaryText := runCLI(t, "backend", "notes", "list", "work-local", "--vault", root)
+	if !strings.Contains(summaryText, "Path") || !strings.Contains(summaryText, "notes/cloud-sync.md") {
+		t.Fatalf("backend notes summary output missing table:\n%s", summaryText)
+	}
+
+	backendCompletion := runCLI(t, "__complete", "backend", "notes", "stat", "--vault", root, "")
+	if !strings.Contains(backendCompletion, "work-local\tlocal") || !strings.Contains(backendCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend notes stat backend completion invalid:\n%s", backendCompletion)
+	}
+	notePathCompletion := runCLI(t, "__complete", "backend", "notes", "stat", "work-local", "--vault", root, "notes/")
+	if !strings.Contains(notePathCompletion, "notes/cloud-sync.md\tnote") || strings.Contains(notePathCompletion, "raw.txt") || !strings.Contains(notePathCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend notes stat path completion invalid:\n%s", notePathCompletion)
+	}
+	notePrefixCompletion := runCLI(t, "__complete", "backend", "notes", "list", "work-local", "--vault", root, "")
+	if !strings.Contains(notePrefixCompletion, "notes/\tprefix") || !strings.Contains(notePrefixCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend notes list prefix completion invalid:\n%s", notePrefixCompletion)
+	}
+	objectKeyCompletion := runCLI(t, "__complete", "backend", "object", "stat", "work-local", "--vault", root, "pinax/")
+	if !strings.Contains(objectKeyCompletion, "pinax/manifest.json\tobject") || !strings.Contains(objectKeyCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend object stat key completion invalid:\n%s", objectKeyCompletion)
 	}
 }

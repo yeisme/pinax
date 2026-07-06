@@ -44,6 +44,19 @@ func TestBrainAnswerPreviewIsEvidenceFirstAndBodySafe(t *testing.T) {
 	if len(sources) == 0 {
 		t.Fatalf("sources missing: %#v", data)
 	}
+
+	summary := runCLI(t, "brain", "answer", "Alice roadmap budget", "--vault", root)
+	for _, want := range []string{"Brain sources", "Kind", "Path", "Title", "notes/alice.md", "Alice Meeting"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("brain answer summary missing %q:\n%s", want, summary)
+		}
+	}
+	agentOut := runCLI(t, "brain", "answer", "Alice roadmap budget", "--vault", root, "--agent")
+	for _, want := range []string{"brain_source.1.kind=note", "brain_source.1.path=notes/alice.md", `brain_source.1.title="Alice Meeting"`} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("brain answer agent output missing %q:\n%s", want, agentOut)
+		}
+	}
 }
 
 func TestBrainMaintainPlanOnlyAndSavePlanEvidence(t *testing.T) {
@@ -74,5 +87,18 @@ func TestBrainMaintainPlanOnlyAndSavePlanEvidence(t *testing.T) {
 	data := envelope["data"].(map[string]any)
 	if data["schema_version"] != "pinax.agent_brain.maintenance_plan.v1" || data["writes"] != false {
 		t.Fatalf("maintenance plan data = %#v", data)
+	}
+
+	summary := runCLI(t, "brain", "maintain", "--dry-run", "--vault", root)
+	for _, want := range []string{"Brain maintenance operations", "Kind", "Risk", "Status", "stale_memory", "duplicate_memory", "citation_repair"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("brain maintain summary missing %q:\n%s", want, summary)
+		}
+	}
+	agentOut := runCLI(t, "brain", "maintain", "--dry-run", "--vault", root, "--agent")
+	for _, want := range []string{"brain_operation.1.kind=stale_memory", "brain_operation.1.risk=low", "brain_operation.1.status=candidate", "brain_operation.3.kind=citation_repair", "brain_operation.3.next_action="} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("brain maintain agent output missing %q:\n%s", want, agentOut)
+		}
 	}
 }

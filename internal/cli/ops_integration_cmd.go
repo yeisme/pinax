@@ -78,7 +78,7 @@ func addCloudCommands(root *cobra.Command, ctx commandBuildContext) {
 		Short:   "Configure S3-compatible direct Cloud Sync backend",
 		Example: "pinax cloud backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.CloudBackendSetS3(cmd.Context(), app.CloudBackendSetRequest{VaultPath: *ctx.vaultPath, Kind: "s3", Bucket: *ctx.s3Bucket, Region: *ctx.s3Region, Prefix: *ctx.s3Prefix, Endpoint: *ctx.s3Endpoint, Profile: *ctx.s3Profile, WorkspaceID: *ctx.cloudWorkspace, DeviceID: *ctx.cloudDevice, SecretRef: *ctx.cloudSecretRef})
+			projection, err := ctx.svc.CloudBackendSetS3(cmd.Context(), app.CloudBackendSetRequest{VaultPath: *ctx.vaultPath, Kind: "s3", Bucket: *ctx.s3Bucket, Region: *ctx.s3Region, Prefix: *ctx.s3Prefix, Endpoint: *ctx.s3Endpoint, Profile: *ctx.s3Profile, AddressingStyle: *ctx.s3AddressingStyle, WorkspaceID: *ctx.cloudWorkspace, DeviceID: *ctx.cloudDevice, SecretRef: *ctx.cloudSecretRef})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -87,6 +87,7 @@ func addCloudCommands(root *cobra.Command, ctx commandBuildContext) {
 	cloudBackendSetS3Cmd.Flags().StringVar(ctx.s3Prefix, "prefix", "", "S3 object key prefix")
 	cloudBackendSetS3Cmd.Flags().StringVar(ctx.s3Endpoint, "endpoint", "", "S3-compatible endpoint URL")
 	cloudBackendSetS3Cmd.Flags().StringVar(ctx.s3Profile, "profile", "", "S3 credential profile name; do not save the secret")
+	cloudBackendSetS3Cmd.Flags().StringVar(ctx.s3AddressingStyle, "addressing-style", "auto", "S3 addressing style: auto, path, or virtual-hosted")
 	cloudBackendSetS3Cmd.Flags().StringVar(ctx.cloudWorkspace, "workspace", "", "Cloud workspace id")
 	cloudBackendSetS3Cmd.Flags().StringVar(ctx.cloudDevice, "device", "", "Local device id")
 	cloudBackendSetS3Cmd.Flags().StringVar(ctx.cloudSecretRef, "secret-ref", "", "Secret manager reference; do not save the raw secret")
@@ -223,7 +224,7 @@ func addBackendCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.svc.RemoveBackend(cmd.Context(), app.BackendRequest{VaultPath: *ctx.vaultPath, Name: name})
 	}))
 	backendObjectCmd := &cobra.Command{Use: "object", Short: "Browse backend objects"}
-	backendObjectListCmd := &cobra.Command{Use: "list <name> [prefix]", Short: "List backend objects", ValidArgsFunction: backendNameCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
+	backendObjectListCmd := &cobra.Command{Use: "list <name> [prefix]", Short: "List backend objects", ValidArgsFunction: backendObjectCompletion(func() string { return *ctx.vaultPath }, false, true), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 1 || len(args) > 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "backend.object.list", "argument_required", "backend object list requires a backend name", "pinax backend object list <name> [prefix] --vault <vault>")
 		}
@@ -235,7 +236,7 @@ func addBackendCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	backendObjectCmd.AddCommand(backendObjectListCmd)
-	backendObjectStatCmd := &cobra.Command{Use: "stat <name> <key>", Short: "Show backend object status", ValidArgsFunction: backendNameCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
+	backendObjectStatCmd := &cobra.Command{Use: "stat <name> <key>", Short: "Show backend object status", ValidArgsFunction: backendObjectCompletion(func() string { return *ctx.vaultPath }, false, false), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "backend.object.stat", "argument_required", "backend object stat requires a backend name and key", "pinax backend object stat <name> <key> --vault <vault>")
 		}
@@ -244,6 +245,48 @@ func addBackendCommands(root *cobra.Command, ctx commandBuildContext) {
 	}}
 	backendObjectCmd.AddCommand(backendObjectStatCmd)
 	backendCmd.AddCommand(backendObjectCmd)
+	backendNotesCmd := &cobra.Command{Use: "notes", Short: "Inspect note-like backend objects"}
+	backendNotesSummaryCmd := &cobra.Command{Use: "summary [name] [prefix]", Short: "Summarize backend note objects", ValidArgsFunction: backendObjectCompletion(func() string { return *ctx.vaultPath }, true, true), RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 2 {
+			return renderCommandError(cmd, ctx.outputMode(), "backend.notes.summary", "argument_unexpected", "backend notes summary accepts at most a backend name and prefix", "pinax backend notes summary [name] [prefix] --vault <vault>")
+		}
+		name := ""
+		prefix := ""
+		if len(args) >= 1 {
+			name = args[0]
+		}
+		if len(args) == 2 {
+			prefix = args[1]
+		}
+		projection, err := ctx.svc.BackendNotesSummary(cmd.Context(), app.BackendNotesRequest{VaultPath: *ctx.vaultPath, Name: name, Prefix: prefix})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	backendNotesCmd.AddCommand(backendNotesSummaryCmd)
+	backendNotesListCmd := &cobra.Command{Use: "list [name] [prefix]", Short: "List backend note objects", ValidArgsFunction: backendObjectCompletion(func() string { return *ctx.vaultPath }, true, true), RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 2 {
+			return renderCommandError(cmd, ctx.outputMode(), "backend.notes.list", "argument_unexpected", "backend notes list accepts at most a backend name and prefix", "pinax backend notes list [name] [prefix] --vault <vault>")
+		}
+		name := ""
+		prefix := ""
+		if len(args) >= 1 {
+			name = args[0]
+		}
+		if len(args) == 2 {
+			prefix = args[1]
+		}
+		projection, err := ctx.svc.BackendNotesList(cmd.Context(), app.BackendNotesRequest{VaultPath: *ctx.vaultPath, Name: name, Prefix: prefix})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	backendNotesCmd.AddCommand(backendNotesListCmd)
+	backendNotesStatCmd := &cobra.Command{Use: "stat <name> <path>", Short: "Show backend note object status", ValidArgsFunction: backendObjectCompletion(func() string { return *ctx.vaultPath }, true, false), RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 2 {
+			return renderCommandError(cmd, ctx.outputMode(), "backend.notes.stat", "argument_required", "backend notes stat requires a backend name and path", "pinax backend notes stat <name> <path> --vault <vault>")
+		}
+		projection, err := ctx.svc.BackendNotesStat(cmd.Context(), app.BackendNotesRequest{VaultPath: *ctx.vaultPath, Name: args[0], Path: args[1]})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	backendNotesCmd.AddCommand(backendNotesStatCmd)
+	backendCmd.AddCommand(backendNotesCmd)
 	root.AddCommand(backendCmd)
 }
 

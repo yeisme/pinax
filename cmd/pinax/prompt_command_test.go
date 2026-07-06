@@ -31,6 +31,26 @@ func TestPromptImportSearchShowResolveCommands(t *testing.T) {
 	if searchFacts["results"] != "1" {
 		t.Fatalf("search facts = %#v", searchFacts)
 	}
+	searchDefaultOut := runCLI(t, "prompt", "search", "portrait", "--domain", "visual_generation", "--tag", "character", "--vault", root)
+	for _, want := range []string{"Prompt assets", "Prompt ID", "Title", "Domain", "Lifecycle", "Permission", "novel_character_portrait_v1", "Novel character portrait", "visual_generation", "draft", "internal"} {
+		if !strings.Contains(searchDefaultOut, want) {
+			t.Fatalf("prompt search default output missing %q:\n%s", want, searchDefaultOut)
+		}
+	}
+	for _, unwanted := range []string{"Prompt asset 1", "prompt_asset.1", "prompt_template"} {
+		if strings.Contains(searchDefaultOut, unwanted) {
+			t.Fatalf("prompt search default output should render a bounded table, found %q:\n%s", unwanted, searchDefaultOut)
+		}
+	}
+	searchAgentOut := runCLI(t, "prompt", "search", "portrait", "--domain", "visual_generation", "--tag", "character", "--vault", root, "--agent")
+	for _, want := range []string{"command=prompt.search", "fact.results=1", "prompt_asset.1.id=novel_character_portrait_v1", "prompt_asset.1.title=\"Novel character portrait\"", "prompt_asset.1.domain=visual_generation", "prompt_asset.1.lifecycle=draft", "prompt_asset.1.permission=internal"} {
+		if !strings.Contains(searchAgentOut, want) {
+			t.Fatalf("prompt search agent output missing %q:\n%s", want, searchAgentOut)
+		}
+	}
+	if strings.Contains(searchAgentOut, "Create a portrait") || strings.Contains(searchAgentOut, root) {
+		t.Fatalf("prompt search agent output leaked prompt body or path:\n%s", searchAgentOut)
+	}
 
 	showOut := runCLI(t, "prompt", "show", "novel_character_portrait_v1", "--vault", root, "--json")
 	showEnvelope := parsePromptEnvelope(t, showOut)

@@ -50,9 +50,33 @@ func TestDatabaseSchemaAndViewRegistryV2CLI(t *testing.T) {
 	if !strings.Contains(listOut, "database.schema.list") || !strings.Contains(listOut, "published") || !strings.Contains(listOut, "checkbox") {
 		t.Fatalf("schema list output invalid:\n%s", listOut)
 	}
+	defaultListOut := runCLI(t, "database", "schema", "list", "--vault", root)
+	for _, want := range []string{"Properties", "Property", "Type", "Values", "status", "select", "active,done", "published", "checkbox"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("schema list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	agentOut := runCLI(t, "database", "schema", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=database.schema.list", "fact.properties=2", "property.1.name=published", "property.1.type=checkbox", "property.2.name=status", "property.2.type=select"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("schema list agent output missing %q:\n%s", want, agentOut)
+		}
+	}
 	showOut := runCLI(t, "database", "schema", "show", "published", "--vault", root, "--json")
 	if !strings.Contains(showOut, "database.schema.show") || !strings.Contains(showOut, `"property":"published"`) || !strings.Contains(showOut, `"type":"checkbox"`) {
 		t.Fatalf("schema show output invalid:\n%s", showOut)
+	}
+	defaultShowOut := runCLI(t, "database", "schema", "show", "status", "--vault", root)
+	for _, want := range []string{"Property schema", "Field", "Value", "Property", "Type", "Values", "Updated", "Validation", "status", "select", "active,done", "ok"} {
+		if !strings.Contains(defaultShowOut, want) {
+			t.Fatalf("schema show default output missing %q:\n%s", want, defaultShowOut)
+		}
+	}
+	agentShowOut := runCLI(t, "database", "schema", "show", "status", "--vault", root, "--agent")
+	for _, want := range []string{"command=database.schema.show", "fact.property=status", "fact.type=select", "fact.values=active,done", "schema_property.name=status", "schema_property.type=select", "schema_property.values=active,done", "schema_property.validation_status=ok"} {
+		if !strings.Contains(agentShowOut, want) {
+			t.Fatalf("schema show agent missing %q:\n%s", want, agentShowOut)
+		}
 	}
 	viewOut := runCLI(t, "database", "view", "save", "sql-active", "--query", "SELECT title FROM notes LIMIT 20", "--kind", "table", "--column", "title", "--vault", root, "--json")
 	if !strings.Contains(viewOut, "database.view.save") {
@@ -279,6 +303,18 @@ func TestSavedViewsCLI(t *testing.T) {
 	if !strings.Contains(listOut, "view.list") || !strings.Contains(listOut, "active-work") {
 		t.Fatalf("view list output invalid:\n%s", listOut)
 	}
+	defaultListOut := runCLI(t, "view", "list", "--vault", root)
+	for _, want := range []string{"Views", "View", "Group", "Kind", "Status", "Sort", "active-work", "work", "reference", "active", "title"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("view list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	agentListOut := runCLI(t, "view", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=view.list", "fact.views=1", "view.1.name=active-work", "view.1.group=work", "view.1.kind=reference", "view.1.status=active", "view.1.sort=title"} {
+		if !strings.Contains(agentListOut, want) {
+			t.Fatalf("view list agent missing %q:\n%s", want, agentListOut)
+		}
+	}
 	showOut := runCLI(t, "view", "show", "active-work", "--vault", root, "--json")
 	var showEnvelope map[string]any
 	if err := json.Unmarshal([]byte(showOut), &showEnvelope); err != nil {
@@ -287,6 +323,18 @@ func TestSavedViewsCLI(t *testing.T) {
 	showFacts := showEnvelope["facts"].(map[string]any)
 	if showEnvelope["command"] != "view.show" || showFacts["view"] != "active-work" || showFacts["returned"] != "1" || !strings.Contains(showOut, "工作参考") || strings.Contains(showOut, "个人草稿") {
 		t.Fatalf("view show envelope = %#v out=%s", showEnvelope, showOut)
+	}
+	defaultShowOut := runCLI(t, "view", "show", "active-work", "--vault", root)
+	for _, want := range []string{"Path", "Title", "Kind", "Tags", "Status", "Updated", "notes/work/refs/work-ref.md", "工作参考", "reference", "active", "work"} {
+		if !strings.Contains(defaultShowOut, want) {
+			t.Fatalf("view show default output missing %q:\n%s", want, defaultShowOut)
+		}
+	}
+	agentShowOut := runCLI(t, "view", "show", "active-work", "--vault", root, "--agent")
+	for _, want := range []string{"command=view.show", "fact.returned=1", "note.1.path=notes/work/refs/work-ref.md", "note.1.title=工作参考", "note.1.kind=reference", "note.1.status=active"} {
+		if !strings.Contains(agentShowOut, want) {
+			t.Fatalf("view show agent missing %q:\n%s", want, agentShowOut)
+		}
 	}
 
 	dbSaveOut := runCLI(t, "database", "view", "save", "db-active", "--group", "work", "--status", "active", "--kind", "reference", "--sort", "title", "--vault", root, "--json")
@@ -299,7 +347,7 @@ func TestSavedViewsCLI(t *testing.T) {
 	}
 
 	dbListOut := runCLI(t, "database", "view", "list", "--vault", root, "--agent")
-	for _, want := range []string{"command=database.view.list", "fact.views=2"} {
+	for _, want := range []string{"command=database.view.list", "fact.views=2", "view.1.name=active-work", "view.2.name=db-active"} {
 		if !strings.Contains(dbListOut, want) {
 			t.Fatalf("database view list missing %q:\n%s", want, dbListOut)
 		}
@@ -312,6 +360,18 @@ func TestSavedViewsCLI(t *testing.T) {
 	}
 	if dbShowEnvelope["command"] != "database.view.show" || dbShowEnvelope["facts"].(map[string]any)["returned"] != "1" || !strings.Contains(dbShowOut, "工作参考") {
 		t.Fatalf("database view show envelope = %#v out=%s", dbShowEnvelope, dbShowOut)
+	}
+	dbDefaultShowOut := runCLI(t, "database", "view", "show", "db-active", "--vault", root)
+	for _, want := range []string{"Path", "Title", "Kind", "Tags", "Status", "Updated", "notes/work/refs/work-ref.md", "工作参考", "reference", "active", "work"} {
+		if !strings.Contains(dbDefaultShowOut, want) {
+			t.Fatalf("database view show default output missing %q:\n%s", want, dbDefaultShowOut)
+		}
+	}
+	dbAgentShowOut := runCLI(t, "database", "view", "show", "db-active", "--vault", root, "--agent")
+	for _, want := range []string{"command=database.view.show", "fact.returned=1", "note.1.path=notes/work/refs/work-ref.md", "note.1.title=工作参考", "note.1.kind=reference", "note.1.status=active"} {
+		if !strings.Contains(dbAgentShowOut, want) {
+			t.Fatalf("database view show agent missing %q:\n%s", want, dbAgentShowOut)
+		}
 	}
 
 	dbDeleteFailed, err := runCLIExpectError("database", "view", "delete", "db-active", "--vault", root, "--json")
@@ -905,8 +965,18 @@ func TestIndexMachineOutputContractsCLI(t *testing.T) {
 		t.Fatalf("index doctor json contract invalid:\n%s", jsonStdout)
 	}
 
+	humanOut := runCLI(t, "index", "doctor", "--vault", root)
+	for _, want := range []string{"Index issues", "Severity", "Code", "Path", "Message", "warning", "index_missing", "Local index missing"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("index doctor human missing %q:\n%s", want, humanOut)
+		}
+	}
+	if strings.Contains(humanOut, "状态:") || strings.Contains(humanOut, "重点:") {
+		t.Fatalf("index doctor human contains legacy prose:\n%s", humanOut)
+	}
+
 	agentOut := runCLI(t, "index", "doctor", "--vault", root, "--agent")
-	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=index.doctor", "status=partial", "fact.issue_codes=index_missing", "issue.1.code=index_missing"} {
+	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=index.doctor", "status=partial", "fact.issue_codes=index_missing", "issue.1.code=index_missing", `issue.1.message="Local index missing"`} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("index doctor agent missing %q:\n%s", want, agentOut)
 		}

@@ -355,6 +355,37 @@ func TestDailyInboxWorkflowCLI(t *testing.T) {
 	if listEnvelope["command"] != "inbox.list" || listEnvelope["facts"].(map[string]any)["returned"] != "1" {
 		t.Fatalf("inbox list envelope = %#v", listEnvelope)
 	}
+	inboxDefaultOut := runCLI(t, "inbox", "list", "--vault", root)
+	for _, want := range []string{"Path", "Title", "Kind", "Tags", "Status", "Updated", "inbox/inbox-idea.md", "Inbox Idea", "inbox", "idea"} {
+		if !strings.Contains(inboxDefaultOut, want) {
+			t.Fatalf("inbox list default output missing %q:\n%s", want, inboxDefaultOut)
+		}
+	}
+	inboxAgentOut := runCLI(t, "inbox", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=inbox.list", "fact.returned=1", "note.1.path=inbox/inbox-idea.md", "note.1.title=\"Inbox Idea\"", "note.1.kind=inbox", "note.1.status=inbox"} {
+		if !strings.Contains(inboxAgentOut, want) {
+			t.Fatalf("inbox list agent missing %q:\n%s", want, inboxAgentOut)
+		}
+	}
+
+	draftOut := runCLI(t, "draft", "create", "Draft Idea", "--body", "draft body", "--tags", "draft", "--slug", "draft-idea", "--vault", root, "--json")
+	var draftEnvelope map[string]any
+	if err := json.Unmarshal([]byte(draftOut), &draftEnvelope); err != nil {
+		t.Fatalf("draft create json invalid: %v\n%s", err, draftOut)
+	}
+	draftPath := draftEnvelope["facts"].(map[string]any)["path"].(string)
+	draftDefaultOut := runCLI(t, "draft", "list", "--vault", root)
+	for _, want := range []string{"Path", "Title", "Kind", "Tags", "Status", "Updated", draftPath, "Draft Idea", "draft"} {
+		if !strings.Contains(draftDefaultOut, want) {
+			t.Fatalf("draft list default output missing %q:\n%s", want, draftDefaultOut)
+		}
+	}
+	draftAgentOut := runCLI(t, "draft", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=draft.list", "fact.returned=1", "note.1.path=" + draftPath, "note.1.title=\"Draft Idea\"", "note.1.status=draft"} {
+		if !strings.Contains(draftAgentOut, want) {
+			t.Fatalf("draft list agent missing %q:\n%s", want, draftAgentOut)
+		}
+	}
 
 	triageOut := runCLI(t, "inbox", "triage", inboxPath, "--group", "work", "--folder", "ideas", "--kind", "reference", "--status", "active", "--vault", root, "--json")
 	var triageEnvelope map[string]any
@@ -659,6 +690,43 @@ func TestNoteLinkGraphCLI(t *testing.T) {
 	}
 }
 
+func TestNoteLinksAllWikiConflictFiltersCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_source\ntitle: Source\nkind: reference\n---\n\n# Source\n\nSee [[Shared]] and [[Missing]].\n")
+	writeCLIFixture(t, filepath.Join(root, "notes", "shared-a.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_shared_a\ntitle: Shared\nkind: reference\n---\n\n# Shared\n")
+	writeCLIFixture(t, filepath.Join(root, "other", "shared-b.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_shared_b\ntitle: Shared\nkind: reference\n---\n\n# Shared\n")
+
+	ambiguousOut := runCLI(t, "note", "links", "--all", "--kind", "wiki", "--status", "ambiguous", "--vault", root, "--json")
+	var ambiguous map[string]any
+	if err := json.Unmarshal([]byte(ambiguousOut), &ambiguous); err != nil {
+		t.Fatalf("ambiguous output invalid json: %v\n%s", err, ambiguousOut)
+	}
+	ambiguousFacts := ambiguous["facts"].(map[string]any)
+	if ambiguous["command"] != "note.links" || ambiguousFacts["all"] != "true" || ambiguousFacts["links"] != "1" || ambiguousFacts["ambiguous"] != "1" || ambiguousFacts["kind"] != "wiki" || ambiguousFacts["status_filter"] != "ambiguous" {
+		t.Fatalf("ambiguous envelope = %#v\nout=%s", ambiguous, ambiguousOut)
+	}
+	if !strings.Contains(ambiguousOut, "note_shared_a") || !strings.Contains(ambiguousOut, "note_shared_b") {
+		t.Fatalf("ambiguous candidates missing:\n%s", ambiguousOut)
+	}
+	agentOut := runCLI(t, "note", "links", "--all", "--kind", "wiki", "--status", "ambiguous", "--vault", root, "--agent")
+	for _, want := range []string{"command=note.links", "fact.all=true", "fact.links=1", "link.1.source_path=notes/source.md", "link.1.kind=wiki", "link.1.status=ambiguous", "link.1.target=Shared", "link.1.candidate_count=2", "link.1.candidate.1.path=notes/shared-a.md", "link.1.candidate.2.path=other/shared-b.md"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("note links agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+
+	brokenOut := runCLI(t, "note", "links", "--all", "--kind", "wiki", "--status", "broken", "--vault", root, "--json")
+	var broken map[string]any
+	if err := json.Unmarshal([]byte(brokenOut), &broken); err != nil {
+		t.Fatalf("broken output invalid json: %v\n%s", err, brokenOut)
+	}
+	brokenFacts := broken["facts"].(map[string]any)
+	if brokenFacts["links"] != "1" || brokenFacts["broken"] != "1" || !strings.Contains(brokenOut, "Missing") {
+		t.Fatalf("broken envelope = %#v\nout=%s", broken, brokenOut)
+	}
+}
+
 func TestLinkOutputContractModes(t *testing.T) {
 	root := linkOutputFixture(t)
 	out := runCLI(t, "note", "links", "Alpha", "--vault", root, "--json")
@@ -935,6 +1003,18 @@ func TestNoteShowStemAndMetadataPlanQueryResolverContractsCLI(t *testing.T) {
 	if fileExists(filepath.Join(root, ".pinax", "records", "events.jsonl")) {
 		t.Fatalf("metadata plan query wrote ledger")
 	}
+	metadataHuman := runCLI(t, "metadata", "plan", "adopt-target", "--vault", root)
+	for _, want := range []string{"Metadata operations", "Kind", "Path", "Status", "metadata_update", "notes/adopt-target.md", "planned"} {
+		if !strings.Contains(metadataHuman, want) {
+			t.Fatalf("metadata plan human output missing %q:\n%s", want, metadataHuman)
+		}
+	}
+	metadataAgent := runCLI(t, "metadata", "plan", "adopt-target", "--vault", root, "--agent")
+	for _, want := range []string{"operation.1.kind=metadata_update", "operation.1.path=notes/adopt-target.md", `operation.1.reason="Add Pinax metadata to adoptable Markdown"`, "operation.1.status=planned"} {
+		if !strings.Contains(metadataAgent, want) {
+			t.Fatalf("metadata plan agent output missing %q:\n%s", want, metadataAgent)
+		}
+	}
 
 	ambiguousRoot := t.TempDir()
 	runCLI(t, "init", ambiguousRoot, "--title", "Vault", "--json")
@@ -970,6 +1050,18 @@ func TestRecordAdoptQueryPlanContractsCLI(t *testing.T) {
 	}
 	if !strings.Contains(planOut, "notes/yeisme.md") || !strings.Contains(planOut, "pinax record adopt yeisme --vault") {
 		t.Fatalf("record adopt query plan missing operation/action:\n%s", planOut)
+	}
+	planHuman := runCLI(t, "record", "adopt", "yeisme", "--plan", "--vault", root)
+	for _, want := range []string{"Record candidates", "Kind", "Path", "Status", "Score", "file", "notes/yeisme.md", "adoptable"} {
+		if !strings.Contains(planHuman, want) {
+			t.Fatalf("record adopt human output missing %q:\n%s", want, planHuman)
+		}
+	}
+	planAgent := runCLI(t, "record", "adopt", "yeisme", "--plan", "--vault", root, "--agent")
+	for _, want := range []string{"command=record.adopt", "fact.candidates=1", "candidate.1.object_kind=file", "candidate.1.path=notes/yeisme.md", "candidate.1.managed_status=adoptable"} {
+		if !strings.Contains(planAgent, want) {
+			t.Fatalf("record adopt agent output missing %q:\n%s", want, planAgent)
+		}
 	}
 	if fileExists(filepath.Join(root, ".pinax", "records", "events.jsonl")) {
 		t.Fatalf("record adopt --plan wrote ledger")
@@ -1020,6 +1112,18 @@ func TestRecordHistoryUsesResolverInputCLI(t *testing.T) {
 	facts := envelope["facts"].(map[string]any)
 	if envelope["command"] != "record.history" || facts["note_id"] == "" || facts["path"] != "history-note.md" || facts["candidates"] != "1" || facts["match_field"] != "stem" {
 		t.Fatalf("record history resolver envelope = %#v\n%s", envelope, out)
+	}
+	humanOut := runCLI(t, "record", "history", "history-note", "--vault", root)
+	for _, want := range []string{"Record details", "Note ID", "Path", "Lifecycle", facts["note_id"].(string), "history-note.md", "active"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("record history human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut := runCLI(t, "record", "history", "history-note", "--vault", root, "--agent")
+	for _, want := range []string{"record_detail.note_id=" + facts["note_id"].(string), "record_detail.path=history-note.md", "record_detail.lifecycle=active", "record_detail.record_version=1"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("record history agent output missing %q:\n%s", want, agentOut)
+		}
 	}
 }
 
@@ -1356,6 +1460,18 @@ func TestFolderCreateListShowCLI(t *testing.T) {
 	repairOut := runCLI(t, "folder", "repair", "--plan", "--vault", root, "--json")
 	if !strings.Contains(repairOut, `"command":"folder.repair"`) || !strings.Contains(repairOut, `"writes":"false"`) {
 		t.Fatalf("folder repair plan output invalid:\n%s", repairOut)
+	}
+	repairHuman := runCLI(t, "folder", "repair", "--plan", "--vault", root)
+	for _, want := range []string{"Folder issues", "Code", "Path", "Operation", "Message", "folder_adoptable", "folder.adopt"} {
+		if !strings.Contains(repairHuman, want) {
+			t.Fatalf("folder repair human output missing %q:\n%s", want, repairHuman)
+		}
+	}
+	repairAgent := runCLI(t, "folder", "repair", "--plan", "--vault", root, "--agent")
+	for _, want := range []string{"command=folder.repair", "fact.issues=", "issue.1.code=folder_adoptable", "issue.1.operation=folder.adopt"} {
+		if !strings.Contains(repairAgent, want) {
+			t.Fatalf("folder repair agent output missing %q:\n%s", want, repairAgent)
+		}
 	}
 }
 

@@ -36,6 +36,7 @@ type commandBuildContext struct {
 	s3Prefix                 *string
 	s3Endpoint               *string
 	s3Profile                *string
+	s3AddressingStyle        *string
 	noteProject              *string
 	noteGroup                *string
 	noteFolder               *string

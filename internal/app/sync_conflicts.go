@@ -240,7 +240,11 @@ func mainPathForSyncConflict(rel string) (string, error) {
 	if idx <= strings.LastIndex(stem, "/") {
 		return "", &domain.CommandError{Code: "invalid_conflict_file", Message: "sync conflict file is missing the timestamp segment"}
 	}
-	return stem[:idx] + ".md", nil
+	base := stem[:idx]
+	if filepath.Ext(base) != "" {
+		return base, nil
+	}
+	return base + ".md", nil
 }
 
 func readSyncConflictBodies(root string, entry domain.SyncConflictEntry) ([]byte, []byte, error) {

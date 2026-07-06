@@ -207,6 +207,31 @@ func TestPublishServeLoopbackPinaxWebStaticSite(t *testing.T) {
 	}
 }
 
+func TestPublishServeDefaultsToLoopbackAndRejectsPublicHost(t *testing.T) {
+	root := publishVaultFixture(t)
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "build", "--profile", "public", "--target", "local", "--out", outDir, "--vault", root, "--json")
+
+	defaultOut := runCLI(t, "publish", "serve", "--profile", "public", "--out", outDir, "--port", "0", "--once", "--vault", root, "--json")
+	defaultEnvelope := parsePublishEnvelope(t, defaultOut)
+	defaultFacts := defaultEnvelope["facts"].(map[string]any)
+	if defaultEnvelope["command"] != "publish.serve" || defaultFacts["host"] != "127.0.0.1" || !strings.HasPrefix(fmt.Sprint(defaultFacts["url"]), "http://127.0.0.1:") {
+		t.Fatalf("serve default host envelope = %#v", defaultEnvelope)
+	}
+	if strings.Contains(defaultOut, root) {
+		t.Fatalf("serve default output leaked local root:\n%s", defaultOut)
+	}
+
+	publicOut, publicErr := runCLIExpectError("publish", "serve", "--profile", "public", "--out", outDir, "--host", "0.0.0.0", "--port", "0", "--once", "--vault", root, "--json")
+	if publicErr == nil || !strings.Contains(publicOut, "publish_serve_host_unsafe") {
+		t.Fatalf("serve should reject public host: out=%s err=%v", publicOut, publicErr)
+	}
+	if strings.Contains(publicOut, root) || strings.Contains(publicOut, "http://0.0.0.0:") {
+		t.Fatalf("serve public host rejection leaked local root or bind URL:\n%s", publicOut)
+	}
+}
+
 func TestPublishDevBuildsAndServesOnce(t *testing.T) {
 	root := publishVaultFixture(t)
 	outDir := filepath.Join(root, "dist", "site")
@@ -223,6 +248,20 @@ func TestPublishDevBuildsAndServesOnce(t *testing.T) {
 	}
 	if strings.Contains(out, root) {
 		t.Fatalf("publish dev output leaked local root:\n%s", out)
+	}
+}
+
+func TestPublishDevRejectsPublicHost(t *testing.T) {
+	root := publishVaultFixture(t)
+	outDir := filepath.Join(root, "dist", "site")
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
+
+	out, err := runCLIExpectError("publish", "dev", "--profile", "public", "--out", outDir, "--host", "0.0.0.0", "--port", "0", "--once", "--vault", root, "--json")
+	if err == nil || !strings.Contains(out, "publish_serve_host_unsafe") {
+		t.Fatalf("publish dev should reject public host: out=%s err=%v", out, err)
+	}
+	if strings.Contains(out, root) || strings.Contains(out, "http://0.0.0.0:") {
+		t.Fatalf("publish dev public host rejection leaked local root or bind URL:\n%s", out)
 	}
 }
 
@@ -370,6 +409,17 @@ func TestPublishThemeListAndEjectCommands(t *testing.T) {
 	if listFacts["themes"] != "1" || listFacts["theme.1.name"] != "pinax-encyclopedia" || listFacts["theme.1.contract"] != "pinax.publish_theme.v1" {
 		t.Fatalf("theme list facts = %#v", listFacts)
 	}
+	defaultListOut := runCLI(t, "publish", "theme", "list", "--vault", root)
+	for _, want := range []string{"Themes", "Theme", "Source", "Contract", "pinax-encyclopedia", "builtin", "pinax.publish_theme.v1"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("theme list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	for _, unwanted := range []string{"Theme 1", "theme.1.name"} {
+		if strings.Contains(defaultListOut, unwanted) {
+			t.Fatalf("theme list default output should render a theme table, found %q:\n%s", unwanted, defaultListOut)
+		}
+	}
 
 	outDir := filepath.Join(root, "ejected-theme")
 	ejectOut := runCLI(t, "publish", "theme", "eject", "pinax-encyclopedia", "--out", outDir, "--vault", root, "--json")
@@ -380,6 +430,18 @@ func TestPublishThemeListAndEjectCommands(t *testing.T) {
 	ejectFacts := ejectEnvelope["facts"].(map[string]any)
 	if ejectFacts["theme"] != "pinax-encyclopedia" || ejectFacts["contract"] != "pinax.publish_theme.v1" || ejectFacts["files"] == "0" {
 		t.Fatalf("theme eject facts = %#v", ejectFacts)
+	}
+	ejectDefaultOut := runCLI(t, "publish", "theme", "eject", "pinax-encyclopedia", "--out", filepath.Join(root, "ejected-theme-default"), "--vault", root)
+	for _, want := range []string{"Theme files", "Path", "theme.toml", "assets/css/pinax.css", "layouts/_default/baseof.html"} {
+		if !strings.Contains(ejectDefaultOut, want) {
+			t.Fatalf("theme eject default output missing %q:\n%s", want, ejectDefaultOut)
+		}
+	}
+	ejectAgentOut := runCLI(t, "publish", "theme", "eject", "pinax-encyclopedia", "--out", filepath.Join(root, "ejected-theme-agent"), "--vault", root, "--agent")
+	for _, want := range []string{"command=publish.theme.eject", "fact.files=11", "file.1.path=assets/css/pinax.css", "file.11.path=theme.toml"} {
+		if !strings.Contains(ejectAgentOut, want) {
+			t.Fatalf("theme eject agent output missing %q:\n%s", want, ejectAgentOut)
+		}
 	}
 	for _, rel := range []string{"theme.toml", "layouts/_default/baseof.html", "layouts/_default/single.html", "assets/css/pinax.css", "assets/js/pinax-search.js"} {
 		if !fileExists(filepath.Join(outDir, filepath.FromSlash(rel))) {
@@ -422,6 +484,19 @@ func TestPublishThemeAndDeployOutputModesExposeStableProjection(t *testing.T) {
 func TestPublishProfileAgentOutputIsStableAndClean(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
+
+	listDefaultOut := runCLI(t, "publish", "profile", "list", "--vault", root)
+	for _, want := range []string{"Publish profiles", "Profile", "Target", "Renderer", "Title", "Theme", "public", "github-wiki", "none"} {
+		if !strings.Contains(listDefaultOut, want) {
+			t.Fatalf("profile list default output missing %q:\n%s", want, listDefaultOut)
+		}
+	}
+	listAgentOut := runCLI(t, "publish", "profile", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=publish.profile.list", "fact.profiles=1", "profile.1.name=public", "profile.1.target=github-wiki", "profile.1.renderer=none"} {
+		if !strings.Contains(listAgentOut, want) {
+			t.Fatalf("profile list agent missing %q:\n%s", want, listAgentOut)
+		}
+	}
 
 	agentOut := runCLI(t, "publish", "profile", "validate", "public", "--vault", root, "--agent")
 	for _, want := range []string{"command=publish.profile.validate", "status=success", "fact.profile=public", "fact.target=github-wiki", "fact.issues=0", "action.plan="} {
@@ -558,7 +633,7 @@ func TestPublishPlanOutputModesExposeStableProjection(t *testing.T) {
 	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Output Modes", "kind": "concept", "status": "active", "publish": "public"}, "# Output Modes\n")
 
 	summaryOut := runCLI(t, "publish", "plan", "--profile", "public", "--target", "github-pages", "--vault", root)
-	for _, want := range []string{"发布计划已生成", "selected count", "pinax publish build --profile public --target github-pages --vault <vault> --json"} {
+	for _, want := range []string{"发布计划已生成", "selected count", "Publish selected items", "Note ID", "Title", "Source", "Output Modes", "notes/public.md", "pinax publish build --profile public --target github-pages --vault <vault> --json"} {
 		if !strings.Contains(summaryOut, want) {
 			t.Fatalf("summary output missing %q:\n%s", want, summaryOut)
 		}
@@ -571,7 +646,7 @@ func TestPublishPlanOutputModesExposeStableProjection(t *testing.T) {
 	}
 
 	agentOut := runCLI(t, "publish", "plan", "--profile", "public", "--target", "github-pages", "--vault", root, "--agent")
-	for _, want := range []string{"mode=agent", "command=publish.plan", "status=success", "fact.selected_count=1", "fact.manual_review_count=0", "action.build="} {
+	for _, want := range []string{"mode=agent", "command=publish.plan", "status=success", "fact.selected_count=1", "fact.manual_review_count=0", "publish_item.1.id=note_public", "publish_item.1.title=\"Output Modes\"", "publish_item.1.source_path=notes/public.md", "action.build="} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("agent output missing %q:\n%s", want, agentOut)
 		}
@@ -1112,6 +1187,56 @@ func TestPublishDoctorDetectsFakeHugoAndProfile(t *testing.T) {
 	}
 	if strings.Contains(out, root) {
 		t.Fatalf("doctor output leaked local root:\n%s", out)
+	}
+}
+
+func TestPublishDoctorIssueOutputCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	fakeBin := t.TempDir()
+	fakeGit := filepath.Join(fakeBin, "git")
+	if err := os.WriteFile(fakeGit, []byte("#!/bin/sh\necho git version 2.0.0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin)
+	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "hugo", "--vault", root, "--json")
+
+	humanOut := runCLI(t, "publish", "doctor", "--profile", "public", "--target", "github-pages", "--out", filepath.Join(root, "dist", "site"), "--vault", root)
+	for _, want := range []string{"Publish issues", "Severity", "Code", "Field", "Message", "warning", "hugo_unavailable", "hugo", "Hugo executable was not found on PATH"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("publish doctor human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut := runCLI(t, "publish", "doctor", "--profile", "public", "--target", "github-pages", "--out", filepath.Join(root, "dist", "site"), "--vault", root, "--agent")
+	for _, want := range []string{"command=publish.doctor", "status=partial", "fact.issues=1", "issue.1.code=hugo_unavailable", "issue.1.severity=warning", "issue.1.field=hugo", `issue.1.message="Hugo executable was not found on PATH"`} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("publish doctor agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+}
+
+func TestPublishProfileValidateIssueOutputCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, ".pinax", "publish", "profiles", "bad.yaml"), "schema_version: pinax.publish_profile.v1\nname: bad\ntarget: github-pages\nrenderer: unknown\n")
+
+	humanOut, err := runCLIExpectError("publish", "profile", "validate", "bad", "--vault", root)
+	if err == nil {
+		t.Fatalf("publish profile validate bad succeeded:\n%s", humanOut)
+	}
+	for _, want := range []string{"Publish profile issues", "Severity", "Code", "Field", "Message", "publish_renderer_invalid", "renderer"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("publish profile validate human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut, err := runCLIExpectError("publish", "profile", "validate", "bad", "--vault", root, "--agent")
+	if err == nil {
+		t.Fatalf("publish profile validate bad agent succeeded:\n%s", agentOut)
+	}
+	for _, want := range []string{"command=publish.profile.validate", "status=failed", "fact.issues=3", "issue.1.code=publish_renderer_invalid", "issue.1.field=renderer"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("publish profile validate agent output missing %q:\n%s", want, agentOut)
+		}
 	}
 }
 

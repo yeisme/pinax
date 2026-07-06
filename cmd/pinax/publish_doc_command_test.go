@@ -69,6 +69,18 @@ func TestPublishDocLarkWorkflowCreatesMappingAndStatus(t *testing.T) {
 	if listEnvelope["command"] != "publish.doc.list" || listEnvelope["facts"].(map[string]any)["mappings"] != "1" {
 		t.Fatalf("list envelope = %#v", listEnvelope)
 	}
+	defaultListOut := runCLI(t, "publish", "doc", "list", "--target", "lark-doc", "--vault", root)
+	for _, want := range []string{"Document publish mappings", "Note ID", "Target", "Provider", "Status", "Renderer", "note_alpha", "lark-doc", "lark", "published", "native-docx"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("doc list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	agentListOut := runCLI(t, "publish", "doc", "list", "--target", "lark-doc", "--vault", root, "--agent")
+	for _, want := range []string{"command=publish.doc.list", "fact.mappings=1", "doc_mapping.1.note_id=note_alpha", "doc_mapping.1.target=lark-doc", "doc_mapping.1.provider=lark", "doc_mapping.1.publish_status=published", "doc_mapping.1.renderer=native-docx"} {
+		if !strings.Contains(agentListOut, want) {
+			t.Fatalf("doc list agent missing %q:\n%s", want, agentListOut)
+		}
+	}
 }
 
 func writeFakePublishCLI(t *testing.T, path, provider string) {
@@ -82,12 +94,40 @@ func writeFakePublishCLI(t *testing.T, path, provider string) {
 		"  echo '{\"status\":\"ok\"}'\n" +
 		"  exit 0\n" +
 		"fi\n" +
+		"if [ \"$1\" = \"drive\" ] && [ \"$2\" = \"+inspect\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"type\":\"docx\",\"token\":\"ext_test_docx\",\"url\":\"https://example.test/docx/ext_test_docx\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"if [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n" +
 		"  echo '{\"identities\":{\"user\":{\"status\":\"ready\",\"available\":true},\"bot\":{\"status\":\"ready\",\"available\":true}}}'\n" +
 		"  exit 0\n" +
 		"fi\n" +
+		"if [ \"$1\" = \"docs\" ] && [ \"$2\" = \"+create\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"document\":{\"document_id\":\"ext_test_docx\",\"revision_id\":2,\"url\":\"https://example.test/docx/ext_test_docx\"}}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"docs\" ] && [ \"$2\" = \"+update\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"document\":{\"document_id\":\"ext_test_docx\",\"revision_id\":3,\"url\":\"https://example.test/docx/ext_test_docx\"}}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"docs\" ] && [ \"$2\" = \"+fetch\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"document\":{\"document_id\":\"ext_test_docx\",\"content\":\"<title>D</title><whiteboard token=\\\"fake_wb\\\"></whiteboard>\",\"revision_id\":3}}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"whiteboard\" ] && [ \"$2\" = \"+update\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"created_node_id\":\"t1:1\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"docs\" ] && [ \"$2\" = \"+media-insert\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"block_id\":\"fake_img_block\",\"file_token\":\"fake_media_token\",\"type\":\"image\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"docs\" ] && [ \"$2\" = \"+media-upload\" ]; then\n" +
+		"  echo '{\"ok\":true,\"data\":{\"file_token\":\"fake_media_token\"}}'\n" +
+		"  exit 0\n" +
+		"fi\n" +
 		"case \"$1:$2\" in\n" +
-		"  markdown:+create|markdown:+overwrite) echo '{\"status\":\"ok\",\"id\":\"ext_test_doc\",\"url\":\"https://example.test/doc/ext_test_doc\"}' ;;\n" +
+		"  markdown:+create|markdown:+overwrite) echo '{\"status\":\"ok\",\"id\":\"ext_test_doc\",\"url\":\"https://example.test/doc/ext_test_doc\",\"type\":\"file\"}' ;;\n" +
 		"  *) echo '{\"status\":\"ok\",\"provider\":\"" + provider + "\"}' ;;\n" +
 		"esac\n"
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
@@ -133,6 +173,18 @@ func TestPublishDocProviderListNotionProfileAndAgentOutput(t *testing.T) {
 	if listEnvelope["command"] != "publish.doc.provider.list" || listEnvelope["facts"].(map[string]any)["providers"] != "2" {
 		t.Fatalf("provider list envelope = %#v", listEnvelope)
 	}
+	defaultListOut := runCLI(t, "publish", "doc", "provider", "list", "--vault", root)
+	for _, want := range []string{"Document publish providers", "Target", "Provider", "notion-page", "notion", "lark-doc", "lark"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("provider list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	agentListOut := runCLI(t, "publish", "doc", "provider", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=publish.doc.provider.list", "fact.providers=2", "doc_provider.1.target=notion-page", "doc_provider.1.provider=notion", "doc_provider.2.target=lark-doc", "doc_provider.2.provider=lark"} {
+		if !strings.Contains(agentListOut, want) {
+			t.Fatalf("provider list agent missing %q:\n%s", want, agentListOut)
+		}
+	}
 
 	profileOut := runCLI(t, "publish", "doc", "profile", "set", "notion-page", "--workspace", "ws_test", "--parent-page", "pg_parent", "--vault", root, "--json")
 	profileEnvelope := parsePublishEnvelope(t, profileOut)
@@ -159,5 +211,28 @@ func TestPublishDocProviderListNotionProfileAndAgentOutput(t *testing.T) {
 	}
 	if strings.Contains(agentOut, root) || strings.Contains(agentOut, "Body for Notion") {
 		t.Fatalf("agent output leaked local path or note body:\n%s", agentOut)
+	}
+}
+
+func TestPublishDocAllRejectsConflictingSelectors(t *testing.T) {
+	root := t.TempDir()
+	writePublishNoteFixture(t, root, "notes/index/alpha.md", map[string]string{"note_id": "note_alpha", "title": "Alpha", "kind": "concept", "status": "active"}, "# Alpha\n\nBody.\n")
+	runCLI(t, "publish", "doc", "profile", "set", "lark-doc", "--folder", "fld_test", "--vault", root, "--json")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "prepare note", args: []string{"publish", "doc", "prepare", "--all", "--note", "note_alpha", "--target", "lark-doc", "--vault", root, "--json"}},
+		{name: "push package", args: []string{"publish", "doc", "push", "--all", "--package", "pkg_123", "--target", "lark-doc", "--vault", root, "--dry-run", "--json"}},
+		{name: "unlink note", args: []string{"publish", "doc", "unlink", "--all", "--note", "note_alpha", "--target", "lark-doc", "--vault", root, "--json"}},
+	} {
+		out, err := runCLIExpectError(tc.args...)
+		if err == nil {
+			t.Fatalf("%s unexpectedly succeeded:\n%s", tc.name, out)
+		}
+		if !strings.Contains(out, `"code":"argument_conflict"`) || strings.Contains(out, "pkg_123") && !strings.Contains(out, "--all") {
+			t.Fatalf("%s expected argument_conflict, got:\n%s", tc.name, out)
+		}
 	}
 }

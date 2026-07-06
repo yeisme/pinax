@@ -1,7 +1,10 @@
 # Document publish maintenance uses CLI-authored assets and fake provider CLIs.
+# renderer=native-docx 是新 lark-doc 默认：产出飞书原生 docx，而非 Drive .md file。
 exec mkdir -p vault/notes/index
-exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_alpha" "title: Alpha Doc" "kind: concept" "status: active" "publish: public" "---" "" "# Alpha Doc" "PUBLIC_ALPHA_BODY" > vault/notes/index/alpha.md'
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_alpha" "title: Alpha Doc" "kind: concept" "status: active" "publish: public" "---" "" "# Alpha Doc" "" "PUBLIC_ALPHA_BODY" "" "![diagram](assets/diagram.png)" > vault/notes/index/alpha.md'
 exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_beta" "title: Beta Page" "kind: concept" "status: active" "publish: public" "---" "" "# Beta Page" "PUBLIC_BETA_BODY" > vault/notes/index/beta.md'
+exec mkdir -p vault/notes/assets
+exec sh -c 'printf "PNGDATA" > vault/notes/assets/diagram.png'
 
 exec sh -c 'pinax publish doc provider list --vault vault --json > providers.json'
 validate-json-envelope providers.json
@@ -9,6 +12,7 @@ validate-clean-stdout providers.json
 exec grep -q '"command":"publish.doc.provider.list"' providers.json
 exec grep -q '"providers":"2"' providers.json
 
+# 新 lark-doc profile 默认 renderer=native-docx。
 exec sh -c 'pinax publish doc profile set lark-doc --folder fld_test --as user --vault vault --json > lark-profile.json'
 validate-json-envelope lark-profile.json
 validate-clean-stdout lark-profile.json
@@ -17,6 +21,7 @@ exec grep -q '"as":"user"' lark-profile.json
 exec grep -q '"layout":"mirror"' lark-profile.json
 exec grep -q '"template":"vault"' lark-profile.json
 exec grep -q '"index_page":"true"' lark-profile.json
+exec grep -q '"renderer":"native-docx"' lark-profile.json
 exists vault/.pinax/publish/doc/profiles/lark-doc.yaml
 
 exec sh -c 'pinax publish doc provider doctor --target lark-doc --vault vault --json > lark-doctor.json'
@@ -25,38 +30,88 @@ validate-clean-stdout lark-doctor.json
 exec grep -q '"command":"publish.doc.provider.doctor"' lark-doctor.json
 exec grep -q '"as":"user"' lark-doctor.json
 
+# native-docx prepare 必须产出 native render plan（而非只产出 .md body）。
 exec sh -c 'pinax publish doc prepare --note note_alpha --target lark-doc --vault vault --json > lark-prepare.json'
 validate-json-envelope lark-prepare.json
 validate-clean-stdout lark-prepare.json
 exec grep -q '"command":"publish.doc.prepare"' lark-prepare.json
 exec grep -q '"note_id":"note_alpha"' lark-prepare.json
+exec grep -q '"renderer":"native-docx"' lark-prepare.json
+exec grep -q '"render_revision":"pinax.publish.render.v1"' lark-prepare.json
 exec sh -c 'for f in vault/.pinax/publish/doc/packages/pubdoc_note_alpha_lark_doc_*.json; do basename "$f" .json; done > lark-package.txt'
 exec sh -c 'grep -q "Published from Pinax" vault/.pinax/publish/doc/packages/*.json'
+exec sh -c 'grep -q "native_plan" vault/.pinax/publish/doc/packages/*.json'
 exec grep -q '"remote_path":"notes/index/Alpha Doc.md"' lark-prepare.json
 
+# dry-run 探测原生文档能力，不走 markdown +create。
+exec sh -c 'rm -f lark-calllog.jsonl'
 exec sh -c 'pinax publish doc push --package "$(cat lark-package.txt)" --target lark-doc --vault vault --dry-run --json > lark-dry-run.json'
 validate-json-envelope lark-dry-run.json
 validate-clean-stdout lark-dry-run.json
 exec grep -q '"publish_status":"dry_run_verified"' lark-dry-run.json
+exec grep -q '"renderer":"native-docx"' lark-dry-run.json
 
+# native push 产出 docx 对象（type != file），URL 指向 docx。
+exec sh -c 'rm -f lark-calllog.jsonl'
 exec sh -c 'pinax publish doc push --package "$(cat lark-package.txt)" --target lark-doc --vault vault --json > lark-push.json'
 validate-json-envelope lark-push.json
 validate-clean-stdout lark-push.json
 exec grep -q '"publish_status":"published"' lark-push.json
-exec grep -q 'https://example.test/lark/fake_lark_doc' lark-push.json
+exec grep -q '"renderer":"native-docx"' lark-push.json
+exec grep -q '"external_object_type":"docx"' lark-push.json
+exec grep -q 'https://example.test/docx/fake_docx_token' lark-push.json
 exists vault/.pinax/publish/doc/mappings/note_alpha/lark-doc.json
 exists vault/.pinax/publish/doc/folders/lark-doc/notes.json
 exists vault/.pinax/publish/doc/folders/lark-doc/notes_index.json
 exec grep -q 'index_object:' vault/.pinax/publish/doc/profiles/lark-doc.yaml
+# 关键断言：native-docx 路径绝不调用 markdown +create/+overwrite（拒绝 silent fallback）。
+! exec grep -q 'markdown ' lark-calllog.jsonl
 
 exec sh -c 'pinax publish doc status --note note_alpha --vault vault --json > lark-status.json'
 validate-json-envelope lark-status.json
 validate-clean-stdout lark-status.json
 exec grep -q '"publish_status":"published"' lark-status.json
+exec grep -q '"renderer":"native-docx"' lark-status.json
+exec grep -q '"external_object_type":"docx"' lark-status.json
 exec sh -c 'pinax publish doc list --target lark-doc --vault vault --json > lark-list.json'
 validate-json-envelope lark-list.json
 validate-clean-stdout lark-list.json
 exec grep -q '"mappings":"1"' lark-list.json
+
+# renderer=markdown-file 是 legacy fallback：仍走 markdown +create，产出 Drive file。
+exec sh -c 'pinax publish doc profile set lark-doc --folder fld_test --as user --renderer markdown-file --vault vault --json > lark-md-profile.json'
+validate-json-envelope lark-md-profile.json
+validate-clean-stdout lark-md-profile.json
+exec grep -q '"renderer":"markdown-file"' lark-md-profile.json
+exec sh -c 'pinax publish doc prepare --note note_beta --target lark-doc --vault vault --json > lark-md-prepare.json'
+validate-json-envelope lark-md-prepare.json
+validate-clean-stdout lark-md-prepare.json
+exec sh -c 'for f in vault/.pinax/publish/doc/packages/pubdoc_note_beta_lark_doc_*.json; do basename "$f" .json; done > lark-md-package.txt'
+exec sh -c 'rm -f lark-calllog.jsonl'
+exec sh -c 'pinax publish doc push --package "$(cat lark-md-package.txt)" --target lark-doc --vault vault --json > lark-md-push.json'
+validate-json-envelope lark-md-push.json
+validate-clean-stdout lark-md-push.json
+exec grep -q '"publish_status":"published"' lark-md-push.json
+exec grep -q '"renderer":"markdown-file"' lark-md-push.json
+exec grep -q '"external_object_type":"file"' lark-md-push.json
+exec grep -q 'https://example.test/lark/fake_lark_doc' lark-md-push.json
+# markdown-file 路径确实调用了 markdown +create。
+exec grep -q 'markdown +create' lark-calllog.jsonl
+exists vault/.pinax/publish/doc/mappings/note_beta/lark-doc.json
+
+# 迁移守卫：markdown-file mapping 存在时切回 native-docx 不允许原地改义。
+exec sh -c 'pinax publish doc profile set lark-doc --folder fld_test --as user --renderer native-docx --vault vault --json > lark-native-profile2.json'
+validate-json-envelope lark-native-profile2.json
+exec sh -c 'pinax publish doc push --package "$(cat lark-md-package.txt)" --target lark-doc --vault vault --json > lark-migration.json 2>&1 || true'
+validate-json-envelope lark-migration.json
+exec grep -q '"status":"failed"' lark-migration.json
+exec grep -q 'publish_object_type_migration_required' lark-migration.json
+
+# 不支持的 renderer 被拒绝，不写入 profile。
+exec sh -c 'pinax publish doc profile set lark-doc --folder fld_test --renderer html --vault vault --json > lark-bad-renderer.json 2>&1 || true'
+validate-json-envelope lark-bad-renderer.json
+exec grep -q '"status":"failed"' lark-bad-renderer.json
+exec grep -q 'publish_doc_renderer_invalid' lark-bad-renderer.json
 
 exec sh -c 'pinax publish doc profile set notion-page --workspace ws_test --parent-page pg_parent --vault vault --json > notion-profile.json'
 validate-json-envelope notion-profile.json
@@ -90,4 +145,8 @@ validate-json-envelope notion-list.json
 validate-clean-stdout notion-list.json
 exec grep -q '"mappings":"1"' notion-list.json
 
-! exec grep -R -q 'PUBLIC_ALPHA_BODY\|PUBLIC_BETA_BODY' *.json *.agent 2>/dev/null
+# 脱敏断言：native plan / mapping / receipt 不含本地绝对路径、token 或 cookie。
+# 注意：package 含正文是发布设计（发布内容本身）；这里只检查敏感字段。
+! exec sh -c 'grep -R -q "Authorization\|Bearer \|Cookie\|/home/\|/Users/" vault/.pinax/publish/doc/packages/ vault/.pinax/publish/doc/mappings/ vault/.pinax/publish/doc/profiles/ 2>/dev/null'
+# native plan 的 media 路径必须是 vault-relative，不含绝对路径。
+! exec sh -c 'grep -q "\"path\":\"/" vault/.pinax/publish/doc/packages/*.json 2>/dev/null'

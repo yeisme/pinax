@@ -13,6 +13,7 @@ Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。三个�
 Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可复现 proof loop。每个阶段都保持 bounded：projection 只返回事实和下一步，不返回完整 note body、token 或 provider payload；写入只能通过 plan -> snapshot -> apply -> receipt -> restore 控制链发生。
 
 - [Demo Proof Loop](./demo-proof-loop.md)：复制合成 messy vault fixture，端到端运行 diagnose -> plan -> snapshot -> apply -> restore。
+- [完整使用样例](./usage/full-example.md)：从空 vault 开始串起 capture、retrieve、proof loop、project/database、API、sync、backend、publish 和 plugin dry-run。
 - [文档设计](./overview/documentation-design.md)：说明读者路径、章节归属、命令文档形态和 Pinax 文档维护规则。
 
 ## 当前状态
@@ -24,7 +25,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 
 ## 双向关系入口
 
-- `pinax note links <ref>` 显示 outgoing links，支持 `--broken-only`、`--kind`、`--include-ignored` 和 `--limit`。
+- `pinax note links <ref>` 显示 outgoing links；`pinax note links --all --kind wiki --status ambiguous` 可全库查看 `[[...]]` 歧义。支持 `--broken-only`、`--kind`、`--status`、`--include-ignored`、`--limit` 和 `--all`。
 - `pinax note backlinks <ref>` 显示 backlinks，支持 `--include-broken` 和 `--limit`。
 - `pinax note orphans --mode full|no-incoming|no-outgoing` 分别显示完全孤立 note、无 incoming link 的 note、无 outgoing link 的 note。
 - `pinax search <query> --link-target <note-id|path|title|raw-target>` 按关系目标过滤搜索结果；目标有歧义时返回 `link_target_ambiguous`，不会自动替用户选择候选项。
@@ -65,6 +66,8 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [Demo Proof Loop](./demo-proof-loop.md)
 - [命令手册](./commands/README.md)
 - [本地开发运行手册](./operations/local-development.md)
+- [模块审查与 TDD 手册](./operations/module-review-tdd.md)
+- [完整使用样例](./usage/full-example.md)
 - [Release Packaging](./operations/release-packaging.md)
 - [中文文档地图](./README.zh-CN.md)
 - [贡献指南](../CONTRIBUTING.zh-CN.md)

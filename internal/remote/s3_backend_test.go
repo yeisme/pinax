@@ -24,3 +24,23 @@ func TestParseS3EndpointDefaultsToPathStyleForCustomEndpoint(t *testing.T) {
 		t.Fatalf("custom endpoint should default to path style: %#v", options)
 	}
 }
+
+func TestParseS3EndpointUsesVirtualHostedForTencentCOS(t *testing.T) {
+	_, _, options, err := parseS3Endpoint("s3://pinax-note-1322128555/pinax-sync?endpoint=https%3A%2F%2Fcos.ap-guangzhou.myqcloud.com&region=ap-guangzhou&profile=tencent-cos-pinax")
+	if err != nil {
+		t.Fatalf("parse endpoint: %v", err)
+	}
+	if options.PathStyle {
+		t.Fatalf("Tencent COS endpoint should use virtual-hosted style: %#v", options)
+	}
+}
+
+func TestParseS3EndpointAllowsExplicitVirtualHostedStyle(t *testing.T) {
+	_, _, options, err := parseS3Endpoint("s3://pinax-test/prefix?endpoint=http%3A%2F%2F10.10.1.102%3A9010&addressing_style=virtual-hosted")
+	if err != nil {
+		t.Fatalf("parse endpoint: %v", err)
+	}
+	if options.PathStyle {
+		t.Fatalf("explicit virtual-hosted style should disable path style: %#v", options)
+	}
+}
