@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -254,9 +255,23 @@ func TestNoteTagRecordFactsRenderInAllModes(t *testing.T) {
 	if err := RenderWithOptions(&jsonOut, ModeJSON, projection, RenderOptions{ColorMode: "always"}); err != nil {
 		t.Fatalf("render json: %v", err)
 	}
-	for _, want := range []string{"\"command\":\"note.tag\"", "\"record_event\":\"note.metadata_updated\"", "\"ledger_seq\":\"2\"", "\"index_updated\":\"true\""} {
-		if !strings.Contains(jsonOut.String(), want) {
-			t.Fatalf("json output missing %q:\n%s", want, jsonOut.String())
+	var parsed struct {
+		Command string            `json:"command"`
+		Facts   map[string]string `json:"facts"`
+	}
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
+		t.Fatalf("json invalid: %v\n%s", err, jsonOut.String())
+	}
+	if parsed.Command != "note.tag" {
+		t.Fatalf("json command = %q, want note.tag:\n%s", parsed.Command, jsonOut.String())
+	}
+	for key, want := range map[string]string{
+		"record_event":  "note.metadata_updated",
+		"ledger_seq":    "2",
+		"index_updated": "true",
+	} {
+		if parsed.Facts[key] != want {
+			t.Fatalf("json facts.%s = %q, want %q:\n%s", key, parsed.Facts[key], want, jsonOut.String())
 		}
 	}
 	if strings.Contains(jsonOut.String(), "\x1b[") {
@@ -473,7 +488,16 @@ func TestProjectionActionsAgentActionsJSONActions(t *testing.T) {
 	if err := RenderWithOptions(&jsonOut, ModeJSON, projection, RenderOptions{ColorMode: "never"}); err != nil {
 		t.Fatalf("render json: %v", err)
 	}
-	if !strings.Contains(jsonOut.String(), `"actions"`) || !strings.Contains(jsonOut.String(), `"command":"pinax template preview journal.daily --vault ./my-notes --json"`) {
+	var parsed struct {
+		Actions []struct {
+			Name    string `json:"name"`
+			Command string `json:"command"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
+		t.Fatalf("json invalid: %v\n%s", err, jsonOut.String())
+	}
+	if len(parsed.Actions) != 1 || parsed.Actions[0].Command != "pinax template preview journal.daily --vault ./my-notes --json" {
 		t.Fatalf("json missing action:\n%s", jsonOut.String())
 	}
 	var agent bytes.Buffer

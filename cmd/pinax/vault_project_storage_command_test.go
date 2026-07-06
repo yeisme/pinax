@@ -654,7 +654,7 @@ func TestVaultStatsDoctorAndDashboardCLI(t *testing.T) {
 	}
 
 	statsHuman := runCLI(t, "stats", "--vault", root)
-	for _, want := range []string{"━━━━━━━━", "────────", "Highlights", "Vault statistics generated.", "Metric", "Value", "Notes", "1"} {
+	for _, want := range []string{"────────", "Highlights", "Vault statistics generated.", "Metric", "Value", "Notes", "1"} {
 		if !strings.Contains(statsHuman, want) {
 			t.Fatalf("stats human output missing %q:\n%s", want, statsHuman)
 		}

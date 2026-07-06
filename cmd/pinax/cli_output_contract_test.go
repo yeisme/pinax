@@ -319,7 +319,7 @@ func TestHumanOutputIsPolishedForNotebookViewsAndHelp(t *testing.T) {
 	writeCLIFixture(t, filepath.Join(root, "notes", "raw.md"), "# Raw Note\n\nbody\n")
 
 	groupOut := runCLI(t, "group", "list", "--vault", root)
-	for _, want := range []string{"━━━━━━━━", "────────", "Highlights", "Metric", "Value", "Group", "Count", "work", "personal"} {
+	for _, want := range []string{"────────", "Highlights", "Metric", "Value", "Group", "Count", "work", "personal"} {
 		if !strings.Contains(groupOut, want) {
 			t.Fatalf("group list polished output missing %q:\n%s", want, groupOut)
 		}
@@ -344,7 +344,7 @@ func TestHumanOutputIsPolishedForNotebookViewsAndHelp(t *testing.T) {
 
 	writeCLIFixture(t, filepath.Join(root, "notes", "needs-metadata.md"), "---\nschema_version: pinax.note.v1\ntitle: Needs Metadata\n---\n\n# Needs Metadata\n\nbody\n")
 	planOut := runCLI(t, "metadata", "plan", "--vault", root)
-	for _, want := range []string{"━━━━━━━━", "────────", "Highlights", "Metadata plan generated.", "Metric", "Value", "Planned updates", "Next step"} {
+	for _, want := range []string{"────────", "Highlights", "Metadata plan generated.", "Metric", "Value", "Planned updates", "Next step"} {
 		if !strings.Contains(planOut, want) {
 			t.Fatalf("metadata plan polished output missing %q:\n%s", want, planOut)
 		}

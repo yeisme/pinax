@@ -33,6 +33,7 @@ type RenderOptions struct {
 	Width      int
 	Markdown   MarkdownOptions
 	IsTerminal bool
+	JSONIndent string
 }
 
 type MarkdownOptions struct {
@@ -74,6 +75,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 	case ModeJSON:
 		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
+		if jsonIndentEnabled(w, opts) {
+			enc.SetIndent("", "  ")
+		}
 		return enc.Encode(projection)
 	case ModeAgent:
 		return renderAgent(w, projection)
@@ -245,6 +249,30 @@ func applyThemeRole(roles *ThemeRoles, role, color string) {
 	}
 }
 
+// jsonIndentEnabled decides whether --json output is pretty-printed. Defaults to
+// indented on an interactive terminal (human inspection) and compact when piped,
+// redirected, or written to a buffer (scripts, CI, test snapshots). Callers can
+// force a mode via RenderOptions.JSONIndent or the PINAX_JSON env var.
+func jsonIndentEnabled(w io.Writer, opts RenderOptions) bool {
+	switch strings.ToLower(strings.TrimSpace(opts.JSONIndent)) {
+	case "pretty", "indent", "on", "1", "true", "yes", "always":
+		return true
+	case "compact", "off", "0", "false", "no", "never":
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PINAX_JSON"))) {
+	case "pretty", "indent", "on", "1", "true", "yes", "always":
+		return true
+	case "compact", "off", "0", "false", "no", "never":
+		return false
+	}
+	if opts.IsTerminal {
+		return true
+	}
+	file, ok := w.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
 func summaryColorEnabledWithOptions(w io.Writer, opts RenderOptions) bool {
 	mode := strings.ToLower(strings.TrimSpace(opts.ColorMode))
 	if mode == "" {
@@ -322,9 +350,21 @@ func renderSummaryTable(w io.Writer, theme summaryTheme, header []string, rows [
 		BorderStyle(theme.rule).
 		StyleFunc(summaryTableStyle(theme, header))
 	body := trimTrailingSpaceLines(tw.Render())
-	rule := strings.Repeat("━", maxRenderedLineWidth(body))
-	_, err := fmt.Fprintf(w, "%s\n%s\n%s\n", theme.rule.Render(rule), body, theme.rule.Render(rule))
+	_, err := fmt.Fprintln(w, indentBlock(body, "  "))
 	return err
+}
+
+// indentBlock left-pads every line of a multi-line block, used to give summary
+// tables a small visual margin without heavy framing rules.
+func indentBlock(value, pad string) string {
+	if pad == "" {
+		return value
+	}
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		lines[i] = pad + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func summaryTableStyle(theme summaryTheme, header []string) charmtable.StyleFunc {
