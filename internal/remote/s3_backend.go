@@ -111,6 +111,11 @@ func NewS3BackendWithOptions(ctx context.Context, bucket string, prefix string, 
 			o.BaseEndpoint = aws.String(options.EndpointURL)
 		}
 		o.UsePathStyle = options.PathStyle
+		// S3-compatible services (e.g. Tencent COS) rarely return x-amz-checksum-*
+		// headers, which the SDK's default WhenSupported policy turns into a WARN
+		// per object. Only validate checksums when the operation requires it.
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix = prefix + "/"
