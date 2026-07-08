@@ -302,12 +302,12 @@ func TestConfiguredRemoteModeLeavesCloudSyncCommandsLocal(t *testing.T) {
 	cmd := NewRootCommand("test")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"cloud", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--workspace", "ec", "--device", "dev", "--vault", vault, "--json"})
+	cmd.SetArgs([]string{"capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--workspace", "ec", "--device", "dev", "--vault", vault, "--json"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cloud backend set should remain local: %v\n%s", err, out.String())
+		t.Fatalf("capsa backend set should remain local: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), `"command":"cloud.backend.set"`) || !strings.Contains(out.String(), `"backend_kind":"s3-direct"`) {
-		t.Fatalf("cloud backend set output = %s", out.String())
+	if !strings.Contains(out.String(), `"command":"capsa.backend.set"`) || !strings.Contains(out.String(), `"backend_kind":"s3-direct"`) {
+		t.Fatalf("capsa backend set output = %s", out.String())
 	}
 
 	cmd = NewRootCommand("test")
@@ -335,9 +335,9 @@ func TestEnvironmentRemoteModeLeavesCloudSyncCommandsLocal(t *testing.T) {
 	cmd := NewRootCommand("test")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"cloud", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--workspace", "ec", "--device", "dev", "--vault", vault, "--json"})
+	cmd.SetArgs([]string{"capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--workspace", "ec", "--device", "dev", "--vault", vault, "--json"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("cloud backend set should remain local with PINAX_API_URL: %v\n%s", err, out.String())
+		t.Fatalf("capsa backend set should remain local with PINAX_API_URL: %v\n%s", err, out.String())
 	}
 
 	cmd = NewRootCommand("test")

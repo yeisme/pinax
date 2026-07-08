@@ -574,6 +574,8 @@ func applyRemoteTrashDelete(root string, marker remoteTrashDeleteMarker) (remote
 		objectKind = strings.SplitN(objectID, "/", 2)[0]
 	}
 	switch objectKind {
+	case "note":
+		return applyRemoteNoteDelete(root, objectID, marker)
 	case "project":
 		return applyRemoteProjectDelete(root, objectID, marker)
 	case "subproject":
@@ -581,6 +583,42 @@ func applyRemoteTrashDelete(root string, marker remoteTrashDeleteMarker) (remote
 	default:
 		return remoteTrashDeleteResult{}, nil
 	}
+}
+
+func applyRemoteNoteDelete(root, objectID string, marker remoteTrashDeleteMarker) (remoteTrashDeleteResult, error) {
+	noteID := strings.TrimPrefix(objectID, "note/")
+	if strings.TrimSpace(noteID) == "" {
+		return remoteTrashDeleteResult{}, nil
+	}
+	notes, err := scanNotes(root)
+	if err != nil {
+		return remoteTrashDeleteResult{}, err
+	}
+	var note domain.Note
+	for _, item := range notes {
+		if item.ID == noteID {
+			note = item
+			break
+		}
+	}
+	if strings.TrimSpace(note.ID) == "" {
+		return remoteTrashDeleteResult{}, nil
+	}
+	trashRel, err := uniqueTrashRel(root, note.Path, time.Now().UTC())
+	if err != nil {
+		return remoteTrashDeleteResult{}, err
+	}
+	if moved, moveErr := moveIfExists(root, note.Path, trashRel); moveErr != nil {
+		return remoteTrashDeleteResult{}, moveErr
+	} else if !moved {
+		return remoteTrashDeleteResult{}, nil
+	}
+	tombstone := domain.Tombstone{NoteID: note.ID, ObjectKind: "note", ObjectID: note.ID, TombstoneID: remoteTombstoneID(marker, note.ID), OldPath: note.Path, Title: note.Title, TrashPath: trashRel, DeletedAt: remoteDeletedAt(marker), Source: "sync.pull.delete", Evidence: []string{trashRel, tombstonesRel}}
+	if err := upsertTrashTombstone(root, tombstone); err != nil {
+		return remoteTrashDeleteResult{}, err
+	}
+	_ = appendEvent(root, "sync.pull.delete", "success", map[string]string{"object_id": note.ID, "trash_path": trashRel})
+	return remoteTrashDeleteResult{Applied: true}, nil
 }
 
 func applyRemoteProjectDelete(root, objectID string, marker remoteTrashDeleteMarker) (remoteTrashDeleteResult, error) {

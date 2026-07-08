@@ -226,7 +226,7 @@ func TestProjectAndStorageCLIJSON(t *testing.T) {
 		}
 	}
 
-	storageOut := runCLI(t, "storage", "set-s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax/", "--profile", "work", "--vault", root, "--json")
+	storageOut := runCLI(t, "storage", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax/", "--profile", "work", "--vault", root, "--json")
 	if strings.Contains(strings.ToLower(storageOut), "secret") || strings.Contains(strings.ToLower(storageOut), "access_key") {
 		t.Fatalf("storage output leaked secret-like material:\n%s", storageOut)
 	}
@@ -607,9 +607,9 @@ func TestProjectLearningInitCLI(t *testing.T) {
 func TestStorageSetS3RequiresBucketAndRegion(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault")
-	out, err := runCLIExpectError("storage", "set-s3", "--bucket", "notes", "--vault", root, "--json")
+	out, err := runCLIExpectError("storage", "set", "s3", "--bucket", "notes", "--vault", root, "--json")
 	if err == nil {
-		t.Fatalf("storage set-s3 without region succeeded: %s", out)
+		t.Fatalf("storage set s3 without region succeeded: %s", out)
 	}
 	var envelope map[string]any
 	if err := json.Unmarshal([]byte(out), &envelope); err != nil {

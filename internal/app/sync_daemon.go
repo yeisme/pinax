@@ -34,7 +34,7 @@ func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (dom
 		return errorProjection("sync.daemon.run", err), err
 	}
 	if !req.Yes {
-		err := &domain.CommandError{Code: "approval_required", Message: "sync daemon run requires --yes", Hint: "Run pinax sync daemon run --target cloud --vault <vault> --yes after confirming automatic sync writes"}
+		err := &domain.CommandError{Code: "approval_required", Message: "sync daemon run requires --yes", Hint: fmt.Sprintf("Run pinax sync daemon run --target %s --vault <vault> --yes after confirming automatic sync writes", syncOutputTarget(target))}
 		return domain.NewErrorProjection("sync.daemon.run", err), err
 	}
 	lock, err := syncdaemon.AcquireRunnerLock(root)
@@ -113,7 +113,7 @@ func (s *Service) SyncDaemonStart(_ context.Context, req SyncDaemonRequest) (dom
 		return errorProjection("sync.daemon.start", err), err
 	}
 	if !req.Yes {
-		err := &domain.CommandError{Code: "approval_required", Message: "sync daemon start requires --yes", Hint: "Run pinax sync daemon start --target cloud --vault <vault> --yes after confirming automatic sync writes"}
+		err := &domain.CommandError{Code: "approval_required", Message: "sync daemon start requires --yes", Hint: fmt.Sprintf("Run pinax sync daemon start --target %s --vault <vault> --yes after confirming automatic sync writes", syncOutputTarget(target))}
 		return domain.NewErrorProjection("sync.daemon.start", err), err
 	}
 	exe, err := os.Executable()
@@ -225,7 +225,8 @@ func emitSyncDaemonEvent(repo syncdaemon.Repository, sink syncdaemon.EventSink, 
 
 func syncDaemonProjection(command, summary, root string, state syncdaemon.DaemonState, events []syncdaemon.SyncDaemonEvent) domain.Projection {
 	projection := domain.NewProjection(command, summary)
-	projection.Facts["target"] = syncDaemonDefault(state.Target, "cloud")
+	projection.Facts["target"] = syncOutputTarget(syncDaemonDefault(state.Target, syncTargetCapsa))
+	addCapsaBridgeFacts(&projection, state.Target)
 	projection.Facts["daemon_status"] = syncDaemonDefault(state.Status, syncdaemon.StatusStopped)
 	projection.Facts["detection_mode"] = syncDaemonDefault(state.DetectionMode, string(syncdaemon.DetectionWatch))
 	projection.Facts["local_dirty"] = fmt.Sprint(state.LocalDirty)

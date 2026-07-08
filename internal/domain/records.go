@@ -53,6 +53,7 @@ type RecordEvent struct {
 	Lifecycle       NoteLifecycle   `json:"lifecycle,omitempty"`
 	ContentRevision ContentRevision `json:"content_revision,omitempty"`
 	VersionEvidence VersionEvidence `json:"version_evidence,omitempty"`
+	TrashPath       string          `json:"trash_path,omitempty"`
 	Evidence        []string        `json:"evidence,omitempty"`
 	CreatedAt       string          `json:"created_at"`
 }

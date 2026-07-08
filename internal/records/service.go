@@ -196,15 +196,20 @@ func applyRecordEvent(state *domain.LedgerState, event domain.RecordEvent) error
 		if record.NoteID == "" || record.Lifecycle == domain.NoteLifecycleDeleted {
 			return invalidTransition(event, record.Lifecycle)
 		}
+		oldPath := record.Path
+		oldHash := record.ContentRevision.Hash
+		title := record.Title
 		transition(domain.NoteLifecycleTrashed)
+		state.Tombstones[event.NoteID] = noteTombstone(event, oldPath, oldHash, title, event.TrashPath)
 	case domain.RecordEventNoteDeleted:
 		if record.NoteID == "" || record.Lifecycle == domain.NoteLifecycleDeleted {
 			return invalidTransition(event, record.Lifecycle)
 		}
 		oldPath := record.Path
 		oldHash := record.ContentRevision.Hash
+		title := record.Title
 		transition(domain.NoteLifecycleDeleted)
-		state.Tombstones[event.NoteID] = domain.Tombstone{NoteID: event.NoteID, OldPath: oldPath, OldHash: oldHash, Title: record.Title, DeletedAt: event.CreatedAt, Source: string(event.Kind), Evidence: event.Evidence}
+		state.Tombstones[event.NoteID] = noteTombstone(event, oldPath, oldHash, title, "")
 	case domain.RecordEventNoteRestored:
 		if record.NoteID == "" || record.Lifecycle != domain.NoteLifecycleDeleted && record.Lifecycle != domain.NoteLifecycleTrashed {
 			return invalidTransition(event, record.Lifecycle)
@@ -220,6 +225,31 @@ func applyRecordEvent(state *domain.LedgerState, event domain.RecordEvent) error
 		return &domain.CommandError{Code: "record_event_kind_invalid", Message: "record event kind 不受支持"}
 	}
 	return nil
+}
+
+func noteTombstone(event domain.RecordEvent, oldPath, oldHash, title, trashPath string) domain.Tombstone {
+	objectID := strings.TrimSpace(event.NoteID)
+	tombstoneID := "trash_" + sanitizeRecordToken(objectID)
+	return domain.Tombstone{NoteID: event.NoteID, ObjectKind: "note", ObjectID: objectID, TombstoneID: tombstoneID, OldPath: oldPath, OldHash: oldHash, Title: title, TrashPath: strings.TrimSpace(trashPath), DeletedAt: event.CreatedAt, Source: string(event.Kind), Evidence: event.Evidence}
+}
+
+func sanitizeRecordToken(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "note"
+	}
+	var b strings.Builder
+	for _, r := range trimmed {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	if b.Len() == 0 {
+		return "note"
+	}
+	return b.String()
 }
 
 func invalidTransition(event domain.RecordEvent, current domain.NoteLifecycle) error {

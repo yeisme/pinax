@@ -40,7 +40,7 @@ pinax vault dashboard --vault work --port 0
 
 ## Ignore Policy
 
-`.pinaxignore` controls Pinax content manifest and Cloud Sync selection. It is separate from `.gitignore`: Git ignore rules do not implicitly exclude Pinax content.
+`.pinaxignore` controls Pinax content manifest and Capsa Sync selection. It is separate from `.gitignore`: Git ignore rules do not implicitly exclude Pinax content.
 
 New vaults receive a default `.pinaxignore` plus a metadata-only `.gitignore` block. The Git block keeps Git focused on safe `.pinax` project metadata while Pinax sync/provider transports manage Markdown, scripts, assets, attachments, and other unignored regular files.
 

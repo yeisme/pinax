@@ -397,19 +397,6 @@ func isNumericSummaryColumn(header string) bool {
 	}
 }
 
-func maxRenderedLineWidth(value string) int {
-	width := 0
-	for _, line := range strings.Split(value, "\n") {
-		if lineWidth := lipgloss.Width(line); lineWidth > width {
-			width = lineWidth
-		}
-	}
-	if width == 0 {
-		return 1
-	}
-	return width
-}
-
 func trimTrailingSpaceLines(value string) string {
 	lines := strings.Split(value, "\n")
 	for i, line := range lines {

@@ -33,4 +33,4 @@ Profiles may record endpoint, workspace id, device id, default scope, and secret
 
 ## Safety Boundary
 
-Profiles are for connection aliases. Cloud Sync backend configuration remains under [`cloud`](./cloud.md) and [`sync`](./sync.md); object storage backend profiles remain under [`backend`](./backend.md) and [`storage`](./storage.md). Remote API Mode uses [`api`](./api.md) and [`token`](./token.md).
+Profiles are for connection aliases. Capsa Sync backend configuration remains under [`capsa`](./capsa.md) and [`sync`](./sync.md); object storage backend profiles remain under [`backend`](./backend.md) and [`storage`](./storage.md). Remote API Mode uses [`api`](./api.md) and [`token`](./token.md).

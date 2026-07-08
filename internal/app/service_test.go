@@ -266,6 +266,159 @@ func TestCloudSyncPullPreservesScriptMode(t *testing.T) {
 	}
 }
 
+func TestCloudSyncPullDoesNotRestoreLocallyMovedPath(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+	}
+	writeFile(t, filepath.Join(deviceA, "index", "home.md"), "# Home\n\noriginal index note\n")
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync pull: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(deviceB, "notes"), 0o755); err != nil {
+		t.Fatalf("mkdir notes: %v", err)
+	}
+	if err := os.Rename(filepath.Join(deviceB, "index", "home.md"), filepath.Join(deviceB, "notes", "home.md")); err != nil {
+		t.Fatalf("move note locally: %v", err)
+	}
+
+	projection, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if !hasCommandCode(err, "LOCAL_UNPUSHED_CHANGES") {
+		t.Fatalf("sync pull should protect local move, err=%v projection=%#v", err, projection)
+	}
+	if fileExistsApp(filepath.Join(deviceB, "index", "home.md")) {
+		t.Fatalf("sync pull restored stale index path")
+	}
+	if got := readFile(t, filepath.Join(deviceB, "notes", "home.md")); !strings.Contains(got, "original index note") {
+		t.Fatalf("local moved note missing body:\n%s", got)
+	}
+}
+
+func TestCloudSyncAllPushesLocalMoveAndRemoteDeviceDeletesOldPath(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+	}
+	writeFile(t, filepath.Join(deviceA, "index", "home.md"), "# Home\n\nmove me out of index\n")
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync pull: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(deviceB, "notes"), 0o755); err != nil {
+		t.Fatalf("mkdir notes: %v", err)
+	}
+	if err := os.Rename(filepath.Join(deviceB, "index", "home.md"), filepath.Join(deviceB, "notes", "home.md")); err != nil {
+		t.Fatalf("move note locally: %v", err)
+	}
+
+	syncAll, err := svc.SyncAll(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync all after local move: %v projection=%#v", err, syncAll)
+	}
+	if syncAll.Facts["remote_write"] != "true" {
+		t.Fatalf("sync all did not push local move: %#v", syncAll.Facts)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("device A pull moved path: %v", err)
+	}
+	if fileExistsApp(filepath.Join(deviceA, "index", "home.md")) {
+		t.Fatalf("device A kept stale index path after remote move")
+	}
+	if got := readFile(t, filepath.Join(deviceA, "notes", "home.md")); !strings.Contains(got, "move me out of index") {
+		t.Fatalf("device A missing moved note body:\n%s", got)
+	}
+}
+
+func TestCloudSyncPullAppliesNoteSoftDeleteMarker(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+	}
+	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: deviceA, Title: "Delete Me", Body: "remote soft delete body", Dir: "notes", Slug: "delete-me"}); err != nil {
+		t.Fatalf("create note: %v", err)
+	}
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync pull: %v", err)
+	}
+	if _, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: deviceA, NoteRef: "Delete Me", Yes: true}); err != nil {
+		t.Fatalf("soft delete on device A: %v", err)
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push note delete marker: %v", err)
+	}
+	pull, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync pull note delete marker: %v", err)
+	}
+	if pull.Facts["delete_markers_applied"] != "1" {
+		t.Fatalf("pull did not apply note delete marker: %#v", pull.Facts)
+	}
+	if fileExistsApp(filepath.Join(deviceB, "notes", "delete-me.md")) {
+		t.Fatalf("device B kept active note path after remote soft delete")
+	}
+	trash, err := svc.TrashList(ctx, TrashRequest{VaultPath: deviceB})
+	if err != nil {
+		t.Fatalf("trash list: %v", err)
+	}
+	if trash.Facts["entries"] != "1" || trash.Facts["entry.1.object_kind"] != "note" {
+		t.Fatalf("trash missing remote-deleted note: facts=%#v data=%#v", trash.Facts, trash.Data)
+	}
+	trashPath := filepath.Join(deviceB, filepath.FromSlash(trash.Facts["entry.1.trash_path"]))
+	if got := readFile(t, trashPath); !strings.Contains(got, "remote soft delete body") {
+		t.Fatalf("trash backup missing note body:\n%s", got)
+	}
+}
+
 func TestCloudSyncPullAppliesProjectDeleteMarker(t *testing.T) {
 	ctx := context.Background()
 	store := t.TempDir()
@@ -1114,6 +1267,33 @@ func TestNoteUXServiceResolverListCreateAndMutate(t *testing.T) {
 	deleted, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: root, NoteRef: "Created Renamed", Yes: true})
 	if err != nil || deleted.Facts["trash_path"] == "" {
 		t.Fatalf("delete projection=%#v err=%v", deleted, err)
+	}
+}
+
+func TestNoteSoftDeleteCreatesCloudDeleteMarker(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "Trash Me", Body: "soft delete marker body", Dir: "notes", Slug: "trash-me"}); err != nil {
+		t.Fatalf("create note: %v", err)
+	}
+	deleted, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: root, NoteRef: "Trash Me", Yes: true})
+	if err != nil {
+		t.Fatalf("soft delete note: %v", err)
+	}
+	manifest, err := pinaxcloud.BuildManifest(root)
+	if err != nil {
+		t.Fatalf("build manifest: %v", err)
+	}
+	if len(manifest.Deletes) != 1 {
+		t.Fatalf("delete markers = %#v", manifest.Deletes)
+	}
+	deleteMarker := manifest.Deletes[0]
+	if deleteMarker.ObjectKind != "note" || deleteMarker.ObjectID == "" || deleteMarker.PathHash != pinaxcloud.PathHash("notes/trash-me.md") || !strings.HasPrefix(deleteMarker.TrashBlobID, "blob_") {
+		t.Fatalf("note delete marker = %#v trash=%#v", deleteMarker, deleted.Facts)
 	}
 }
 

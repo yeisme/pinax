@@ -28,7 +28,7 @@ pinax kb import ./source --include "*.md" --include "*.txt" --vault ./my-notes -
 pinax kb rebuild --backend lancedb --provider gemini --vault ./my-notes --json
 pinax kb rebuild --backend lancedb --provider openai --model text-embedding-3-small --vault ./my-notes --json
 pinax kb rebuild --backend lancedb --provider ollama --model nomic-embed-text --vault ./my-notes --json
-pinax kb search "Cloud Sync semantic projection" --vault ./my-notes --agent
+pinax kb search "Capsa Sync semantic projection" --vault ./my-notes --agent
 pinax kb context "prepare an implementation plan" --limit 8 --vault ./my-notes --json
 ```
 
@@ -54,7 +54,7 @@ Providers create embeddings. Backends store and search vectors. They are configu
 
 ## Multi-Device Rule
 
-Cloud Sync synchronizes encrypted vault revisions only. Do not sync `.pinax/kb/lancedb/`, `.pinax/kb/fake/`, raw vectors, raw provider payloads, or provider credentials; each device should run `pinax kb refresh --vault <vault>` after pulling changes. KB/LanceDB is a local rebuildable projection, not a source of truth.
+Capsa Sync synchronizes encrypted vault revisions only. Do not sync `.pinax/kb/lancedb/`, `.pinax/kb/fake/`, raw vectors, raw provider payloads, or provider credentials; each device should run `pinax kb refresh --vault <vault>` after pulling changes. KB/LanceDB is a local rebuildable projection, not a source of truth.
 
 ## Agent Brain Role
 

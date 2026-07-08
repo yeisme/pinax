@@ -12,7 +12,7 @@ stdout '"status":"ok"'
 stdout '"provider":"notion"'
 
 # Login and verify sync --events outputs start and end contracts
-exec pinax cloud login --endpoint http://localhost --workspace ws_123 --device dev_laptop --secret-ref op://pinax/cloud-token --vault vault --json
+exec pinax capsa login --endpoint http://localhost --workspace ws_123 --device dev_laptop --secret-ref op://pinax/cloud-token --vault vault --json
 
 exec pinax sync push --target cloud --events --dry-run --vault vault
 stdout '"type":"start"'

@@ -60,6 +60,29 @@ func TestLedgerRejectsIllegalLifecycleTransition(t *testing.T) {
 	}
 }
 
+func TestLedgerTrashedNoteMaterializesTombstone(t *testing.T) {
+	root := t.TempDir()
+	svc := NewService(root)
+	if err := svc.Init(context.Background()); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := svc.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "create", NoteID: "note_a", Path: "notes/a.md", Title: "A", ContentRevision: domain.ContentRevision{Hash: "h1", Size: 12}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteTrashed, IdempotencyKey: "trash", NoteID: "note_a", Path: "notes/a.md", TrashPath: ".pinax/trash/20260708/notes/a.md"}); err != nil {
+		t.Fatalf("trash: %v", err)
+	}
+	state, err := svc.Replay(context.Background())
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	record := state.Records["note_a"]
+	tombstone := state.Tombstones["note_a"]
+	if record.Lifecycle != domain.NoteLifecycleTrashed || tombstone.ObjectKind != "note" || tombstone.ObjectID != "note_a" || tombstone.OldPath != "notes/a.md" || tombstone.TrashPath == "" {
+		t.Fatalf("trashed state record=%#v tombstone=%#v", record, tombstone)
+	}
+}
+
 func TestLedgerMetadataUpdateMaterializesExistingRecord(t *testing.T) {
 	root := t.TempDir()
 	svc := NewService(root)

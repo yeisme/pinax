@@ -295,13 +295,11 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addIndexCommands(cmd, ctx)
 
 	addBriefingCommands(cmd, ctx)
-	addCloudCommands(cmd, ctx)
+	addCapsaCommands(cmd, ctx)
 
 	addSyncCommands(cmd, ctx)
 
 	addMetadataRepairOrganizeCommands(cmd, ctx)
-
-	addGitCommands(cmd, ctx)
 
 	addProofCommands(cmd, ctx)
 
@@ -351,6 +349,7 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"prompt":     "Automation and integrations",
 		"collection": "Automation and integrations",
 		"briefing":   "Automation and integrations",
+		"capsa":      "Automation and integrations",
 		"sync":       "Automation and integrations",
 		"backend":    "Automation and integrations",
 		"cloud":      "Automation and integrations",
@@ -653,7 +652,7 @@ func remoteModeLocalCommand(cmd *cobra.Command, source string) bool {
 		return true
 	}
 	root, _, _ := strings.Cut(path, " ")
-	if root == "cloud" || root == "sync" {
+	if root == "capsa" || root == "sync" {
 		return true
 	}
 	if source != "config" {

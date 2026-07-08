@@ -1,6 +1,6 @@
 # api Command
 
-`pinax api` manages the local REST/RPC projection adapter. It exposes controlled Pinax capabilities from one local vault; it is Remote API Mode, not Cloud Sync.
+`pinax api` manages the local REST/RPC projection adapter. It exposes controlled Pinax capabilities from one local vault; it is Remote API Mode, not Capsa Sync.
 
 Use [`share`](./share.md) for explicit LAN read-only review surfaces. `api serve` remains the local REST/RPC adapter for clients and tools; `share start` owns LAN-facing Web/API preview gates.
 
@@ -65,11 +65,11 @@ pinax api serve --vault ./my-notes --readonly --port 8787 --token-file ~/.config
 
 Clients can forward supported commands with `--api-url`, `--api-token`, `--api-token-file`, or `PINAX_API_URL`/`PINAX_API_TOKEN`. Local control commands such as `config`, `api`, `token`, `profile`, and `vault` remain local when the endpoint comes from persisted `remote.api_url` so users can still edit connection state.
 
-The client coverage goal is full CLI parity through registered capabilities, not a generic remote shell. New client-visible operations must appear in `pinax api routes --json`, share the CLI projection envelope, and preserve the same approval, snapshot, dry-run, write-mode, and redaction gates as the CLI command they mirror. Commands that control the local runtime, foreground server, foreground daemon, editor, completion, credentials, or Cloud Sync device state remain local-only unless a dedicated capability is added.
+The client coverage goal is full CLI parity through registered capabilities, not a generic remote shell. New client-visible operations must appear in `pinax api routes --json`, share the CLI projection envelope, and preserve the same approval, snapshot, dry-run, write-mode, and redaction gates as the CLI command they mirror. Commands that control the local runtime, foreground server, foreground daemon, editor, completion, credentials, or Capsa Sync device state remain local-only unless a dedicated capability is added.
 
 See [Client CLI Parity and Realtime Sync](../interfaces/client-cli-parity-and-sync.md) for the coverage matrix and phased route expansion plan.
 
-Cloud Sync is separate. Use [`cloud`](./cloud.md) and [`sync`](./sync.md) for distributed encrypted vault convergence across devices.
+Capsa Sync is separate. Use [`capsa`](./capsa.md) and [`sync`](./sync.md) for distributed encrypted vault convergence across devices.
 
 ## Safety Boundary
 

@@ -580,7 +580,7 @@ func (s *Service) DeleteNote(ctx context.Context, req NoteDeleteRequest) (domain
 	projection.Summary = "Note moved to trash."
 	projection.Facts["trash_path"] = trashRel
 	projection.Data = map[string]any{"note": note, "trash_path": trashRel}
-	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteTrashed, "note.trash:"+note.ID+":"+note.Path+":"+trashRel, note, note.Path)
+	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteTrashed, "note.trash:"+note.ID+":"+note.Path+":"+trashRel, note, note.Path, func(event *domain.RecordEvent) { event.TrashPath = trashRel })
 	if recordErr != nil {
 		return errorProjection("note.delete", recordErr), recordErr
 	}

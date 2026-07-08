@@ -1,4 +1,4 @@
-# Pinax Cloud Sync Architecture
+# Pinax Capsa Sync Architecture
 
 Pinax remote behavior has three different patterns. They must not be described as the same feature.
 
@@ -22,28 +22,28 @@ Characteristics:
 - Deployment boundary: local/loopback by default; cross-machine use should go through an explicit tunnel or trusted local network wrapper.
 - Current status: implemented for supported read and controlled mutation routes.
 
-This pattern is useful for dashboards, local agents, and a central always-on workstation. It is not multi-device file synchronization and must not be documented as a Cloud Sync transport.
+This pattern is useful for dashboards, local agents, and a central always-on workstation. It is not multi-device file synchronization and must not be documented as a Capsa Sync transport.
 
-## Pattern B: Cloud Sync protocol with pluggable transport
+## Pattern B: Capsa Sync protocol with pluggable transport
 
-Pinax Cloud Sync is the intended multi-device design. Each device keeps its own local Markdown vault and syncs encrypted manifests/blobs through a transport.
+Pinax Capsa Sync is the intended multi-device design. Each device keeps its own local Markdown vault and syncs encrypted manifests/blobs through a transport.
 
 ```text
 laptop vault        phone vault         desktop vault
     |                   |                    |
     | encrypted blobs + encrypted manifest   |
     v                   v                    v
-        Cloud Sync Protocol + Transport
+        Capsa Sync Protocol + Transport
           server | s3-direct | rclone-direct | embedded
 ```
 
-The word `cloud` names the synchronization protocol, not necessarily a hosted Pinax Cloud service.
+The word `capsa` names the synchronization protocol, not necessarily a hosted Capsa service.
 
-Backup mirror language is allowed only for CLI-side direct transports where Pinax writes encrypted Cloud Sync objects to a user-selected provider bucket, prefix, rclone remote, or file store. A backup mirror is not a Pinax Cloud server feature: it does not gain Pinax server-side auth, server audit, object lifecycle policy, multi-tenant controls, or rate limiting. Those controls exist only when the configured transport is the Pinax Cloud server transport.
+Backup mirror language is allowed only for CLI-side direct transports where Pinax writes encrypted Capsa Sync objects to a user-selected provider bucket, prefix, rclone remote, or file store. A backup mirror is not a Capsa server feature: it does not gain Pinax server-side auth, server audit, object lifecycle policy, multi-tenant controls, or rate limiting. Those controls exist only when the configured transport is the Capsa server transport.
 
 ### Transport modes
 
-| Transport | Endpoint example | Needs remote Pinax Cloud service | Implemented status | Trade-off |
+| Transport | Endpoint example | Needs remote Capsa service | Implemented status | Trade-off |
 | --- | --- | --- | --- | --- |
 | `server` | `https://cloud.example.test` | Yes | Implemented through the shared sync engine and `internal/cloudclient.Transport` for current revision, blob batch-check/upload/download, and revision commit. | Server gives auth, audit, policy, and multi-tenant control, but requires backend deployment. |
 | `s3-direct` | `s3://notes/pinax-sync` | No | Implemented through the direct object-store engine over `remote.BlobStore`; local/file and S3-compatible backends commit with CAS semantics where supported. | Provider credentials define access; no Pinax server-side auth/audit. |
@@ -62,7 +62,7 @@ Unsupported schemes, unavailable backends, and failed commit paths must return s
 
 ### Local daemon layer
 
-`pinax sync daemon` is a client-side process that reuses the same Cloud Sync transport operations. It does not add a new remote service role.
+`pinax sync daemon` is a client-side process that reuses the same Capsa Sync transport operations. It does not add a new remote service role.
 
 The daemon is the realtime convergence layer, not the backup mirror layer. New daemon behavior, automatic conflict handling, push notification support, background lifecycle changes, or conflict resolution semantics require separate OpenSpec coverage before implementation. Backup mirror wording must not imply automatic merge, realtime watch/poll guarantees, or conflict resolution beyond the explicit `pinax sync pull` / `pinax sync push` / `pinax sync conflicts` workflows.
 
@@ -80,7 +80,7 @@ The daemon must acquire a per-vault runner lock and the shared sync operation lo
 
 ## Object-store layout for direct transports
 
-Direct S3/rclone transports store Cloud Sync objects under a configured prefix:
+Direct S3/rclone transports store Capsa Sync objects under a configured prefix:
 
 ```text
 {prefix}/
@@ -141,7 +141,7 @@ The plaintext manifest exists only on the client after decryption. It may contai
 
 `remote_write=true` requires a durable revision commit in every transport.
 
-### Pinax Cloud server transport
+### Capsa server transport
 
 The server uses database transaction semantics:
 
@@ -190,7 +190,7 @@ Native OneDrive through Microsoft Graph is non-MVP. It may be added later as a s
 Server-style configuration:
 
 ```bash
-pinax cloud login \
+pinax capsa login \
   --endpoint https://cloud.example.test \
   --workspace ws_123 \
   --device laptop \
@@ -201,19 +201,19 @@ pinax cloud login \
 Explicit backend selection:
 
 ```bash
-pinax cloud backend set server --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault ./my-notes
-pinax cloud backend set s3 --bucket notes --prefix pinax-sync/ --region us-east-1 --profile work --workspace personal --device laptop --vault ./my-notes
-pinax cloud backend set rclone --remote onedrive:PinaxSync --workspace personal --device laptop --vault ./my-notes
+pinax capsa backend set server --endpoint https://cloud.example.test --workspace ws_123 --device laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault ./my-notes
+pinax capsa backend set s3 --bucket notes --prefix pinax-sync/ --region us-east-1 --profile work --workspace personal --device laptop --vault ./my-notes
+pinax capsa backend set rclone --remote onedrive:PinaxSync --workspace personal --device laptop --vault ./my-notes
 ```
 
-`cloud login` remains a shortcut for `cloud backend set server`.
+`capsa login` remains a shortcut for `capsa backend set server`.
 
 Cloud state is stored as CLI-authored YAML at `.pinax/cloud/config.yaml`. S3-compatible transports store `s3.bucket`, `s3.prefix`, `s3.endpoint`, `s3.region`, `s3.profile`, and `s3.path_style` as structured fields so operators do not have to read or hand-edit URL-escaped query parameters. Legacy `.pinax/cloud/config.json` remains read-compatible only.
 
 A push against any transport has one write-success point:
 
 ```bash
-pinax sync push --target cloud --vault ./my-notes --yes --json
+pinax sync push --target capsa --vault ./my-notes --yes --json
 ```
 
 The command may report `remote_write=true` only after the selected transport durably commits the head revision and Pinax writes local sync-state evidence. A dry-run, plan generation, object upload without successful head/revision commit, failed commit, unsupported backend capability, or unsupported scheme is not a remote write.
@@ -222,7 +222,7 @@ The command may report `remote_write=true` only after the selected transport dur
 
 Pinax CLI owns the protocol engine and local vault mutation:
 
-- cloud backend profile/state commands;
+- capsa backend profile/state commands;
 - vault scan and manifest construction;
 - client-side encryption/decryption;
 - sync plan and conflict application;
@@ -233,7 +233,7 @@ Pinax CLI owns the protocol engine and local vault mutation:
 - local RPC/Go API entrypoints that call the same app service;
 - output contract, sync run receipt, event, and redaction tests.
 
-Pinax Cloud backend service owns only server transport responsibilities:
+Capsa backend service owns only server transport responsibilities:
 
 - HTTP API routing;
 - auth/device state;
@@ -252,7 +252,7 @@ When local conflict inspection intentionally shows note content, it must be an e
 
 ## Agent Brain projection sync policy
 
-Cloud Sync does not turn Agent Brain projections into shared plaintext state. The authority split is:
+Capsa Sync does not turn Agent Brain projections into shared plaintext state. The authority split is:
 
 | Data product | Sync authority | Rebuild policy |
 | --- | --- | --- |
@@ -262,14 +262,14 @@ Cloud Sync does not turn Agent Brain projections into shared plaintext state. Th
 | SQLite/GORM index | Rebuildable projection | Excluded from manifests; rebuild with `pinax index refresh --vault ./my-notes --json`. |
 | KB/LanceDB vectors | Rebuildable projection | Excluded from manifests; rebuild or refresh with `pinax kb refresh --vault ./my-notes`; never upload plaintext vectors or provider payloads. |
 | Graph projections | Rebuildable projection | Excluded from manifests; rebuild with `pinax graph rebuild --vault ./my-notes --json`. |
-| Answer cache | Planned rebuildable cache | No current Cloud Sync behavior; future cache sync must not store raw prompts, provider payloads, or full note bodies. |
+| Answer cache | Planned rebuildable cache | No current Capsa Sync behavior; future cache sync must not store raw prompts, provider payloads, or full note bodies. |
 | Maintenance plan | Reviewable service-owned plan evidence | Saved plans require redacted receipts and proof-loop apply gates; they are not background rewrites. |
 
 ## Non-Cloud CLI drift exclusion
 
-The following CLI contract drift items are not part of the `pinax-cloud-distributed-sync` completion definition: `note links --broken-only`, `note backlinks --include-broken`, `note orphans --mode`, root help `Other` grouping, `docs/commands/README.md` command-map drift, and `cloud backend set server` documentation polish that is not needed to explain Cloud Sync transport boundaries. A follow-up owner change should be created separately, recommended name: `pinax-cli-contract-drift`.
+The following CLI contract drift items are not part of the `pinax-cloud-distributed-sync` completion definition: `note links --broken-only`, `note backlinks --include-broken`, `note orphans --mode`, root help `Other` grouping, `docs/commands/README.md` command-map drift, and `capsa backend set server` documentation polish that is not needed to explain Capsa Sync transport boundaries. A follow-up owner change should be created separately, recommended name: `pinax-cli-contract-drift`.
 
-This Cloud Sync change may mention those items only as explicit exclusions. It must not mix unrelated CLI repairs into Cloud Sync readiness.
+This Capsa Sync change may mention those items only as explicit exclusions. It must not mix unrelated CLI repairs into Capsa Sync readiness.
 
 ## Release verification notes
 
@@ -282,6 +282,6 @@ openspec validate pinax-cloud-distributed-sync
 openspec validate --all
 ```
 
-Expected release evidence must prove: server, S3/file, rclone, and embedded/local API paths share the sync engine; unsupported schemes and failed commits do not no-op; durable revision commit plus local sync-state evidence is the only source of `remote_write=true`; conflicts are lossless; redaction scans cover stdout/stderr/events/receipts/fixtures/object metadata; and Local API remains documented separately from Cloud Sync Protocol.
+Expected release evidence must prove: server, S3/file, rclone, and embedded/local API paths share the sync engine; unsupported schemes and failed commits do not no-op; durable revision commit plus local sync-state evidence is the only source of `remote_write=true`; conflicts are lossless; redaction scans cover stdout/stderr/events/receipts/fixtures/object metadata; and Local API remains documented separately from Capsa Sync Protocol.
 
 The final integration is complete only when two independent local vaults can sync through at least one fake/local transport and one direct or server transport, and both devices converge without plaintext leaking to server logs, stdout, events, fixtures, object metadata, receipts, or diagnostics.

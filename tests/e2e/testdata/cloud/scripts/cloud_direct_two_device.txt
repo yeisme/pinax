@@ -6,11 +6,11 @@ stdout '"command":"vault.init"'
 
 exec sh -c 'mkdir -p device-a/notes && printf "# Alpha\n\nfrom device A\n" > device-a/notes/alpha.md'
 
-exec pinax cloud login --endpoint file://$WORK/object-store --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault device-a --json
-stdout '"command":"cloud.login"'
+exec pinax capsa login --endpoint file://$WORK/object-store --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault device-a --json
+stdout '"command":"capsa.login"'
 ! stdout 'PINAX_SYNC_SECRET'
-exec pinax cloud login --endpoint file://$WORK/object-store --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault device-b --json
-stdout '"command":"cloud.login"'
+exec pinax capsa login --endpoint file://$WORK/object-store --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault device-b --json
+stdout '"command":"capsa.login"'
 ! stdout 'PINAX_SYNC_SECRET'
 
 exec pinax sync push --target cloud --vault device-a --yes --json

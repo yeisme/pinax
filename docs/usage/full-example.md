@@ -1,6 +1,6 @@
 # Pinax 完整使用样例
 
-本文给出一条从空目录开始的完整 Pinax 使用路线。核心流程只依赖本地 Markdown vault；Cloud Sync、API、plugin、Feishu 发布和 backend inspection 是可选扩展。示例命令使用真实 `pinax` 命令，不使用本地 agent wrapper。
+本文给出一条从空目录开始的完整 Pinax 使用路线。核心流程只依赖本地 Markdown vault；Capsa Sync、API、plugin、Feishu 发布和 backend inspection 是可选扩展。示例命令使用真实 `pinax` 命令，不使用本地 agent wrapper。
 
 ## 0. 准备
 
@@ -123,7 +123,7 @@ MCP surface 是只读 bounded projection：
 pinax mcp serve --vault ./my-notes
 ```
 
-## 6. 双设备 Cloud Sync（file backend 示例）
+## 6. 双设备 Capsa Sync（file backend 示例）
 
 这个示例使用本地 file backend 模拟两个设备。真实凭据通过环境变量或用户级 secret store 提供，不写入 vault 或仓库。
 
@@ -133,10 +133,10 @@ pinax init ./device-a --title "Device A"
 pinax init ./device-b --title "Device B"
 pinax note add "Alpha" --body "# Alpha\n\nfrom device A" --vault ./device-a --json
 pinax index refresh --vault ./device-a --json
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a --json
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b --json
-pinax sync push --target cloud --vault ./device-a --yes --json
-pinax sync pull --target cloud --vault ./device-b --yes --json
+pinax capsa login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a --json
+pinax capsa login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b --json
+pinax sync push --target capsa --vault ./device-a --yes --json
+pinax sync pull --target capsa --vault ./device-b --yes --json
 pinax sync conflicts list --vault ./device-b --json
 ```
 

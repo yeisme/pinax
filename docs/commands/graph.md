@@ -36,7 +36,7 @@ Query output is intentionally bounded for agents. It returns prompt asset IDs an
 - The graph projection is local and rebuildable; it is not a new source of truth.
 - `graph query` is read-only. If the projection is missing, Pinax can compute graph context from current prompt assets without writing.
 - Do not use graph output as provenance by itself; source refs and collection receipts remain the audit evidence.
-- Cloud Sync should not upload `.pinax/graph/` projections by default. After sync pull or import, rebuild graph projections locally with `pinax graph rebuild --vault ./my-notes --json` when graph context is needed.
+- Capsa Sync should not upload `.pinax/graph/` projections by default. After sync pull or import, rebuild graph projections locally with `pinax graph rebuild --vault ./my-notes --json` when graph context is needed.
 
 ## Agent Brain Role
 

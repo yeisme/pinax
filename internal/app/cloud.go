@@ -64,6 +64,11 @@ func (s *Service) CloudBackendSetS3(_ context.Context, req CloudBackendSetReques
 	return projection, nil
 }
 
+func (s *Service) CapsaBackendSetS3(ctx context.Context, req CloudBackendSetRequest) (domain.Projection, error) {
+	projection, err := s.CloudBackendSetS3(ctx, req)
+	return capsaCloudProjection(projection, err)
+}
+
 func cloudBackendSetErrorProjection(err error) (domain.Projection, error) {
 	msg := err.Error()
 	commandErr := &domain.CommandError{Code: "invalid_cloud_config", Message: msg, Hint: "Use a supported cloud backend such as server, s3, or rclone"}
@@ -103,6 +108,11 @@ func (s *Service) CloudBackendSetRclone(_ context.Context, req CloudBackendSetRe
 	projection.Data = pinaxcloud.RedactedData(state)
 	projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax cloud doctor --vault %s --json", shellQuote(root))}}
 	return projection, nil
+}
+
+func (s *Service) CapsaBackendSetRclone(ctx context.Context, req CloudBackendSetRequest) (domain.Projection, error) {
+	projection, err := s.CloudBackendSetRclone(ctx, req)
+	return capsaCloudProjection(projection, err)
 }
 
 func rcloneEndpoint(remoteName string) string {
@@ -189,6 +199,11 @@ func (s *Service) CloudLogin(_ context.Context, req CloudLoginRequest) (domain.P
 	return projection, nil
 }
 
+func (s *Service) CapsaLogin(ctx context.Context, req CloudLoginRequest) (domain.Projection, error) {
+	projection, err := s.CloudLogin(ctx, req)
+	return capsaCloudProjection(projection, err)
+}
+
 func (s *Service) CloudStatus(_ context.Context, req CloudRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
@@ -203,6 +218,11 @@ func (s *Service) CloudStatus(_ context.Context, req CloudRequest) (domain.Proje
 	projection.Data = pinaxcloud.RedactedData(state)
 	projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax cloud doctor --vault %s --json", shellQuote(root))}}
 	return projection, nil
+}
+
+func (s *Service) CapsaStatus(ctx context.Context, req CloudRequest) (domain.Projection, error) {
+	projection, err := s.CloudStatus(ctx, req)
+	return capsaCloudProjection(projection, err)
 }
 
 func (s *Service) CloudLogout(_ context.Context, req CloudRequest) (domain.Projection, error) {
@@ -222,6 +242,11 @@ func (s *Service) CloudLogout(_ context.Context, req CloudRequest) (domain.Proje
 	projection.Data = pinaxcloud.RedactedData(state)
 	projection.Actions = []domain.Action{{Name: "login", Command: fmt.Sprintf("pinax cloud login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}}
 	return projection, nil
+}
+
+func (s *Service) CapsaLogout(ctx context.Context, req CloudRequest) (domain.Projection, error) {
+	projection, err := s.CloudLogout(ctx, req)
+	return capsaCloudProjection(projection, err)
 }
 
 func (s *Service) CloudDoctor(_ context.Context, req CloudRequest) (domain.Projection, error) {
@@ -246,6 +271,21 @@ func (s *Service) CloudDoctor(_ context.Context, req CloudRequest) (domain.Proje
 	projection.Data = result
 	projection.Actions = []domain.Action{{Name: "status", Command: fmt.Sprintf("pinax cloud status --vault %s --json", shellQuote(root))}}
 	return projection, nil
+}
+
+func (s *Service) CapsaDoctor(ctx context.Context, req CloudRequest) (domain.Projection, error) {
+	projection, err := s.CloudDoctor(ctx, req)
+	return capsaCloudProjection(projection, err)
+}
+
+func capsaCloudProjection(projection domain.Projection, err error) (domain.Projection, error) {
+	rewriteProjectionCommands(&projection, syncTargetCloud, syncTargetCapsa)
+	if projection.Facts == nil {
+		projection.Facts = map[string]string{}
+	}
+	projection.Facts["target"] = syncTargetCapsa
+	addCapsaBridgeFacts(&projection, syncTargetCapsa)
+	return projection, err
 }
 
 func addCloudStateFacts(projection *domain.Projection, state pinaxcloud.State) {

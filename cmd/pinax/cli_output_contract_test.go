@@ -54,9 +54,10 @@ func TestCLITreePrimaryPathAliases(t *testing.T) {
 	dailyPrimary := runCLI(t, "journal", "daily", "show", "--vault", root, "--json")
 	assertSameCommandAndFacts(t, dailyRoot, dailyPrimary, "daily.show")
 
-	legacyStorage := runCLI(t, "storage", "set-local", "--root", root, "--vault", root, "--json")
 	primaryStorage := runCLI(t, "storage", "set", "local", "--root", root, "--vault", root, "--json")
-	assertSameCommandAndFacts(t, legacyStorage, primaryStorage, "storage.set_local")
+	if !strings.Contains(primaryStorage, "storage.set_local") {
+		t.Fatalf("primary storage set local missing facts:\n%s", primaryStorage)
+	}
 
 	rootSchema := runCLI(t, "schema", "export", "--format", "openapi", "--vault", root, "--json")
 	apiSchema := runCLI(t, "api", "schema", "export", "--format", "openapi", "--vault", root, "--json")

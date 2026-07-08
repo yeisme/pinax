@@ -165,11 +165,12 @@ func (s *Service) SyncDiff(ctx context.Context, req SyncRequest) (domain.Project
 	if err != nil {
 		return errorProjection("sync.diff", err), err
 	}
-	if target == "cloud" {
+	req.Target = target
+	if isCapsaSyncTarget(target) {
 		projection, cloudErr := buildCloudSyncProjection(ctx, "sync.diff", root, req, syncplan.DirectionDiff)
 		if cloudErr != nil {
 			if pinaxcloud.IsNotConfigured(cloudErr) || isCommandErrorCode(cloudErr, "cloud_not_configured") {
-				return cloudSyncNotConfiguredProjection(root), nil
+				return cloudSyncNotConfiguredProjection(root, target), nil
 			}
 			return projection, cloudErr
 		}
@@ -195,14 +196,15 @@ func (s *Service) SyncPush(ctx context.Context, req SyncRequest) (domain.Project
 	if err != nil {
 		return errorProjection("sync.push", err), err
 	}
+	req.Target = target
 	lock, err := syncdaemon.AcquireOperationLock(root, "sync.push")
 	if err != nil {
 		return commandErrorProjection("sync.push", err)
 	}
 	defer lock.Release()
-	if target == "cloud" {
+	if isCapsaSyncTarget(target) {
 		if !req.Yes && !req.DryRun {
-			err := &domain.CommandError{Code: "approval_required", Message: "sync push requires --yes or --dry-run", Hint: "Review the plan first with pinax sync push --target cloud --dry-run, then add --yes after confirming"}
+			err := &domain.CommandError{Code: "approval_required", Message: "sync push requires --yes or --dry-run", Hint: fmt.Sprintf("Review the plan first with pinax sync push --target %s --dry-run, then add --yes after confirming", syncOutputTarget(target))}
 			projection := domain.NewErrorProjection("sync.push", err)
 			_ = writeApprovalRequiredSyncRun(root, req, "sync.push", syncplan.DirectionPush, err, &projection)
 			return projection, err
@@ -221,14 +223,15 @@ func (s *Service) SyncPull(ctx context.Context, req SyncRequest) (domain.Project
 	if err != nil {
 		return errorProjection("sync.pull", err), err
 	}
+	req.Target = target
 	lock, err := syncdaemon.AcquireOperationLock(root, "sync.pull")
 	if err != nil {
 		return commandErrorProjection("sync.pull", err)
 	}
 	defer lock.Release()
-	if target == "cloud" {
+	if isCapsaSyncTarget(target) {
 		if !req.Yes && !req.DryRun {
-			err := &domain.CommandError{Code: "approval_required", Message: "sync pull requires --yes or --dry-run", Hint: "Review the plan first with pinax sync pull --target cloud --dry-run, then add --yes after confirming"}
+			err := &domain.CommandError{Code: "approval_required", Message: "sync pull requires --yes or --dry-run", Hint: fmt.Sprintf("Review the plan first with pinax sync pull --target %s --dry-run, then add --yes after confirming", syncOutputTarget(target))}
 			projection := domain.NewErrorProjection("sync.pull", err)
 			_ = writeApprovalRequiredSyncRun(root, req, "sync.pull", syncplan.DirectionPull, err, &projection)
 			return projection, err
@@ -250,13 +253,13 @@ func cleanSyncRequest(req SyncRequest) (string, string, error) {
 	}
 	target := strings.TrimSpace(req.Target)
 	if target == "" {
-		target = "git"
+		target = syncTargetCapsa
 	}
 	switch target {
-	case "git", "s3", "cloud":
+	case "git", "s3", syncTargetCapsa, syncTargetCloud, syncTargetPinaxCloud:
 		return root, target, nil
 	default:
-		return "", "", &domain.CommandError{Code: "invalid_sync_target", Message: "sync target only supports git, s3, or cloud", Hint: "pinax sync diff --target git"}
+		return "", "", &domain.CommandError{Code: "invalid_sync_target", Message: "sync target only supports git, s3, capsa, cloud, or pinax-cloud", Hint: "pinax sync diff --target capsa"}
 	}
 }
 
@@ -270,7 +273,7 @@ func syncPlanData(target string, profile domain.StorageProfile) map[string]any {
 		plan["storage"] = profile
 		plan["adapter_status"] = "planned"
 	}
-	if target == "cloud" {
+	if isCapsaSyncTarget(target) {
 		plan["backend_required"] = true
 		plan["api_handoff"] = []string{"POST /v1/devices", "PUT /v1/vaults/{vault}/manifest", "GET /v1/vaults/{vault}/manifest", "PUT /v1/vaults/{vault}/objects/{path}", "POST /v1/vaults/{vault}/conflicts"}
 	}

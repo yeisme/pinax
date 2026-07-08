@@ -1,53 +1,53 @@
-# cloud Command
+# capsa Command
 
-`pinax cloud` manages local state for the distributed Pinax Cloud Sync protocol. It is not the same feature as `pinax api serve`: `api serve` exposes one centralized vault through local REST/RPC, while Cloud Sync keeps a separate local vault on every device and exchanges encrypted revisions, manifests, and blobs through a selected transport.
+`pinax capsa` manages local state for the distributed Pinax Capsa Sync protocol. It is not the same feature as `pinax api serve`: `api serve` exposes one centralized vault through local REST/RPC, while Capsa Sync keeps a separate local vault on every device and exchanges encrypted revisions, manifests, and blobs through a selected transport.
 
-The word `cloud` names the sync protocol, not necessarily a hosted Pinax Cloud service. Pinax Cloud Sync can use the current server-style `cloud login` transport, S3-compatible direct storage, rclone-backed providers such as OneDrive, or embedded Go API/local RPC entrypoints that call the same app service.
+The word `capsa` names the sync protocol, not necessarily a hosted Capsa service. Pinax Capsa Sync can use the current server-style `capsa login` transport, S3-compatible direct storage, rclone-backed providers such as OneDrive, or embedded Go API/local RPC entrypoints that call the same app service.
 
 ## Subcommands
 
 | Command | Purpose | Writes |
 | --- | --- | --- |
-| `pinax cloud login` | Shortcut for configuring a server-style Cloud backend endpoint, workspace, device, and secret reference. | Writes cloud state; does not save the raw token. |
-| `pinax cloud backend set s3` | Configures direct S3/MinIO/R2-compatible object storage transport. | Writes cloud state; does not save access key or secret key. |
-| `pinax cloud backend set rclone` | Configures an rclone direct transport such as an existing OneDrive remote. | Writes cloud state; does not save OAuth refresh tokens. |
-| `pinax cloud status` | Views cloud state. | Does not write. |
-| `pinax cloud logout` | Logs out or clears the local device/backend state. | Writes cloud state. |
-| `pinax cloud doctor` | Diagnoses cloud state and transport boundaries. | Does not write. |
+| `pinax capsa login` | Shortcut for configuring a server-style Capsa backend endpoint, workspace, device, and secret reference. | Writes Capsa sync state; does not save the raw token. |
+| `pinax capsa backend set s3` | Configures direct S3/MinIO/R2-compatible object storage transport. | Writes Capsa sync state; does not save access key or secret key. |
+| `pinax capsa backend set rclone` | Configures an rclone direct transport such as an existing OneDrive remote. | Writes Capsa sync state; does not save OAuth refresh tokens. |
+| `pinax capsa status` | Views Capsa sync state. | Does not write. |
+| `pinax capsa logout` | Logs out or clears the local device/backend state. | Writes Capsa sync state. |
+| `pinax capsa doctor` | Diagnoses Capsa sync state and transport boundaries. | Does not write. |
 
-## Centralized Local API vs Cloud Sync Protocol
+## Centralized Local API vs Capsa Sync Protocol
 
 | Pattern | Command surface | Vault ownership | Current status |
 | --- | --- | --- | --- |
-| Centralized local access | `pinax api serve`, `pinax --api-url ...`, local RPC routes | One running `pinax api serve` process owns one server-side vault. Callers do not keep an independent synchronized vault. | Implemented for registered local API routes. Not a Cloud Sync transport. |
-| Cloud Sync server transport | `pinax cloud login`, then `pinax sync --target cloud` | Every device owns its own local vault. Pinax Cloud Server coordinates encrypted blob/revision exchange. | Implemented through the shared sync engine and `internal/cloudclient.Transport`; `remote_write=true` is emitted only after a durable revision commit and local sync-state receipt. |
-| Cloud Sync S3 direct transport | `pinax cloud backend set s3`, then `pinax sync --target cloud` | Every device owns its own local vault. The provider stores encrypted Cloud Sync objects. | Implemented for the direct object-store engine; `remote_write=true` is emitted only after the head/revision commit succeeds. |
-| Cloud Sync rclone direct transport | `pinax cloud backend set rclone`, then `pinax sync --target cloud` | Every device owns its own local vault. rclone is the provider credential boundary. | Implemented through the shared object-store sync path; lock-object commit protection covers providers without reliable conditional writes. |
+| Centralized local access | `pinax api serve`, `pinax --api-url ...`, local RPC routes | One running `pinax api serve` process owns one server-side vault. Callers do not keep an independent synchronized vault. | Implemented for registered local API routes. Not a Capsa Sync transport. |
+| Capsa Sync server transport | `pinax capsa login`, then `pinax sync --target capsa` | Every device owns its own local vault. Capsa Server coordinates encrypted blob/revision exchange. | Implemented through the shared sync engine and `internal/cloudclient.Transport`; `remote_write=true` is emitted only after a durable revision commit and local sync-state receipt. |
+| Capsa Sync S3 direct transport | `pinax capsa backend set s3`, then `pinax sync --target capsa` | Every device owns its own local vault. The provider stores encrypted Capsa Sync objects. | Implemented for the direct object-store engine; `remote_write=true` is emitted only after the head/revision commit succeeds. |
+| Capsa Sync rclone direct transport | `pinax capsa backend set rclone`, then `pinax sync --target capsa` | Every device owns its own local vault. rclone is the provider credential boundary. | Implemented through the shared object-store sync path; lock-object commit protection covers providers without reliable conditional writes. |
 | Embedded Go API / local RPC | `app.Service` methods and `Pinax.Sync.Push` / `Pinax.Sync.Pull` local RPC | Same local app service and vault mutation rules as CLI. | Implemented for local callers. This is not `pinax api serve` centralized remote mode. |
 
 The distributed design is similar to Obsidian Sync: laptop, phone, and desktop all keep local vaults. The transport stores encrypted sync artifacts and revision order; it does not become the plaintext note source of truth.
 
-`pinax sync daemon` is the local automation layer on top of this protocol. It runs on each device, watches local vault changes, polls the remote Cloud Sync head for remote changes, and then invokes the same pull/push engine as explicit CLI commands. It is not a hosted Pinax Cloud service, and it does not give the transport plaintext note access.
+`pinax sync daemon` is the local automation layer on top of this protocol. It runs on each device, watches local vault changes, polls the remote Capsa Sync head for remote changes, and then invokes the same pull/push engine as explicit CLI commands. It is not a hosted Capsa service, and it does not give the transport plaintext note access.
 
 ## User-runnable setup examples
 
 Server transport configuration:
 
 ```bash
-pinax cloud login \
-  --endpoint https://cloud.example.test \
+pinax capsa login \
+  --endpoint https://capsa.example.test \
   --workspace ws_123 \
   --device laptop \
-  --secret-ref env://PINAX_CLOUD_TOKEN \
+  --secret-ref env://PINAX_CAPSA_TOKEN \
   --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./my-notes
-pinax cloud status --vault ./my-notes --json
-pinax cloud doctor --vault ./my-notes
+pinax capsa status --vault ./my-notes --json
+pinax capsa doctor --vault ./my-notes
 ```
 
-### Pinax Cloud Sync MLP server contract
+### Pinax Capsa Sync MLP server contract
 
-The server transport speaks the Pinax Cloud Sync MLP (minimum lovable product) REST contract. The public protocol uses `vault_id` terminology and never transfers plaintext Markdown:
+The server transport speaks the Pinax Capsa Sync MLP (minimum lovable product) REST contract. The public protocol uses `vault_id` terminology and never transfers plaintext Markdown:
 
 | Operation | Method & Path | Notes |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ Stable error codes (uppercase, machine-readable): `UNAUTHENTICATED`, `DEVICE_REV
 S3-compatible direct transport:
 
 ```bash
-pinax cloud backend set s3 \
+pinax capsa backend set s3 \
   --bucket notes \
   --region us-east-1 \
   --prefix pinax-sync/ \
@@ -79,26 +79,26 @@ pinax cloud backend set s3 \
   --workspace personal \
   --device laptop \
   --vault ./my-notes
-pinax cloud doctor --vault ./my-notes --json
+pinax capsa doctor --vault ./my-notes --json
 ```
 
 OneDrive through rclone direct transport:
 
 ```bash
 rclone config
-pinax cloud backend set rclone \
+pinax capsa backend set rclone \
   --remote onedrive:PinaxSync \
   --workspace personal \
   --device laptop \
   --vault ./my-notes
-pinax cloud doctor --vault ./my-notes --json
+pinax capsa doctor --vault ./my-notes --json
 ```
 
 Native Microsoft Graph / OneDrive OAuth is intentionally not part of the MVP. OneDrive examples should use rclone until a separate native Graph adapter design owns device-code login, token refresh, keychain storage, eTag conditional writes, and Graph-specific failure handling.
 
-`cloud login` requires the server configuration fields `--endpoint`, `--workspace`, `--device`, and `--secret-ref`. `--secret-ref` points to the cloud auth token. `--encryption-secret-ref` points to the shared client-side sync encryption secret and falls back to `--secret-ref` only for older configs. For direct S3/rclone backends, Pinax stores provider references such as AWS profile or rclone remote name, not raw secrets.
+`capsa login` requires the server configuration fields `--endpoint`, `--workspace`, `--device`, and `--secret-ref`. `--secret-ref` points to the Capsa auth token. `--encryption-secret-ref` points to the shared client-side sync encryption secret and falls back to `--secret-ref` only for older configs. For direct S3/rclone backends, Pinax stores provider references such as AWS profile or rclone remote name, not raw secrets.
 
-Cloud Sync state is CLI-authored. The primary human-readable config is `.pinax/cloud/config.yaml`. For S3 direct backends, Pinax stores structured fields instead of an escaped endpoint URI:
+Capsa Sync state is CLI-authored. The primary human-readable config is `.pinax/cloud/config.yaml`. For S3 direct backends, Pinax stores structured fields instead of an escaped endpoint URI:
 
 ```yaml
 schema_version: pinax.cloud.config.v1
@@ -115,11 +115,11 @@ s3:
   path_style: true
 ```
 
-Older `.pinax/cloud/config.json` files are read for compatibility, but new `pinax cloud backend set ...` writes YAML and removes the legacy JSON config.
+Older `.pinax/cloud/config.json` files are read for compatibility, but new `pinax capsa backend set ...` writes YAML and removes the legacy JSON config.
 
 ## `remote_write=true` rule
 
-A Cloud Sync push may output `remote_write=true` only after the selected transport has durably committed a new revision and Pinax has written the local sync-state receipt. A dry-run, plan, blob upload, manifest upload, failed commit, unsupported backend capability, or unsupported scheme is not a remote write.
+A Capsa Sync push may output `remote_write=true` only after the selected transport has durably committed a new revision and Pinax has written the local sync-state receipt. A dry-run, plan, blob upload, manifest upload, failed commit, unsupported backend capability, or unsupported scheme is not a remote write.
 
 Direct local/object-store example:
 
@@ -128,16 +128,16 @@ pinax init ./device-a --title "Device A"
 pinax init ./device-b --title "Device B"
 mkdir -p ./device-a/notes
 printf '# Alpha\n\nfrom device A\n' > ./device-a/notes/alpha.md
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
-pinax sync push --target cloud --vault ./device-a --yes --json
-pinax sync pull --target cloud --vault ./device-b --yes --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax sync push --target capsa --vault ./device-a --yes --json
+pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
 
 Local daemon preview:
 
 ```bash
-pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon run --target capsa --vault ./device-a --yes
 pinax sync daemon status --vault ./device-a --json
 pinax sync daemon stop --vault ./device-a
 ```
@@ -150,11 +150,11 @@ Unavailable backends, unsupported schemes, and failed commit paths must return a
 
 ## Boundaries
 
-- Server transport: Pinax Cloud Server owns auth/device scope, idempotency, revision CAS, audit, readiness, and encrypted object persistence.
+- Server transport: Capsa Server owns auth/device scope, idempotency, revision CAS, audit, readiness, and encrypted object persistence.
 - S3 direct transport: provider credentials are the access boundary; there is no Pinax server-side auth, audit, multi-tenant policy, or rate limiting.
 - Rclone direct transport: rclone config is the credential boundary; lock-object commit protection is required before the transport can claim successful remote writes when provider conditional writes are unavailable.
 - Embedded Go API/local RPC: local integrations call the same app service; they do not bypass approval, dry-run, conflict, event, or redaction rules.
-- Local API: `pinax api serve` is centralized access to one vault and must not be documented as a Cloud Sync transport.
+- Local API: `pinax api serve` is centralized access to one vault and must not be documented as a Capsa Sync transport.
 
 Do not include real endpoint tokens, Authorization headers, cookies, plaintext note bodies, encrypted secret values, raw secret refs, provider stderr, or provider payloads in stdout, stderr, events, fixtures, receipts, object metadata, docs, or examples.
 

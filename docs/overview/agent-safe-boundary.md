@@ -69,7 +69,7 @@ Local direct transports such as S3/rclone Cloud Sync do not provide server-side 
 Pinax Cloud Sync is a distributed sync coordinator, not a hosted vault. Two invariants hold:
 
 1. **No plaintext** — the server only ever stores encrypted envelopes. Note bodies are encrypted on the client before upload; the server never receives or stores plaintext note content.
-2. **No exec** — the cloud backend never executes local tools, provider calls, or CLI commands. It only coordinates encrypted blobs, manifests, revisions, and conflict metadata.
+2. **No exec** — the capsa backend never executes local tools, provider calls, or CLI commands. It only coordinates encrypted blobs, manifests, revisions, and conflict metadata.
 
 The encrypted envelope schema is `pinax.cloud.envelope.v1`:
 

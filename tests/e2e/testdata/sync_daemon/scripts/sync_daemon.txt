@@ -2,8 +2,8 @@
 exec pinax init vault --title Vault --json
 stdout '"command":"vault.init"'
 
-exec pinax cloud login --endpoint $PINAX_FAKE_CLOUD_URL --workspace ws_123 --device dev_laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault vault --json
-stdout '"command":"cloud.login"'
+exec pinax capsa login --endpoint $PINAX_FAKE_CLOUD_URL --workspace ws_123 --device dev_laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault vault --json
+stdout '"command":"capsa.login"'
 ! stdout 'PINAX_CLOUD_TOKEN'
 ! stdout 'Authorization'
 

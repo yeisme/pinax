@@ -37,7 +37,7 @@ func resolveSyncRequest(req app.SyncRequest) app.SyncRequest {
 func syncTargetForEndpoint(endpoint string) string {
 	trimmed := strings.TrimSpace(endpoint)
 	switch trimmed {
-	case "git", "s3", "cloud":
+	case "git", "s3", "capsa", "cloud", "pinax-cloud":
 		return trimmed
 	}
 	u, err := url.Parse(trimmed)
@@ -46,7 +46,7 @@ func syncTargetForEndpoint(endpoint string) string {
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
-		return "cloud"
+		return "capsa"
 	case "s3":
 		return "s3"
 	default:
@@ -56,7 +56,9 @@ func syncTargetForEndpoint(endpoint string) string {
 
 func syncTargetCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	items := []string{
-		"cloud\tconfigured Cloud Sync backend",
+		"capsa\tCapsa encrypted sync backend",
+		"cloud\tlegacy alias for Capsa",
+		"pinax-cloud\tlegacy alias for Capsa",
 		"s3\tS3-compatible direct backend",
 		"git\tGit backend",
 	}
@@ -134,7 +136,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncCmd.Flags().StringVar(ctx.syncTarget, "target", "cloud", "Sync target: git, s3, or cloud")
+	syncCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	_ = syncCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only run merge calculation")
 	syncCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync writes")
@@ -142,7 +144,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	syncInitCmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize cloud sync configuration",
+		Short: "Initialize Capsa sync configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.SyncInit(cmd.Context(), app.SyncInitRequest{VaultPath: *ctx.vaultPath, Endpoint: *ctx.cloudEndpoint, WorkspaceID: *ctx.cloudWorkspace, DeviceID: *ctx.cloudDevice, SecretRef: *ctx.cloudSecretRef})
 			return ctx.renderProjection(cmd, projection, err)
@@ -172,10 +174,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncDiffCmd.Flags().StringVar(ctx.syncTarget, "target", "git", "Sync target: git, s3, or cloud")
+	syncDiffCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	syncDiffCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", true, "Only generate the sync plan; do not write the vault or remote")
-	syncDiffCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known cloud base revision")
-	syncDiffCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Cloud remote revision for tests or fake backends")
+	syncDiffCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
+	syncDiffCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	addPathPolicyFlag(syncDiffCmd)
 	_ = syncDiffCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.AddCommand(syncDiffCmd)
@@ -187,10 +189,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncPushCmd.Flags().StringVar(ctx.syncTarget, "target", "git", "Sync target: git, s3, or cloud")
+	syncPushCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	syncPushCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only generate the sync plan; do not write the vault or remote")
-	syncPushCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known cloud base revision")
-	syncPushCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Cloud remote revision for tests or fake backends")
+	syncPushCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
+	syncPushCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPushCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
 	addPathPolicyFlag(syncPushCmd)
 	_ = syncPushCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
@@ -203,10 +205,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncPullCmd.Flags().StringVar(ctx.syncTarget, "target", "git", "Sync target: git, s3, or cloud")
+	syncPullCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	syncPullCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only generate the sync plan; do not write the vault or remote")
-	syncPullCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known cloud base revision")
-	syncPullCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Cloud remote revision for tests or fake backends")
+	syncPullCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
+	syncPullCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPullCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
 	addPathPolicyFlag(syncPullCmd)
 	_ = syncPullCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
@@ -237,7 +239,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsTailCmd, logsPruneCmd)
 	syncCmd.AddCommand(logsCmd)
 
-	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Cloud Sync daemon"}
+	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Capsa sync daemon"}
 	daemonRunCmd := &cobra.Command{Use: "run", Short: "Run the sync daemon in the foreground", RunE: func(cmd *cobra.Command, args []string) error {
 		mode := ctx.outputMode()
 		streamSeq := 1
@@ -276,7 +278,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	for _, c := range []*cobra.Command{daemonRunCmd, daemonStartCmd} {
-		c.Flags().StringVar(ctx.syncTarget, "target", "cloud", "Sync target: cloud")
+		c.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, cloud, or pinax-cloud")
 		c.Flags().BoolVar(ctx.yes, "yes", false, "Confirm automatic sync writes")
 		c.Flags().DurationVar(&daemonPollInterval, "poll-interval", time.Second, "Remote head poll interval")
 		c.Flags().DurationVar(&daemonSyncTimeout, "sync-timeout", 30*time.Second, "Per-sync operation timeout")

@@ -4,7 +4,7 @@
 
 Pinax is the **agent-safe knowledge control plane for your Markdown vault** — it lets AI safely read, diagnose, repair, and sync a real local knowledge base, while keeping every agent write auditable, previewable, and reversible. Your Markdown vault stays the source of truth; the agent never sees plaintext it should not, and the cloud never stores plaintext notes.
 
-> Three ideas to remember: **Local Vault is the source of truth / the Proof Loop protects every agent write / Cloud Sync only coordinates ciphertext.**
+> Three ideas to remember: **Local Vault is the source of truth / the Proof Loop protects every agent write / Capsa Sync only coordinates ciphertext.**
 
 ## The aha moment
 
@@ -25,7 +25,7 @@ pinax version restore apply --vault ./my-notes --plan restore-<id> --yes        
 | --- | --- |
 | **Proof loop safe writes** | Every agent-driven change is plan → snapshot → apply → receipt → restore. No direct file surgery, no silent writes, every apply is reversible. |
 | **Plaintext boundary** | Read commands default to `--display card`, not the full body. Agents, MCP, dashboard, and project boards share one bounded projection; only explicit `--display body` puts the body in a local JSON projection. |
-| **Self-hosted encrypted sync** | Pinax Cloud only coordinates encrypted revisions — AES-256-GCM client-side encryption, the server never sees plaintext notes and never executes local tools. |
+| **Self-hosted encrypted sync** | Capsa only coordinates encrypted revisions — AES-256-GCM client-side encryption, the server never sees plaintext notes and never executes local tools. |
 
 Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer for your vault, **avoids** Notion's cloud lock-in, and is **more programmable and verifiable** than Reflect. It is not another notes app — it is the control plane that makes your existing Markdown vault safe for AI.
 
@@ -37,7 +37,7 @@ Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer fo
 | CLI output modes: default summary, `--agent`, `--json`, `--events`, `--explain` | Supported |
 | Local dashboard, read-only MCP, localhost REST/RPC adapter, and workspace/task/database/graph read projections | Supported |
 | Obsidian-style vault compatibility: wikilinks/backlinks, properties, daily managed blocks, templates, attachments, dataview blocks, `.obsidian/` ignore | Preview |
-| Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
+| Capsa Sync over server, file/S3-compatible object store, and rclone transports | Preview |
 
 ## Installation
 
@@ -158,7 +158,7 @@ pinax version snapshot --vault ./my-notes --message "checkpoint"
 pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
 ```
 
-Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync remains a transport boundary and is not required for the local proof loop.
+Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Capsa Sync remains a transport boundary and is not required for the local proof loop.
 
 ## Workspace And Database Views
 
@@ -451,9 +451,9 @@ curl -s http://127.0.0.1:8787/v1/capabilities
 
 REST `GET /v1/projects/{slug}/board`, RPC `Pinax.ProjectBoard.Show`, and the MCP board tool return the same class of bounded board projection; write-like remote calls only return dry-run/plan, `approval_required`, or `snapshot_required` by default. Real Markdown changes still go through explicit CLI commands.
 
-## Cloud Sync preview
+## Capsa Sync preview
 
-Pinax Cloud Sync is separate from `pinax api serve`. The Local API exposes one centralized vault through REST/RPC; Cloud Sync is a distributed protocol where each device keeps its own local vault and exchanges encrypted revisions, manifests, and blobs through a selected transport.
+Pinax Capsa Sync is separate from `pinax api serve`. The Local API exposes one centralized vault through REST/RPC; Capsa Sync is a distributed protocol where each device keeps its own local vault and exchanges encrypted revisions, manifests, and blobs through a selected transport.
 
 Configure a direct object-store transport and sync two local devices:
 
@@ -462,35 +462,35 @@ pinax init ./device-a --title "Device A"
 pinax init ./device-b --title "Device B"
 mkdir -p ./device-a/notes
 printf '# Alpha\n\nfrom device A\n' > ./device-a/notes/alpha.md
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
-pinax sync push --target cloud --vault ./device-a --yes --json
-pinax sync pull --target cloud --vault ./device-b --yes --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax sync push --target capsa --vault ./device-a --yes --json
+pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
 
 Run local automatic sync on a configured device:
 
 ```bash
-pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon run --target capsa --vault ./device-a --yes
 pinax sync daemon status --vault ./device-a --json
 pinax sync daemon logs --vault ./device-a --limit 20 --json
 pinax sync daemon stop --vault ./device-a
 ```
 
-The daemon is a local process. On startup it immediately runs one pull-before-push sync cycle, then watches local vault changes and polls the remote Cloud Sync head. Default human output shows live progress lines; `--events` emits an NDJSON stream; redacted daemon state and events are persisted under `.pinax/sync-daemon/`.
+The daemon is a local process. On startup it immediately runs one pull-before-push sync cycle, then watches local vault changes and polls the remote Capsa Sync head. Default human output shows live progress lines; `--events` emits an NDJSON stream; redacted daemon state and events are persisted under `.pinax/sync-daemon/`.
 
-S3-compatible storage uses the same Cloud Sync protocol without a Pinax Cloud Server:
+S3-compatible storage uses the same Capsa Sync protocol without a Capsa Server:
 
 ```bash
-pinax cloud backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes
-pinax cloud doctor --vault ./my-notes --json
+pinax capsa backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes
+pinax capsa doctor --vault ./my-notes --json
 ```
 
-Server and rclone backends are explicit transports, not aliases for Local API. Server transport uses `internal/cloudclient.Transport` so Pinax Cloud can own auth/audit/policy, while rclone direct transport uses the shared object-store sync path for providers such as OneDrive. Native Microsoft Graph is a separate future transport.
+Server and rclone backends are explicit transports, not aliases for Local API. Server transport uses `internal/cloudclient.Transport` so Capsa can own auth/audit/policy, while rclone direct transport uses the shared object-store sync path for providers such as OneDrive. Native Microsoft Graph is a separate future transport.
 
 `remote_write=true` is valid only after the selected transport durably commits a revision and Pinax writes local sync-state evidence. Dry-runs, plans, blob uploads, failed or unsupported transport operations, and pull operations keep `remote_write=false`.
 
-See [cloud command docs](./docs/commands/cloud.md), [sync command docs](./docs/commands/sync.md), and [Cloud Sync architecture](./docs/architecture/cloud-sync-design.md).
+See [Capsa command docs](./docs/commands/capsa.md), [sync command docs](./docs/commands/sync.md), and [Capsa Sync architecture](./docs/architecture/cloud-sync-design.md).
 
 MCP tools and resources are read-only, including `pinax.note.links`, `pinax.note.backlinks`, `pinax.note.context`, and `pinax.vault.graph_summary`. They reuse the CLI relationship projection and return bounded facts, candidate summaries, and next-step commands. They do not return full note bodies and do not write Markdown, `.pinax/`, Git, providers, or remote state.
 

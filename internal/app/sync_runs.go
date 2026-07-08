@@ -77,6 +77,8 @@ type currentSyncState struct {
 	VaultID            string `json:"vault_id"`
 	DeviceID           string `json:"device_id"`
 	LastSyncedRevision string `json:"last_synced_revision,omitempty"`
+	LastManifestBlobID string `json:"last_manifest_blob_id,omitempty"`
+	LastManifestCache  string `json:"last_manifest_cache,omitempty"`
 	LastSyncRunID      string `json:"last_sync_run_id"`
 	LastDirection      string `json:"last_direction"`
 	LastStatus         string `json:"last_status"`
@@ -88,15 +90,16 @@ type syncRunRecord struct {
 	Path    string         `json:"path"`
 }
 
-func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud.State, pathPolicy string) SyncRunReceipt {
+func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud.State, pathPolicy, target string) SyncRunReceipt {
 	createdAt := time.Now().UTC()
 	runID := "sync_" + createdAt.Format("20060102T150405.000000000")
 	policy := syncops.NormalizePathPolicy(pathPolicy)
+	outputTarget := syncOutputTarget(target)
 	return SyncRunReceipt{
 		SchemaVersion: syncRunSchemaVersion,
 		RunID:         runID,
 		Command:       command,
-		Target:        "cloud",
+		Target:        outputTarget,
 		Direction:     string(direction),
 		Status:        "success",
 		BackendKind:   directBackendKind(state),
@@ -108,7 +111,7 @@ func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud
 		Counts:        map[string]int{},
 		TimingsMS:     map[string]int64{},
 		Actions:       []domain.Action{},
-		Redaction:     SyncRunRedaction{PathPolicy: policy, SecretPolicy: "cloud"},
+		Redaction:     SyncRunRedaction{PathPolicy: policy, SecretPolicy: outputTarget},
 		CreatedAt:     createdAt.Format(time.RFC3339),
 	}
 }
@@ -162,15 +165,28 @@ func writeCurrentSyncState(root string, state pinaxcloud.State, receipt SyncRunR
 	if strings.TrimSpace(syncedRevision) == "" {
 		syncedRevision = previous.LastSyncedRevision
 	}
+	manifestBlobID := strings.TrimSpace(receipt.ManifestBlobID)
+	if manifestBlobID == "" {
+		manifestBlobID = previous.LastManifestBlobID
+	}
+	manifestCache := previous.LastManifestCache
+	if strings.TrimSpace(syncedRevision) != "" {
+		candidate := syncManifestCacheRel(syncedRevision)
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate))); err == nil {
+			manifestCache = candidate
+		}
+	}
 	current := currentSyncState{
 		SchemaVersion:      syncStateSchemaVersion,
-		Target:             "cloud",
+		Target:             syncOutputTarget(receipt.Target),
 		BackendKind:        directBackendKind(state),
 		Endpoint:           syncops.SanitizeString(state.Config.Endpoint),
 		WorkspaceID:        syncops.SanitizeString(state.Config.WorkspaceID),
 		VaultID:            syncVaultID(state, state.Config.WorkspaceID),
 		DeviceID:           syncops.SanitizeString(state.Config.DeviceID),
 		LastSyncedRevision: syncops.SanitizeString(syncedRevision),
+		LastManifestBlobID: syncops.SanitizeString(manifestBlobID),
+		LastManifestCache:  syncops.SanitizeString(manifestCache),
 		LastSyncRunID:      receipt.RunID,
 		LastDirection:      receipt.Direction,
 		LastStatus:         receipt.Status,
@@ -270,10 +286,11 @@ func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, 
 	}
 	started := time.Now()
 	pathPolicy := syncops.NormalizePathPolicy(req.PathPolicy)
-	receipt := syncRunStart(command, direction, state, pathPolicy)
-	plan := syncplan.Plan{SchemaVersion: syncplan.PlanSchemaVersion, Status: "approval_required", Direction: direction, Target: "cloud", DryRun: req.DryRun, RequiresApproval: true, RemoteWrite: false}
+	outputTarget := syncOutputTarget(req.Target)
+	receipt := syncRunStart(command, direction, state, pathPolicy, outputTarget)
+	plan := syncplan.Plan{SchemaVersion: syncplan.PlanSchemaVersion, Status: "approval_required", Direction: direction, Target: outputTarget, DryRun: req.DryRun, RequiresApproval: true, RemoteWrite: false}
 	if projection.Actions == nil {
-		projection.Actions = []domain.Action{{Name: "dry_run", Command: fmt.Sprintf("pinax %s --target cloud --dry-run --vault %s --json", strings.ReplaceAll(command, ".", " "), shellQuote(root))}}
+		projection.Actions = []domain.Action{{Name: "dry_run", Command: fmt.Sprintf("pinax %s --target %s --dry-run --vault %s --json", strings.ReplaceAll(command, ".", " "), outputTarget, shellQuote(root))}}
 	}
 	receipt, receiptPath, finishErr := finishSyncRun(root, state, receipt, plan, "approval_required", commandErr, projection.Actions, pathPolicy, started)
 	if finishErr != nil {
@@ -282,7 +299,8 @@ func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, 
 	_ = writeCurrentSyncState(root, state, receipt, "")
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Facts["remote_write"] = "false"
-	projection.Facts["target"] = "cloud"
+	projection.Facts["target"] = outputTarget
+	addCapsaBridgeFacts(projection, req.Target)
 	projection.Evidence = []string{receiptPath}
 	projection.Data = map[string]any{"receipt": receipt}
 	return nil

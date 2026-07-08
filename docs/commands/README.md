@@ -37,7 +37,7 @@ Pinax is built around one agent-safe proof loop. Each path maps to a small set o
 | **Plan** | [`pinax repair plan --save`](./repair.md), [`pinax organize plan --save`](./organize.md) | Turn issues into reviewable saved plans. |
 | **Apply safely** | [`pinax version snapshot`](./version.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Snapshot first, then apply with explicit confirmation. |
 
-Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and provider expansion (`pinax backend`) are separate advanced workflows, not part of the local proof loop.
+Capsa Sync (`pinax capsa`/`pinax sync`), daily briefing (`pinax briefing`), and provider expansion (`pinax backend`) are separate advanced workflows, not part of the local proof loop.
 
 Project Workspace (`pinax project learning init ...`, `pinax project subproject ...`, `pinax project board ...`, `pinax project item ...`) is an advanced local workflow for managing research, learning, client, content, or tool-candidate work inside one vault. It stays local-first and writes only Markdown plus CLI-authored `.pinax` project metadata.
 
@@ -75,7 +75,7 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Organization and retrieval | [`pinax proof`](./proof.md) | Run the local Capture -> Retrieve -> Diagnose -> Plan -> Snapshot -> Apply safely proof loop. |
 | Organization and retrieval | [`pinax brain`](./brain.md) | Agent Brain preview command group; `brain answer` is implemented as read-only extractive preview, while context/sources/maintain remain planned. |
 | Automation and integration | [`pinax briefing`](./briefing.md) | Manage daily trending-note briefing recipes, runs, and delivery. |
-| Automation and integration | [`pinax cloud`](./cloud.md) | Manage local state for cloud sync. |
+| Automation and integration | [`pinax capsa`](./capsa.md) | Manage local state for Capsa sync. |
 | Automation and integration | [`pinax sync`](./sync.md) | Generate and execute sync plans. |
 | Automation and integration | [`pinax plan`](./plan.md) | Manage personal daily, weekly, and monthly planning workflows. |
 | Automation and integration | [`pinax prompt`](./prompt.md) | Manage reusable prompt assets, lifecycle decisions, URI resolution, and prompt usage feedback. |
@@ -162,4 +162,4 @@ By default, Pinax commands can be divided into three categories:
 
 `pinax --api-url http://127.0.0.1:8787 <supported-command>` forwards supported read/write-plan commands to `pinax api serve` through `POST /v1/rpc`. `PINAX_API_URL` enables the same mode for agents, and `pinax config set remote.api_url http://127.0.0.1:8787 --scope user` persists the default endpoint for ordinary supported commands. Use `--api-token`, `--api-token-file`, or `PINAX_API_TOKEN` when the server requires Bearer auth; do not store raw tokens in config. Remote mode rejects explicit `--vault` with `remote_vault_conflict` and rejects unsupported commands with `remote_command_unsupported` instead of falling back to local execution. Local control commands (`config`, `api`, `token`, `profile`, `vault`) stay local when the endpoint comes from `remote.api_url` so configuration remains editable.
 
-Cloud Sync is a different distributed workflow from Remote API Mode. Remote API Mode forwards commands to one running local vault. Cloud Sync (`pinax cloud` + `pinax sync --target cloud`) is intended to keep independent local vaults on each device converged through encrypted backend revisions and conflict handling.
+Capsa Sync is a different distributed workflow from Remote API Mode. Remote API Mode forwards commands to one running local vault. Capsa Sync (`pinax capsa` + `pinax sync --target capsa`) is intended to keep independent local vaults on each device converged through encrypted backend revisions and conflict handling.
