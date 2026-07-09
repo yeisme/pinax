@@ -39,7 +39,7 @@ func (s *Service) CloudBackendSetS3(_ context.Context, req CloudBackendSetReques
 	if secretRef == "" && strings.TrimSpace(req.Profile) != "" {
 		secretRef = "profile://" + strings.TrimSpace(req.Profile)
 	}
-	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, BackendKind: "s3-direct", S3: &pinaxcloud.S3Config{Bucket: bucket, Prefix: prefix, Endpoint: endpointURL, Region: region, Profile: strings.TrimSpace(req.Profile), AddressingStyle: addressingStyle, PathStyle: pathStyle}})
+	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, EncryptionSecretRef: strings.TrimSpace(req.EncryptionSecretRef), BackendKind: "s3-direct", S3: &pinaxcloud.S3Config{Bucket: bucket, Prefix: prefix, Endpoint: endpointURL, Region: region, Profile: strings.TrimSpace(req.Profile), AddressingStyle: addressingStyle, PathStyle: pathStyle}})
 	if err != nil {
 		projection, commandErr := cloudBackendSetErrorProjection(err)
 		return projection, commandErr
@@ -60,6 +60,9 @@ func (s *Service) CloudBackendSetS3(_ context.Context, req CloudBackendSetReques
 	}
 	projection.Facts["path_style"] = fmt.Sprint(pathStyle)
 	projection.Data = pinaxcloud.RedactedData(state)
+	if warning := weakEncryptionKeyWarning(state); warning != nil {
+		projection.Warnings = append(projection.Warnings, *warning)
+	}
 	projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax cloud doctor --vault %s --json", shellQuote(root))}}
 	return projection, nil
 }
@@ -269,6 +272,7 @@ func (s *Service) CloudDoctor(_ context.Context, req CloudRequest) (domain.Proje
 	projection.Facts["device_id"] = result.DeviceID
 	projection.Facts["secret_ref_configured"] = "true"
 	projection.Data = result
+	addEncryptionKeyDoctorCheck(&projection, root)
 	projection.Actions = []domain.Action{{Name: "status", Command: fmt.Sprintf("pinax cloud status --vault %s --json", shellQuote(root))}}
 	return projection, nil
 }
@@ -308,4 +312,52 @@ func cloudStateErrorProjection(command, root string, err error) (domain.Projecti
 		return domain.NewErrorProjection(command, commandErr), commandErr
 	}
 	return errorProjection(command, err), err
+}
+
+// weakEncryptionKeyWarning reports when the sync encryption key is derived from
+// a provider credential reference rather than a dedicated secret. When the
+// config carries no dedicated EncryptionSecretRef and the provider SecretRef is
+// not backed by a strong secret manager (env:// or keychain://), the encryption
+// key is effectively the provider credential. Returns nil when the key is
+// adequately sourced.
+func weakEncryptionKeyWarning(state pinaxcloud.State) *domain.ProjectionWarning {
+	if strings.TrimSpace(state.Config.EncryptionSecretRef) != "" {
+		return nil
+	}
+	secretRef := strings.TrimSpace(state.Config.SecretRef)
+	if secretRef == "" || strings.HasPrefix(secretRef, "env://") || strings.HasPrefix(secretRef, "keychain://") {
+		return nil
+	}
+	return &domain.ProjectionWarning{
+		Code:    "weak_encryption_key",
+		Message: "Encryption key derived from provider credential reference; set --encryption-secret-ref for a dedicated sync encryption key",
+		Hint:    "Set --encryption-secret-ref env://PINAX_SYNC_SECRET",
+	}
+}
+
+// addEncryptionKeyDoctorCheck compares the encryption key id implied by the
+// current config against the key id recorded during the last successful sync.
+// A mismatch means the encryption secret changed since the last sync, so blobs
+// encrypted under the previous key may no longer be decryptable. It only fires
+// when both ids are non-empty and diverge.
+func addEncryptionKeyDoctorCheck(projection *domain.Projection, root string) {
+	state, err := pinaxcloud.Load(root)
+	if err != nil {
+		return
+	}
+	currentKeyID := pinaxcloud.KeyID(pinaxcloud.EncryptionSecretRef(state.Config))
+	if strings.TrimSpace(currentKeyID) == "" {
+		return
+	}
+	stored, err := readCurrentSyncState(root)
+	if err != nil || strings.TrimSpace(stored.LastKeyID) == "" {
+		return
+	}
+	if stored.LastKeyID != currentKeyID {
+		projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
+			Code:    "encryption_key_mismatch",
+			Message: fmt.Sprintf("Current encryption key id %s does not match the key id %s used during the last sync", currentKeyID, stored.LastKeyID),
+			Hint:    "Restore the previous encryption secret or run pinax sync push --yes to re-encrypt with the current key",
+		})
+	}
 }

@@ -79,6 +79,7 @@ type currentSyncState struct {
 	LastSyncedRevision string `json:"last_synced_revision,omitempty"`
 	LastManifestBlobID string `json:"last_manifest_blob_id,omitempty"`
 	LastManifestCache  string `json:"last_manifest_cache,omitempty"`
+	LastKeyID          string `json:"last_key_id,omitempty"`
 	LastSyncRunID      string `json:"last_sync_run_id"`
 	LastDirection      string `json:"last_direction"`
 	LastStatus         string `json:"last_status"`
@@ -187,6 +188,7 @@ func writeCurrentSyncState(root string, state pinaxcloud.State, receipt SyncRunR
 		LastSyncedRevision: syncops.SanitizeString(syncedRevision),
 		LastManifestBlobID: syncops.SanitizeString(manifestBlobID),
 		LastManifestCache:  syncops.SanitizeString(manifestCache),
+		LastKeyID:          syncops.SanitizeString(pinaxcloud.KeyID(pinaxcloud.EncryptionSecretRef(state.Config))),
 		LastSyncRunID:      receipt.RunID,
 		LastDirection:      receipt.Direction,
 		LastStatus:         receipt.Status,

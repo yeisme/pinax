@@ -431,18 +431,19 @@ type CloudLoginRequest struct {
 }
 
 type CloudBackendSetRequest struct {
-	VaultPath       string
-	Kind            string
-	Bucket          string
-	Region          string
-	Prefix          string
-	Endpoint        string
-	Profile         string
-	AddressingStyle string
-	Remote          string
-	WorkspaceID     string
-	DeviceID        string
-	SecretRef       string
+	VaultPath           string
+	Kind                string
+	Bucket              string
+	Region              string
+	Prefix              string
+	Endpoint            string
+	Profile             string
+	AddressingStyle     string
+	Remote              string
+	WorkspaceID         string
+	DeviceID            string
+	SecretRef           string
+	EncryptionSecretRef string
 }
 
 type CloudRequest struct {

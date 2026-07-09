@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -352,4 +353,226 @@ func (e cloudDaemonExecutor) Push(ctx context.Context) (string, error) {
 		return strings.TrimSpace(projection.Facts["revision_id"]), nil
 	}
 	return "", nil
+}
+
+// SyncDaemonInstallRequest configures a sync daemon service unit for a vault.
+type SyncDaemonInstallRequest struct {
+	VaultPath string
+}
+
+// SyncDaemonInstall writes a platform-specific service unit (systemd user unit
+// on Linux, launchd plist on macOS) for the sync daemon. It does not start the
+// service; the returned enable_command tells the user how to start it. Windows
+// is unsupported and returns a platform_unsupported error.
+func (s *Service) SyncDaemonInstall(_ context.Context, req SyncDaemonInstallRequest) (domain.Projection, error) {
+	root, err := filepath.Abs(strings.TrimSpace(req.VaultPath))
+	if err != nil {
+		return errorProjection("sync.daemon.install", err), err
+	}
+	if err := ensureVaultAssets(root); err != nil {
+		return errorProjection("sync.daemon.install", err), err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return errorProjection("sync.daemon.install", err), err
+	}
+	homeDir, _ := os.UserHomeDir()
+	slug := daemonServiceSlug(root)
+	unitPath, enableCommand, err := installDaemonUnit(runtime.GOOS, homeDir, exe, root, slug)
+	if err != nil {
+		return commandErrorProjection("sync.daemon.install", err)
+	}
+	envWritten := daemonWriteEnvFile(root)
+	projection := domain.NewProjection("sync.daemon.install", "Sync daemon service unit installed.")
+	projection.Facts["vault_path"] = root
+	projection.Facts["binary"] = exe
+	projection.Facts["slug"] = slug
+	projection.Facts["unit_path"] = unitPath
+	projection.Facts["enable_command"] = enableCommand
+	projection.Facts["env_file"] = fmt.Sprint(envWritten)
+	projection.Actions = []domain.Action{{Name: "enable", Command: enableCommand}}
+	return projection, nil
+}
+
+// SyncDaemonUninstall removes the sync daemon service unit for a vault. It does
+// not stop a running service; the caller is expected to stop it first.
+func (s *Service) SyncDaemonUninstall(_ context.Context, req SyncDaemonInstallRequest) (domain.Projection, error) {
+	root, err := filepath.Abs(strings.TrimSpace(req.VaultPath))
+	if err != nil {
+		return errorProjection("sync.daemon.uninstall", err), err
+	}
+	homeDir, _ := os.UserHomeDir()
+	slug := daemonServiceSlug(root)
+	unitPath, removed, err := uninstallDaemonUnit(runtime.GOOS, homeDir, slug)
+	if err != nil {
+		return commandErrorProjection("sync.daemon.uninstall", err)
+	}
+	projection := domain.NewProjection("sync.daemon.uninstall", "Sync daemon service unit removed.")
+	projection.Facts["vault_path"] = root
+	projection.Facts["slug"] = slug
+	projection.Facts["unit_path"] = unitPath
+	projection.Facts["removed"] = fmt.Sprint(removed)
+	return projection, nil
+}
+
+// daemonServiceSlug produces a filesystem-safe service label from a vault path:
+// the lowercase basename with every non-alphanumeric run collapsed to a single
+// hyphen. An empty result falls back to "vault".
+func daemonServiceSlug(vaultPath string) string {
+	base := filepath.Base(strings.TrimRight(filepath.ToSlash(vaultPath), "/"))
+	base = strings.ToLower(base)
+	var b strings.Builder
+	prevDash := true
+	for _, r := range base {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		if !prevDash {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		slug = "vault"
+	}
+	return slug
+}
+
+// systemdUnitContent renders a systemd user service unit for the sync daemon.
+// The EnvironmentFile directive is always emitted; daemonWriteEnvFile is
+// responsible for creating the referenced file when a secret is available.
+func systemdUnitContent(binary, vaultPath, slug string) string {
+	envFile := filepath.Join(vaultPath, ".pinax", "cloud", "sync-env")
+	return fmt.Sprintf(`[Unit]
+Description=Pinax Capsa sync daemon (%s)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%s sync daemon run --target capsa --vault %s --yes
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=%s
+
+[Install]
+WantedBy=default.target
+`, slug, binary, vaultPath, envFile)
+}
+
+// launchdPlistContent renders a launchd agent plist for the sync daemon.
+// RunAtLoad starts the daemon at login; KeepAlive with SuccessfulExit=false
+// restarts it after any non-zero exit.
+func launchdPlistContent(binary, vaultPath, slug string) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.yeisme.capsa-sync.%s</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>sync</string>
+        <string>daemon</string>
+        <string>run</string>
+        <string>--target</string>
+        <string>capsa</string>
+        <string>--vault</string>
+        <string>%s</string>
+        <string>--yes</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+</dict>
+</plist>
+`, slug, binary, vaultPath)
+}
+
+// systemdUnitPath returns the user unit file path for a slug.
+func systemdUnitPath(homeDir, slug string) string {
+	return filepath.Join(homeDir, ".config", "systemd", "user", "capsa-sync-"+slug+".service")
+}
+
+// launchdPlistPath returns the LaunchAgent plist path for a slug.
+func launchdPlistPath(homeDir, slug string) string {
+	return filepath.Join(homeDir, "Library", "LaunchAgents", "com.yeisme.capsa-sync."+slug+".plist")
+}
+
+// installDaemonUnit writes the service unit for the given platform. It returns
+// the written unit path and the user-facing enable command. Windows and any
+// other unsupported platform yield a platform_unsupported error.
+func installDaemonUnit(platform, homeDir, binary, vaultPath, slug string) (string, string, error) {
+	switch platform {
+	case "linux":
+		unitPath := systemdUnitPath(homeDir, slug)
+		if err := os.MkdirAll(filepath.Dir(unitPath), 0o700); err != nil {
+			return "", "", err
+		}
+		if err := os.WriteFile(unitPath, []byte(systemdUnitContent(binary, vaultPath, slug)), 0o644); err != nil {
+			return "", "", err
+		}
+		return unitPath, "systemctl --user enable --now capsa-sync-" + slug, nil
+	case "darwin":
+		unitPath := launchdPlistPath(homeDir, slug)
+		if err := os.MkdirAll(filepath.Dir(unitPath), 0o700); err != nil {
+			return "", "", err
+		}
+		if err := os.WriteFile(unitPath, []byte(launchdPlistContent(binary, vaultPath, slug)), 0o644); err != nil {
+			return "", "", err
+		}
+		return unitPath, "launchctl load " + unitPath, nil
+	default:
+		err := &domain.CommandError{Code: "platform_unsupported", Message: fmt.Sprintf("sync daemon service install is not supported on %s", platform), Hint: "Use 'pinax sync daemon run' to run the daemon in the foreground"}
+		return "", "", err
+	}
+}
+
+// uninstallDaemonUnit removes the service unit for the given platform. It does
+// not stop a running service. A missing unit file is reported as removed=false
+// rather than an error. Unsupported platforms yield platform_unsupported.
+func uninstallDaemonUnit(platform, homeDir, slug string) (string, bool, error) {
+	var unitPath string
+	switch platform {
+	case "linux":
+		unitPath = systemdUnitPath(homeDir, slug)
+	case "darwin":
+		unitPath = launchdPlistPath(homeDir, slug)
+	default:
+		err := &domain.CommandError{Code: "platform_unsupported", Message: fmt.Sprintf("sync daemon service uninstall is not supported on %s", platform), Hint: "Use 'pinax sync daemon run' to run the daemon in the foreground"}
+		return "", false, err
+	}
+	if _, statErr := os.Stat(unitPath); statErr != nil {
+		return unitPath, false, nil
+	}
+	if err := os.Remove(unitPath); err != nil {
+		return unitPath, false, err
+	}
+	return unitPath, true, nil
+}
+
+// daemonWriteEnvFile writes <vault>/.pinax/cloud/sync-env (mode 0600) containing
+// PINAX_SYNC_SECRET when that variable is set in the current environment. It
+// returns true when the file was written and false (no error) when the secret
+// is absent, so callers can record the outcome without treating absence as a
+// failure.
+func daemonWriteEnvFile(root string) bool {
+	value, ok := os.LookupEnv("PINAX_SYNC_SECRET")
+	if !ok || strings.TrimSpace(value) == "" {
+		return false
+	}
+	envDir := filepath.Join(root, ".pinax", "cloud")
+	if err := os.MkdirAll(envDir, 0o700); err != nil {
+		return false
+	}
+	content := "PINAX_SYNC_SECRET=" + value + "\n"
+	return os.WriteFile(filepath.Join(envDir, "sync-env"), []byte(content), 0o600) == nil
 }

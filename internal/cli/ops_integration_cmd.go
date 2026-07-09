@@ -77,9 +77,9 @@ func addCapsaCommands(root *cobra.Command, ctx commandBuildContext) {
 	capsaBackendSetS3Cmd := &cobra.Command{
 		Use:     "s3",
 		Short:   "Configure S3-compatible direct Capsa backend",
-		Example: "pinax capsa backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes",
+		Example: "pinax capsa backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./my-notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.CapsaBackendSetS3(cmd.Context(), app.CloudBackendSetRequest{VaultPath: *ctx.vaultPath, Kind: "s3", Bucket: *ctx.s3Bucket, Region: *ctx.s3Region, Prefix: *ctx.s3Prefix, Endpoint: *ctx.s3Endpoint, Profile: *ctx.s3Profile, AddressingStyle: *ctx.s3AddressingStyle, WorkspaceID: *ctx.cloudWorkspace, DeviceID: *ctx.cloudDevice, SecretRef: *ctx.cloudSecretRef})
+			projection, err := ctx.svc.CapsaBackendSetS3(cmd.Context(), app.CloudBackendSetRequest{VaultPath: *ctx.vaultPath, Kind: "s3", Bucket: *ctx.s3Bucket, Region: *ctx.s3Region, Prefix: *ctx.s3Prefix, Endpoint: *ctx.s3Endpoint, Profile: *ctx.s3Profile, AddressingStyle: *ctx.s3AddressingStyle, WorkspaceID: *ctx.cloudWorkspace, DeviceID: *ctx.cloudDevice, SecretRef: *ctx.cloudSecretRef, EncryptionSecretRef: *ctx.cloudEncryptionSecretRef})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -92,6 +92,7 @@ func addCapsaCommands(root *cobra.Command, ctx commandBuildContext) {
 	capsaBackendSetS3Cmd.Flags().StringVar(ctx.cloudWorkspace, "workspace", "", "Capsa workspace id")
 	capsaBackendSetS3Cmd.Flags().StringVar(ctx.cloudDevice, "device", "", "Local device id")
 	capsaBackendSetS3Cmd.Flags().StringVar(ctx.cloudSecretRef, "secret-ref", "", "Secret manager reference; do not save the raw secret")
+	capsaBackendSetS3Cmd.Flags().StringVar(ctx.cloudEncryptionSecretRef, "encryption-secret-ref", "", "Dedicated sync encryption secret reference; avoids weak-key warning")
 	capsaBackendSetRcloneCmd := &cobra.Command{
 		Use:     "rclone",
 		Short:   "Configure rclone direct Capsa backend",

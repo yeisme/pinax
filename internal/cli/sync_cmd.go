@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/app/syncdaemon"
+	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/output"
 	"github.com/yeisme/pinax/internal/profile"
 )
@@ -286,7 +287,25 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	daemonRunCmd.Flags().BoolVar(&daemonOnce, "once", false, "Run one daemon sync cycle and exit")
 	daemonLogsCmd.Flags().IntVar(&syncLogLimit, "limit", 20, "Maximum daemon events to read")
-	daemonCmd.AddCommand(daemonRunCmd, daemonStartCmd, daemonStatusCmd, daemonStopCmd, daemonLogsCmd)
+	daemonInstallCmd := &cobra.Command{Use: "install", Short: "Install the sync daemon as a system service unit", RunE: func(cmd *cobra.Command, args []string) error {
+		if !*ctx.yes {
+			err := &domain.CommandError{Code: "approval_required", Message: "sync daemon install requires --yes", Hint: "Run pinax sync daemon install --vault <vault> --yes to write the service unit"}
+			return ctx.renderProjection(cmd, domain.NewErrorProjection("sync.daemon.install", err), err)
+		}
+		projection, err := ctx.svc.SyncDaemonInstall(cmd.Context(), app.SyncDaemonInstallRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonUninstallCmd := &cobra.Command{Use: "uninstall", Short: "Remove the sync daemon system service unit", RunE: func(cmd *cobra.Command, args []string) error {
+		if !*ctx.yes {
+			err := &domain.CommandError{Code: "approval_required", Message: "sync daemon uninstall requires --yes", Hint: "Run pinax sync daemon uninstall --vault <vault> --yes to remove the service unit"}
+			return ctx.renderProjection(cmd, domain.NewErrorProjection("sync.daemon.uninstall", err), err)
+		}
+		projection, err := ctx.svc.SyncDaemonUninstall(cmd.Context(), app.SyncDaemonInstallRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonInstallCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm service unit install")
+	daemonUninstallCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm service unit removal")
+	daemonCmd.AddCommand(daemonRunCmd, daemonStartCmd, daemonStatusCmd, daemonStopCmd, daemonLogsCmd, daemonInstallCmd, daemonUninstallCmd)
 	syncCmd.AddCommand(daemonCmd)
 
 	addSyncConflictsCommands(syncCmd, ctx)

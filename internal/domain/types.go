@@ -140,16 +140,26 @@ func (e *CommandError) Error() string {
 }
 
 type Projection struct {
-	SpecVersion string            `json:"spec_version"`
-	Mode        string            `json:"mode"`
-	Command     string            `json:"command"`
-	Status      string            `json:"status"`
-	Summary     string            `json:"summary,omitempty"`
-	Facts       map[string]string `json:"facts,omitempty"`
-	Actions     []Action          `json:"actions,omitempty"`
-	Evidence    []string          `json:"evidence,omitempty"`
-	Data        any               `json:"data,omitempty"`
-	Error       *CommandError     `json:"error,omitempty"`
+	SpecVersion string              `json:"spec_version"`
+	Mode        string              `json:"mode"`
+	Command     string              `json:"command"`
+	Status      string              `json:"status"`
+	Summary     string              `json:"summary,omitempty"`
+	Facts       map[string]string   `json:"facts,omitempty"`
+	Actions     []Action            `json:"actions,omitempty"`
+	Evidence    []string            `json:"evidence,omitempty"`
+	Data        any                 `json:"data,omitempty"`
+	Warnings    []ProjectionWarning `json:"warnings,omitempty"`
+	Error       *CommandError       `json:"error,omitempty"`
+}
+
+// ProjectionWarning is a non-fatal advisory attached to a projection. Unlike
+// Error, a warning does not change the command status; it surfaces a condition
+// the user should review (e.g. a weak encryption key).
+type ProjectionWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
 }
 
 // VaultObjectKind identifies the kind of vault object returned by shared resolver paths.
