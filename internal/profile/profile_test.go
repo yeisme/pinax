@@ -225,3 +225,87 @@ func TestProfilesPath(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected, got)
 	}
 }
+
+const awsCredentialsFixture = `[default]
+aws_access_key_id = AKIADEFAULT
+aws_secret_access_key = default-secret
+
+[tencent-cos-pinax]
+# inline comment is ignored
+aws_access_key_id = AKIATENCENT
+aws_secret_access_key = cos-pinax-secret-value
+region = ap-shanghai
+
+[other-profile]
+aws_access_key_id = AKIAOTHER
+aws_secret_access_key = other-secret
+`
+
+func writeAWSCredentialsFixture(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "credentials")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	return path
+}
+
+func TestResolveSecretRef_Profile(t *testing.T) {
+	path := writeAWSCredentialsFixture(t, awsCredentialsFixture)
+	orig := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+	_ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", path)
+	defer func() { _ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", orig) }()
+
+	got, err := ResolveSecretRef("profile://tencent-cos-pinax")
+	if err != nil {
+		t.Fatalf("resolve profile: %v", err)
+	}
+	if got != "cos-pinax-secret-value" {
+		t.Fatalf("resolved secret = %q, want cos-pinax-secret-value", got)
+	}
+
+	// default profile still resolves independently.
+	def, err := ResolveSecretRef("profile://default")
+	if err != nil {
+		t.Fatalf("resolve default profile: %v", err)
+	}
+	if def != "default-secret" {
+		t.Fatalf("default secret = %q", def)
+	}
+}
+
+func TestResolveSecretRef_ProfileMissing(t *testing.T) {
+	path := writeAWSCredentialsFixture(t, awsCredentialsFixture)
+	orig := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+	_ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", path)
+	defer func() { _ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", orig) }()
+
+	if _, err := ResolveSecretRef("profile://does-not-exist"); err == nil {
+		t.Fatal("expected error for missing profile")
+	}
+}
+
+func TestResolveSecretRef_ProfileFileUnreadable(t *testing.T) {
+	orig := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+	_ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "missing-credentials"))
+	defer func() { _ = os.Setenv("AWS_SHARED_CREDENTIALS_FILE", orig) }()
+
+	if _, err := ResolveSecretRef("profile://anything"); err == nil {
+		t.Fatal("expected error when credentials file is unreadable")
+	}
+}
+
+func TestResolveSecretRef_ProfileUnchangedPaths(t *testing.T) {
+	// env:// and plain: schemes must keep working alongside profile://.
+	origEnv := os.Getenv("PINAX_TEST_SECRET")
+	_ = os.Setenv("PINAX_TEST_SECRET", "env-value")
+	defer func() { _ = os.Setenv("PINAX_TEST_SECRET", origEnv) }()
+
+	if got, err := ResolveSecretRef("env://PINAX_TEST_SECRET"); err != nil || got != "env-value" {
+		t.Fatalf("env:// resolution = %q, err=%v", got, err)
+	}
+	if got, err := ResolveSecretRef("plain:raw-secret"); err != nil || got != "raw-secret" {
+		t.Fatalf("plain: resolution = %q, err=%v", got, err)
+	}
+}

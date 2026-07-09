@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -104,6 +105,9 @@ func ResolveSecretRef(ref string) (string, error) {
 		return resolveKeychain(account)
 	case strings.HasPrefix(ref, "plain:"):
 		return strings.TrimPrefix(ref, "plain:"), nil
+	case strings.HasPrefix(ref, "profile://"):
+		profileName := strings.TrimPrefix(ref, "profile://")
+		return resolveAWSProfileSecret(profileName)
 	default:
 		return ref, nil
 	}
@@ -128,6 +132,59 @@ func resolveKeychain(account string) (string, error) {
 		return strings.TrimSpace(string(out)), nil
 	}
 	return "", fmt.Errorf("keychain is not supported on this operating system")
+}
+
+// resolveAWSProfileSecret reads the AWS shared credentials INI file and returns
+// the aws_secret_access_key for the named profile. No subprocess, no external
+// INI dependency. The credentials path defaults to ~/.aws/credentials but can
+// be overridden with the AWS_SHARED_CREDENTIALS_FILE environment variable.
+func resolveAWSProfileSecret(profileName string) (string, error) {
+	if strings.TrimSpace(profileName) == "" {
+		return "", fmt.Errorf("profile name is required")
+	}
+	path := strings.TrimSpace(os.Getenv("AWS_SHARED_CREDENTIALS_FILE"))
+	if path == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory for AWS credentials: %w", err)
+		}
+		path = filepath.Join(homeDir, ".aws", "credentials")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("read AWS credentials file %s: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	scanner := bufio.NewScanner(file)
+	inSection := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inSection = strings.TrimSpace(line[1:len(line)-1]) == profileName
+			continue
+		}
+		if !inSection {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(key) == "aws_secret_access_key" {
+			secret := strings.TrimSpace(value)
+			if secret == "" {
+				return "", fmt.Errorf("aws_secret_access_key is empty for profile %q in %s", profileName, path)
+			}
+			return secret, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("scan AWS credentials file %s: %w", path, err)
+	}
+	return "", fmt.Errorf("profile %q not found in %s", profileName, path)
 }
 
 // ResolveTarget resolves a target string to backend connection parameters.

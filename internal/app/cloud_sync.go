@@ -111,7 +111,37 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		return projection, planErr
 	}
 	if direction == syncplan.DirectionPush && req.Yes && !req.DryRun && isExecutableCloudState(state) {
-		commit, execErr := executeCloudPush(ctx, root, state, localManifest, req.BaseRevision)
+		rebaseResult, execErr := runCloudPushRebase(cloudRebasePlan{
+			commit: func(base string) (cloudsync.CommitResult, error) {
+				return executeCloudPush(ctx, root, state, localManifest, base)
+			},
+			pull:          func() (cloudRemoteSnapshot, error) { return loadCloudRemoteSnapshot(ctx, state) },
+			localManifest: localManifest,
+			baseManifest:  baseManifest,
+			baseRevision:  req.BaseRevision,
+			yes:           req.Yes,
+		})
+		if len(rebaseResult.Conflicts) > 0 {
+			// Auto-rebase pulled the remote head and found a content conflict that
+			// cannot be auto-pushed. Surface a conflict_required projection.
+			plan.RemoteWrite = false
+			conflicts := cloudRebaseConflictEntries(rebaseResult.Conflicts)
+			commandErr := &domain.CommandError{Code: "conflict_required", Message: "sync push hit a content conflict after auto-rebase", Hint: fmt.Sprintf("Resolve conflicts with pinax sync conflicts list --vault %s, then rerun pinax sync push --yes", shellQuote(root))}
+			projection := domain.NewErrorProjection(command, commandErr)
+			projection.Actions = syncConflictActions(root, conflicts)
+			receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
+			if receiptErr == nil {
+				_ = writeCurrentSyncState(root, state, receipt, "")
+				projection.Facts["run_id"] = receipt.RunID
+				projection.Facts["conflicts"] = fmt.Sprint(len(conflicts))
+				projection.Evidence = []string{receiptPath}
+			}
+			addCloudSyncFacts(&projection, state, plan)
+			addCapsaBridgeFacts(&projection, req.Target)
+			addCloudContentFacts(&projection, localManifest)
+			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "conflicts": conflicts, "receipt": receipt}
+			return projection, commandErr
+		}
 		if execErr != nil {
 			plan.RemoteWrite = false
 			commandErr := commandErrorFromError(execErr)
@@ -126,6 +156,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
 			return projection, commandErr
 		}
+		commit := rebaseResult.Commit
 		plan.RemoteWrite = commit.RemoteWrite
 		receipt.RemoteWrite = commit.RemoteWrite
 		receipt.RevisionID = commit.RevisionID
@@ -264,6 +295,8 @@ func commandErrorFromError(err error) *domain.CommandError {
 		return &domain.CommandError{Code: "lock_held", Message: message, Hint: "Retry after the current Capsa sync finishes"}
 	case strings.Contains(rawMessage, "transport_unavailable"), isRcloneCommandFailure(rawMessage):
 		return &domain.CommandError{Code: "transport_unavailable", Message: message, Hint: "Check the configured Capsa transport before retrying"}
+	case isCloudRevisionConflict(err):
+		return &domain.CommandError{Code: "REVISION_CONFLICT", Message: message, Hint: "Another device pushed a newer revision; rerun pinax sync push --yes to auto-rebase, or pull first"}
 	default:
 		return &domain.CommandError{Code: "cloud_sync_failed", Message: message, Hint: "Run pinax capsa doctor --vault <vault> --json"}
 	}
@@ -796,6 +829,108 @@ func executeCloudPush(ctx context.Context, root string, state pinaxcloud.State, 
 		return cloudsync.CommitResult{}, err
 	}
 	return transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, ObjectRefs: objectRefs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
+}
+
+// isCloudRevisionConflict reports whether err is a CAS revision conflict from
+// either the object-store transports (cloudsync.ErrRevisionConflict) or the
+// Pinax Cloud server transport (REVISION_CONFLICT).
+func isCloudRevisionConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, cloudsync.ErrRevisionConflict) {
+		return true
+	}
+	return cloudclient.IsRevisionConflict(err)
+}
+
+// cloudRebaseOutcome reports whether a freshly pulled remote snapshot lets a
+// push retry cleanly or exposes an unresolvable content conflict.
+type cloudRebaseOutcome struct {
+	conflict  bool
+	conflicts []syncplan.Operation
+}
+
+// planCloudRebase diffs the local manifest against the freshly pulled remote
+// snapshot (using the original base as the common ancestor) and reports whether
+// the push can be retried cleanly or must surface a content conflict.
+func planCloudRebase(localManifest, baseManifest, remoteManifest pinaxcloud.Manifest, remoteRevision string) cloudRebaseOutcome {
+	diffPlan, _ := syncplan.BuildPlan(syncplan.Request{Direction: syncplan.DirectionDiff, Target: "cloud", LocalManifest: localManifest, BaseManifest: baseManifest, RemoteManifest: remoteManifest, BaseRevision: remoteRevision, RemoteRevision: remoteRevision, DryRun: true, Yes: true})
+	var conflicts []syncplan.Operation
+	for _, op := range diffPlan.Operations {
+		if op.Kind == "conflict" {
+			conflicts = append(conflicts, op)
+		}
+	}
+	if len(conflicts) > 0 {
+		return cloudRebaseOutcome{conflict: true, conflicts: conflicts}
+	}
+	return cloudRebaseOutcome{}
+}
+
+// cloudRebasePlan bundles the commit/pull hooks and plan inputs for a push that
+// may auto-rebase once on a revision conflict. The commit and pull functions are
+// injected so the rebase retry path is deterministic and unit-testable.
+type cloudRebasePlan struct {
+	commit        func(baseRevision string) (cloudsync.CommitResult, error)
+	pull          func() (cloudRemoteSnapshot, error)
+	localManifest pinaxcloud.Manifest
+	baseManifest  pinaxcloud.Manifest
+	baseRevision  string
+	yes           bool
+}
+
+// cloudPushRebaseResult is the outcome of a push with optional auto-rebase.
+type cloudPushRebaseResult struct {
+	Commit    cloudsync.CommitResult
+	Conflicts []syncplan.Operation // non-empty when auto-rebase found content conflicts
+	Rebased   bool                 // true when the commit succeeded on the retry after rebase
+}
+
+// runCloudPushRebase commits a push and, when --yes is set and the commit fails
+// with a revision conflict, pulls the remote head, rebuilds the push plan, and
+// retries the commit exactly once:
+//   - no content conflict -> retry the commit against the new base revision;
+//   - content conflict    -> return the conflict operations (caller builds the
+//     conflict projection), no error;
+//   - retry exhausted     -> surface the ORIGINAL revision conflict error;
+//   - pull failure        -> surface the original revision conflict error.
+//
+// There is no retry loop: at most one rebase attempt.
+func runCloudPushRebase(plan cloudRebasePlan) (cloudPushRebaseResult, error) {
+	commit, err := plan.commit(plan.baseRevision)
+	if err == nil {
+		return cloudPushRebaseResult{Commit: commit}, nil
+	}
+	if !plan.yes || !isCloudRevisionConflict(err) {
+		return cloudPushRebaseResult{}, err
+	}
+	originalConflict := err
+	snapshot, pullErr := plan.pull()
+	if pullErr != nil {
+		// Cannot rebase onto the remote head; surface the original conflict.
+		return cloudPushRebaseResult{}, originalConflict
+	}
+	outcome := planCloudRebase(plan.localManifest, plan.baseManifest, snapshot.Manifest, snapshot.RevisionID)
+	if outcome.conflict {
+		return cloudPushRebaseResult{Conflicts: outcome.conflicts}, nil
+	}
+	retried, retryErr := plan.commit(snapshot.RevisionID)
+	if retryErr != nil {
+		// Retry exhausted: surface the original revision conflict (no loop).
+		return cloudPushRebaseResult{}, originalConflict
+	}
+	return cloudPushRebaseResult{Commit: retried, Rebased: true}, nil
+}
+
+// cloudRebaseConflictEntries converts auto-rebase conflict operations into sync
+// conflict entries so the conflict projection's next actions point at real paths.
+func cloudRebaseConflictEntries(ops []syncplan.Operation) []domain.SyncConflictEntry {
+	entries := make([]domain.SyncConflictEntry, 0, len(ops))
+	for _, op := range ops {
+		entries = append(entries, domain.SyncConflictEntry{File: op.Path, MainPath: op.Path})
+	}
+	return entries
 }
 
 func remoteBlobMatchesKey(ctx context.Context, transport cloudsync.Transport, blobID, keyID string) (bool, error) {

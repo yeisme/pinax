@@ -14,7 +14,7 @@ func TestCloud(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/cloud/scripts",
 		Setup: func(env *testscript.Env) error {
-			env.Vars = append(env.Vars, "PATH="+sharedBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), "PINAX_FAKE_CLOUD_URL="+fake.Endpoint(), "PINAX_CLOUD_TOKEN=fake-token")
+			env.Vars = append(env.Vars, "PATH="+sharedBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), "PINAX_FAKE_CLOUD_URL="+fake.Endpoint(), "PINAX_CLOUD_TOKEN=fake-token", "PINAX_SYNC_SECRET=fake-sync-secret")
 			return nil
 		},
 	})

@@ -147,6 +147,7 @@ func (s *Service) SyncDaemonStart(_ context.Context, req SyncDaemonRequest) (dom
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	cmd.Env = os.Environ()
 	if err := cmd.Start(); err != nil {
 		return errorProjection("sync.daemon.start", err), err
 	}

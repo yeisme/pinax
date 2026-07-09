@@ -294,6 +294,7 @@ func TestLocalRPCProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
 }
 
 func TestLocalRPCSyncPushPullUsesWriteGateAndService(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "rpc-sync-secret")
 	ctx := context.Background()
 	objectRoot := t.TempDir()
 	root := t.TempDir()

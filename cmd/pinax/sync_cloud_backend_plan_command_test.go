@@ -552,6 +552,7 @@ func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
 }
 
 func TestSyncCloudPlannerCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "test-sync-secret")
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nbody\n")
@@ -867,6 +868,7 @@ func TestCloudBackendSetRcloneCLI(t *testing.T) {
 }
 
 func TestDirectCloudPushPullCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "test-sync-secret")
 	objectRoot := t.TempDir()
 	deviceA := t.TempDir()
 	deviceB := t.TempDir()
@@ -972,6 +974,7 @@ func TestSyncConflictsCommandsUseProjectionOutputModesAndReceiptsCLI(t *testing.
 }
 
 func TestSyncConflictNextActionsAppearInSyncJSONAndAgentOutputsCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "test-sync-secret")
 	objectRoot := t.TempDir()
 	deviceA := t.TempDir()
 	deviceB := t.TempDir()

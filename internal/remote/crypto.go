@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/yeisme/pinax/internal/profile"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -34,11 +35,30 @@ func DeriveKey(secretRef string) (CryptoKey, error) {
 	if secretRef == "" {
 		return CryptoKey{}, fmt.Errorf("secret ref required")
 	}
-	// Using a static salt for deterministic key derivation since secretRef is our master secret
+	// Resolve the secret reference (env://, profile://, keychain://, plain:)
+	// BEFORE key derivation. Fail closed: never use the raw reference string as
+	// key material when resolution fails.
+	resolved, err := profile.ResolveSecretRef(secretRef)
+	if err != nil {
+		return CryptoKey{}, fmt.Errorf("resolve encryption secret: %w", err)
+	}
+	// Using a static salt for deterministic key derivation since the resolved
+	// secret is our master secret. Salt/iterations/key-size are frozen.
 	salt := []byte("pinax-cloud-sync-salt-v1")
-	key := pbkdf2.Key([]byte(secretRef), salt, 100000, 32, sha256.New)
+	key := pbkdf2.Key([]byte(resolved), salt, 100000, 32, sha256.New)
 	keyIDHash := sha256.Sum256(append([]byte("pinax-cloud-key-id\x00"), key...))
 	return CryptoKey{KeyID: "key_" + hex.EncodeToString(keyIDHash[:])[:16], key: key}, nil
+}
+
+// KeyID resolves the secret reference and returns the stable key identifier for
+// secretRef, or an empty string when the reference cannot be resolved. It never
+// returns key material derived from an unresolved reference.
+func KeyID(secretRef string) string {
+	key, err := DeriveKey(secretRef)
+	if err != nil {
+		return ""
+	}
+	return key.KeyID
 }
 
 func EncryptBlob(key CryptoKey, plaintext, aad []byte) (EncryptedEnvelope, error) {
