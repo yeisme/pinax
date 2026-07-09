@@ -13,7 +13,7 @@ The word `capsa` names the sync protocol, not necessarily a hosted Capsa service
 | `pinax capsa backend set rclone` | Configures an rclone direct transport such as an existing OneDrive remote. | Writes Capsa sync state; does not save OAuth refresh tokens. |
 | `pinax capsa status` | Views Capsa sync state. | Does not write. |
 | `pinax capsa logout` | Logs out or clears the local device/backend state. | Writes Capsa sync state. |
-| `pinax capsa doctor` | Diagnoses Capsa sync state and transport boundaries. | Does not write. |
+| `pinax capsa doctor` | Diagnoses Capsa sync state, transport boundaries, and encryption key health (`encryption_key_mismatch`, `weak_encryption_key`). | Does not write. |
 
 ## Centralized Local API vs Capsa Sync Protocol
 
@@ -71,6 +71,7 @@ Stable error codes (uppercase, machine-readable): `UNAUTHENTICATED`, `DEVICE_REV
 S3-compatible direct transport:
 
 ```bash
+export PINAX_SYNC_SECRET="your-encryption-secret"
 pinax capsa backend set s3 \
   --bucket notes \
   --region us-east-1 \
@@ -78,6 +79,7 @@ pinax capsa backend set s3 \
   --profile work \
   --workspace personal \
   --device laptop \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./my-notes
 pinax capsa doctor --vault ./my-notes --json
 ```
@@ -112,11 +114,29 @@ pinax capsa backend set s3 \
   --workspace personal \
   --device laptop \
   --secret-ref env://PINAX_SYNC_SECRET \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./my-notes
 pinax capsa doctor --vault ./my-notes --json
 ```
 
 COS region endpoints: `cos.ap-guangzhou.myqcloud.com`, `cos.ap-beijing.myqcloud.com`, `cos.ap-shanghai.myqcloud.com`, `cos.ap-chengdu.myqcloud.com`, etc. Pinax suppresses checksum validation warnings for S3-compatible providers (commit `495978f`).
+
+### Weak encryption key warning
+
+If you configure S3 direct or server transport without `--encryption-secret-ref`, Pinax warns `weak_encryption_key`. This means the encryption key is derived from the same credential reference used for transport auth (e.g., `profile://tencent-cos-pinax`).
+
+For production use, always set a dedicated encryption key:
+
+```bash
+export PINAX_SYNC_SECRET="your-dedicated-encryption-secret"
+pinax capsa backend set s3 \
+  --bucket pinax-note-1322128555 \
+  --region ap-guangzhou \
+  --endpoint https://cos.ap-guangzhou.myqcloud.com \
+  --profile tencent-cos-pinax \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
+  --vault ./my-notes
+```
 
 OneDrive through rclone direct transport:
 
@@ -164,8 +184,8 @@ pinax init ./device-a --title "Device A"
 pinax init ./device-b --title "Device B"
 mkdir -p ./device-a/notes
 printf '# Alpha\n\nfrom device A\n' > ./device-a/notes/alpha.md
-pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
 pinax sync push --target capsa --vault ./device-a --yes --json
 pinax sync pull --target capsa --vault ./device-b --yes --json
 ```

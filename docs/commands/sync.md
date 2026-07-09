@@ -40,6 +40,8 @@ pinax sync push --target capsa --vault ./my-notes --dry-run --json
 Configure an S3-compatible direct backend and sync two devices:
 
 ```bash
+export PINAX_SYNC_SECRET="your-encryption-secret"
+
 pinax capsa backend set s3 \
   --bucket notes \
   --region us-east-1 \
@@ -47,6 +49,7 @@ pinax capsa backend set s3 \
   --profile work \
   --workspace personal \
   --device laptop \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./device-a
 pinax sync push --target capsa --vault ./device-a --yes --json
 
@@ -57,6 +60,7 @@ pinax capsa backend set s3 \
   --profile work \
   --workspace personal \
   --device desktop \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./device-b
 pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
@@ -91,6 +95,7 @@ pinax capsa backend set s3 \
   --workspace personal \
   --device laptop \
   --secret-ref env://PINAX_SYNC_SECRET \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./my-notes
 pinax sync push --vault ./my-notes --yes --json
 
@@ -104,6 +109,7 @@ pinax capsa backend set s3 \
   --workspace personal \
   --device desktop \
   --secret-ref env://PINAX_SYNC_SECRET \
+  --encryption-secret-ref env://PINAX_SYNC_SECRET \
   --vault ./my-notes
 pinax sync pull --vault ./my-notes --yes --json
 ```
@@ -115,8 +121,8 @@ COS region endpoints follow `https://cos.<region>.myqcloud.com` (e.g. `cos.ap-be
 Use a local object-store transport for development or local E2E checks:
 
 ```bash
-pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
 pinax sync push --target capsa --vault ./device-a --yes --json
 pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
@@ -159,6 +165,38 @@ pinax sync daemon start --target capsa --vault ./my-notes --yes
 The first daemon release detects local file changes with a local watcher and detects remote changes by polling the Capsa Sync head. Redacted daemon state and event logs live under `.pinax/sync-daemon/` and can be inspected with `pinax sync daemon logs --vault ./my-notes --limit 20 --json`. It is a local process, not a hosted service, and it does not change the Capsa Sync plaintext boundary: transports still coordinate encrypted blobs, encrypted manifests, and revision metadata only.
 
 These apply commands use the same sync engine as direct object-store transports. If the selected backend is unavailable, the commit fails, or the configured scheme is unsupported, the command must return a structured partial/error such as `transport_unavailable`, `unsupported_scheme`, or `revision_conflict` with `remote_write=false`. It must not silently no-op, produce a dummy revision, or emit `remote_write=true`.
+
+## Daemon service installation
+
+For long-running persistent sync, install the daemon as an OS service:
+
+### Linux (systemd user unit)
+
+```bash
+pinax sync daemon install --vault ./my-notes --yes
+systemctl --user enable --now capsa-sync-my-notes
+```
+
+To remove:
+
+```bash
+systemctl --user stop capsa-sync-my-notes
+pinax sync daemon uninstall --vault ./my-notes --yes
+```
+
+### macOS (launchd)
+
+```bash
+pinax sync daemon install --vault ./my-notes --yes
+launchctl load ~/Library/LaunchAgents/com.yeisme.capsa-sync.my-notes.plist
+```
+
+To remove:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.yeisme.capsa-sync.my-notes.plist
+pinax sync daemon uninstall --vault ./my-notes --yes
+```
 
 ## Capsa Sync execution model
 
@@ -222,12 +260,20 @@ pinax capsa doctor --vault ./my-notes --json
 COS requires **virtual-hosted** addressing. Pinax auto-detects `.myqcloud.com` endpoints and sets `path_style=false`. If you overrode with `--addressing-style path`, remove it and reconfigure:
 
 ```bash
-pinax capsa backend set s3 --bucket <bucket> --region ap-guangzhou --endpoint https://cos.ap-guangzhou.myqcloud.com --profile <profile> --vault ./my-notes
+pinax capsa backend set s3 --bucket <bucket> --region ap-guangzhou --endpoint https://cos.ap-guangzhou.myqcloud.com --profile <profile> --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./my-notes
 ```
 
 ### `revision_conflict`
 
 Another device pushed a newer revision since your last pull. Run `pinax sync --vault ./my-notes --yes` (bidirectional) to pull remote changes and re-push in one step. If conflicts arise, Pinax preserves local edits as `.conflict.md` files — use `pinax sync conflicts list` to inspect.
+
+### `encryption_key_mismatch`
+
+The encryption key has changed since the last sync. This happens after upgrading Pinax (the DeriveKey fix changes key derivation). Run `pinax capsa doctor --vault ./my-notes` to confirm, then re-push:
+
+```bash
+pinax sync push --vault ./my-notes --yes
+```
 
 ### `LOCAL_UNPUSHED_CHANGES`
 
