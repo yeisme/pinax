@@ -56,7 +56,7 @@ func TestNoteTagRecordFactsCLI(t *testing.T) {
 		t.Fatalf("note tag json invalid: %v\n%s", err, stdout)
 	}
 	facts := envelope["facts"].(map[string]any)
-	for key, want := range map[string]string{"record_event": "note.metadata_updated", "ledger_seq": "2", "record_version": "2", "index_updated": "true"} {
+	for key, want := range map[string]string{"record_event": "note.metadata_updated", "ledger_seq": "3", "record_version": "2", "index_updated": "true"} {
 		if facts[key] != want {
 			t.Fatalf("fact %s = %#v, want %q; envelope=%#v", key, facts[key], want, envelope)
 		}

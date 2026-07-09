@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 	"unicode"
 
 	"github.com/yeisme/pinax/internal/app/noteops"
@@ -3354,9 +3356,10 @@ func ensureFrontmatter(note domain.Note, content string) string {
 	return b.String()
 }
 
+// ponytail: UUID v7 (time-ordered, path-independent); old SHA1(path) broke on rename
 func stableNoteID(path string) string {
-	sum := sha1.Sum([]byte(filepath.ToSlash(path)))
-	return "note_" + hex.EncodeToString(sum[:])[:12]
+	id, _ := uuid.NewV7()
+	return "note_" + strings.ReplaceAll(id.String(), "-", "")
 }
 
 func slugify(title string) string {
