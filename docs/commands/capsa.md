@@ -82,6 +82,42 @@ pinax capsa backend set s3 \
 pinax capsa doctor --vault ./my-notes --json
 ```
 
+### S3 addressing style and provider auto-detection
+
+Pinax auto-detects the S3 addressing style from the endpoint URL:
+
+| Provider | Endpoint pattern | Default style | Reason |
+| --- | --- | --- | --- |
+| Tencent COS | `*.myqcloud.com` / `*.myqcloud.com.cn` | **virtual-hosted** | COS rejects path-style requests with `PathStyleDomainForbidden` |
+| MinIO / custom | Any other endpoint with a custom `--endpoint` | **path-style** | Most S3-compatible appliances require path-style |
+| AWS S3 | No `--endpoint` (default) | virtual-hosted | AWS SDK default |
+
+Override with `--addressing-style path` or `--addressing-style virtual-hosted` when needed. For Tencent COS, do not set `--addressing-style path`.
+
+### Tencent Cloud COS example
+
+```bash
+# AWS shared profile (~/.aws/credentials)
+# [tencent-cos-pinax]
+# aws_access_key_id = AKIDxxxxxxxxxxxx
+# aws_secret_access_key = <secret>
+
+export PINAX_SYNC_SECRET="your-encryption-secret"
+pinax capsa backend set s3 \
+  --bucket pinax-note-1322128555 \
+  --region ap-guangzhou \
+  --endpoint https://cos.ap-guangzhou.myqcloud.com \
+  --profile tencent-cos-pinax \
+  --prefix pinax-sync/ \
+  --workspace personal \
+  --device laptop \
+  --secret-ref env://PINAX_SYNC_SECRET \
+  --vault ./my-notes
+pinax capsa doctor --vault ./my-notes --json
+```
+
+COS region endpoints: `cos.ap-guangzhou.myqcloud.com`, `cos.ap-beijing.myqcloud.com`, `cos.ap-shanghai.myqcloud.com`, `cos.ap-chengdu.myqcloud.com`, etc. Pinax suppresses checksum validation warnings for S3-compatible providers (commit `495978f`).
+
 OneDrive through rclone direct transport:
 
 ```bash

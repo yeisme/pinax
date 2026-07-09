@@ -61,6 +61,57 @@ pinax capsa backend set s3 \
 pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
 
+### Tencent Cloud COS (real-world verified)
+
+Tencent Cloud Object Storage (COS) is S3-compatible and uses **virtual-hosted** addressing by default. Pinax auto-detects `.myqcloud.com` endpoints and selects virtual-hosted style automatically — you do not need `--addressing-style virtual-hosted`.
+
+AWS profile in `~/.aws/credentials`:
+
+```ini
+[profile tencent-cos-pinax]
+region = ap-guangzhou
+
+[tencent-cos-pinax]
+aws_access_key_id = AKIDxxxxxxxxxxxx
+aws_secret_access_key = <your-secret-key>
+```
+
+Configure two devices and sync:
+
+```bash
+export PINAX_SYNC_SECRET="your-encryption-secret"
+
+# Device A (laptop)
+pinax capsa backend set s3 \
+  --bucket pinax-note-1322128555 \
+  --region ap-guangzhou \
+  --endpoint https://cos.ap-guangzhou.myqcloud.com \
+  --profile tencent-cos-pinax \
+  --prefix pinax-sync/ \
+  --workspace personal \
+  --device laptop \
+  --secret-ref env://PINAX_SYNC_SECRET \
+  --vault ./my-notes
+pinax sync push --vault ./my-notes --yes --json
+
+# Device B (desktop) — same bucket, different device id
+pinax capsa backend set s3 \
+  --bucket pinax-note-1322128555 \
+  --region ap-guangzhou \
+  --endpoint https://cos.ap-guangzhou.myqcloud.com \
+  --profile tencent-cos-pinax \
+  --prefix pinax-sync/ \
+  --workspace personal \
+  --device desktop \
+  --secret-ref env://PINAX_SYNC_SECRET \
+  --vault ./my-notes
+pinax sync pull --vault ./my-notes --yes --json
+```
+
+After initial push, use `pinax sync --vault ./my-notes --yes` for bidirectional sync. If you moved a note locally but haven't pushed yet, `sync pull` returns `LOCAL_UNPUSHED_CHANGES`; `pinax sync` (without subcommand) will push the move and pull remote changes in one step.
+
+COS region endpoints follow `https://cos.<region>.myqcloud.com` (e.g. `cos.ap-beijing.myqcloud.com`, `cos.ap-shanghai.myqcloud.com`). The `--profile` flag reads credentials from the named AWS shared profile; Pinax never stores the raw secret key.
+
 Use a local object-store transport for development or local E2E checks:
 
 ```bash
@@ -155,3 +206,37 @@ S3 direct can serve as a backup mirror for encrypted Capsa Sync objects, but it 
 Client CLI parity does not replace the daemon. Remote API Mode can let a client trigger supported explicit sync operations through registered RPC capabilities, but realtime multi-device convergence should run `pinax sync daemon` on each device that owns a local vault.
 
 See [`docs/architecture/cloud-sync-design.md`](../architecture/cloud-sync-design.md) for the architecture split. See [Client CLI Parity and Realtime Sync](../interfaces/client-cli-parity-and-sync.md) for the client coverage boundary. See also [`api`](./api.md), [`token`](./token.md), and [`profile`](./profile.md) for Remote API Mode.
+
+## S3 direct sync troubleshooting
+
+### `NoSuchBucket`
+
+The bucket name is wrong or the credentials lack access. Verify the bucket exists and the profile has read/write permission:
+
+```bash
+pinax capsa doctor --vault ./my-notes --json
+```
+
+### `PathStyleDomainForbidden` (Tencent COS)
+
+COS requires **virtual-hosted** addressing. Pinax auto-detects `.myqcloud.com` endpoints and sets `path_style=false`. If you overrode with `--addressing-style path`, remove it and reconfigure:
+
+```bash
+pinax capsa backend set s3 --bucket <bucket> --region ap-guangzhou --endpoint https://cos.ap-guangzhou.myqcloud.com --profile <profile> --vault ./my-notes
+```
+
+### `revision_conflict`
+
+Another device pushed a newer revision since your last pull. Run `pinax sync --vault ./my-notes --yes` (bidirectional) to pull remote changes and re-push in one step. If conflicts arise, Pinax preserves local edits as `.conflict.md` files — use `pinax sync conflicts list` to inspect.
+
+### `LOCAL_UNPUSHED_CHANGES`
+
+You moved or deleted a note locally without pushing. `sync pull` refuses to run to avoid restoring old paths. Run `pinax sync --vault ./my-notes --yes` to push the local move/delete and pull remote changes together.
+
+### `cloud_not_configured`
+
+No Capsa backend is configured for this vault. Run `pinax capsa backend set s3 ...` (S3 direct) or `pinax capsa login ...` (Capsa Server) first. Check with `pinax capsa status --vault ./my-notes --json`.
+
+### Checksum warnings in logs
+
+Pinax sets `RequestChecksumCalculationWhenRequired` and `ResponseChecksumValidationWhenRequired` for S3-compatible providers. This suppresses per-object `x-amz-checksum-*` WARN messages from services like Tencent COS that don't return checksum headers. No action needed.
