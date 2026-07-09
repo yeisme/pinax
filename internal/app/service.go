@@ -18,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 	"unicode"
 
 	"github.com/yeisme/pinax/internal/app/noteops"
@@ -3356,10 +3354,14 @@ func ensureFrontmatter(note domain.Note, content string) string {
 	return b.String()
 }
 
-// ponytail: UUID v7 (time-ordered, path-independent); old SHA1(path) broke on rename
+// stableNoteID returns a deterministic ID derived from the note path.
+// Rename-safety is handled at a higher level: notes always carry a note_id in
+// frontmatter (written by CreateNote / ensureFrontmatter), so renaming a note
+// does not change its ID.  This function is a deterministic hash, NOT a random
+// generator — many callers rely on idempotency (same input → same output).
 func stableNoteID(path string) string {
-	id, _ := uuid.NewV7()
-	return "note_" + strings.ReplaceAll(id.String(), "-", "")
+	sum := sha1.Sum([]byte(filepath.ToSlash(path)))
+	return "note_" + hex.EncodeToString(sum[:])[:12]
 }
 
 func slugify(title string) string {

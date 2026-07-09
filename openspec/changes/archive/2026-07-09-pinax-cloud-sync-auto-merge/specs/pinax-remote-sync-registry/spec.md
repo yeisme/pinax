@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Cloud Sync protects local-first moves and deletes
 
@@ -11,7 +11,7 @@ Pinax SHALL use the latest Cloud Sync path as the default sync target and SHALL 
 - **WHEN** the user runs `pinax sync pull --vault ./my-notes --yes --json`
 - **THEN** Pinax SHALL fail with `LOCAL_UNPUSHED_CHANGES`
 - **AND** it SHALL NOT recreate `index/home.md`
-- **AND** it SHALL recommend `pinax sync --target cloud --vault ./my-notes --yes`.
+- **AND** it SHALL recommend `pinax sync --vault ./my-notes --yes`.
 
 #### Scenario: Bidirectional sync pushes the local move
 
@@ -24,5 +24,5 @@ Pinax SHALL use the latest Cloud Sync path as the default sync target and SHALL 
 #### Scenario: Sync subcommands default to Cloud Sync
 
 - **WHEN** a user runs `pinax sync diff`, `pinax sync push`, or `pinax sync pull` without `--target`
-- **THEN** Pinax SHALL use `cloud` as the target
-- **AND** `--target git` and `--target s3` SHALL remain explicit compatibility paths.
+- **THEN** Pinax SHALL use `capsa` as the default target
+- **AND** `--target git`, `--target s3`, and `--target cloud` SHALL remain explicit compatibility paths.

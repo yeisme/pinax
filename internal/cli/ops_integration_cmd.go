@@ -54,7 +54,6 @@ func addBriefingCommands(root *cobra.Command, ctx commandBuildContext) {
 	root.AddCommand(briefingCmd)
 }
 
-
 func addCapsaCommands(root *cobra.Command, ctx commandBuildContext) {
 	capsaCmd := &cobra.Command{Use: "capsa", Short: "Manage Capsa encrypted sync state"}
 	capsaLoginCmd := &cobra.Command{
@@ -289,11 +288,4 @@ func backendUnaryCommand(ctx commandBuildContext, use string, aliases []string, 
 		projection, err := run(cmd, args[0])
 		return ctx.renderProjection(cmd, projection, err)
 	}}
-}
-
-func backendPlanCommand(ctx commandBuildContext, use, short, command, msg, hint string, run func(*cobra.Command, string) (domain.Projection, error)) *cobra.Command {
-	cmd := backendUnaryCommand(ctx, use, nil, short, command, msg, hint, run)
-	cmd.Flags().BoolVar(ctx.backendDryRun, "dry-run", false, "Preview the plan only; do not write")
-	cmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm writes")
-	return cmd
 }

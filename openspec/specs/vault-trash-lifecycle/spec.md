@@ -4,23 +4,21 @@
 TBD - created by archiving change pinax-project-trash-sync. Update Purpose after archive.
 ## Requirements
 ### Requirement: Vault objects use a recoverable trash lifecycle
-Pinax SHALL route destructive vault object operations through a CLI-authored trash lifecycle by default. A vault object includes notes, projects, subprojects, project board configuration, templates, views, and future structured registry assets.
 
-#### Scenario: Default delete moves object to trash
-- **WHEN** a user runs `pinax project delete history --vault ./my-notes --yes --json`
-- **THEN** Pinax SHALL remove `history` from active project listings
-- **AND** it SHALL write a tombstone with object kind, object id, old registry facts, trash path, deleted time, source command, and version evidence
-- **AND** it SHALL preserve recoverable registry and content fragments under `.pinax/trash/<date>/`.
+Pinax SHALL include notes in Cloud Sync delete marker handling so note soft deletes converge across devices without hard-deleting user content silently.
 
-#### Scenario: Delete without approval is rejected
-- **WHEN** a user runs `pinax project delete history --vault ./my-notes --json`
-- **THEN** Pinax SHALL fail with stable error code `approval_required`
-- **AND** no Markdown file, `.pinax` asset, registry, index database, Git state, provider state, or remote service SHALL be modified.
+#### Scenario: Note soft delete produces a cloud delete marker
 
-#### Scenario: Hard delete is explicit and bounded
-- **WHEN** a user runs `pinax trash purge project/history --hard --yes --vault ./my-notes --json`
-- **THEN** Pinax SHALL permanently remove only the matching trash backup and tombstone after validation
-- **AND** active vault objects SHALL NOT be hard-deleted directly by default.
+- **WHEN** a user runs `pinax note delete "Draft" --vault ./my-notes --yes --json`
+- **THEN** Pinax SHALL move the note to `.pinax/trash/`
+- **AND** the next Cloud Sync manifest SHALL include a `note` delete marker for the old path and a trash backup blob.
+
+#### Scenario: Remote note delete marker enters local trash
+
+- **GIVEN** device A soft-deletes a note and pushes Cloud Sync
+- **WHEN** device B runs `pinax sync pull --vault ./my-notes --yes --json`
+- **THEN** Pinax SHALL remove the active note path on device B
+- **AND** it SHALL preserve the note body under local trash with a note tombstone.
 
 ### Requirement: Trash contents are inspectable and restorable
 Pinax SHALL provide commands to inspect, restore, and purge trash entries without requiring users or agents to edit `.pinax/**` files by hand.

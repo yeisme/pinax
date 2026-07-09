@@ -124,7 +124,6 @@ type commandBuildContext struct {
 	backendName              *string
 	backendRoot              *string
 	backendRemote            *string
-	backendDryRun            *bool
 	planFromPeriod           *string
 	planWithTaskBridge       *bool
 	planTaskReview           *bool

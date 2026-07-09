@@ -5,4 +5,4 @@
 - [x] 增加 manifest baseline cache，并让 pull 按三方计划应用。
 - [x] 将 `sync diff/push/pull` 默认 target 切到 `cloud`，保留显式 legacy target。
 - [x] 为 note soft delete marker、远端 note delete marker pull 写回 trash lifecycle 补测试和实现。
-- [x] 运行聚焦测试：`go test ./internal/app ./internal/records ./cmd/pinax -run 'TestCloudSync|TestNoteSoftDeleteCreatesCloudDeleteMarker|TestLedgerTrashedNoteMaterializesTombstone|TestSyncSubcommandsDefaultToCloudCLI' -count=1`。
+- [x] 运行聚焦测试：`go test ./internal/app ./internal/records ./cmd/pinax -run 'TestCloudSync|TestNoteSoftDeleteCreatesCloudDeleteMarker|TestLedgerTrashedNoteMaterializesTombstone|TestSyncSubcommandsDefaultToCapsaCLI' -count=1`。

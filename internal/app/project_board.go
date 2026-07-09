@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -924,7 +926,9 @@ func parseUncheckedChecklistTitle(line string) (string, bool) {
 }
 
 func checklistTaskID(path string, line int, title string) string {
-	return "task_" + strings.TrimPrefix(stableNoteID(fmt.Sprintf("%s:%d:%s", filepath.ToSlash(path), line, title)), "note_")
+	input := fmt.Sprintf("%s:%d:%s", filepath.ToSlash(path), line, title)
+	sum := sha1.Sum([]byte(input))
+	return "task_" + hex.EncodeToString(sum[:])[:12]
 }
 
 func firstBoardNonEmpty(values ...string) string {
