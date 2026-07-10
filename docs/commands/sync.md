@@ -269,7 +269,7 @@ Another device pushed a newer revision since your last pull. Run `pinax sync --v
 
 ### `encryption_key_mismatch`
 
-The encryption key has changed since the last sync. This happens after upgrading Pinax (the DeriveKey fix changes key derivation). Run `pinax capsa doctor --vault ./my-notes` to confirm, then re-push:
+The encryption key has changed since the last sync. This can happen after upgrading from the older Pinax-local crypto path (`pinax-cloud-sync-salt-v1`) to the shared Capsa SDK crypto path (`capsa-sync-salt-v1`). Existing COS/S3 objects encrypted by the old path must be re-pushed with the current key. Run `pinax capsa doctor --vault ./my-notes` to confirm, then re-push:
 
 ```bash
 pinax sync push --vault ./my-notes --yes

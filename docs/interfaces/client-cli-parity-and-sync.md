@@ -76,13 +76,13 @@ Dashboard 和 MCP 默认只读。Dashboard 的 active tab selection 是 client-l
 Cloud Sync 配置完成后，每台设备启动本地 daemon：
 
 ```bash
-pinax sync daemon run --target cloud --vault ./my-notes --yes
+pinax sync daemon run --target capsa --vault ./my-notes --yes
 ```
 
 自动化或 supervisor 可以读取事件流：
 
 ```bash
-pinax sync daemon run --target cloud --vault ./my-notes --yes --events
+pinax sync daemon run --target capsa --vault ./my-notes --yes --events
 ```
 
 查看状态和日志：

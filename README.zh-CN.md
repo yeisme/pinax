@@ -212,19 +212,19 @@ pinax api serve --readonly --no-auth --port 8787 --vault work
 pinax mcp serve --vault work
 ```
 
-Cloud Sync preview：
+Capsa Sync preview：
 
 ```bash
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
-pinax sync push --target cloud --vault ./device-a --yes --json
-pinax sync pull --target cloud --vault ./device-b --yes --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax sync push --target capsa --vault ./device-a --yes --json
+pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
 
 本地自动同步 daemon：
 
 ```bash
-pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon run --target capsa --vault ./device-a --yes
 pinax sync daemon status --vault ./device-a --json
 pinax sync daemon logs --vault ./device-a --limit 20 --json
 pinax sync daemon stop --vault ./device-a

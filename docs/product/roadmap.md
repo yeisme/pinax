@@ -51,7 +51,7 @@ Cloud Sync 的核心风险是多设备冲突收敛和服务端合同对齐。以
 
 | Gate | 验证方式 |
 | --- | --- |
-| **G1: 真实 CLI ↔ 真实 backend 端到端 smoke** | 使用真实 `cli/pinax` 连接真实 `backend-server/pinax-cloud`（**不是** `internal/cloudclient/mlptest` fake server），完成 device bind → push → pull → conflict convergence 全链路。冲突收敛指两端在 same-workspace 下经过 push/pull 后达到一致状态，无静默丢写、无 orphan revision。 |
+| **G1: 真实 CLI ↔ 真实 backend 端到端 smoke** | 使用真实 `cli/pinax` 连接真实 `backend-server/capsa`（**不是** `internal/cloudclient/mlptest` fake server），完成 device bind → push → pull → conflict convergence 全链路。冲突收敛指两端在 same-workspace 下经过 push/pull 后达到一致状态，无静默丢写、无 orphan revision。 |
 | **G2: 第二台设备真实同步** | 在两台独立设备上通过真实 transport（S3 或 server）完成一次跨设备同步：A 设备写入 → push → B 设备 pull → 验证 B 设备 vault 内容与 A 一致。不能只依赖 `file://` local fixture 路径——`file://` 是开发调试 transport，不是生产 transport。 |
 | **G3: 已知 flaky test 稳定化** | `TestObjectStoreTransportLockFallbackRejectsConcurrentFirstHeadCreation`（`internal/cloudsync/object_store_test.go`）必须稳定通过，或以书面方式文档化其 known-flaky 原因及缓解方案（race condition window、test timeout 调整等）。不能以 `-skip` 静默跳过——静默跳过等于隐藏问题。 |
 
@@ -76,7 +76,7 @@ v1.0 GA 在以下三个条件**全部满足**后触发。v1.0 不新增功能特
 | --- | --- |
 | **C1: 两个 Preview 全部毕业** | Cloud Sync 达到 G1 + G2 + G3，Obsidian Compatibility 达到 O1 + O2。 |
 | **C2: 一次 ≥2 周的真实 dogfooding 记录** | 文档化在 `docs/operations/` 下：使用真实 vault（非 fixture）、通过 proof loop 执行真实 repair/organize（含 snapshot + apply + restore 验证）、跨设备真实 sync（非 `file://`）。记录应包含遇到的问题、修复方式和改进 follow-up item。 |
-| **C3: CLI ↔ backend 合同对齐验证** | 确认 `cli/pinax` cloudclient 期望的 API 合同与 `backend-server/pinax-cloud` 实际 handler 无 drift。验证方式：contract test 或 manual probe 覆盖 device bind、push、pull、conflict resolve 路径。Drift 是分布式系统最常见的隐性故障源，必须在 GA 前显式验证。 |
+| **C3: CLI ↔ backend 合同对齐验证** | 确认 `cli/pinax` cloudclient 期望的 API 合同与 `backend-server/capsa` 实际 handler 无 drift。验证方式：contract test 或 manual probe 覆盖 device bind、push、pull、conflict resolve 路径。Drift 是分布式系统最常见的隐性故障源，必须在 GA 前显式验证。 |
 
 **v1.0 不等于 "全部功能完成"**。Pinax 会有 v1.x、v2.x 的持续演进。v1.0 的语义是：核心三支柱（Local Vault / Proof Loop / Cloud Sync）已在真实场景中验证，可以承诺向后兼容和稳定合同。在此之前的 breaking change 不需要 deprecation cycle；v1.0 后 breaking change 需要遵循 semver。
 

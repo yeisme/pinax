@@ -73,7 +73,7 @@ Pinax 是本地优先的统一笔记 Agent CLI：Markdown vault 是用户知识�
 | 查看本地 API routes | `pinax api routes --vault work --json` |
 | 查看工作台状态 projection | `pinax api status --vault work --json` |
 | 渲染 database tab | `pinax database view render active-table --vault work --json` |
-| 启动实时同步 daemon | `pinax sync daemon run --target cloud --vault work --yes` |
+| 启动实时同步 daemon | `pinax sync daemon run --target capsa --vault work --yes` |
 
 详细命令说明见 [命令手册](./commands/README.md)。
 

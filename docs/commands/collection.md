@@ -1,6 +1,6 @@
 # collection Command
 
-`pinax collection` turns a `pinax.content_bundle.v1` file into a local-first content collection: Markdown notes, prompt assets, receipts, and graph-ready metadata. Pinax does not crawl websites; upstream tools such as Indagator prepare the bundle, and Pinax owns the durable vault assets.
+`pinax collection` turns a `pinax.content_bundle.v1` file into a local-first content collection: Markdown notes, prompt assets, receipts, and graph-ready metadata. Pinax does not crawl websites; any local tool, manual workflow, fixture, or optional acquisition adapter can prepare the bundle, and Pinax owns the durable vault assets.
 
 ## Subcommands
 
@@ -31,4 +31,4 @@ The import format is `schema_version: pinax.content_bundle.v1`. Each item needs 
 - `--dry-run` never writes notes, `.pinax/`, Git, providers, or remote state.
 - A real import requires `--yes` and writes structured evidence through Pinax services.
 - `collection export` may include prompt bodies in the output file requested by the user, but command projections stay bounded.
-- Provider crawling, extraction, and image rendering remain outside Pinax; use Indagator for acquisition and Eikona for rendering/feedback.
+- Provider crawling, extraction, and image rendering remain outside Pinax. Use a generic bundle producer, manual import, or optional acquisition adapter for source preparation; use Eikona for rendering/feedback when visual assets are needed.

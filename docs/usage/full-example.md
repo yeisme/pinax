@@ -133,8 +133,8 @@ pinax init ./device-a --title "Device A"
 pinax init ./device-b --title "Device B"
 pinax note add "Alpha" --body "# Alpha\n\nfrom device A" --vault ./device-a --json
 pinax index refresh --vault ./device-a --json
-pinax capsa login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a --json
-pinax capsa login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-a --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-b --json
 pinax sync push --target capsa --vault ./device-a --yes --json
 pinax sync pull --target capsa --vault ./device-b --yes --json
 pinax sync conflicts list --vault ./device-b --json
@@ -211,4 +211,3 @@ go test ./...
 go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 openspec validate --all
 ```
-

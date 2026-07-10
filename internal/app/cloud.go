@@ -243,7 +243,7 @@ func (s *Service) CloudLogout(_ context.Context, req CloudRequest) (domain.Proje
 	projection := domain.NewProjection("cloud.logout", "Cloud device session logged out.")
 	addCloudStateFacts(&projection, state)
 	projection.Data = pinaxcloud.RedactedData(state)
-	projection.Actions = []domain.Action{{Name: "login", Command: fmt.Sprintf("pinax cloud login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}}
+	projection.Actions = []domain.Action{{Name: "login", Command: fmt.Sprintf("pinax capsa login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}}
 	return projection, nil
 }
 
@@ -259,7 +259,7 @@ func (s *Service) CloudDoctor(_ context.Context, req CloudRequest) (domain.Proje
 	}
 	result := pinaxcloud.Doctor(root)
 	if !result.Configured {
-		commandErr := &domain.CommandError{Code: result.Code, Message: result.Message, Hint: fmt.Sprintf("pinax cloud login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}
+		commandErr := &domain.CommandError{Code: result.Code, Message: result.Message, Hint: fmt.Sprintf("pinax capsa login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}
 		return domain.NewErrorProjection("cloud.doctor", commandErr), commandErr
 	}
 	projection := domain.NewProjection("cloud.doctor", "Cloud backend diagnostics passed.")
@@ -308,7 +308,7 @@ func addCloudStateFacts(projection *domain.Projection, state pinaxcloud.State) {
 
 func cloudStateErrorProjection(command, root string, err error) (domain.Projection, error) {
 	if pinaxcloud.IsNotConfigured(err) {
-		commandErr := &domain.CommandError{Code: "cloud_not_configured", Message: "cloud backend is not configured", Hint: fmt.Sprintf("pinax cloud login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}
+		commandErr := &domain.CommandError{Code: "cloud_not_configured", Message: "Capsa backend is not configured", Hint: fmt.Sprintf("pinax capsa login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", shellQuote(root))}
 		return domain.NewErrorProjection(command, commandErr), commandErr
 	}
 	return errorProjection(command, err), err
