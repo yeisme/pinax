@@ -18,15 +18,17 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.1
+	github.com/yeisme/capsa v0.0.0
 	github.com/yuin/goldmark v1.7.8
 	go.uber.org/zap v1.27.0
-	golang.org/x/crypto v0.53.0
 	golang.org/x/term v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gen v0.3.28
 	gorm.io/gorm v1.31.1
 	gorm.io/plugin/dbresolver v1.6.2
 )
+
+require golang.org/x/crypto v0.53.0 // indirect
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
@@ -100,3 +102,6 @@ require (
 	modernc.org/memory v1.5.0 // indirect
 	modernc.org/sqlite v1.23.1 // indirect
 )
+
+replace github.com/yeisme/capsa => ../../shared/capsa
+

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yeisme/pinax/internal/remote"
@@ -15,6 +16,8 @@ type ObjectStoreTransport struct {
 	store  remote.BlobStore
 	layout Layout
 }
+
+var objectStoreLocalLocks sync.Map
 
 func NewObjectStoreTransport(store remote.BlobStore, layout Layout) *ObjectStoreTransport {
 	return &ObjectStoreTransport{store: store, layout: layout}
@@ -107,6 +110,10 @@ func (t *ObjectStoreTransport) commitRevisionCAS(ctx context.Context, req Commit
 }
 
 func (t *ObjectStoreTransport) commitRevisionWithLock(ctx context.Context, req CommitRequest) (CommitResult, error) {
+	localLock := objectStoreLocalLock(t.layout.LockKey())
+	localLock.Lock()
+	defer localLock.Unlock()
+
 	requestID := strings.TrimSpace(req.RequestID)
 	if requestID == "" {
 		requestID = "pinax-" + time.Now().UTC().Format("20060102150405.000000000")
@@ -152,6 +159,11 @@ func (t *ObjectStoreTransport) commitRevisionWithLock(ctx context.Context, req C
 		return CommitResult{}, err
 	}
 	return CommitResult{RevisionID: revisionID, ManifestBlobID: req.ManifestBlobID, RemoteWrite: true}, nil
+}
+
+func objectStoreLocalLock(key string) *sync.Mutex {
+	lock, _ := objectStoreLocalLocks.LoadOrStore(key, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 func (t *ObjectStoreTransport) supportsConditionalWrites() bool {
