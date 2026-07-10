@@ -282,10 +282,10 @@ Pinax SHALL expose sync plans for Git, S3, and Pinax Cloud without pretending th
 
 #### Scenario: Cloud sync reports backend requirement
 
-- **WHEN** a user runs `pinax sync diff --target cloud --vault <vault>`
+- **WHEN** a user runs `pinax sync diff --target capsa --vault <vault>`
 - **THEN** Pinax returns a plan with `backend_required=true`
 - **AND** the projection includes the minimum Pinax Cloud API handoff
-- **AND** `pinax sync push --target cloud --vault <vault>` without `--yes` fails with an approval-required error.
+- **AND** `pinax sync push --target capsa --vault <vault>` without `--yes` fails with an approval-required error.
 
 ### Requirement: Template authoring from the CLI
 

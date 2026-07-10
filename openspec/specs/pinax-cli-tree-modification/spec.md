@@ -16,7 +16,7 @@ Pinax SHALL 移除 `pinax cloud` 命令组（capsa 的旧版别名）。
 
 #### Scenario: cloud login 迁移到 capsa login
 
-- **GIVEN** 用户之前使用 `pinax cloud login`
+- **GIVEN** 用户之前使用 `pinax capsa login`
 - **WHEN** 用户运行 `pinax capsa login --endpoint <url> --workspace <id> --device <device> --secret-ref <ref> --vault <vault>`
 - **THEN** 命令 SHALL 执行相同的 capsa login 逻辑
 - **AND** 配置 SHALL 写入 vault 的 `.pinax/config.yaml`

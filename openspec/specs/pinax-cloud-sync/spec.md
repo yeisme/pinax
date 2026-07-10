@@ -27,7 +27,7 @@ Pinax SHALL distinguish centralized Local API access from distributed Cloud Sync
 
 #### Scenario: Cloud Sync 每台设备拥有本地 vault
 
-- **WHEN** 用户运行 `pinax sync push --target cloud` 或 `pinax sync pull --target cloud`
+- **WHEN** 用户运行 `pinax sync push --target capsa` 或 `pinax sync pull --target capsa`
 - **THEN** Pinax SHALL 使用已配置 Cloud Sync transport 交换加密 revision、manifest 和 blob
 - **AND** 每台设备 SHALL 保留可离线使用的本地 Markdown vault
 
@@ -35,7 +35,7 @@ Pinax SHALL distinguish centralized Local API access from distributed Cloud Sync
 
 - **GIVEN** a vault contains `notes/a.md`, `scripts/build.sh`, and `assets/logo.png`
 - **AND** `.pinaxignore` does not exclude those paths
-- **WHEN** the user runs `pinax sync push --target cloud --dry-run --vault <vault> --json`
+- **WHEN** the user runs `pinax sync push --target capsa --dry-run --vault <vault> --json`
 - **THEN** the sync plan SHALL include those files in the local content manifest
 - **AND** protected output SHALL report counts and hashes, not file payload bytes.
 
@@ -90,7 +90,7 @@ Pinax SHALL preserve the local-first boundary between CLI-side backup mirror tra
 
 ### Requirement: 端侧加密保护明文
 
-Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备的 explicit local content flows.
+Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备。加密密钥 SHALL 通过 Capsa SDK 从 secret reference 解析出真实密钥值，SHALL NOT 使用引用字符串本身作为密钥材料。
 
 #### Scenario: 加密 manifest 和 blob
 
@@ -98,16 +98,28 @@ Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开�
 - **THEN** 数据 SHALL 使用端侧加密 envelope
 - **AND** 后端或 direct object store SHALL 只看到 encrypted payload 和非敏感 revision metadata
 
-#### Scenario: 对象 key 和 metadata 不暴露路径
+#### Scenario: profile:// 引用解析为真实密钥
 
-- **WHEN** direct transport 写入对象 key、metadata、revision 或 head
-- **THEN** object key SHALL use protocol/layout ids such as `head.json`, `revisions/`, `manifests/sha256/`, and `blobs/sha256/`
-- **AND** SHALL NOT contain plaintext note path, plaintext note body, raw token, Authorization header, Cookie, raw secret ref, provider stderr, or provider payload
+- **GIVEN** `secret_ref` 配置为 `profile://tencent-cos-pinax`
+- **WHEN** Pinax 执行 Cloud Sync 加密操作
+- **THEN** Pinax SHALL 调用 `github.com/yeisme/capsa` SDK crypto API 解析为真实的 `aws_secret_access_key`
+- **AND** SHALL NOT 使用字面字符串 `profile://tencent-cos-pinax` 作为 PBKDF2 输入
+- **AND** 如果 profile 不存在或无法解析，SHALL 返回错误
 
-#### Scenario: 脱敏验证
+#### Scenario: SDK salt migration requires re-push
 
-- **WHEN** 测试、stdout、stderr、event、receipt、fixture、backend log 或 object metadata 写入 Cloud Sync 相关数据
-- **THEN** 不得暴露 plaintext note body、plaintext path in protected surfaces, raw token, Authorization header, Cookie, raw secret ref, provider stderr, or provider payload
+- **GIVEN** 远端 COS/S3 对象由旧 Pinax-local crypto path 写入
+- **WHEN** Pinax 升级到 Capsa SDK crypto path
+- **THEN** key derivation SHALL use `capsa-sync-salt-v1`
+- **AND** 旧 `pinax-cloud-sync-salt-v1` 加密对象 SHALL require a fresh `pinax sync push --target capsa --yes` from a complete local vault
+- **AND** docs SHALL describe the migration rather than promising transparent remote decryption
+
+#### Scenario: 弱加密密钥警告
+
+- **GIVEN** 用户运行 `pinax capsa backend set s3` 未指定 `--encryption-secret-ref`
+- **AND** `secret_ref` 不是 `env://` 或 `keychain://` scheme
+- **WHEN** Pinax 配置 Capsa Sync backend
+- **THEN** projection SHALL 包含 `weak_encryption_key` 警告
 
 ### Requirement: Agent Brain 投影不作为 Cloud Sync 明文状态
 
@@ -129,29 +141,26 @@ Cloud Sync SHALL preserve the distinction between encrypted source content, serv
 
 ### Requirement: Revision CAS 提交准入
 
-Cloud push SHALL only report a remote write after a compare-and-swap revision commit succeeds and local sync-state evidence is written.
+Cloud push SHALL only report a remote write after a compare-and-swap revision commit succeeds. 当 `--yes` 已确认且 commit 因 `revision_conflict` 失败时，push SHALL 自动拉取远端修订、重建计划并重试一次。
 
 #### Scenario: durable commit 后 remote_write=true
 
-- **WHEN** missing encrypted blobs and encrypted manifest have been uploaded
-- **AND** transport atomically commits a new revision against the observed base revision
+- **WHEN** transport atomically commits a new revision against the observed base revision
 - **THEN** CLI MAY output `remote_write=true`
-- **AND** local sync-state/run evidence SHALL include backend kind, device/workspace ids, revision id, manifest id, status, and timestamp without leaking secrets
 
-#### Scenario: plan/blob upload 不算 remote write
+#### Scenario: Base revision 失配时自动 rebase
 
-- **WHEN** CLI only generated a plan, performed dry-run, uploaded blobs, uploaded a manifest, or hit an unsupported transport path
-- **THEN** CLI SHALL output `remote_write=false`
-- **AND** SHALL NOT create a dummy revision or claim sync success
+- **GIVEN** 用户已通过 `--yes` 确认同步写入
+- **WHEN** commit 返回 `revision_conflict`
+- **THEN** CLI SHALL 自动拉取远端修订，重建 push plan，并重试一次 commit
+- **AND** 如果重建后的 plan 无冲突且 commit 成功，SHALL 输出 `remote_write=true`
+- **AND** 如果重建后的 plan 有冲突，SHALL 返回 `conflict_required`
 
-#### Scenario: Base revision 失配时拒绝推送
+#### Scenario: 无 --yes 时不自动 rebase
 
-- **GIVEN** 客户端基于 base revision `rev_a` 提交 commit
-- **AND** transport current revision is `rev_b`
-- **WHEN** transport receives the commit request
-- **THEN** it SHALL reject the commit with stable `revision_conflict`
-- **AND** SHALL NOT accept partial manifest or partial revision write
-- **AND** CLI SHALL prompt the user to pull and resolve conflicts before retrying push
+- **GIVEN** 用户运行 `pinax sync push` 未带 `--yes`
+- **WHEN** commit 返回 `revision_conflict`
+- **THEN** CLI SHALL 直接返回 `revision_conflict` 错误
 
 ### Requirement: Sync plan 支持 dry-run 和冲突
 
@@ -159,7 +168,7 @@ Sync planner SHALL support dry-run mode and SHALL preserve concurrent local edit
 
 #### Scenario: dry-run sync
 
-- **WHEN** 用户运行 `pinax sync diff --target cloud --dry-run` or `pinax sync push --target cloud --dry-run`
+- **WHEN** 用户运行 `pinax sync diff --target capsa --dry-run` or `pinax sync push --target capsa --dry-run`
 - **THEN** 输出 SHALL 显示 sync plan
 - **AND** SHALL NOT write remote objects, update sync-state revision, or modify Markdown
 
@@ -206,7 +215,7 @@ CLI SHALL provide commands for initializing, reusing, diagnosing, and viewing Cl
 
 #### Scenario: 初始化或复用同步配置
 
-- **WHEN** 用户运行 `pinax sync init --target cloud --vault <vault>`
+- **WHEN** 用户运行 `pinax sync init --target capsa --vault <vault>`
 - **THEN** CLI SHALL reuse existing `.pinax/cloud/config.yaml` when present
 - **AND** SHALL report configured backend kind, endpoint, workspace, and device in redacted output
 
@@ -222,13 +231,13 @@ CLI SHALL provide commands for initializing, reusing, diagnosing, and viewing Cl
 
 #### Scenario: 仅拉取 (Pull Only)
 
-- **WHEN** 用户运行 `pinax sync pull --target cloud --yes`
+- **WHEN** 用户运行 `pinax sync pull --target capsa --yes`
 - **THEN** CLI SHALL download and decrypt the committed remote revision for local application
 - **AND** SHALL NOT push local unsynced changes to the transport during that pull
 
 #### Scenario: 仅推送 (Push Only)
 
-- **WHEN** 用户运行 `pinax sync push --target cloud --yes`
+- **WHEN** 用户运行 `pinax sync push --target capsa --yes`
 - **THEN** CLI SHALL attempt to push local changes through the configured Cloud Sync transport
 - **AND** if base revision mismatch occurs, CLI SHALL refuse the push and require pull/conflict handling before retry
 
@@ -299,22 +308,32 @@ Pinax server sync client implementation SHALL not become the first writer that l
 
 ### Requirement: 本地后台实时同步进程
 
-Pinax SHALL provide an explicitly managed local sync daemon for a configured vault. The daemon SHALL reuse the existing Cloud Sync push/pull/conflict engine and SHALL NOT introduce a separate synchronization protocol or bypass existing approval, receipt, redaction, and `remote_write=true` rules.
+Pinax SHALL provide a managed local sync daemon. 后台 daemon 子进程 SHALL 继承父进程的环境变量。Pinax SHALL 提供 `daemon install`/`uninstall` 命令生成 OS 服务单元。
 
-#### Scenario: 前台运行 daemon 启动后立即同步
+#### Scenario: 后台 daemon 继承环境变量
 
-- **GIVEN** a vault has a configured Cloud Sync backend
-- **WHEN** the user runs `pinax sync daemon run --target cloud --vault <vault> --yes`
-- **THEN** Pinax SHALL start a local daemon runner for that vault
-- **AND** it SHALL immediately execute one startup sync cycle before waiting for the next poll interval
-- **AND** that cycle SHALL pull a newer remote revision before pushing local dirty content
-- **AND** it SHALL persist redacted daemon events under `.pinax/sync-daemon/events.jsonl`.
+- **GIVEN** `PINAX_SYNC_SECRET` 设置在当前 shell 环境中
+- **WHEN** the user runs `pinax sync daemon start --target capsa --vault <vault> --yes`
+- **THEN** daemon 子进程 SHALL 继承 `PINAX_SYNC_SECRET` 及其他所有环境变量
 
-#### Scenario: 机器输出保持稳定
+#### Scenario: Linux systemd 服务安装
 
-- **WHEN** the user runs `pinax sync daemon run --target cloud --vault <vault> --yes --json`
-- **THEN** stdout SHALL remain one final JSON envelope for `sync.daemon.run`
-- **AND** intermediate progress SHALL NOT be mixed into JSON stdout.
+- **GIVEN** 用户在 Linux 上运行 `pinax sync daemon install --vault ./my-notes`
+- **THEN** SHALL 在 `~/.config/systemd/user/capsa-sync-<slug>.service` 写入服务单元
+- **AND** SHALL NOT 自动启动服务
+- **AND** projection SHALL 包含 `systemctl --user enable --now capsa-sync-<slug>`
+
+#### Scenario: macOS launchd 服务安装
+
+- **GIVEN** 用户在 macOS 上运行 `pinax sync daemon install --vault ./my-notes`
+- **THEN** SHALL 在 `~/Library/LaunchAgents/com.yeisme.capsa-sync.<slug>.plist` 写入 plist
+- **AND** SHALL NOT 自动加载服务
+
+#### Scenario: 卸载服务单元
+
+- **WHEN** 用户运行 `pinax sync daemon uninstall --vault ./my-notes`
+- **THEN** Pinax SHALL 删除服务单元文件
+- **AND** SHALL NOT 停止正在运行的服务
 
 ### Requirement: 本地变更触发同步
 
@@ -390,9 +409,9 @@ Daemon command output, daemon events, daemon logs, sync receipts, integration ev
 
 #### Scenario: realtime human output and events stream
 
-- **WHEN** the user runs `pinax sync daemon run --target cloud --vault <vault> --yes`
+- **WHEN** the user runs `pinax sync daemon run --target capsa --vault <vault> --yes`
 - **THEN** Pinax SHALL emit concise human-readable progress lines for daemon lifecycle and sync attempts
-- **AND** `pinax sync daemon run --target cloud --vault <vault> --yes --events` SHALL emit NDJSON events with stable additive event types
+- **AND** `pinax sync daemon run --target capsa --vault <vault> --yes --events` SHALL emit NDJSON events with stable additive event types
 - **AND** neither mode SHALL expose plaintext note bodies, raw secret refs, Authorization headers, cookies, provider payloads, raw prompts, hidden system prompts, or private tool arguments.
 
 #### Scenario: daemon logs expose persisted events
@@ -414,7 +433,7 @@ Pinax SHALL document and preserve the distinction between Remote API Mode and Cl
 #### Scenario: sync daemon owns realtime multi-device convergence
 
 - **WHEN** a user wants realtime multi-device sync
-- **THEN** the documented command SHALL be `pinax sync daemon run --target cloud --vault <vault> --yes`
+- **THEN** the documented command SHALL be `pinax sync daemon run --target capsa --vault <vault> --yes`
 - **AND** each device SHALL keep its own local vault while the Cloud Sync transport coordinates only encrypted revisions, encrypted manifests, encrypted blobs, and conflict metadata.
 
 #### Scenario: explicit remote sync RPC does not replace daemon lifecycle
@@ -446,7 +465,7 @@ Cloud Sync SHALL represent deletions as encrypted tombstone/delete marker entrie
 
 #### Scenario: Push includes delete marker after project delete
 - **GIVEN** device A deletes project `history` through `pinax project delete history --yes`
-- **WHEN** device A runs `pinax sync push --target cloud --vault ./device-a --yes --json`
+- **WHEN** device A runs `pinax sync push --target capsa --vault ./device-a --yes --json`
 - **THEN** the encrypted manifest SHALL include a delete marker for object id `project/history` or its path hash
 - **AND** protected stdout, receipts, object keys, and object metadata SHALL NOT expose plaintext note bodies, tokens, Authorization headers, or provider payloads
 - **AND** `remote_write=true` SHALL only appear after the transport commits the revision successfully.
@@ -454,7 +473,7 @@ Cloud Sync SHALL represent deletions as encrypted tombstone/delete marker entrie
 #### Scenario: Pull applies delete marker to local registry and index
 - **GIVEN** device B has project `history` active locally
 - **AND** the remote committed revision contains a delete marker for `project/history`
-- **WHEN** device B runs `pinax sync pull --target cloud --vault ./device-b --yes --json`
+- **WHEN** device B runs `pinax sync pull --target capsa --vault ./device-b --yes --json`
 - **THEN** Pinax SHALL move or mark the local project as trashed through the trash service
 - **AND** `pinax project list --vault ./device-b --json` SHALL exclude `history`
 - **AND** `pinax trash list --vault ./device-b --json` SHALL include the tombstone.
@@ -477,7 +496,7 @@ Cloud Sync SHALL transfer recoverable trash backup blobs when a deletion is sync
 
 #### Scenario: Missing trash backup is diagnosable
 - **GIVEN** a local tombstone references a trash backup path that no longer exists
-- **WHEN** the user runs `pinax sync push --target cloud --dry-run --vault ./my-notes --json`
+- **WHEN** the user runs `pinax sync push --target capsa --dry-run --vault ./my-notes --json`
 - **THEN** Pinax SHALL return partial status with stable issue code `trash_backup_missing`
 - **AND** it SHALL NOT claim that the deletion is safely recoverable on another device.
 

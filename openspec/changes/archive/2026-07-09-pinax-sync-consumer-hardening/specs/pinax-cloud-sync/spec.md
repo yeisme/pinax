@@ -2,7 +2,7 @@
 
 ### Requirement: 端侧加密保护明文
 
-Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备。加密密钥 SHALL 从 secret reference 解析出真实密钥值，SHALL NOT 使用引用字符串本身作为密钥材料。
+Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备。加密密钥 SHALL 通过 Capsa SDK 从 secret reference 解析出真实密钥值，SHALL NOT 使用引用字符串本身作为密钥材料。
 
 #### Scenario: 加密 manifest 和 blob
 
@@ -14,9 +14,17 @@ Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开�
 
 - **GIVEN** `secret_ref` 配置为 `profile://tencent-cos-pinax`
 - **WHEN** Pinax 执行 Cloud Sync 加密操作
-- **THEN** `DeriveKey` SHALL 通过 `ResolveSecretRef` 解析为真实的 `aws_secret_access_key`
+- **THEN** Pinax SHALL 调用 `github.com/yeisme/capsa` SDK crypto API 解析为真实的 `aws_secret_access_key`
 - **AND** SHALL NOT 使用字面字符串 `profile://tencent-cos-pinax` 作为 PBKDF2 输入
 - **AND** 如果 profile 不存在或无法解析，SHALL 返回错误
+
+#### Scenario: SDK salt migration requires re-push
+
+- **GIVEN** 远端 COS/S3 对象由旧 Pinax-local crypto path 写入
+- **WHEN** Pinax 升级到 Capsa SDK crypto path
+- **THEN** key derivation SHALL use `capsa-sync-salt-v1`
+- **AND** 旧 `pinax-cloud-sync-salt-v1` 加密对象 SHALL require a fresh `pinax sync push --target capsa --yes` from a complete local vault
+- **AND** docs SHALL describe the migration rather than promising transparent remote decryption
 
 #### Scenario: 弱加密密钥警告
 
