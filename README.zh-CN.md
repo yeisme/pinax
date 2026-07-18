@@ -29,6 +29,19 @@ pinax version restore apply --vault ./my-notes --plan restore-<id> --yes        
 
 Pinax **互补** Obsidian 和 Logseq，作为你 vault 的 agent-safe 维护层；**避开** Notion 的云锁定；比 Reflect **更可编程、更可验证**。它不是另一个笔记 App——它是让你的已有 Markdown vault 对 AI 安全的控制平面。
 
+## Identity-first 笔记内核
+
+每个持久 note、journal、asset、project、subproject 和 managed task 都有 canonical UUIDv7 `object_id`。path 只是可变化的当前定位，不再承担身份。SQL/Dataview、双链、project board、apply receipt、tombstone 与 manifest v2 都围绕 object ID 关联。
+
+```bash
+pinax record identity audit --vault ./my-notes --json
+pinax sync manifest audit --vault ./my-notes --json
+pinax sync manifest plan --save --vault ./my-notes --json
+pinax sync manifest promote --plan manifest-plan-<id> --remote-capability v2 --vault ./my-notes --yes --json
+```
+
+Agent plan 会绑定 object ID、observed path、expected content revision 和 record version。纯 move 可按 UUID 安全重定位；旧 path 被复用或正文漂移时返回 `plan_stale`。apply receipt 只记录 before/after revision、ledger sequence、snapshot、changed paths 和 sync readiness，不保存正文或凭据。
+
 ## 状态
 
 | 能力 | 状态 |
@@ -52,12 +65,12 @@ Pinax **互补** Obsidian 和 Logseq，作为你 vault 的 agent-safe 维护层�
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.1.5`）：
+从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.1.6`）：
 
 ```bash
 # linux x86_64（请按你的平台调整 os/arch：darwin、windows；x86_64、aarch64）
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.5/pinax_0.1.5_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.5/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.6/pinax_0.1.6_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.6/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version

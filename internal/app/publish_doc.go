@@ -1362,7 +1362,7 @@ func publishDocExecutable(target domain.PublishDocTarget) string {
 	if target == domain.PublishDocTargetLarkDoc {
 		return "lark-cli"
 	}
-	return "notion"
+	return "ntn"
 }
 
 func publishDocExternalType(profile domain.PublishDocProfile) string {

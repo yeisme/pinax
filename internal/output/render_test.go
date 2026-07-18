@@ -220,13 +220,13 @@ func TestAgentExpandsNoteAndSearchResultItems(t *testing.T) {
 func TestSyncLogsTailRendersEventItems(t *testing.T) {
 	projection := domain.NewProjection("sync.logs.tail", "Sync event timeline read.")
 	projection.Facts["events"] = "1"
-	projection.Data = map[string]any{"events": []map[string]any{{"type": "sync.run", "run_id": "sync_1", "direction": "push", "status": "success", "backend_kind": "server", "ts": "2026-06-27T10:00:00Z"}}}
+	projection.Data = map[string]any{"events": []map[string]any{{"type": "sync.file", "seq": 1, "run_id": "sync_1", "direction": "push", "kind": "upload_blob", "path": "notes/demo.md", "status": "success", "backend_kind": "server", "ts": "2026-06-27T10:00:00Z"}}}
 
 	var summary bytes.Buffer
 	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
 		t.Fatalf("render summary: %v", err)
 	}
-	for _, want := range []string{"Run ID", "Direction", "Backend", "sync_1", "push", "server"} {
+	for _, want := range []string{"Run ID", "Direction", "Operation", "Path", "Backend", "sync_1", "push", "upload_blob", "notes/demo.md", "server"} {
 		if !strings.Contains(summary.String(), want) {
 			t.Fatalf("summary missing %q:\n%s", want, summary.String())
 		}
@@ -236,9 +236,19 @@ func TestSyncLogsTailRendersEventItems(t *testing.T) {
 	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
 		t.Fatalf("render agent: %v", err)
 	}
-	for _, want := range []string{"event.1.run_id=sync_1", "event.1.direction=push", "event.1.backend_kind=server", "event.1.status=success"} {
+	for _, want := range []string{"event.1.type=sync.file", "event.1.run_id=sync_1", "event.1.direction=push", "event.1.kind=upload_blob", "event.1.path=notes/demo.md", "event.1.backend_kind=server", "event.1.status=success"} {
 		if !strings.Contains(agent.String(), want) {
 			t.Fatalf("agent missing %q:\n%s", want, agent.String())
+		}
+	}
+
+	var events bytes.Buffer
+	if err := RenderWithOptions(&events, ModeEvents, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render events: %v", err)
+	}
+	for _, want := range []string{`"type":"progress"`, `"event_type":"sync.file"`, `"kind":"upload_blob"`, `"path":"notes/demo.md"`} {
+		if !strings.Contains(events.String(), want) {
+			t.Fatalf("events missing %q:\n%s", want, events.String())
 		}
 	}
 }

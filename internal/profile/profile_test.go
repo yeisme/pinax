@@ -309,3 +309,48 @@ func TestResolveSecretRef_ProfileUnchangedPaths(t *testing.T) {
 		t.Fatalf("plain: resolution = %q, err=%v", got, err)
 	}
 }
+
+func TestEnsureStoredSecretPersistsWithPrivatePermissions(t *testing.T) {
+	dir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	_ = os.Setenv("XDG_CONFIG_HOME", dir)
+	defer func() { _ = os.Setenv("XDG_CONFIG_HOME", origXDG) }()
+
+	ref, err := EnsureStoredSecret("capsa-sync-test")
+	if err != nil {
+		t.Fatalf("EnsureStoredSecret: %v", err)
+	}
+	if ref != "stored://capsa-sync-test" {
+		t.Fatalf("ref = %q", ref)
+	}
+	first, err := ResolveSecretRef(ref)
+	if err != nil {
+		t.Fatalf("ResolveSecretRef: %v", err)
+	}
+	secondRef, err := EnsureStoredSecret("capsa-sync-test")
+	if err != nil || secondRef != ref {
+		t.Fatalf("second EnsureStoredSecret: ref=%q err=%v", secondRef, err)
+	}
+	second, err := ResolveSecretRef(ref)
+	if err != nil || first != second || first == "" {
+		t.Fatalf("stored secret changed: first=%q second=%q err=%v", first, second, err)
+	}
+	info, err := os.Stat(SecretsPath())
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("secrets permissions = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestResolveSecretRef_StoredMissing(t *testing.T) {
+	dir := t.TempDir()
+	origXDG := os.Getenv("XDG_CONFIG_HOME")
+	_ = os.Setenv("XDG_CONFIG_HOME", dir)
+	defer func() { _ = os.Setenv("XDG_CONFIG_HOME", origXDG) }()
+
+	if _, err := ResolveSecretRef("stored://missing"); err == nil {
+		t.Fatal("expected missing stored secret error")
+	}
+}

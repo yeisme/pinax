@@ -53,7 +53,7 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 	if statsErr != nil {
 		return errorProjection("proof.loop.run", statsErr), statsErr
 	}
-	captureFacts := stageFacts(stats, "capture")
+	captureFacts := stageFacts(stats)
 	for k, v := range captureFacts {
 		projection.Facts["capture."+k] = v
 	}
@@ -152,7 +152,7 @@ func (s *Service) saveOrganizePlanForRun(root string) (string, string, error) {
 }
 
 // stageFacts 从子阶段 projection 提取事实并加上前缀。
-func stageFacts(p domain.Projection, prefix string) map[string]string {
+func stageFacts(p domain.Projection) map[string]string {
 	out := map[string]string{}
 	for k, v := range p.Facts {
 		out[k] = v

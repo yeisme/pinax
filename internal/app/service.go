@@ -26,6 +26,7 @@ import (
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/domain"
 	gitstore "github.com/yeisme/pinax/internal/git"
+	"github.com/yeisme/pinax/internal/identity"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	"github.com/yeisme/pinax/internal/markdownnote"
 	notesearch "github.com/yeisme/pinax/internal/search"
@@ -34,7 +35,8 @@ import (
 )
 
 type Service struct {
-	versionBackend pinaxversion.VersionBackend
+	versionBackend    pinaxversion.VersionBackend
+	identityAllocator *identity.Allocator
 }
 
 func NewService() *Service { return NewServiceWithVersionBackend(pinaxversion.NewLocalBackend()) }
@@ -43,7 +45,21 @@ func NewServiceWithVersionBackend(backend pinaxversion.VersionBackend) *Service 
 	if backend == nil {
 		backend = pinaxversion.NewLocalBackend()
 	}
-	return &Service{versionBackend: backend}
+	return &Service{versionBackend: backend, identityAllocator: identity.NewAllocator()}
+}
+
+func (s *Service) allocateObjectID(kind identity.ObjectKind, root, locator string) (string, error) {
+	if !kind.Valid() {
+		return "", fmt.Errorf("invalid object kind %q", kind)
+	}
+	if s.identityAllocator == nil {
+		s.identityAllocator = identity.NewAllocator()
+	}
+	id, err := s.identityAllocator.Allocate(string(kind) + ":create:" + root + ":" + filepath.ToSlash(locator))
+	if err != nil {
+		return "", err
+	}
+	return id.String(), nil
 }
 
 func currentTimeUTC() time.Time {
@@ -943,7 +959,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 			slug = slugify(req.Title)
 		}
 		if slug == "" {
-			slug = stableNoteID(req.Title)
+			slug = deterministicShortID(req.Title)
 		}
 		if err := validateNoteSlug(slug); err != nil {
 			return errorProjection("note.new", err), err
@@ -963,13 +979,17 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		}
 		body = rendered
 	}
+	noteID, err := s.allocateObjectID(identity.KindNote, root, rel)
+	if err != nil {
+		return errorProjection("note.new", err), err
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	content := buildNoteContentWithStatus(req.Title, rel, req.Project, folder, kind, cleanTags(req.Tags), req.Status, now, body)
+	content := buildNoteContentWithObjectID(noteID, req.Title, req.Project, folder, kind, cleanTags(req.Tags), req.Status, now, body)
 	projection := domain.NewProjection("note.new", "Note created.")
 	projection.Facts["path"] = rel
 	projection.Facts["planned_path"] = rel
 	projection.Facts["title"] = req.Title
-	projection.Facts["note_id"] = stableNoteID(rel)
+	projection.Facts["note_id"] = noteID
 	projection.Facts["tags"] = strings.Join(cleanTags(req.Tags), ",")
 	if req.Project != "" {
 		projection.Facts["project"] = req.Project
@@ -986,7 +1006,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	}
 	if templateName != "" {
 		projection.Facts["template"] = templateName
-		templateUseID := stableNoteID(templateName + ":" + rel)
+		templateUseID := deterministicShortID(templateName + ":" + rel)
 		projection.Facts["template_use_id"] = templateUseID
 		projection.Facts["effective_path"] = rel
 		if templateMeta.ScenarioID != "" {
@@ -1008,7 +1028,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 			projection.Facts["template.overrides"] = strings.Join(templateOverrides, ",")
 		}
 	}
-	data := map[string]any{"note": domain.Note{ID: stableNoteID(rel), Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}, "planned_path": rel, "frontmatter_preview": strings.SplitN(content, "---\n\n", 2)[0] + "---", "body_preview": strings.TrimSpace(body)}
+	data := map[string]any{"note": domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}, "planned_path": rel, "frontmatter_preview": strings.SplitN(content, "---\n\n", 2)[0] + "---", "body_preview": strings.TrimSpace(body)}
 	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax note show %s --vault %s", shellQuote(rel), shellQuote(root))}}
 	if templateName != "" {
 		nextActions := templateMetadataActions(templateMeta.AfterCreateActions)
@@ -1047,7 +1067,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return errorProjection("note.new", err), err
 	}
-	dailyIndexRel, dailyErr := appendDailyIndex(root, domain.Note{ID: stableNoteID(rel), Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status})
+	dailyIndexRel, dailyErr := appendDailyIndex(root, domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status})
 	if dailyErr != nil {
 		if code := templateengine.ErrorCode(dailyErr); strings.HasPrefix(code, "managed_block_") {
 			projection.Status = "partial"
@@ -1066,7 +1086,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	}
 	projection.Facts["index_updated"] = "true"
 	projection.Evidence = []string{dailyIndexRel, filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
-	note := domain.Note{ID: stableNoteID(rel), Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}
+	note := domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}
 	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteCreated, "note.new:"+note.ID+":"+rel, note, "")
 	if recordErr != nil {
 		return errorProjection("note.new", recordErr), recordErr
@@ -1183,6 +1203,8 @@ func (s *Service) ShowNoteProjection(ctx context.Context, req ShowNoteRequest) (
 	projection.Facts["path"] = note.Path
 	projection.Facts["title"] = note.Title
 	projection.Facts["note_id"] = note.ID
+	projection.Facts["object_id"] = note.ID
+	projection.Facts["object_kind"] = "note"
 	projection.Facts["view"] = view
 	if tags := cleanTags(note.Tags); len(tags) > 0 {
 		projection.Facts["tags"] = strings.Join(tags, ",")
@@ -1718,6 +1740,11 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 		}
 		ops = append(ops, durableSourceMetadataOperations(note)...)
 	}
+	boundOperations, err := bindPlanOperations(ctx, root, ops)
+	if err != nil {
+		return errorProjection("metadata.plan", err), err
+	}
+	ops = boundOperations
 	projection := domain.NewProjection("metadata.plan", "Metadata plan generated.")
 	projection.Facts["planned_updates"] = fmt.Sprint(len(ops))
 	projection.Data = map[string]any{"operations": ops}
@@ -1736,11 +1763,17 @@ func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.P
 	if err != nil {
 		return errorProjection("metadata.apply", err), err
 	}
+	beforeBindingsByPath, err := managedNotePlanBindings(ctx, root)
+	if err != nil {
+		return errorProjection("metadata.apply", err), err
+	}
+	beforeBindings := managedBindingsByObject(beforeBindingsByPath)
 	notes, err := scanNotes(root)
 	if err != nil {
 		return errorProjection("metadata.apply", err), err
 	}
 	applied := 0
+	changedPaths := make([]string, 0)
 	for _, note := range notes {
 		if !noteNeedsMetadata(note) {
 			continue
@@ -1753,17 +1786,34 @@ func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.P
 		if err != nil {
 			return errorProjection("metadata.apply", err), err
 		}
+		if strings.TrimSpace(note.ID) == "" {
+			objectID, allocateErr := s.allocateObjectID(identity.KindNote, root, note.Path)
+			if allocateErr != nil {
+				return errorProjection("metadata.apply", allocateErr), allocateErr
+			}
+			note.ID = objectID
+		}
 		updated := ensureFrontmatter(note, string(content))
 		if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 			return errorProjection("metadata.apply", err), err
 		}
+		parsed := parseNote(note.Path, updated)
+		if _, err := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMetadataUpdated, "metadata.apply:"+parsed.ID+":"+note.Path, parsed, ""); err != nil {
+			return errorProjection("metadata.apply", err), err
+		}
 		applied++
+		changedPaths = append(changedPaths, note.Path)
 		_ = appendEvent(root, "metadata.apply", "success", map[string]string{"path": note.Path})
 	}
 	projection := domain.NewProjection("metadata.apply", "Metadata applied.")
 	projection.Facts["applied_updates"] = fmt.Sprint(applied)
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
-	_ = ctx
+	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "metadata.apply", "", "", beforeBindings, changedPaths)
+	if receiptErr != nil {
+		return errorProjection("metadata.apply", receiptErr), receiptErr
+	}
+	addApplyReceiptProjection(&projection, receipt)
+	projection.Data = map[string]any{"applied_updates": applied, "receipt": receipt}
 	return projection, nil
 }
 
@@ -1882,7 +1932,7 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		if err != nil {
 			return errorProjection("organize.apply", err), err
 		}
-		if err := ensureOrganizePlanFresh(root, plan); err != nil {
+		if err := ensureOrganizePlanFresh(ctx, root, &plan); err != nil {
 			projection := errorProjection("organize.apply", err)
 			projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax organize plan --vault %s --save", shellQuote(root))}}
 			projection.Data = map[string]any{"plan_id": plan.PlanID}
@@ -1890,10 +1940,17 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		}
 		savedPlan = &plan
 	}
+	beforeBindingsByPath, err := managedNotePlanBindings(ctx, root)
+	if err != nil {
+		return errorProjection("organize.apply", err), err
+	}
+	beforeBindings := managedBindingsByObject(beforeBindingsByPath)
+	snapshotID := ""
 	if req.SnapshotMessage != "" {
 		if _, err := s.GitSnapshot(ctx, SnapshotRequest{VaultPath: root, Message: req.SnapshotMessage}); err != nil {
 			return errorProjection("organize.apply", err), err
 		}
+		snapshotID = filepath.ToSlash(filepath.Join(".pinax", "last_snapshot"))
 	}
 	if !gitstore.HasSnapshot(root) {
 		err := &domain.CommandError{Code: "snapshot_required", Message: "Organizing structure requires an explicit version snapshot first", Hint: fmt.Sprintf("pinax version snapshot --vault %s --message %s", shellQuote(root), shellQuote("snapshot before organize"))}
@@ -1906,6 +1963,7 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		return errorProjection("organize.apply", err), err
 	}
 	appliedMetadata := 0
+	changedPaths := make([]string, 0)
 	for _, op := range ops {
 		if op.Status != "planned" || (op.Kind != "tag_patch" && op.Kind != "status_patch") {
 			continue
@@ -1914,6 +1972,7 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 			return errorProjection("organize.apply", err), err
 		}
 		appliedMetadata++
+		changedPaths = append(changedPaths, op.Path)
 		_ = appendEvent(root, "organize.apply", "success", map[string]string{"kind": op.Kind, "path": op.Path})
 	}
 	appliedMoves := 0
@@ -1940,6 +1999,17 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		if err := os.Rename(source, target); err != nil {
 			return errorProjection("organize.apply", err), err
 		}
+		content, readErr := os.ReadFile(target)
+		if readErr != nil {
+			return errorProjection("organize.apply", readErr), readErr
+		}
+		movedNote := parseNote(op.Target, string(content))
+		if movedNote.ID != "" {
+			if _, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMoved, "organize.move:"+movedNote.ID+":"+op.Path+":"+op.Target, movedNote, op.Path); recordErr != nil {
+				return errorProjection("organize.apply", recordErr), recordErr
+			}
+		}
+		changedPaths = append(changedPaths, op.Path, op.Target)
 		appliedMoves++
 		_ = appendEvent(root, "organize.apply", "success", map[string]string{"from": op.Path, "to": op.Target})
 	}
@@ -1955,7 +2025,16 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 	projection.Facts["applied"] = fmt.Sprint(appliedMoves + appliedMetadata)
 	projection.Facts["skipped"] = fmt.Sprint(skipped)
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
-	projection.Data = map[string]any{"applied_moves": appliedMoves, "applied_metadata": appliedMetadata, "skipped": skipped}
+	planID := ""
+	if savedPlan != nil {
+		planID = savedPlan.PlanID
+	}
+	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "organize.apply", planID, snapshotID, beforeBindings, changedPaths)
+	if receiptErr != nil {
+		return errorProjection("organize.apply", receiptErr), receiptErr
+	}
+	addApplyReceiptProjection(&projection, receipt)
+	projection.Data = map[string]any{"applied_moves": appliedMoves, "applied_metadata": appliedMetadata, "skipped": skipped, "receipt": receipt}
 	return projection, nil
 }
 
@@ -2085,7 +2164,7 @@ func (s *Service) GitSnapshot(ctx context.Context, req SnapshotRequest) (domain.
 }
 func appendDailyIndex(root string, note domain.Note) (string, error) {
 	date := currentTimeUTC().Format("2006-01-02")
-	root, rel, _, err := ensureJournalNote(root, "daily", DailyRequest{Date: date})
+	root, rel, _, err := ensureJournalNote(root, DailyRequest{Date: date})
 	if err != nil {
 		return "", err
 	}
@@ -2128,12 +2207,11 @@ func appendDailyIndex(root string, note domain.Note) (string, error) {
 	return rel, os.WriteFile(path, []byte(updated), 0o644)
 }
 
-//nolint:unused // Reserved for daily-specific callers that do not need the generic period parameter.
-func ensureDailyNote(vaultPath string) (string, string, string, error) {
-	return ensureJournalNote(vaultPath, "daily", DailyRequest{})
+func ensureJournalNote(vaultPath string, req DailyRequest) (string, string, string, error) {
+	return NewService().ensureJournalNote(vaultPath, "daily", req)
 }
 
-func ensureJournalNote(vaultPath, period string, req DailyRequest) (string, string, string, error) {
+func (s *Service) ensureJournalNote(vaultPath, period string, req DailyRequest) (string, string, string, error) {
 	root, err := cleanVaultPath(vaultPath)
 	if err != nil {
 		return "", "", "", err
@@ -2176,11 +2254,19 @@ func ensureJournalNote(vaultPath, period string, req DailyRequest) (string, stri
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	title := journalTitle(period, key)
-	content := buildNoteContentWithStatus(title, rel, "", period, period, []string{period}, "journal", now, body)
+	journalObjectID, err := s.allocateObjectID(identity.KindNote, root, rel)
+	if err != nil {
+		return "", "", "", err
+	}
+	content := buildNoteContentWithObjectID(journalObjectID, title, "", period, period, []string{period}, "journal", now, body)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", "", "", err
 	}
 	if err := refreshIndex(root); err != nil {
+		return "", "", "", err
+	}
+	journalNote := parseNote(rel, content)
+	if _, err := appendNoteRecordEvent(context.Background(), root, domain.RecordEventNoteCreated, "journal.create:"+journalNote.ID+":"+rel, journalNote, ""); err != nil {
 		return "", "", "", err
 	}
 	_ = appendEvent(root, period+".create", "success", map[string]string{"path": rel, "template": templateName})
@@ -2579,6 +2665,9 @@ func buildOrganizePlan(root string) (domain.OrganizePlan, error) {
 	for _, op := range ops {
 		plan.Operations = append(plan.Operations, organizeOperationFromPlan(planID, op))
 	}
+	if err := bindOrganizePlanObjects(context.Background(), root, &plan); err != nil {
+		return domain.OrganizePlan{}, err
+	}
 	return plan, nil
 }
 
@@ -2965,7 +3054,10 @@ func listOrganizePlans(root string) ([]domain.OrganizePlanSummary, error) {
 	return plans, nil
 }
 
-func ensureOrganizePlanFresh(root string, plan domain.OrganizePlan) error {
+func ensureOrganizePlanFresh(ctx context.Context, root string, plan *domain.OrganizePlan) error {
+	if plan == nil {
+		return &domain.CommandError{Code: "plan_required", Message: "organize plan is required", Hint: "Rerun pinax organize plan --save"}
+	}
 	if plan.Status != "planned" {
 		return &domain.CommandError{Code: "organize_plan_not_planned", Message: "organize plan status is not applicable", Hint: "Rerun pinax organize plan --save"}
 	}
@@ -2976,6 +3068,13 @@ func ensureOrganizePlanFresh(root string, plan domain.OrganizePlan) error {
 	// 校验前必须与 buildOrganizePlan 保持同一套候选事实：计划保存时通过
 	// organizeCandidateFacts 过滤掉 daily/journal 等非组织候选笔记，这里如果不
 	// 同样过滤，任何包含日志的 vault 都会因为 facts 数量不一致被误判为 stale。
+	objectBound, err := rebaseOrganizePlanObjects(ctx, root, plan)
+	if err != nil {
+		return err
+	}
+	if objectBound {
+		return nil
+	}
 	facts, err := scanNoteFacts(root)
 	if err != nil {
 		return err
@@ -3330,8 +3429,8 @@ func ensureFrontmatter(note domain.Note, content string) string {
 	if meta["schema_version"] == "" {
 		meta["schema_version"] = "pinax.note.v1"
 	}
-	if meta["note_id"] == "" {
-		meta["note_id"] = stableNoteID(note.Path)
+	if meta["note_id"] == "" && strings.TrimSpace(note.ID) != "" {
+		meta["note_id"] = note.ID
 	}
 	if meta["title"] == "" {
 		meta["title"] = note.Title
@@ -3354,13 +3453,10 @@ func ensureFrontmatter(note domain.Note, content string) string {
 	return b.String()
 }
 
-// stableNoteID returns a deterministic ID derived from the note path.
-// Rename-safety is handled at a higher level: notes always carry a note_id in
-// frontmatter (written by CreateNote / ensureFrontmatter), so renaming a note
-// does not change its ID.  This function is a deterministic hash, NOT a random
-// generator — many callers rely on idempotency (same input → same output).
-func stableNoteID(path string) string {
-	sum := sha1.Sum([]byte(filepath.ToSlash(path)))
+// deterministicShortID returns a short reproducible token for non-identity uses
+// such as fallback slugs, template runs, trash receipts and inferred board items.
+func deterministicShortID(value string) string {
+	sum := sha1.Sum([]byte(filepath.ToSlash(value)))
 	return "note_" + hex.EncodeToString(sum[:])[:12]
 }
 
@@ -3411,11 +3507,15 @@ func nextNotePath(root, rel string) (string, error) {
 }
 
 func buildNoteContentWithStatus(title, rel, project, folder, kind string, tags []string, status, now, body string) string {
+	return buildNoteContentWithObjectID(legacyNoteIDForPath(rel), title, project, folder, kind, tags, status, now, body)
+}
+
+func buildNoteContentWithObjectID(noteID, title, project, folder, kind string, tags []string, status, now, body string) string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("schema_version: pinax.note.v1\n")
 	b.WriteString("note_id: ")
-	b.WriteString(stableNoteID(rel))
+	b.WriteString(noteID)
 	b.WriteString("\n")
 	b.WriteString("title: ")
 	b.WriteString(title)
@@ -3672,24 +3772,24 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-func (s *Service) loadMutableNoteForWrite(ctx context.Context, vaultPath, noteRef string) (string, domain.Note, string, string, map[string]string, string, error) {
+func (s *Service) loadMutableNoteForWrite(ctx context.Context, vaultPath, noteRef string) (string, domain.Note, string, string, map[string]string, error) {
 	root, err := cleanVaultPath(vaultPath)
 	if err != nil {
-		return "", domain.Note{}, "", "", nil, "", err
+		return "", domain.Note{}, "", "", nil, err
 	}
-	result, err := s.ResolveVaultObjectForWrite(ctx, ResolverRequest{VaultPath: root, Query: noteRef, Scope: "registered", Kind: "note"})
+	result, err := s.ResolveManagedObjectForMutation(ctx, ResolverRequest{VaultPath: root, Query: noteRef, Scope: "registered", Kind: "note"})
 	if err != nil {
 		if len(result.Candidates) > 1 {
-			return "", domain.Note{}, "", "", nil, "", &resolverNoteAmbiguousError{CommandError: &domain.CommandError{Code: domain.ErrorCodeVaultObjectRefAmbiguous, Message: "note write query matched multiple candidates", Hint: "Retry with a more specific note_id, filename, or full path"}, Result: result}
+			return "", domain.Note{}, "", "", nil, &resolverNoteAmbiguousError{CommandError: &domain.CommandError{Code: domain.ErrorCodeVaultObjectRefAmbiguous, Message: "note write query matched multiple candidates", Hint: "Retry with a more specific note_id, filename, or full path"}, Result: result}
 		}
-		return "", domain.Note{}, "", "", nil, "", err
+		return "", domain.Note{}, "", "", nil, err
 	}
 	if len(result.Candidates) == 0 {
-		return "", domain.Note{}, "", "", nil, "", &domain.CommandError{Code: "note_not_found", Message: "Note not found", Hint: "Run pinax note list to view available notes"}
+		return "", domain.Note{}, "", "", nil, &domain.CommandError{Code: "note_not_found", Message: "Note not found", Hint: "Run pinax note list to view available notes"}
 	}
 	notes, err := scanNotes(root)
 	if err != nil {
-		return "", domain.Note{}, "", "", nil, "", err
+		return "", domain.Note{}, "", "", nil, err
 	}
 	var note domain.Note
 	for _, candidate := range notes {
@@ -3699,31 +3799,31 @@ func (s *Service) loadMutableNoteForWrite(ctx context.Context, vaultPath, noteRe
 		}
 	}
 	if note.Path == "" {
-		return "", domain.Note{}, "", "", nil, "", &domain.CommandError{Code: "note_not_found", Message: "Note not found", Hint: "Run pinax index refresh, then retry"}
+		return "", domain.Note{}, "", "", nil, &domain.CommandError{Code: "note_not_found", Message: "Note not found", Hint: "Run pinax index refresh, then retry"}
 	}
 	return loadMutableResolvedNote(root, note)
 }
 
-func loadMutableResolvedNote(root string, note domain.Note) (string, domain.Note, string, string, map[string]string, string, error) {
+func loadMutableResolvedNote(root string, note domain.Note) (string, domain.Note, string, string, map[string]string, error) {
 	path, err := safeJoin(root, note.Path)
 	if err != nil {
-		return "", domain.Note{}, "", "", nil, "", err
+		return "", domain.Note{}, "", "", nil, err
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", domain.Note{}, "", "", nil, "", err
+		return "", domain.Note{}, "", "", nil, err
 	}
-	meta, body := splitFrontmatter(string(b))
+	meta, _ := splitFrontmatter(string(b))
 	if meta["schema_version"] == "" {
 		meta["schema_version"] = "pinax.note.v1"
 	}
-	if meta["note_id"] == "" {
-		meta["note_id"] = stableNoteID(note.Path)
+	if strings.TrimSpace(meta["note_id"]) == "" {
+		return "", domain.Note{}, "", "", nil, &domain.CommandError{Code: "identity_migration_required", Message: "note has no canonical object identity", Hint: "Run pinax record identity audit, then save and apply an identity migration plan"}
 	}
 	if meta["title"] == "" {
 		meta["title"] = note.Title
 	}
-	return root, note, path, string(b), meta, body, nil
+	return root, note, path, string(b), meta, nil
 }
 
 func loadMutableNote(vaultPath, noteRef string) (string, domain.Note, string, string, map[string]string, string, error) {
@@ -3751,8 +3851,8 @@ func loadMutableNote(vaultPath, noteRef string) (string, domain.Note, string, st
 	if meta["schema_version"] == "" {
 		meta["schema_version"] = "pinax.note.v1"
 	}
-	if meta["note_id"] == "" {
-		meta["note_id"] = stableNoteID(note.Path)
+	if strings.TrimSpace(meta["note_id"]) == "" {
+		return "", domain.Note{}, "", "", nil, "", &domain.CommandError{Code: "identity_migration_required", Message: "note has no canonical object identity", Hint: "Run pinax record identity audit, then save and apply an identity migration plan"}
 	}
 	if meta["title"] == "" {
 		meta["title"] = note.Title
@@ -3967,35 +4067,6 @@ func removeTags(existing, remove []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-//nolint:unused // Kept for legacy note fixtures that still use the pre-status frontmatter shape.
-func buildNoteContent(title, rel, project string, tags []string, now, body string) string {
-	var b strings.Builder
-	b.WriteString("---\n")
-	b.WriteString("schema_version: pinax.note.v1\n")
-	b.WriteString("note_id: ")
-	b.WriteString(stableNoteID(rel))
-	b.WriteString("\n")
-	b.WriteString("title: ")
-	b.WriteString(title)
-	b.WriteString("\n")
-	b.WriteString("tags: ")
-	b.WriteString(formatTags(cleanTags(tags)))
-	b.WriteString("\n")
-	if project != "" {
-		b.WriteString("project: ")
-		b.WriteString(project)
-		b.WriteString("\n")
-	}
-	b.WriteString("created_at: ")
-	b.WriteString(now)
-	b.WriteString("\nupdated_at: ")
-	b.WriteString(now)
-	b.WriteString("\n---\n\n")
-	b.WriteString(strings.TrimSpace(body))
-	b.WriteString("\n")
-	return b.String()
 }
 
 var templateVariablePattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_:-]*)\s*\}\}`)

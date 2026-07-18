@@ -28,6 +28,7 @@ func newAttachmentRecord(db *gorm.DB, opts ...gen.DOOption) attachmentRecord {
 	tableName := _attachmentRecord.attachmentRecordDo.TableName()
 	_attachmentRecord.ALL = field.NewAsterisk(tableName)
 	_attachmentRecord.ID = field.NewUint(tableName, "id")
+	_attachmentRecord.ObjectID = field.NewString(tableName, "object_id")
 	_attachmentRecord.NotePath = field.NewString(tableName, "note_path")
 	_attachmentRecord.ReferenceText = field.NewString(tableName, "reference_text")
 	_attachmentRecord.TargetPath = field.NewString(tableName, "target_path")
@@ -44,6 +45,7 @@ type attachmentRecord struct {
 
 	ALL           field.Asterisk
 	ID            field.Uint
+	ObjectID      field.String
 	NotePath      field.String
 	ReferenceText field.String
 	TargetPath    field.String
@@ -66,6 +68,7 @@ func (a attachmentRecord) As(alias string) *attachmentRecord {
 func (a *attachmentRecord) updateTableName(table string) *attachmentRecord {
 	a.ALL = field.NewAsterisk(table)
 	a.ID = field.NewUint(table, "id")
+	a.ObjectID = field.NewString(table, "object_id")
 	a.NotePath = field.NewString(table, "note_path")
 	a.ReferenceText = field.NewString(table, "reference_text")
 	a.TargetPath = field.NewString(table, "target_path")
@@ -87,8 +90,9 @@ func (a *attachmentRecord) GetFieldByName(fieldName string) (field.OrderExpr, bo
 }
 
 func (a *attachmentRecord) fillFieldMap() {
-	a.fieldMap = make(map[string]field.Expr, 6)
+	a.fieldMap = make(map[string]field.Expr, 7)
 	a.fieldMap["id"] = a.ID
+	a.fieldMap["object_id"] = a.ObjectID
 	a.fieldMap["note_path"] = a.NotePath
 	a.fieldMap["reference_text"] = a.ReferenceText
 	a.fieldMap["target_path"] = a.TargetPath

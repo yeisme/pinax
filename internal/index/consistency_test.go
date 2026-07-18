@@ -156,7 +156,7 @@ func TestExtractLinkRowsUsesEnhancedWikiParser(t *testing.T) {
 }
 
 func BenchmarkIndexRebuild(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	for i := 0; i < b.N; i++ {
 		root := b.TempDir()
 		if _, err := Rebuild(root, notes); err != nil {
@@ -166,7 +166,7 @@ func BenchmarkIndexRebuild(b *testing.B) {
 }
 
 func BenchmarkIncrementalNoteUpdate(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -182,7 +182,7 @@ func BenchmarkIncrementalNoteUpdate(b *testing.B) {
 }
 
 func BenchmarkBacklinks(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -194,7 +194,7 @@ func BenchmarkBacklinks(b *testing.B) {
 }
 
 func BenchmarkSearchLinkTarget(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -208,7 +208,7 @@ func BenchmarkSearchLinkTarget(b *testing.B) {
 }
 
 func BenchmarkIndexSearchTokenCandidates(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -283,7 +283,8 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-func syntheticNotes(count int) []domain.Note {
+func syntheticNotes() []domain.Note {
+	const count = 1000
 	notes := make([]domain.Note, 0, count)
 	for i := 0; i < count; i++ {
 		target := (i + 1) % count

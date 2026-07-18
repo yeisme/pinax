@@ -130,6 +130,22 @@ From 24 failure memories:
 - Implications of success
 - ANY communication suggesting completion/correctness
 
+## Destructive Git Operations — Verify State First
+
+`git reset`, `rebase`, `cherry-pick`, or force-push without checking current branch state is a verification failure, not just a git mistake. This monorepo runs multiple Claude sessions that commit to the same branches concurrently.
+
+**BEFORE any branch-rewriting operation:**
+1. VERIFY HEAD: `git log --oneline -3`
+2. CHECK reflog for moves by other sessions: `git reflog -5`
+3. CONFIRM the commit you intend to rewrite is YOURS and still the branch tip
+4. ONLY THEN run the destructive op
+
+The failure mode: assuming HEAD is unchanged since your last commit. Another session may have advanced the branch, and a blind `reset --hard HEAD~1` detaches THEIR commit. Recover with `git reflog`. Never rewrite another session's commit SHA — restore it with `git reset --mixed <their-sha>` to preserve it.
+
+| Claim | Requires | Not Sufficient |
+|-------|----------|----------------|
+| Safe to reset/rebase this branch | `git log` + `git reflog` show HEAD is your commit and tip | "I just committed here" / "HEAD should still be X" |
+
 ## The Bottom Line
 
 **No shortcuts for verification.**

@@ -1022,7 +1022,7 @@ func TestPublishDeployVercelUsesFakeCLIAndRedactsOutput(t *testing.T) {
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("PINAX_TEST_VERCEL_LOG", logPath)
-	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	preparePinaxWebPublishApproval(t, root, outDir)
 
 	out := runCLI(t, "publish", "deploy", "--profile", "public", "--target", "vercel", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
 	envelope := parsePublishEnvelope(t, out)
@@ -1046,7 +1046,7 @@ func TestPublishDeployVercelUsesFakeCLIAndRedactsOutput(t *testing.T) {
 func TestPublishDeployVercelMissingCLIIsActionable(t *testing.T) {
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
-	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	preparePinaxWebPublishApproval(t, root, outDir)
 	t.Setenv("PATH", filepath.Join(root, "empty-bin"))
 
 	out, err := runCLIExpectError("publish", "deploy", "--profile", "public", "--target", "vercel", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
@@ -1069,7 +1069,7 @@ func TestPublishDeployCloudflarePagesUsesFakeWranglerAndRedactsOutput(t *testing
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("PINAX_TEST_WRANGLER_LOG", logPath)
-	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	preparePinaxWebPublishApproval(t, root, outDir)
 
 	out := runCLI(t, "publish", "deploy", "--profile", "public", "--target", "cloudflare-pages", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
 	envelope := parsePublishEnvelope(t, out)
@@ -1093,7 +1093,7 @@ func TestPublishDeployCloudflarePagesUsesFakeWranglerAndRedactsOutput(t *testing
 func TestPublishDeployCloudflarePagesMissingCLIIsActionable(t *testing.T) {
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
-	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	preparePinaxWebPublishApproval(t, root, outDir)
 	t.Setenv("PATH", filepath.Join(root, "empty-bin"))
 
 	out, err := runCLIExpectError("publish", "deploy", "--profile", "public", "--target", "cloudflare-pages", "--out", outDir, "--project", "my-notes", "--yes", "--vault", root, "--json")
@@ -1102,8 +1102,9 @@ func TestPublishDeployCloudflarePagesMissingCLIIsActionable(t *testing.T) {
 	}
 }
 
-func preparePinaxWebPublishApproval(t *testing.T, root, outDir, profile string) {
+func preparePinaxWebPublishApproval(t *testing.T, root, outDir string) {
 	t.Helper()
+	const profile = "public"
 	runCLI(t, "publish", "profile", "init", profile, "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
 	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public", "tags": "pages"}, "# Public\n\nSafe body for platform deploy.")
 	runCLI(t, "publish", "build", "--profile", profile, "--target", "local", "--out", outDir, "--vault", root, "--json")
@@ -1254,7 +1255,7 @@ func TestPublishDoctorReportsPlatformReadinessReceiptAndScan(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	preparePinaxWebPublishApproval(t, root, outDir, "public")
+	preparePinaxWebPublishApproval(t, root, outDir)
 
 	out := runCLI(t, "publish", "doctor", "--profile", "public", "--target", "vercel", "--out", outDir, "--vault", root, "--json")
 	envelope := parsePublishEnvelope(t, out)

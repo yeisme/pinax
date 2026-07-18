@@ -44,6 +44,7 @@ Pinax 是本地优先的统一笔记 Agent CLI：Markdown vault 是用户知识�
 - [文档设计](./overview/documentation-design.md)
 - [长期资料源笔记](./overview/durable-source-notes.md)
 - [产品定位](./overview/product-positioning.md)
+- [通用 Agent 记忆系统 PRD](./product/general-agent-memory-prd.md)
 - [MVP 范围](./product/mvp-scope.md)
 - [架构边界](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)

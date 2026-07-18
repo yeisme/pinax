@@ -90,7 +90,7 @@ Pinax SHALL preserve the local-first boundary between CLI-side backup mirror tra
 
 ### Requirement: 端侧加密保护明文
 
-Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备。加密密钥 SHALL 通过 Capsa SDK 从 secret reference 解析出真实密钥值，SHALL NOT 使用引用字符串本身作为密钥材料。
+Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开本地设备。加密密钥 SHALL 通过 Capsa SDK 从 secret reference 解析出真实密钥值，SHALL NOT 使用引用字符串本身作为密钥材料。Capsa SDK Go module source SHALL 指向版本化 submodule `backend-server/capsa/sdk`，SHALL NOT 依赖 plain directory copy 作为生产 SDK source。
 
 #### Scenario: 加密 manifest 和 blob
 
@@ -120,6 +120,15 @@ Manifest 和 blob SHALL 使用 client-side encryption；明文 SHALL NOT 离开�
 - **AND** `secret_ref` 不是 `env://` 或 `keychain://` scheme
 - **WHEN** Pinax 配置 Capsa Sync backend
 - **THEN** projection SHALL 包含 `weak_encryption_key` 警告
+
+#### Scenario: SDK source 指向版本化 submodule
+
+- **GIVEN** Pinax `go.mod` 声明 `require github.com/yeisme/capsa v0.0.0`
+- **WHEN** 开发者编译 sync 或 crypto 相关代码
+- **THEN** `go.mod` replace SHALL 指向 `../../backend-server/capsa/sdk`
+- **AND** SHALL NOT 指向 `../../shared/capsa` plain directory
+- **AND** public module path SHALL 保持 `github.com/yeisme/capsa` 不变
+- **AND** 加密 salt 与 envelope schema SHALL 不因 source 迁移改变
 
 ### Requirement: Agent Brain 投影不作为 Cloud Sync 明文状态
 
@@ -499,4 +508,102 @@ Cloud Sync SHALL transfer recoverable trash backup blobs when a deletion is sync
 - **WHEN** the user runs `pinax sync push --target capsa --dry-run --vault ./my-notes --json`
 - **THEN** Pinax SHALL return partial status with stable issue code `trash_backup_missing`
 - **AND** it SHALL NOT claim that the deletion is safely recoverable on another device.
+
+### Requirement: Cloud Sync manifest v2 is object-first
+Cloud Sync manifest v2 entries SHALL contain canonical `object_id`, `object_kind`, `current_path`, encrypted blob reference, plaintext content hash, size, object revision, update time and producing device ID. Object ID SHALL be the merge identity; path SHALL be a mutable locator.
+
+#### Scenario: Push a renamed note
+- **WHEN** device A renames a note and pushes a new manifest revision
+- **THEN** the manifest SHALL record the same object ID with a new current path and revision, and SHALL NOT encode the operation only as an unrelated path deletion and creation.
+
+#### Scenario: Device B pulls an object move
+- **WHEN** device B has the prior revision of the same object and pulls the rename
+- **THEN** Pinax SHALL move the local object to the remote current path, update ledger and index projections, and preserve its local identity history.
+
+### Requirement: Sync distinguishes revision conflicts from path collisions
+Sync planning SHALL classify concurrent changes by object identity before applying content or path operations.
+
+#### Scenario: Same object changes on two devices
+- **WHEN** two devices modify different revisions of the same object ID from one base revision
+- **THEN** Pinax SHALL attempt the allowed three-way merge or report a revision conflict containing object ID and redacted path evidence without silently choosing one body.
+
+#### Scenario: Different objects claim one path
+- **WHEN** local and remote manifests contain different object IDs with the same current path
+- **THEN** Pinax SHALL report a path collision, preserve both payloads through conflict-safe storage and require an explicit resolution plan.
+
+### Requirement: Deletes propagate by object identity and UUID tombstone
+Cloud Sync deletion entries SHALL contain object ID, object kind, UUID tombstone ID, deletion revision and encrypted recovery evidence where available.
+
+#### Scenario: Pull an object tombstone after local move
+- **WHEN** a remote tombstone deletes an object that has a different local path but the same object ID
+- **THEN** Pinax SHALL match the object by ID, preserve conflicting local changes, apply trash lifecycle semantics and SHALL NOT leave an active duplicate at the moved path.
+
+### Requirement: Manifest v1 migration is explicit and bounded
+Pinax SHALL read existing manifest v1 data during a documented compatibility window and SHALL require identity reconciliation before publishing an authoritative manifest v2 revision.
+
+#### Scenario: First v2 sync against v1 state
+- **WHEN** a vault with manifest v1 state prepares its first manifest v2 push
+- **THEN** Pinax SHALL produce a migration plan that maps paths to canonical object IDs, reports ambiguous or missing identities and performs no remote write until the plan is approved.
+
+### Requirement: 同步日志提供脱敏的文件级时间线
+
+Pinax SHALL 在同步 run 时间线中记录每个计划文件操作的安全元数据，并允许用户持续跟随新追加事件，而不暴露正文、凭据、provider payload 或违反路径策略的路径。
+
+#### Scenario: 查看同步涉及的文件
+
+- **GIVEN** 一次 sync run 包含上传、下载、删除或冲突操作
+- **WHEN** 用户运行 `pinax sync logs tail --vault <vault>`
+- **THEN** CLI SHALL 展示每个文件操作的 run ID、方向、操作类型、状态和允许公开的路径标识
+- **AND** CLI SHALL 同时保留 run 级完成摘要。
+
+#### Scenario: 持续跟随同步文件事件
+
+- **WHEN** 用户运行 `pinax sync logs tail --follow --vault <vault>`
+- **THEN** CLI SHALL 先输出当前尾部事件，再持续输出后续追加的同步事件，直到命令上下文取消
+- **AND** `--events` SHALL 输出逐行有效 NDJSON，不混入 human prose 或 diagnostics。
+
+#### Scenario: 文件事件遵守路径策略和脱敏
+
+- **GIVEN** sync run 使用 `default`、`hash` 或 `omitted` path policy
+- **WHEN** Pinax 持久化或渲染文件级同步事件
+- **THEN** 文件路径 SHALL 使用对应策略处理
+- **AND** 事件、stdout、stderr、测试 fixture 和收据 SHALL NOT 包含 note body、token、Authorization、Cookie 或 provider payload。
+
+#### Scenario: JSON 不进入无限跟随模式
+
+- **WHEN** 用户组合 `sync logs tail --follow --json`
+- **THEN** CLI SHALL 返回稳定的参数错误和可执行提示
+- **AND** SHALL NOT 输出不完整或无限增长的 JSON document。
+
+### Requirement: 同步配置来源与运行态分离
+
+Cloud Sync SHALL treat repository declaration as the portable source for transport topology and local `.pinax/cloud/config.yaml` as generated device runtime state.
+
+#### Scenario: 配置驱动同步
+
+- **WHEN** a repository contains a valid `pinax-sync.yaml` and the user runs `pinax sync repo apply --vault ./my-notes --json`
+- **THEN** subsequent `pinax sync push`, `pinax sync pull` and daemon commands SHALL resolve the generated Capsa runtime config without requiring repeated backend flags
+- **AND** sync SHALL retain existing encrypted revision, manifest, blob and CAS semantics
+
+#### Scenario: 设备状态不进入远程内容清单
+
+- **WHEN** Pinax builds a content manifest after repository bootstrap
+- **THEN** generated cloud config, device state, daemon runtime, secrets assets and sync receipts SHALL follow explicit protected-path rules
+- **AND** SHALL NOT be uploaded as ordinary plaintext note content
+
+### Requirement: 首次设备 bootstrap 安全
+
+Cloud Sync SHALL require explicit first-device or new-device bootstrap semantics before enabling bidirectional writes.
+
+#### Scenario: 新设备首次只拉取
+
+- **WHEN** a new device bootstraps a workspace with no local sync receipt
+- **THEN** Pinax SHALL perform pull-only initialization by default
+- **AND** SHALL require explicit approval before uploading local deletions or replacing remote state
+
+#### Scenario: 加密 key identity 不匹配
+
+- **WHEN** unlocked secrets resolve to a different encryption key identity than the remote head
+- **THEN** sync SHALL fail with `encryption_key_mismatch`
+- **AND** SHALL provide a recovery action without generating a replacement key automatically
 

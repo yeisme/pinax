@@ -17,6 +17,7 @@ import (
 
 type Server struct {
 	service *app.Service
+	memSvc  *app.AgentMemoryService
 	vault   string
 }
 
@@ -33,7 +34,7 @@ type dashboardNoteSummary struct {
 }
 
 func NewServer(service *app.Service, vault string) *Server {
-	return &Server{service: service, vault: vault}
+	return &Server{service: service, memSvc: app.NewAgentMemoryService(), vault: vault}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -46,6 +47,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/note-display/", s.handleNoteDisplay)
 	mux.HandleFunc("/api/database-tabs/", s.handleDatabaseTab)
 	mux.HandleFunc("/api/repair-plans", s.handleRepairPlans)
+	mux.HandleFunc("/api/agent-continuity", s.handleAgentContinuity)
+	mux.HandleFunc("/api/memory-inbox", s.handleMemoryInbox)
+	mux.HandleFunc("/api/trust-metrics", s.handleTrustMetrics)
 	return mux
 }
 
@@ -61,7 +65,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	notesProjection, notesErr := s.notesProjection(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writeHTML(w, "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Pinax Dashboard</title><style>%s</style></head><body>", dashboardCSS)
-	writeHTML(w, "<div class=\"shell\"><aside class=\"sidebar\"><div class=\"brand\"><span class=\"brand-mark\">P</span><div><strong>Pinax</strong><span>Local vault</span></div></div><nav><a class=\"active\" href=\"#overview\">Overview</a><a href=\"#notes\">Notes</a><a href=\"#health\">Health</a><a href=\"#repair\">Repair</a><a href=\"#data\">Data</a></nav></aside><main class=\"main\">")
+	writeHTML(w, "<div class=\"shell\"><aside class=\"sidebar\"><div class=\"brand\"><span class=\"brand-mark\">P</span><div><strong>Pinax</strong><span>Local vault</span></div></div><nav><a class=\"active\" href=\"#overview\">Overview</a><a href=\"#notes\">Notes</a><a href=\"#health\">Health</a><a href=\"#repair\">Repair</a><a href=\"#data\">Data</a><a href=\"/api/trust-metrics\">Trust Center</a></nav></aside><main class=\"main\">")
 	writeHTML(w, "<header class=\"page-header\"><div><p class=\"eyebrow\">Read-only dashboard</p><h1>Pinax Vault Dashboard</h1><p>本地 Markdown vault 的状态、关系健康和维护入口。</p></div><div class=\"header-actions\"><a class=\"button secondary\" href=\"/api/overview\">JSON overview</a><a class=\"button secondary\" href=\"/api/notes\">Notes JSON</a><a class=\"button\" href=\"/api/graph-summary\">Graph summary</a></div></header>")
 	if statsErr != nil || doctorErr != nil {
 		writeHTML(w, "<section class=\"panel\"><div class=\"panel-heading\"><h2>状态</h2></div><p class=\"error-text\">%s %s</p></section>", html.EscapeString(fmt.Sprint(statsErr)), html.EscapeString(fmt.Sprint(doctorErr)))
@@ -135,7 +139,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			writeHTML(w, "</div>")
 		}
 	}
-	writeHTML(w, "</section><section id=\"data\" class=\"panel\"><div class=\"panel-heading\"><div><p class=\"eyebrow\">Read API</p><h2>数据</h2></div></div><div class=\"endpoint-grid\"><a href=\"/api/overview\">/api/overview</a><a href=\"/api/notes\">/api/notes</a><a href=\"/api/graph-summary\">/api/graph-summary</a><a href=\"/api/repair-plans\">/api/repair-plans</a><a href=\"/api/database-tabs/&lt;view&gt;\">/api/database-tabs/&lt;view&gt;</a></div></section></main></div></body></html>")
+	writeHTML(w, "</section><section id=\"data\" class=\"panel\"><div class=\"panel-heading\"><div><p class=\"eyebrow\">Read API</p><h2>数据</h2></div></div><div class=\"endpoint-grid\"><a href=\"/api/overview\">/api/overview</a><a href=\"/api/notes\">/api/notes</a><a href=\"/api/graph-summary\">/api/graph-summary</a><a href=\"/api/repair-plans\">/api/repair-plans</a><a href=\"/api/database-tabs/&lt;view&gt;\">/api/database-tabs/&lt;view&gt;</a><a href=\"/api/agent-continuity\">/api/agent-continuity</a><a href=\"/api/memory-inbox\">/api/memory-inbox</a><a href=\"/api/trust-metrics\">/api/trust-metrics</a></div></section></main></div></body></html>")
 }
 
 func writeDashboardNotesPanel(w io.Writer, projection domain.Projection) {

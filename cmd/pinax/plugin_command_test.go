@@ -99,7 +99,7 @@ budgets:
 
 func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 
 	installOut := runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 	assertJSONCommandStatus(t, installOut, "plugin.install", "success")
@@ -160,7 +160,7 @@ func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
 
 func TestPluginCommandFamilyOutputContract(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 
 	helpOut := runCLI(t, "plugin", "--help")
@@ -231,7 +231,7 @@ func TestPluginCommandFamilyOutputContract(t *testing.T) {
 
 func TestPluginRunUnavailableContract(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 	runCLI(t, "plugin", "enable", "project-dashboard", "--yes", "--vault", root, "--json")
 	runCLI(t, "plugin", "permissions", "grant", "project-dashboard", "projection.read", "--capability", "render_dashboard", "--yes", "--vault", root, "--json")
@@ -283,7 +283,7 @@ func TestPluginRunPythonExternalRunnerContract(t *testing.T) {
 
 func TestPluginPermissionsGrantRevokeAndRunDenyByDefault(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 	runCLI(t, "plugin", "enable", "project-dashboard", "--yes", "--vault", root, "--json")
 
@@ -325,8 +325,9 @@ func TestPluginPermissionsGrantRevokeAndRunDenyByDefault(t *testing.T) {
 	}
 }
 
-func writePluginFixture(t *testing.T, root, id string) string {
+func writePluginFixture(t *testing.T, root string) string {
 	t.Helper()
+	const id = "project-dashboard"
 	pluginDir := filepath.Join(root, "plugins", id)
 	writeCLIFixture(t, filepath.Join(pluginDir, "dist", "plugin.wasm"), "fake wasm bytes")
 	writeCLIFixture(t, filepath.Join(pluginDir, "pinax-plugin.yaml"), `schema_version: pinax.plugin.v1

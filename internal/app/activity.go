@@ -86,7 +86,7 @@ func (s *Service) ActivitySources(_ context.Context, req ActivityRequest) (domai
 	if err != nil {
 		return errorProjection("activity.sources", err), err
 	}
-	result := readActivity(root, ActivityRequest{VaultPath: root, Source: "all", Limit: activityMaxLimit})
+	result := readActivity(root)
 	projection := activityProjection("activity.sources", "Activity sources inspected.", result)
 	projection.Data = map[string]any{"schema_version": activityEntrySchemaVersion, "sources": result.Sources, "warnings": result.Warnings}
 	return projection, nil
@@ -123,7 +123,7 @@ func (s *Service) ActivityShow(_ context.Context, req ActivityRequest) (domain.P
 	if err != nil {
 		return errorProjection("activity.show", err), err
 	}
-	result := readActivity(root, ActivityRequest{VaultPath: root, Source: "all"})
+	result := readActivity(root)
 	for _, entry := range result.Entries {
 		if entry.EventID == strings.TrimSpace(req.EventID) {
 			result.Entries = []ActivityEntry{entry}
@@ -145,7 +145,7 @@ func (s *Service) ActivityManage(_ context.Context, req ActivityRequest) (domain
 	if err != nil {
 		return errorProjection("activity.manage", err), err
 	}
-	result := readActivity(root, ActivityRequest{VaultPath: root, Source: "all", Limit: activityMaxLimit})
+	result := readActivity(root)
 	projection := activityProjection("activity.manage", "Activity log management summary generated.", result)
 	projection.Data = map[string]any{"schema_version": activityEntrySchemaVersion, "sources": result.Sources, "warnings": result.Warnings, "readonly": true}
 	projection.Actions = []domain.Action{{Name: "prune-sync-runs", Command: fmt.Sprintf("pinax sync logs prune --vault %s --keep 200 --max-age-days 90 --yes --json", shellQuote(root))}}
@@ -153,7 +153,7 @@ func (s *Service) ActivityManage(_ context.Context, req ActivityRequest) (domain
 }
 
 func filterActivity(root string, req ActivityRequest) (activityQueryResult, error) {
-	result := readActivity(root, req)
+	result := readActivity(root)
 	since, err := parseActivityTime(req.Since)
 	if err != nil {
 		return result, err
@@ -202,7 +202,7 @@ func filterActivity(root string, req ActivityRequest) (activityQueryResult, erro
 	return result, nil
 }
 
-func readActivity(root string, req ActivityRequest) activityQueryResult {
+func readActivity(root string) activityQueryResult {
 	result := activityQueryResult{Root: root, Filters: map[string]string{}}
 	readers := []func(string, *activityQueryResult){
 		readVaultActivityEvents,

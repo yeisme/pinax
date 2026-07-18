@@ -28,6 +28,7 @@ func newSearchTokenRecord(db *gorm.DB, opts ...gen.DOOption) searchTokenRecord {
 	tableName := _searchTokenRecord.searchTokenRecordDo.TableName()
 	_searchTokenRecord.ALL = field.NewAsterisk(tableName)
 	_searchTokenRecord.ID = field.NewUint(tableName, "id")
+	_searchTokenRecord.ObjectID = field.NewString(tableName, "object_id")
 	_searchTokenRecord.Token = field.NewString(tableName, "token")
 	_searchTokenRecord.NotePath = field.NewString(tableName, "note_path")
 	_searchTokenRecord.Field = field.NewString(tableName, "field")
@@ -44,6 +45,7 @@ type searchTokenRecord struct {
 
 	ALL      field.Asterisk
 	ID       field.Uint
+	ObjectID field.String
 	Token    field.String
 	NotePath field.String
 	Field    field.String
@@ -66,6 +68,7 @@ func (s searchTokenRecord) As(alias string) *searchTokenRecord {
 func (s *searchTokenRecord) updateTableName(table string) *searchTokenRecord {
 	s.ALL = field.NewAsterisk(table)
 	s.ID = field.NewUint(table, "id")
+	s.ObjectID = field.NewString(table, "object_id")
 	s.Token = field.NewString(table, "token")
 	s.NotePath = field.NewString(table, "note_path")
 	s.Field = field.NewString(table, "field")
@@ -87,8 +90,9 @@ func (s *searchTokenRecord) GetFieldByName(fieldName string) (field.OrderExpr, b
 }
 
 func (s *searchTokenRecord) fillFieldMap() {
-	s.fieldMap = make(map[string]field.Expr, 6)
+	s.fieldMap = make(map[string]field.Expr, 7)
 	s.fieldMap["id"] = s.ID
+	s.fieldMap["object_id"] = s.ObjectID
 	s.fieldMap["token"] = s.Token
 	s.fieldMap["note_path"] = s.NotePath
 	s.fieldMap["field"] = s.Field

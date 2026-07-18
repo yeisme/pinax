@@ -291,12 +291,6 @@ func planningDecisionID(root, period string, t time.Time) string {
 	return "plan_dec_" + hex.EncodeToString(h[:])[:16]
 }
 
-//nolint:unused // Retained for deterministic IDs in older planning receipts.
-func planningActionID(root, period string, t time.Time) string {
-	h := sha1.Sum([]byte(root + "\x00" + period + "\x00" + t.Format(time.RFC3339Nano)))
-	return "plan_act_" + hex.EncodeToString(h[:])[:16]
-}
-
 func savePlanningSnapshot(root string, snapshot *domain.PlanningSnapshot) (string, error) {
 	dir, err := safeJoin(root, ".pinax/planning/snapshots")
 	if err != nil {

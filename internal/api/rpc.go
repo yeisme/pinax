@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yeisme/pinax/internal/agentprotocol"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
 )
@@ -18,6 +19,7 @@ type RPCDispatcher struct {
 	service    *app.Service
 	vault      string
 	allowWrite bool
+	agentMem   *app.AgentMemoryService
 }
 
 type DispatcherOptions struct {
@@ -29,7 +31,7 @@ func NewRPCDispatcher(service *app.Service, vault string) *RPCDispatcher {
 }
 
 func NewRPCDispatcherWithOptions(service *app.Service, vault string, options DispatcherOptions) *RPCDispatcher {
-	return &RPCDispatcher{service: service, vault: vault, allowWrite: options.AllowWrite}
+	return &RPCDispatcher{service: service, vault: vault, allowWrite: options.AllowWrite, agentMem: app.NewAgentMemoryService()}
 }
 
 func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projection, error) {
@@ -272,6 +274,72 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		projection, err := d.service.SyncPull(ctx, app.SyncRequest{VaultPath: d.vault, Target: stringParam(req.Params, "target"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run"), BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision")})
 		projection.Mode = "json"
 		return projection, err
+	// Agent memory runtime — experimental RPC routes (readonly context + recall).
+	case "Pinax.Agent.Context":
+		pack, err := d.agentMem.AgentContextRuntime(ctx, app.AgentContextRequest{
+			VaultPath: d.vault,
+			Principal: agentprotocol.DefaultAdapterPrincipal("rpc-client", "rpc"),
+			Scope:     agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: stringParam(req.Params, "workspace")},
+			MaxItems:  20,
+			MaxChars:  8000,
+		})
+		projection := domain.NewProjection("agent.context", "Agent context pack compiled via RPC.")
+		projection.Mode = "json"
+		projection.Facts["schema_version"] = pack.SchemaVersion
+		projection.Facts["entry_count"] = fmt.Sprintf("%d", pack.EntryCount())
+		projection.Data = pack
+		return projection, err
+	case "Pinax.Agent.Memory.Recall":
+		results, err := d.agentMem.AgentMemoryRecallQuery(ctx, d.vault, app.RecallQuery{
+			Scope: agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: stringParam(req.Params, "workspace")},
+		})
+		projection := domain.NewProjection("agent.memory.recall", fmt.Sprintf("Recalled %d agent memories via RPC.", len(results)))
+		projection.Mode = "json"
+		projection.Facts["count"] = fmt.Sprintf("%d", len(results))
+		projection.Data = results
+		return projection, err
+	// Agent continuity experience — experimental additive RPC routes (readonly).
+	case "Pinax.Agent.Continuity":
+		pack, err := d.agentMem.AgentContinuity(ctx, app.ContinuityRequest{
+			VaultPath: d.vault,
+			Principal: agentprotocol.DefaultAdapterPrincipal("rpc-client", "rpc"),
+			Scope:     parseRPCScope(req.Params),
+			Task:      stringParam(req.Params, "task"),
+			Intent:    stringParam(req.Params, "intent"),
+			MaxItems:  intParam(req.Params, "max_items"),
+			MaxChars:  intParam(req.Params, "max_chars"),
+		})
+		projection := domain.NewProjection("agent.continuity", "Continuity pack compiled via RPC.")
+		projection.Mode = "json"
+		projection.Facts["schema_version"] = pack.SchemaVersion
+		projection.Facts["section_count"] = fmt.Sprintf("%d", pack.SectionCount())
+		projection.Facts["handoff_status"] = string(pack.HandoffStatus)
+		projection.Facts["experimental"] = "true"
+		projection.Data = pack
+		return projection, err
+	case "Pinax.Agent.Inbox":
+		inbox, err := d.agentMem.MemoryInbox(ctx, app.InboxRequest{
+			VaultPath: d.vault,
+			Scope:     parseRPCScope(req.Params),
+			Limit:     intParam(req.Params, "limit"),
+		})
+		projection := domain.NewProjection("agent.inbox", "Memory inbox aggregated via RPC.")
+		projection.Mode = "json"
+		projection.Facts["total_items"] = fmt.Sprintf("%d", inbox.TotalItems)
+		projection.Facts["high_risk"] = fmt.Sprintf("%d", inbox.HighRiskCount)
+		projection.Facts["experimental"] = "true"
+		projection.Data = inbox
+		return projection, err
+	case "Pinax.Agent.TrustCenter":
+		tc, err := d.agentMem.AgentTrustCenter(ctx, app.TrustCenterRequest{
+			VaultPath: d.vault,
+			Scope:     parseRPCScope(req.Params),
+		})
+		projection := domain.NewProjection("agent.trust_center", "Trust center projection via RPC.")
+		projection.Mode = "json"
+		projection.Facts["experimental"] = "true"
+		projection.Data = tc
+		return projection, err
 	default:
 		err := &domain.CommandError{Code: "rpc_method_not_found", Message: "RPC method not found", Hint: fmt.Sprintf("Check whether pinax api routes includes %s", req.Method)}
 		projection := domain.NewErrorProjection("api.rpc", err)
@@ -380,4 +448,18 @@ func intParam(params map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+// parseRPCScope 解析 RPC params 中的 scope。
+// 支持 "scope" 参数格式 "kind:id"，默认为 workspace:default。
+func parseRPCScope(params map[string]any) agentprotocol.Scope {
+	s := stringParam(params, "scope")
+	if s == "" {
+		return agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "default"}
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) == 2 {
+		return agentprotocol.Scope{Kind: agentprotocol.ScopeKind(parts[0]), ID: parts[1]}
+	}
+	return agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: s}
 }

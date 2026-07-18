@@ -29,6 +29,19 @@ pinax version restore apply --vault ./my-notes --plan restore-<id> --yes        
 
 Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer for your vault, **avoids** Notion's cloud lock-in, and is **more programmable and verifiable** than Reflect. It is not another notes app — it is the control plane that makes your existing Markdown vault safe for AI.
 
+## Identity-first kernel
+
+Every durable note, journal, asset, project, subproject, and managed task has a canonical UUIDv7 `object_id`. Paths are mutable locators, not identity. SQL/Dataview projections, backlinks, project boards, apply receipts, tombstones, and manifest v2 all join on object IDs.
+
+```bash
+pinax record identity audit --vault ./my-notes --json
+pinax sync manifest audit --vault ./my-notes --json
+pinax sync manifest plan --save --vault ./my-notes --json
+pinax sync manifest promote --plan manifest-plan-<id> --remote-capability v2 --vault ./my-notes --yes --json
+```
+
+Agent plans bind the object ID plus the observed path and expected content/record revision. A pure move can safely rebase by UUID; path reuse or content drift returns `plan_stale`. Every apply writes a body-free receipt with before/after revisions, ledger sequence, snapshot evidence, changed paths, and sync readiness.
+
 ## Status
 
 | Area | Status |
@@ -52,12 +65,12 @@ Install from source:
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.5`):
+Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.6`):
 
 ```bash
 # linux x86_64 (adjust os/arch for your platform: darwin, windows; x86_64, aarch64)
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.5/pinax_0.1.5_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.5/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.6/pinax_0.1.6_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.6/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version

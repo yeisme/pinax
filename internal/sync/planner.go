@@ -47,11 +47,18 @@ type Plan struct {
 }
 
 type Operation struct {
-	Kind     string `json:"kind"` // "upload_blob", "download_blob", "delete_local", "delete_remote", "conflict"
-	Path     string `json:"path,omitempty"`
-	PathHash string `json:"path_hash,omitempty"`
-	BlobID   string `json:"blob_id,omitempty"`
-	Status   string `json:"status"`
+	ObjectID       string `json:"object_id,omitempty"`
+	ObjectKind     string `json:"object_kind,omitempty"`
+	FromPath       string `json:"from_path,omitempty"`
+	ToPath         string `json:"to_path,omitempty"`
+	LocalRevision  string `json:"local_revision,omitempty"`
+	RemoteRevision string `json:"remote_revision,omitempty"`
+	BaseRevision   string `json:"base_object_revision,omitempty"`
+	Kind           string `json:"kind"` // "upload_blob", "download_blob", "delete_local", "delete_remote", "conflict"
+	Path           string `json:"path,omitempty"`
+	PathHash       string `json:"path_hash,omitempty"`
+	BlobID         string `json:"blob_id,omitempty"`
+	Status         string `json:"status"`
 }
 
 type ConflictEntry struct {
@@ -87,7 +94,11 @@ func BuildPlan(req Request) (Plan, error) {
 		return plan, ErrRevisionConflict
 	}
 
-	plan.Operations = diffManifests(req.BaseManifest, req.LocalManifest, req.RemoteManifest, req.Direction)
+	if objectManifestRequest(req) {
+		plan.Operations = diffObjectManifests(req.BaseManifest, req.LocalManifest, req.RemoteManifest, req.Direction)
+	} else {
+		plan.Operations = diffManifests(req.BaseManifest, req.LocalManifest, req.RemoteManifest, req.Direction)
+	}
 	return plan, nil
 }
 
@@ -97,6 +108,160 @@ func requiresApproval(req Request) bool {
 
 func remoteWrite(req Request) bool {
 	return req.Direction == DirectionPush && !req.DryRun && req.Yes
+}
+
+func objectManifestRequest(req Request) bool {
+	if req.LocalManifest.SchemaVersion == remote.ManifestSchemaVersionV2 || req.RemoteManifest.SchemaVersion == remote.ManifestSchemaVersionV2 || req.BaseManifest.SchemaVersion == remote.ManifestSchemaVersionV2 {
+		return true
+	}
+	for _, manifest := range []remote.Manifest{req.LocalManifest, req.RemoteManifest, req.BaseManifest} {
+		for _, entry := range manifest.Entries {
+			if entry.ObjectID != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func diffObjectManifests(base, local, rem remote.Manifest, dir Direction) []Operation {
+	baseByID := objectEntries(base)
+	localByID := objectEntries(local)
+	remoteByID := objectEntries(rem)
+	localByPath := objectPaths(local)
+	remoteByPath := objectPaths(rem)
+	operations := []Operation{}
+	collisionPaths := map[string]bool{}
+	for path, localEntry := range localByPath {
+		if remoteEntry, ok := remoteByPath[path]; ok && localEntry.ObjectID != remoteEntry.ObjectID {
+			operations = append(operations, Operation{Kind: "path_collision", Path: path, FromPath: localEntry.Path, ToPath: remoteEntry.Path, ObjectID: localEntry.ObjectID, ObjectKind: localEntry.ObjectKind, LocalRevision: localEntry.RevisionID, RemoteRevision: remoteEntry.RevisionID, Status: "planned"})
+			collisionPaths[path] = true
+		}
+	}
+	ids := map[string]bool{}
+	for id := range baseByID {
+		ids[id] = true
+	}
+	for id := range localByID {
+		ids[id] = true
+	}
+	for id := range remoteByID {
+		ids[id] = true
+	}
+	ordered := make([]string, 0, len(ids))
+	for id := range ids {
+		ordered = append(ordered, id)
+	}
+	sort.Strings(ordered)
+	for _, id := range ordered {
+		baseEntry, hasBase := baseByID[id]
+		localEntry, hasLocal := localByID[id]
+		remoteEntry, hasRemote := remoteByID[id]
+		if hasLocal && collisionPaths[localEntry.Path] {
+			continue
+		}
+		if hasRemote && collisionPaths[remoteEntry.Path] {
+			continue
+		}
+		if hasLocal && hasRemote {
+			if hasBase && localEntry.RevisionID != baseEntry.RevisionID && remoteEntry.RevisionID != baseEntry.RevisionID && localEntry.RevisionID != remoteEntry.RevisionID {
+				operations = append(operations, objectOperation("revision_conflict", localEntry, remoteEntry, localEntry.Path))
+				continue
+			}
+			if localEntry.Path != remoteEntry.Path {
+				fromPath, toPath := remoteEntry.Path, localEntry.Path
+				if hasBase {
+					if localEntry.Path == baseEntry.Path {
+						fromPath, toPath = localEntry.Path, remoteEntry.Path
+					}
+					if remoteEntry.Path == baseEntry.Path {
+						fromPath, toPath = remoteEntry.Path, localEntry.Path
+					}
+				}
+				entry := localEntry
+				if toPath == remoteEntry.Path {
+					entry = remoteEntry
+				}
+				operations = append(operations, Operation{Kind: "move", ObjectID: id, ObjectKind: entry.ObjectKind, Path: toPath, FromPath: fromPath, ToPath: toPath, BlobID: entry.BlobID, LocalRevision: localEntry.RevisionID, RemoteRevision: remoteEntry.RevisionID, BaseRevision: baseEntry.RevisionID, Status: "planned"})
+				continue
+			}
+			if localEntry.RevisionID == remoteEntry.RevisionID || localEntry.BlobID == remoteEntry.BlobID {
+				continue
+			}
+			if dir == DirectionPush || dir == DirectionDiff {
+				operations = append(operations, objectOperation("upload_blob", localEntry, remoteEntry, localEntry.Path))
+			} else {
+				operations = append(operations, objectOperation("download_blob", localEntry, remoteEntry, remoteEntry.Path))
+			}
+			continue
+		}
+		if hasLocal {
+			kind := "upload_blob"
+			if hasBase {
+				localUnchanged := localEntry.RevisionID == baseEntry.RevisionID || localEntry.BlobID == baseEntry.BlobID
+				if localUnchanged && dir != DirectionPush {
+					kind = "delete_local"
+				} else if !localUnchanged {
+					kind = "revision_conflict"
+				} else {
+					kind = "delete_remote"
+				}
+			} else if dir == DirectionPull {
+				kind = "delete_local"
+			}
+			operations = append(operations, Operation{Kind: kind, ObjectID: id, ObjectKind: localEntry.ObjectKind, Path: localEntry.Path, BlobID: localEntry.BlobID, LocalRevision: localEntry.RevisionID, BaseRevision: baseEntry.RevisionID, Status: "planned"})
+			continue
+		}
+		if hasRemote {
+			kind := "download_blob"
+			if hasBase {
+				remoteUnchanged := remoteEntry.RevisionID == baseEntry.RevisionID || remoteEntry.BlobID == baseEntry.BlobID
+				if remoteUnchanged && dir != DirectionPull {
+					kind = "delete_remote"
+				} else if !remoteUnchanged {
+					kind = "revision_conflict"
+				} else {
+					kind = "download_blob"
+				}
+			} else if dir == DirectionPush {
+				kind = "delete_remote"
+			}
+			operations = append(operations, Operation{Kind: kind, ObjectID: id, ObjectKind: remoteEntry.ObjectKind, Path: remoteEntry.Path, BlobID: remoteEntry.BlobID, RemoteRevision: remoteEntry.RevisionID, BaseRevision: baseEntry.RevisionID, Status: "planned"})
+		}
+	}
+	sort.Slice(operations, func(i, j int) bool {
+		if operations[i].Path == operations[j].Path {
+			return operations[i].Kind < operations[j].Kind
+		}
+		return operations[i].Path < operations[j].Path
+	})
+	return operations
+}
+
+func objectEntries(manifest remote.Manifest) map[string]remote.ManifestEntry {
+	out := map[string]remote.ManifestEntry{}
+	for _, entry := range manifest.Entries {
+		if entry.ObjectID != "" {
+			out[entry.ObjectID] = entry
+		}
+	}
+	return out
+}
+func objectPaths(manifest remote.Manifest) map[string]remote.ManifestEntry {
+	out := map[string]remote.ManifestEntry{}
+	for _, entry := range manifest.Entries {
+		if entry.Path != "" {
+			out[entry.Path] = entry
+		}
+	}
+	return out
+}
+func objectOperation(kind string, local, remoteEntry remote.ManifestEntry, path string) Operation {
+	entry := local
+	if entry.ObjectID == "" {
+		entry = remoteEntry
+	}
+	return Operation{Kind: kind, ObjectID: entry.ObjectID, ObjectKind: entry.ObjectKind, Path: path, BlobID: entry.BlobID, LocalRevision: local.RevisionID, RemoteRevision: remoteEntry.RevisionID, Status: "planned"}
 }
 
 func diffManifests(base, local, rem remote.Manifest, dir Direction) []Operation {

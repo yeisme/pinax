@@ -16,14 +16,15 @@ const (
 type RecordEventKind string
 
 const (
-	RecordEventNoteCreated         RecordEventKind = "note.created"
-	RecordEventNoteRenamed         RecordEventKind = "note.renamed"
-	RecordEventNoteMoved           RecordEventKind = "note.moved"
-	RecordEventNoteArchived        RecordEventKind = "note.archived"
-	RecordEventNoteTrashed         RecordEventKind = "note.trashed"
-	RecordEventNoteDeleted         RecordEventKind = "note.deleted"
-	RecordEventNoteRestored        RecordEventKind = "note.restored"
-	RecordEventNoteMetadataUpdated RecordEventKind = "note.metadata_updated"
+	RecordEventNoteCreated          RecordEventKind = "note.created"
+	RecordEventNoteRenamed          RecordEventKind = "note.renamed"
+	RecordEventNoteMoved            RecordEventKind = "note.moved"
+	RecordEventNoteArchived         RecordEventKind = "note.archived"
+	RecordEventNoteTrashed          RecordEventKind = "note.trashed"
+	RecordEventNoteDeleted          RecordEventKind = "note.deleted"
+	RecordEventNoteRestored         RecordEventKind = "note.restored"
+	RecordEventNoteMetadataUpdated  RecordEventKind = "note.metadata_updated"
+	RecordEventNoteIdentityMigrated RecordEventKind = "note.identity_migrated"
 )
 
 type ContentRevision struct {
@@ -46,6 +47,10 @@ type RecordEvent struct {
 	Seq             uint64          `json:"seq"`
 	IdempotencyKey  string          `json:"idempotency_key"`
 	Kind            RecordEventKind `json:"kind"`
+	ObjectID        string          `json:"object_id,omitempty"`
+	ObjectKind      string          `json:"object_kind,omitempty"`
+	CurrentPath     string          `json:"current_path,omitempty"`
+	LegacyAliases   []string        `json:"legacy_aliases,omitempty"`
 	NoteID          string          `json:"note_id"`
 	Path            string          `json:"path,omitempty"`
 	OldPath         string          `json:"old_path,omitempty"`
@@ -59,6 +64,10 @@ type RecordEvent struct {
 }
 
 type NoteRecord struct {
+	ObjectID        string          `json:"object_id,omitempty"`
+	ObjectKind      string          `json:"object_kind,omitempty"`
+	CurrentPath     string          `json:"current_path,omitempty"`
+	LegacyAliases   []string        `json:"legacy_aliases,omitempty"`
 	NoteID          string          `json:"note_id"`
 	Path            string          `json:"path"`
 	Title           string          `json:"title,omitempty"`

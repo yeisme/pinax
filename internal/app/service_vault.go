@@ -19,6 +19,7 @@ import (
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	"github.com/yeisme/pinax/internal/domain"
 	gitstore "github.com/yeisme/pinax/internal/git"
+	"github.com/yeisme/pinax/internal/identity"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	"github.com/yeisme/pinax/internal/vaultignore"
 )
@@ -312,7 +313,11 @@ func (s *Service) CreateProject(_ context.Context, req ProjectRequest) (domain.P
 	if err != nil {
 		return errorProjection("project.create", err), err
 	}
-	project := domain.Project{Slug: req.Slug, Name: req.Name, Description: req.Description, NotesPrefix: filepath.ToSlash(req.NotesPrefix), CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	projectObjectID, err := s.allocateObjectID(identity.KindProject, root, req.Slug)
+	if err != nil {
+		return errorProjection("project.create", err), err
+	}
+	project := domain.Project{ObjectID: projectObjectID, Slug: req.Slug, Name: req.Name, Description: req.Description, NotesPrefix: filepath.ToSlash(req.NotesPrefix), CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	for i, existing := range registry.Projects {
 		if existing.Slug != req.Slug {
 			continue
@@ -322,6 +327,9 @@ func (s *Service) CreateProject(_ context.Context, req ProjectRequest) (domain.P
 			return domain.NewErrorProjection("project.create", err), err
 		}
 		project.CreatedAt = existing.CreatedAt
+		if strings.TrimSpace(existing.ObjectID) != "" {
+			project.ObjectID = existing.ObjectID
+		}
 		registry.Projects[i] = project
 		return saveProjectRegistryProjection(root, registry, project, false)
 	}
@@ -569,7 +577,7 @@ func (s *Service) VaultDoctor(_ context.Context, req VaultDoctorRequest) (domain
 	return projection, nil
 }
 
-func (s *Service) PlanRepair(_ context.Context, req RepairPlanRequest) (domain.Projection, error) {
+func (s *Service) PlanRepair(ctx context.Context, req RepairPlanRequest) (domain.Projection, error) {
 	started := time.Now()
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
@@ -586,6 +594,9 @@ func (s *Service) PlanRepair(_ context.Context, req RepairPlanRequest) (domain.P
 	issues = append(issues, projectTrashLifecycleIssues(root)...)
 	issues = append(issues, assetAndVersionRepairIssues(root, issues)...)
 	plan := buildRepairPlan(root, facts, stats, issues, elapsed)
+	if err := bindRepairPlanObjects(ctx, root, &plan); err != nil {
+		return errorProjection("repair.plan", err), err
+	}
 	if req.Save {
 		if err := saveRepairPlan(root, &plan); err != nil {
 			return errorProjection("repair.plan", err), err
@@ -634,17 +645,24 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 	if err != nil {
 		return errorProjection("repair.apply", err), err
 	}
-	if err := ensureRepairPlanFresh(root, plan); err != nil {
+	if err := ensureRepairPlanFresh(ctx, root, &plan); err != nil {
 		projection := errorProjection("repair.apply", err)
 		projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax repair plan --vault %s --save", shellQuote(root))}}
 		projection.Data = map[string]any{"plan_id": plan.PlanID}
 		return projection, err
 	}
+	beforeBindingsByPath, err := managedNotePlanBindings(ctx, root)
+	if err != nil {
+		return errorProjection("repair.apply", err), err
+	}
+	beforeBindings := managedBindingsByObject(beforeBindingsByPath)
+	snapshotID := ""
 	requiresSnapshot := repairPlanRequiresSnapshot(plan)
 	if req.SnapshotMessage != "" && requiresSnapshot {
 		if _, err := s.GitSnapshot(ctx, SnapshotRequest{VaultPath: root, Message: req.SnapshotMessage}); err != nil {
 			return errorProjection("repair.apply", err), err
 		}
+		snapshotID = filepath.ToSlash(filepath.Join(".pinax", "last_snapshot"))
 	}
 	if requiresSnapshot && !gitstore.HasSnapshot(root) {
 		err := &domain.CommandError{Code: "snapshot_required", Message: "Applying a repair plan requires an explicit version snapshot first", Hint: fmt.Sprintf("pinax version snapshot --vault %s --message %s", shellQuote(root), shellQuote("snapshot before repair"))}
@@ -655,6 +673,7 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 	}
 	applied := make([]domain.RepairOperation, 0)
 	skipped := make([]domain.RepairOperation, 0)
+	changedPaths := make([]string, 0)
 	for _, op := range plan.Operations {
 		if op.Mode != "automatic" {
 			op.Status = "skipped"
@@ -667,6 +686,9 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 		}
 		op.Status = "applied"
 		applied = append(applied, op)
+		if op.Path != "" {
+			changedPaths = append(changedPaths, op.Path)
+		}
 		_ = appendEvent(root, "repair.apply", "success", map[string]string{"plan_id": plan.PlanID, "operation_id": op.OperationID, "kind": op.Kind})
 	}
 	projection := domain.NewProjection("repair.apply", "Repair plan applied.")
@@ -675,7 +697,12 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 	projection.Facts["applied"] = fmt.Sprint(len(applied))
 	projection.Facts["skipped"] = fmt.Sprint(len(skipped))
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
-	projection.Data = map[string]any{"plan_id": plan.PlanID, "results": applied, "skipped": skipped}
+	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "repair.apply", plan.PlanID, snapshotID, beforeBindings, changedPaths)
+	if receiptErr != nil {
+		return errorProjection("repair.apply", receiptErr), receiptErr
+	}
+	addApplyReceiptProjection(&projection, receipt)
+	projection.Data = map[string]any{"plan_id": plan.PlanID, "results": applied, "skipped": skipped, "receipt": receipt}
 	return projection, nil
 }
 
@@ -700,7 +727,7 @@ func (s *Service) ListRepairPlans(_ context.Context, req VaultRequest) (domain.P
 func (s *Service) applyRepairOperation(ctx context.Context, root string, op domain.RepairOperation) error {
 	switch op.Kind {
 	case "metadata_patch", "tags_patch":
-		return applyRepairMetadataPatch(root, op.Path)
+		return s.applyRepairMetadataPatch(ctx, root, op.Path)
 	case "archive_status_patch":
 		return applyRepairFrontmatterPatch(root, op.Path, map[string]string{"status": "archived"})
 	case "index_rebuild":
@@ -1223,7 +1250,10 @@ func listRepairPlans(root string) ([]domain.RepairPlan, error) {
 	return plans, nil
 }
 
-func ensureRepairPlanFresh(root string, plan domain.RepairPlan) error {
+func ensureRepairPlanFresh(ctx context.Context, root string, plan *domain.RepairPlan) error {
+	if plan == nil {
+		return &domain.CommandError{Code: "plan_required", Message: "repair plan is required", Hint: "Rerun pinax repair plan --save"}
+	}
 	if plan.Status != "planned" {
 		return &domain.CommandError{Code: "repair_plan_not_planned", Message: "repair plan status is not applicable", Hint: "Rerun pinax repair plan --save"}
 	}
@@ -1232,6 +1262,13 @@ func ensureRepairPlanFresh(root string, plan domain.RepairPlan) error {
 		if err == nil && time.Now().UTC().After(expires) {
 			return &domain.CommandError{Code: "plan_stale", Message: "repair plan has expired", Hint: "pinax repair plan --vault <vault> --save"}
 		}
+	}
+	objectBound, err := rebaseRepairPlanObjects(ctx, root, plan)
+	if err != nil {
+		return err
+	}
+	if objectBound {
+		return nil
 	}
 	facts, err := scanNoteFacts(root)
 	if err != nil {
@@ -1248,7 +1285,7 @@ func ensureRepairPlanFresh(root string, plan domain.RepairPlan) error {
 	return nil
 }
 
-func applyRepairMetadataPatch(root, rel string) error {
+func (s *Service) applyRepairMetadataPatch(ctx context.Context, root, rel string) error {
 	path, err := safeJoin(root, rel)
 	if err != nil {
 		return err
@@ -1258,8 +1295,20 @@ func applyRepairMetadataPatch(root, rel string) error {
 		return err
 	}
 	note := parseNote(filepath.ToSlash(rel), string(content))
+	if strings.TrimSpace(note.ID) == "" {
+		objectID, err := s.allocateObjectID(identity.KindNote, root, rel)
+		if err != nil {
+			return err
+		}
+		note.ID = objectID
+	}
 	updated := ensureFrontmatter(note, string(content))
-	return os.WriteFile(path, []byte(updated), 0o644)
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		return err
+	}
+	parsed := parseNote(filepath.ToSlash(rel), updated)
+	_, err = appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMetadataUpdated, "repair.metadata:"+parsed.ID+":"+rel, parsed, "")
+	return err
 }
 
 func applyRepairFrontmatterPatch(root, rel string, fields map[string]string) error {

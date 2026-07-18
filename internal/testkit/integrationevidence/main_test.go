@@ -28,3 +28,27 @@ func TestBuildConfigIncludesPublishEvidenceEntrypoint(t *testing.T) {
 		t.Fatalf("share_lan_readonly check missing: %#v", config.ExtraChecks)
 	}
 }
+
+func TestBuildIdentityConfigUsesRequiredEvidenceDirectoryAndEntrypoint(t *testing.T) {
+	config := buildConfigForProfile("identity", "identity-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	if !strings.Contains(command, "IdentityFirstTwoDeviceKernel") || !strings.Contains(command, "ManifestMigration") {
+		t.Fatalf("identity evidence command = %s", command)
+	}
+	if config.ParentDir != "temp/integration-test-runs" || config.ExtraChecks["canonical_object_identity"] != true {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
+func TestBuildIdentityBenchmarkProfile(t *testing.T) {
+	config := buildConfigForProfile("identity-benchmark", "benchmark-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	for _, required := range []string{"-bench", "Identity|IndexV2|LinkGraph|ObjectSync", "-benchmem"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("benchmark command %q missing %q", command, required)
+		}
+	}
+	if config.ExtraChecks["link_graph_100k"] != true {
+		t.Fatalf("benchmark checks = %#v", config.ExtraChecks)
+	}
+}

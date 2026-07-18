@@ -19,6 +19,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.1
 	github.com/yeisme/capsa v0.0.0
+	github.com/yeisme/lance v0.0.0
 	github.com/yuin/goldmark v1.7.8
 	go.uber.org/zap v1.27.0
 	golang.org/x/term v0.44.0
@@ -85,6 +86,7 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yeisme/credentialctl v0.0.0-dev
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
@@ -103,5 +105,8 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace github.com/yeisme/capsa => ../../shared/capsa
+replace github.com/yeisme/capsa => ../../backend-server/capsa/sdk
 
+replace github.com/yeisme/lance => ../../shared/lance
+
+replace github.com/yeisme/credentialctl => ../../cli/credentialctl

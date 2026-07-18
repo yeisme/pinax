@@ -222,7 +222,7 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	for _, c := range []*cobra.Command{inboxIndexPreviewCmd, inboxIndexCreateCmd, inboxIndexRefreshCmd} {
 		c.Flags().StringVar(&indexTemplate, "template", "index.inbox", "Custom inbox index page template")
-		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true, true))
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true))
 		inboxIndexCmd.AddCommand(c)
 	}
 	inboxCmd.AddCommand(inboxIndexCmd)

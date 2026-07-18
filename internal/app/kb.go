@@ -305,19 +305,16 @@ func planKBImport(root, source string, includes []string) ([]kbImportPlan, error
 		includes = []string{"*.md", "*.txt"}
 	}
 	plans := []kbImportPlan{}
-	add := func(path string) error {
+	add := func(path string) {
 		if !kbPathIncluded(path, includes) {
-			return nil
+			return
 		}
 		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		rel := filepath.ToSlash(filepath.Join("notes", "kb", "imports", slugify(title)+".md"))
 		plans = append(plans, kbImportPlan{SourcePath: path, TargetPath: rel, Title: title, Status: "write"})
-		return nil
 	}
 	if !info.IsDir() {
-		if err := add(source); err != nil {
-			return nil, err
-		}
+		add(source)
 	} else {
 		err = filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -329,7 +326,8 @@ func planKBImport(root, source string, includes []string) ([]kbImportPlan, error
 				}
 				return nil
 			}
-			return add(path)
+			add(path)
+			return nil
 		})
 		if err != nil {
 			return nil, err

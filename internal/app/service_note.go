@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/yeisme/pinax/internal/domain"
+	noteindex "github.com/yeisme/pinax/internal/index"
 )
 
 // Note operations: links/backlinks/orphans, attachments, import/export, edit,
@@ -124,7 +125,7 @@ func (s *Service) NoteOrphans(ctx context.Context, req VaultRequest) (domain.Pro
 	return projection, nil
 }
 func (s *Service) AttachNoteFile(ctx context.Context, req NoteAttachRequest) (domain.Projection, error) {
-	root, note, notePath, content, _, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, notePath, content, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.attach", err), err
 	}
@@ -435,10 +436,13 @@ func (s *Service) EditNote(ctx context.Context, req NoteEditRequest) (domain.Pro
 }
 
 func (s *Service) RenameNote(ctx context.Context, req NoteMutationRequest) (domain.Projection, error) {
-	root, note, path, content, meta, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, path, content, meta, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.rename", err), err
 	}
+	notesBefore, _ := scanNotes(root)
+	_, indexErr := os.Stat(filepath.Join(root, ".pinax", "index.sqlite"))
+	indexWasFresh := indexErr == nil
 	newTitle := strings.TrimSpace(req.Title)
 	if newTitle == "" {
 		err := &domain.CommandError{Code: "title_required", Message: "note rename requires a new title", Hint: "pinax note rename <note> <title> --vault <vault>"}
@@ -448,8 +452,9 @@ func (s *Service) RenameNote(ctx context.Context, req NoteMutationRequest) (doma
 	meta["updated_at"] = time.Now().UTC().Format(time.RFC3339)
 	targetRel := filepath.ToSlash(filepath.Join(filepath.Dir(note.Path), slugify(newTitle)+".md"))
 	if targetRel == filepath.ToSlash(filepath.Dir(note.Path))+"/.md" {
-		targetRel = filepath.ToSlash(filepath.Join(filepath.Dir(note.Path), stableNoteID(newTitle)+".md"))
+		targetRel = filepath.ToSlash(filepath.Join(filepath.Dir(note.Path), deterministicShortID(newTitle)+".md"))
 	}
+	rewriteOperations := linkRewriteOperationsForTarget(notesBefore, note, targetRel, newTitle)
 	target, err := safeJoin(root, targetRel)
 	if err != nil {
 		return errorProjection("note.rename", err), err
@@ -474,19 +479,35 @@ func (s *Service) RenameNote(ctx context.Context, req NoteMutationRequest) (doma
 		return errorProjection("note.rename", recordErr), recordErr
 	}
 	applyRecordEventFacts(&projection, recordEvent)
+	if indexWasFresh {
+		parsed := parseNote(targetRel, updated)
+		if _, indexErr := noteindex.UpdateNote(root, noteindex.NoteUpdate{OldPath: note.Path, Note: parsed}); indexErr != nil {
+			projection.Status = "partial"
+			projection.Actions = append(projection.Actions, domain.Action{Name: "rebuild_index", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(root))})
+		}
+	}
+	attachLinkRewriteOperations(&projection, rewriteOperations, root)
 	return projection, nil
 }
 
 func (s *Service) MoveNote(ctx context.Context, req NoteMutationRequest) (domain.Projection, error) {
-	root, note, path, _, _, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, path, _, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.move", err), err
 	}
+	notesBefore, _ := scanNotes(root)
+	_, indexErr := os.Stat(filepath.Join(root, ".pinax", "index.sqlite"))
+	indexWasFresh := indexErr == nil
 	dir, err := validateNoteDir(req.TargetDir)
 	if err != nil {
 		return errorProjection("note.move", err), err
 	}
+	oldPath := note.Path
 	targetRel := filepath.ToSlash(filepath.Join(dir, filepath.Base(note.Path)))
+	rewriteOperations := linkRewriteOperationsForTarget(notesBefore, note, targetRel, note.Title)
+	if len(rewriteOperations) == 0 {
+		rewriteOperations = indexedLinkRewriteOperations(root, note, targetRel, note.Title)
+	}
 	target, err := safeJoin(root, targetRel)
 	if err != nil {
 		return errorProjection("note.move", err), err
@@ -506,16 +527,23 @@ func (s *Service) MoveNote(ctx context.Context, req NoteMutationRequest) (domain
 	_ = appendEvent(root, "note.move", "success", map[string]string{"from": note.Path, "to": targetRel})
 	projection := noteMutationProjection("note.move", "Note moved.", targetRel, map[string]string{"note_id": note.ID, "title": note.Title})
 	note.Path = targetRel
-	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMoved, "note.move:"+note.ID+":"+note.Path+":"+targetRel, note, req.NoteRef)
+	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMoved, "note.move:"+note.ID+":"+oldPath+":"+targetRel, note, oldPath)
 	if recordErr != nil {
 		return errorProjection("note.move", recordErr), recordErr
 	}
 	applyRecordEventFacts(&projection, recordEvent)
+	if indexWasFresh {
+		if _, indexErr := noteindex.UpdateNote(root, noteindex.NoteUpdate{OldPath: oldPath, Note: note}); indexErr != nil {
+			projection.Status = "partial"
+			projection.Actions = append(projection.Actions, domain.Action{Name: "rebuild_index", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(root))})
+		}
+	}
+	attachLinkRewriteOperations(&projection, rewriteOperations, root)
 	return projection, nil
 }
 
 func (s *Service) ArchiveNote(ctx context.Context, req NoteMutationRequest) (domain.Projection, error) {
-	root, note, path, content, meta, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, path, content, meta, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.archive", err), err
 	}
@@ -538,7 +566,7 @@ func (s *Service) ArchiveNote(ctx context.Context, req NoteMutationRequest) (dom
 }
 
 func (s *Service) DeleteNote(ctx context.Context, req NoteDeleteRequest) (domain.Projection, error) {
-	root, note, path, _, _, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, path, _, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.delete", err), err
 	}
@@ -593,7 +621,7 @@ func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Proje
 	if tagErr != nil {
 		return domain.NewErrorProjection("note.tag", tagErr), tagErr
 	}
-	root, note, path, content, meta, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, path, content, meta, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.tag", err), err
 	}
@@ -647,7 +675,7 @@ func (s *Service) PatchNoteProperty(ctx context.Context, req NotePropertyRequest
 		return domain.NewErrorProjection("note.property", keyErr), keyErr
 	}
 	operation := strings.TrimSpace(req.Operation)
-	root, note, path, content, meta, _, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
+	root, note, path, content, meta, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
 		return errorProjection("note.property", err), err
 	}
@@ -772,7 +800,7 @@ func (s *Service) BulkTag(ctx context.Context, req NoteTagBulkRequest) (domain.P
 	projection.Summary = "Tag batch update applied."
 	recordEvents := 0
 	for _, note := range changed {
-		_, current, path, content, meta, _, err := loadMutableResolvedNote(root, note)
+		_, current, path, content, meta, err := loadMutableResolvedNote(root, note)
 		if err != nil {
 			return errorProjection(command, err), err
 		}
@@ -885,7 +913,7 @@ func (s *Service) BulkFolder(ctx context.Context, req NoteFolderBulkRequest) (do
 	projection.Summary = "Folder batch rename applied."
 	recordEvents := 0
 	for _, change := range changes {
-		_, note, path, content, meta, _, err := loadMutableResolvedNote(root, change.Note)
+		_, note, path, content, meta, err := loadMutableResolvedNote(root, change.Note)
 		if err != nil {
 			return errorProjection(command, err), err
 		}
@@ -1002,10 +1030,10 @@ func normalizeTagsForWrite(tags []string) ([]string, *domain.CommandError) {
 		}
 		tag := strings.TrimPrefix(trimmed, "#")
 		if tag == "" {
-			return nil, invalidTagError(raw)
+			return nil, invalidTagError()
 		}
 		if !isSafeTagValue(tag) {
-			return nil, invalidTagError(raw)
+			return nil, invalidTagError()
 		}
 		if seen[tag] {
 			continue
@@ -1031,14 +1059,14 @@ func isSafeTagValue(tag string) bool {
 	return true
 }
 
-func invalidTagError(tag string) *domain.CommandError {
+func invalidTagError() *domain.CommandError {
 	return &domain.CommandError{Code: "invalid_tag", Message: "tag may only contain letters, numbers, CJK characters, _, -, or /, and cannot contain YAML structural characters, commas, whitespace, or control characters", Hint: "For example, pinax note tag add <note> research/work --vault <vault>"}
 }
 
 func normalizePropertyKey(raw string) (string, *domain.CommandError) {
 	key := strings.TrimSpace(raw)
 	if key == "" {
-		return "", invalidPropertyKeyError(raw)
+		return "", invalidPropertyKeyError()
 	}
 	blocked := map[string]string{
 		"schema_version": "schema_version is managed by Pinax",
@@ -1053,16 +1081,16 @@ func normalizePropertyKey(raw string) (string, *domain.CommandError) {
 	}
 	for i, r := range key {
 		if i == 0 && r != '_' && !unicode.IsLetter(r) {
-			return "", invalidPropertyKeyError(key)
+			return "", invalidPropertyKeyError()
 		}
 		if r != '_' && r != '-' && r != '.' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			return "", invalidPropertyKeyError(key)
+			return "", invalidPropertyKeyError()
 		}
 	}
 	return key, nil
 }
 
-func invalidPropertyKeyError(key string) *domain.CommandError {
+func invalidPropertyKeyError() *domain.CommandError {
 	return &domain.CommandError{Code: "invalid_property", Message: "property key may only contain letters, numbers, _, -, or ., and cannot start with a number or symbol", Hint: "For example, pinax note property set <note> priority 2 --vault <vault>"}
 }
 
@@ -1099,4 +1127,39 @@ func formatTags(tags []string) string {
 		return "[]"
 	}
 	return "[" + strings.Join(tags, ", ") + "]"
+}
+
+func linkRewriteOperationsForTarget(notes []domain.Note, target domain.Note, newPath, newTitle string) []domain.PlanOperation {
+	_, incoming := BuildEnhancedLinkGraph(notes)
+	links := incoming[target.Path]
+	operations := make([]domain.PlanOperation, 0, len(links))
+	for _, link := range links {
+		operations = append(operations, domain.PlanOperation{Kind: "link_rewrite", Path: link.SourcePath, Target: newPath, Reason: "Review Markdown link text after target rename or move; object edge remains stable.", Status: "manual_review", Evidence: []string{"source_object_id=" + link.SourceObjectID, "target_object_id=" + target.ID, "old_target=" + link.TargetRaw, "new_title=" + newTitle}})
+	}
+	return operations
+}
+
+func indexedLinkRewriteOperations(root string, target domain.Note, newPath, newTitle string) []domain.PlanOperation {
+	rows, err := noteindex.LinksByTargetObjectID(root, target.ID)
+	if err != nil {
+		return nil
+	}
+	operations := make([]domain.PlanOperation, 0, len(rows))
+	for _, row := range rows {
+		operations = append(operations, domain.PlanOperation{Kind: "link_rewrite", Path: row.NotePath, Target: newPath, Reason: "Review Markdown link text after target rename or move; object edge remains stable.", Status: "manual_review", Evidence: []string{"source_object_id=" + row.SourceObjectID, "target_object_id=" + target.ID, "old_target=" + row.TargetRaw, "new_title=" + newTitle}})
+	}
+	return operations
+}
+
+func attachLinkRewriteOperations(projection *domain.Projection, operations []domain.PlanOperation, root string) {
+	projection.Facts["link_rewrite_operations"] = fmt.Sprint(len(operations))
+	data, ok := projection.Data.(map[string]any)
+	if !ok || data == nil {
+		data = map[string]any{}
+	}
+	data["link_rewrite_operations"] = operations
+	projection.Data = data
+	if len(operations) > 0 {
+		projection.Actions = append(projection.Actions, domain.Action{Name: "review_links", Command: fmt.Sprintf("pinax note links --all --vault %s --json", shellQuote(root))})
+	}
 }

@@ -42,3 +42,15 @@ func benchmarkNotes(n int) []domain.Note {
 	}
 	return notes
 }
+
+func BenchmarkIndexV2Properties10K(b *testing.B) {
+	notes := benchmarkNotes(10_000)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for iteration := 0; iteration < b.N; iteration++ {
+		rows := ExtractPropertyRows(notes)
+		if len(rows) != len(notes) {
+			b.Fatalf("rows = %d", len(rows))
+		}
+	}
+}

@@ -310,6 +310,22 @@ func (s *Server) handleFolderRepairPlan(w http.ResponseWriter, r *http.Request) 
 	writeProjection(w, projection, err)
 }
 
+func (s *Server) requireWriteAction(w http.ResponseWriter, r *http.Request, command string) bool {
+	if r.Method != http.MethodPost {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
+		return false
+	}
+	if !s.allowWrite {
+		writeProjectionStatus(w, domain.NewErrorProjection(command, &domain.CommandError{Code: "write_disabled", Message: "Remote writes are not enabled", Hint: "Use pinax api serve --allow-write"}), http.StatusForbidden)
+		return false
+	}
+	if !boolQuery(r.URL.Query(), "yes") {
+		writeProjectionStatus(w, domain.NewErrorProjection(command, &domain.CommandError{Code: "approval_required", Message: "Write confirmation is required", Hint: "Pass yes=true to confirm"}), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleFolders(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/folders" || r.URL.Path == "/v1/folders/" {
 		s.handleFolderCollection(w, r)
@@ -819,16 +835,7 @@ func (s *Server) handleInboxItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "discard" {
-		if r.Method != http.MethodPost {
-			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-			return
-		}
-		if !s.allowWrite {
-			writeProjectionStatus(w, domain.NewErrorProjection("inbox.discard", &domain.CommandError{Code: "write_disabled", Message: "Remote writes are not enabled", Hint: "Use pinax api serve --allow-write"}), http.StatusForbidden)
-			return
-		}
-		if !boolQuery(r.URL.Query(), "yes") {
-			writeProjectionStatus(w, domain.NewErrorProjection("inbox.discard", &domain.CommandError{Code: "approval_required", Message: "Write confirmation is required", Hint: "Pass yes=true to confirm"}), http.StatusBadRequest)
+		if !s.requireWriteAction(w, r, "inbox.discard") {
 			return
 		}
 		projection, err := s.service.InboxDiscard(r.Context(), app.NoteMutationRequest{VaultPath: s.vault, NoteRef: ref, Yes: true, DryRun: boolQuery(r.URL.Query(), "dry_run")})
@@ -895,16 +902,7 @@ func (s *Server) handleDraftItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "archive" {
-		if r.Method != http.MethodPost {
-			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-			return
-		}
-		if !s.allowWrite {
-			writeProjectionStatus(w, domain.NewErrorProjection("draft.archive", &domain.CommandError{Code: "write_disabled", Message: "Remote writes are not enabled", Hint: "Use pinax api serve --allow-write"}), http.StatusForbidden)
-			return
-		}
-		if !boolQuery(r.URL.Query(), "yes") {
-			writeProjectionStatus(w, domain.NewErrorProjection("draft.archive", &domain.CommandError{Code: "approval_required", Message: "Write confirmation is required", Hint: "Pass yes=true to confirm"}), http.StatusBadRequest)
+		if !s.requireWriteAction(w, r, "draft.archive") {
 			return
 		}
 		projection, err := s.service.DraftArchive(r.Context(), app.NoteMutationRequest{VaultPath: s.vault, NoteRef: ref, Yes: true, DryRun: boolQuery(r.URL.Query(), "dry_run")})
@@ -912,16 +910,7 @@ func (s *Server) handleDraftItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "discard" {
-		if r.Method != http.MethodPost {
-			writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-			return
-		}
-		if !s.allowWrite {
-			writeProjectionStatus(w, domain.NewErrorProjection("draft.discard", &domain.CommandError{Code: "write_disabled", Message: "Remote writes are not enabled", Hint: "Use pinax api serve --allow-write"}), http.StatusForbidden)
-			return
-		}
-		if !boolQuery(r.URL.Query(), "yes") {
-			writeProjectionStatus(w, domain.NewErrorProjection("draft.discard", &domain.CommandError{Code: "approval_required", Message: "Write confirmation is required", Hint: "Pass yes=true to confirm"}), http.StatusBadRequest)
+		if !s.requireWriteAction(w, r, "draft.discard") {
 			return
 		}
 		projection, err := s.service.DraftDiscard(r.Context(), app.NoteMutationRequest{VaultPath: s.vault, NoteRef: ref, Yes: true, DryRun: boolQuery(r.URL.Query(), "dry_run")})
@@ -1069,7 +1058,7 @@ func rpcRouteGroup(route domain.RemoteRoute) string {
 	}
 }
 
-func (s *Server) handleRouteNotFound(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleRouteNotFound(w http.ResponseWriter, _ *http.Request) {
 	writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "route_not_found", Message: "API route not found"}), http.StatusNotFound)
 }
 

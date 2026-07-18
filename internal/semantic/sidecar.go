@@ -125,7 +125,7 @@ func runSidecar(ctx context.Context, cfg SidecarConfig, op string, req sidecarRe
 		}
 		var execErr *exec.Error
 		if errors.Is(err, exec.ErrNotFound) || errors.As(err, &execErr) || os.IsNotExist(err) {
-			return sidecarResponse{}, sidecarUnavailable(executable)
+			return sidecarResponse{}, sidecarUnavailable()
 		}
 		return sidecarResponse{}, &domain.CommandError{Code: "kb_sidecar_failed", Message: "KB LanceDB sidecar failed", Hint: sanitizeSidecarStderr(stderr.String())}
 	}
@@ -152,7 +152,7 @@ func runSidecar(ctx context.Context, cfg SidecarConfig, op string, req sidecarRe
 	return resp, nil
 }
 
-func sidecarUnavailable(executable string) *domain.CommandError {
+func sidecarUnavailable() *domain.CommandError {
 	return &domain.CommandError{Code: "kb_sidecar_unavailable", Message: "KB LanceDB sidecar is not available", Hint: "Install the sidecar with pipx install git+https://github.com/yeisme/pinax.git#subdirectory=tools/pinax-lancedb-sidecar or set kb.sidecar.executable"}
 }
 

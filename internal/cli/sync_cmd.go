@@ -119,6 +119,7 @@ func writeSyncDaemonStreamEvent(w io.Writer, payload map[string]any) error {
 func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	var syncPathPolicy string
 	var syncLogLimit int
+	var syncLogFollow bool
 	var syncPruneKeep int
 	var syncPruneMaxAgeDays int
 	var daemonPollInterval time.Duration
@@ -226,10 +227,18 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	logsTailCmd := &cobra.Command{Use: "tail", Short: "Tail the safe sync event timeline", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := ctx.svc.SyncLogsTail(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit})
-		return ctx.renderProjection(cmd, projection, err)
+		if !syncLogFollow {
+			projection, err := ctx.svc.SyncLogsTail(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit})
+			return ctx.renderProjection(cmd, projection, err)
+		}
+		mode := ctx.outputMode()
+		if mode == output.ModeJSON || mode == output.ModeExplain {
+			return renderCommandError(cmd, mode, "sync.logs.tail", "sync_logs_follow_mode", "Follow mode requires a streaming output format", "Use --events, --agent, or default human output with --follow")
+		}
+		return ctx.svc.SyncLogsFollow(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit}, newSyncLogFollowEmitter(cmd.OutOrStdout(), mode))
 	}}
 	logsTailCmd.Flags().IntVar(&syncLogLimit, "limit", 20, "Maximum events to read")
+	logsTailCmd.Flags().BoolVar(&syncLogFollow, "follow", false, "Continue streaming newly appended sync events")
 	logsPruneCmd := &cobra.Command{Use: "prune", Short: "Prune old sync run receipts", RunE: func(cmd *cobra.Command, args []string) error {
 		projection, err := ctx.svc.SyncLogsPrune(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Keep: syncPruneKeep, MaxAgeDays: syncPruneMaxAgeDays, Yes: *ctx.yes})
 		return ctx.renderProjection(cmd, projection, err)
@@ -239,6 +248,37 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	logsPruneCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm deleting sync run receipts")
 	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsTailCmd, logsPruneCmd)
 	syncCmd.AddCommand(logsCmd)
+
+	var manifestDeviceID string
+	var manifestPlanID string
+	var manifestRemoteCapability string
+	var manifestSave bool
+	manifestCmd := &cobra.Command{Use: "manifest", Short: "Audit and migrate the object-first sync manifest"}
+	manifestAuditCmd := &cobra.Command{Use: "audit", Short: "Audit v1 manifest object identity without writing", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestAudit(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, DeviceID: manifestDeviceID})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestAuditCmd.Flags().StringVar(&manifestDeviceID, "device-id", "", "Device ID override for an unconfigured vault")
+	manifestPlanCmd := &cobra.Command{Use: "plan", Short: "Generate a manifest v2 migration plan", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestPlan(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, DeviceID: manifestDeviceID, Save: manifestSave})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestPlanCmd.Flags().StringVar(&manifestDeviceID, "device-id", "", "Device ID override for an unconfigured vault")
+	manifestPlanCmd.Flags().BoolVar(&manifestSave, "save", false, "Save the migration plan for explicit promotion")
+	manifestPromoteCmd := &cobra.Command{Use: "promote", Short: "Promote local sync manifest generation to v2", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestPromote(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, PlanID: manifestPlanID, RemoteCapability: manifestRemoteCapability, Yes: *ctx.yes})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestPromoteCmd.Flags().StringVar(&manifestPlanID, "plan", "", "Saved manifest migration plan ID")
+	manifestPromoteCmd.Flags().StringVar(&manifestRemoteCapability, "remote-capability", "", "Confirmed remote manifest capability: v2")
+	manifestPromoteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local manifest v2 promotion")
+	manifestRollbackCmd := &cobra.Command{Use: "rollback", Short: "Roll back local promotion before the first v2 remote write", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestRollback(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, Yes: *ctx.yes})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestRollbackCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local manifest promotion rollback")
+	manifestCmd.AddCommand(manifestAuditCmd, manifestPlanCmd, manifestPromoteCmd, manifestRollbackCmd)
+	syncCmd.AddCommand(manifestCmd)
 
 	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Capsa sync daemon"}
 	daemonRunCmd := &cobra.Command{Use: "run", Short: "Run the sync daemon in the foreground", RunE: func(cmd *cobra.Command, args []string) error {
@@ -309,6 +349,80 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	syncCmd.AddCommand(daemonCmd)
 
 	addSyncConflictsCommands(syncCmd, ctx)
+	addSyncRepoCommands(syncCmd, ctx)
+	addSyncEnvCommands(syncCmd, ctx)
 
 	root.AddCommand(syncCmd)
+}
+
+func newSyncLogFollowEmitter(w io.Writer, mode output.Mode) func(map[string]any) error {
+	agentHeaderWritten := false
+	return func(event map[string]any) error {
+		projection := domain.NewProjection("sync.logs.tail", "Sync event streamed.")
+		projection.Data = event
+		output.ApplyProjectionRedaction(&projection)
+		if sanitized, ok := projection.Data.(map[string]any); ok {
+			event = sanitized
+		}
+		switch mode {
+		case output.ModeAgent:
+			if !agentHeaderWritten {
+				if _, err := fmt.Fprintln(w, "spec_version=1.0\nmode=agent\ncommand=sync.logs.tail\nstatus=success"); err != nil {
+					return err
+				}
+				agentHeaderWritten = true
+			}
+			seq := fmt.Sprint(event["seq"])
+			for _, key := range []string{"type", "run_id", "direction", "kind", "path", "path_hash", "from_path", "to_path", "operation_status", "status", "backend_kind", "ts"} {
+				if value := strings.TrimSpace(fmt.Sprint(event[key])); value != "" && value != "<nil>" {
+					if _, err := fmt.Fprintf(w, "event.%s.%s=%s\n", seq, key, syncLogAgentValue(value)); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		case output.ModeEvents:
+			payload := map[string]any{"spec_version": "1.0", "mode": "events", "command": "sync.logs.tail", "type": "progress"}
+			for key, value := range event {
+				if key == "type" {
+					payload["event_type"] = value
+					continue
+				}
+				if key == "command" {
+					payload["source_command"] = value
+					continue
+				}
+				if key == "seq" {
+					payload["timeline_seq"] = value
+					continue
+				}
+				payload[key] = value
+			}
+			enc := json.NewEncoder(w)
+			enc.SetEscapeHTML(false)
+			return enc.Encode(payload)
+		default:
+			pathValue := firstSyncLogValue(event, "path", "path_hash", "to_path", "from_path")
+			_, err := fmt.Fprintf(w, "%s %s %s %s %s %s\n", firstSyncLogValue(event, "type"), firstSyncLogValue(event, "direction"), firstSyncLogValue(event, "kind"), pathValue, firstSyncLogValue(event, "status"), firstSyncLogValue(event, "run_id"))
+			return err
+		}
+	}
+}
+
+func firstSyncLogValue(event map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value := strings.TrimSpace(fmt.Sprint(event[key]))
+		if value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return "-"
+}
+
+func syncLogAgentValue(value string) string {
+	if strings.ContainsAny(value, " \t\n\r\"'=$`\\") {
+		encoded, _ := json.Marshal(value)
+		return string(encoded)
+	}
+	return value
 }

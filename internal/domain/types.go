@@ -289,6 +289,7 @@ type VersionedFile struct {
 
 // Asset is the stable vault asset metadata shape stored in CLI-authored manifests and projections.
 type Asset struct {
+	ObjectID      string        `json:"object_id,omitempty"`
 	ID            string        `json:"id"`
 	Path          string        `json:"path"`
 	Filename      string        `json:"filename"`
@@ -387,16 +388,18 @@ type ProjectWorkspaceDirectory struct {
 }
 
 type ProjectWorkspace struct {
-	SchemaVersion string                      `json:"schema_version"`
-	Project       string                      `json:"project"`
-	Subproject    string                      `json:"subproject"`
-	Title         string                      `json:"title"`
-	Template      string                      `json:"template"`
-	WorkspacePath string                      `json:"workspace_path"`
-	Directories   []ProjectWorkspaceDirectory `json:"directories"`
-	Status        string                      `json:"status"`
-	CreatedAt     string                      `json:"created_at"`
-	UpdatedAt     string                      `json:"updated_at"`
+	ObjectID        string                      `json:"object_id,omitempty"`
+	ProjectObjectID string                      `json:"project_object_id,omitempty"`
+	SchemaVersion   string                      `json:"schema_version"`
+	Project         string                      `json:"project"`
+	Subproject      string                      `json:"subproject"`
+	Title           string                      `json:"title"`
+	Template        string                      `json:"template"`
+	WorkspacePath   string                      `json:"workspace_path"`
+	Directories     []ProjectWorkspaceDirectory `json:"directories"`
+	Status          string                      `json:"status"`
+	CreatedAt       string                      `json:"created_at"`
+	UpdatedAt       string                      `json:"updated_at"`
 }
 
 type CurrentWorkspace struct {
@@ -414,12 +417,17 @@ type Issue struct {
 }
 
 type PlanOperation struct {
-	Kind     string   `json:"kind"`
-	Path     string   `json:"path"`
-	Target   string   `json:"target,omitempty"`
-	Reason   string   `json:"reason"`
-	Status   string   `json:"status"`
-	Evidence []string `json:"evidence,omitempty"`
+	ObjectID                string          `json:"object_id,omitempty"`
+	ObjectKind              string          `json:"object_kind,omitempty"`
+	ObservedPath            string          `json:"observed_path,omitempty"`
+	ExpectedRecordVersion   uint64          `json:"expected_record_version,omitempty"`
+	ExpectedContentRevision ContentRevision `json:"expected_content_revision,omitempty"`
+	Kind                    string          `json:"kind"`
+	Path                    string          `json:"path"`
+	Target                  string          `json:"target,omitempty"`
+	Reason                  string          `json:"reason"`
+	Status                  string          `json:"status"`
+	Evidence                []string        `json:"evidence,omitempty"`
 }
 
 type RepairPlan struct {
@@ -439,17 +447,22 @@ type RepairPlan struct {
 }
 
 type RepairOperation struct {
-	OperationID string   `json:"operation_id"`
-	Kind        string   `json:"kind"`
-	Mode        string   `json:"mode"`
-	Risk        string   `json:"risk"`
-	Path        string   `json:"path,omitempty"`
-	Target      string   `json:"target,omitempty"`
-	NoteID      string   `json:"note_id,omitempty"`
-	IssueCode   string   `json:"issue_code"`
-	Reason      string   `json:"reason"`
-	Status      string   `json:"status"`
-	Evidence    []string `json:"evidence,omitempty"`
+	OperationID             string          `json:"operation_id"`
+	ObjectID                string          `json:"object_id,omitempty"`
+	ObjectKind              string          `json:"object_kind,omitempty"`
+	ObservedPath            string          `json:"observed_path,omitempty"`
+	ExpectedRecordVersion   uint64          `json:"expected_record_version,omitempty"`
+	ExpectedContentRevision ContentRevision `json:"expected_content_revision,omitempty"`
+	Kind                    string          `json:"kind"`
+	Mode                    string          `json:"mode"`
+	Risk                    string          `json:"risk"`
+	Path                    string          `json:"path,omitempty"`
+	Target                  string          `json:"target,omitempty"`
+	NoteID                  string          `json:"note_id,omitempty"`
+	IssueCode               string          `json:"issue_code"`
+	Reason                  string          `json:"reason"`
+	Status                  string          `json:"status"`
+	Evidence                []string        `json:"evidence,omitempty"`
 }
 
 // RestorePlan 是 version restore 生成的只读恢复计划，restore apply 据此把单个 vault
@@ -486,17 +499,22 @@ type OrganizePlan struct {
 }
 
 type OrganizeOperation struct {
-	OperationID string            `json:"operation_id"`
-	Kind        string            `json:"kind"`
-	Mode        string            `json:"mode"`
-	Risk        string            `json:"risk"`
-	Path        string            `json:"path,omitempty"`
-	Target      string            `json:"target,omitempty"`
-	Before      map[string]string `json:"before,omitempty"`
-	After       map[string]string `json:"after,omitempty"`
-	Reason      string            `json:"reason"`
-	Evidence    []string          `json:"evidence,omitempty"`
-	Status      string            `json:"status"`
+	OperationID             string            `json:"operation_id"`
+	ObjectID                string            `json:"object_id,omitempty"`
+	ObjectKind              string            `json:"object_kind,omitempty"`
+	ObservedPath            string            `json:"observed_path,omitempty"`
+	ExpectedRecordVersion   uint64            `json:"expected_record_version,omitempty"`
+	ExpectedContentRevision ContentRevision   `json:"expected_content_revision,omitempty"`
+	Kind                    string            `json:"kind"`
+	Mode                    string            `json:"mode"`
+	Risk                    string            `json:"risk"`
+	Path                    string            `json:"path,omitempty"`
+	Target                  string            `json:"target,omitempty"`
+	Before                  map[string]string `json:"before,omitempty"`
+	After                   map[string]string `json:"after,omitempty"`
+	Reason                  string            `json:"reason"`
+	Evidence                []string          `json:"evidence,omitempty"`
+	Status                  string            `json:"status"`
 }
 
 type OrganizePlanSummary struct {
@@ -509,6 +527,7 @@ type OrganizePlanSummary struct {
 }
 
 type Project struct {
+	ObjectID    string `json:"object_id,omitempty"`
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -724,22 +743,25 @@ type NoteLink struct {
 	Broken      bool   `json:"broken"`
 
 	// 扩展字段：双联图谱增强。
-	SourceNoteID  string              `json:"source_note_id,omitempty"`
-	TargetNoteID  string              `json:"target_note_id,omitempty"`
-	TargetRaw     string              `json:"target_raw,omitempty"`
-	TargetAlias   string              `json:"target_alias,omitempty"`
-	TargetHeading string              `json:"target_heading,omitempty"`
-	Status        string              `json:"status,omitempty"`
-	Line          int                 `json:"line,omitempty"`
-	Evidence      string              `json:"evidence,omitempty"`
-	Candidates    []NoteLinkCandidate `json:"candidates,omitempty"`
+	SourceObjectID string              `json:"source_object_id,omitempty"`
+	TargetObjectID string              `json:"target_object_id,omitempty"`
+	SourceNoteID   string              `json:"source_note_id,omitempty"`
+	TargetNoteID   string              `json:"target_note_id,omitempty"`
+	TargetRaw      string              `json:"target_raw,omitempty"`
+	TargetAlias    string              `json:"target_alias,omitempty"`
+	TargetHeading  string              `json:"target_heading,omitempty"`
+	Status         string              `json:"status,omitempty"`
+	Line           int                 `json:"line,omitempty"`
+	Evidence       string              `json:"evidence,omitempty"`
+	Candidates     []NoteLinkCandidate `json:"candidates,omitempty"`
 }
 
 // NoteLinkCandidate 描述歧义链接的候选目标。
 type NoteLinkCandidate struct {
-	Path   string `json:"path"`
-	Title  string `json:"title"`
-	NoteID string `json:"note_id,omitempty"`
+	ObjectID string `json:"object_id,omitempty"`
+	Path     string `json:"path"`
+	Title    string `json:"title"`
+	NoteID   string `json:"note_id,omitempty"`
 }
 
 // NoteGraphProjection 描述图谱查询的完整投影。

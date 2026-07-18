@@ -16,7 +16,7 @@ import (
 // periodic-journal and inbox surfaces.
 
 func (s *Service) DailyOpen(ctx context.Context, req DailyRequest) (domain.Projection, error) {
-	root, rel, key, err := ensureJournalNote(req.VaultPath, "daily", req)
+	root, rel, key, err := s.ensureJournalNote(req.VaultPath, "daily", req)
 	if err != nil {
 		return errorProjection("daily.open", err), err
 	}
@@ -31,7 +31,7 @@ func (s *Service) DailyOpen(ctx context.Context, req DailyRequest) (domain.Proje
 }
 
 func (s *Service) DailyShow(ctx context.Context, req DailyRequest) (domain.Projection, error) {
-	root, rel, key, err := ensureJournalNote(req.VaultPath, "daily", req)
+	root, rel, key, err := s.ensureJournalNote(req.VaultPath, "daily", req)
 	if err != nil {
 		return errorProjection("daily.show", err), err
 	}
@@ -46,7 +46,7 @@ func (s *Service) DailyShow(ctx context.Context, req DailyRequest) (domain.Proje
 }
 
 func (s *Service) DailyAppend(_ context.Context, req DailyRequest) (domain.Projection, error) {
-	root, rel, key, err := ensureJournalNote(req.VaultPath, "daily", req)
+	root, rel, key, err := s.ensureJournalNote(req.VaultPath, "daily", req)
 	if err != nil {
 		return errorProjection("daily.append", err), err
 	}
@@ -101,7 +101,7 @@ func (s *Service) MonthlyAppend(ctx context.Context, req DailyRequest) (domain.P
 }
 
 func (s *Service) openJournal(ctx context.Context, period string, req DailyRequest) (domain.Projection, error) {
-	root, rel, key, err := ensureJournalNote(req.VaultPath, period, req)
+	root, rel, key, err := s.ensureJournalNote(req.VaultPath, period, req)
 	if err != nil {
 		return errorProjection(period+".open", err), err
 	}
@@ -116,7 +116,7 @@ func (s *Service) openJournal(ctx context.Context, period string, req DailyReque
 }
 
 func (s *Service) showJournal(ctx context.Context, period string, req DailyRequest) (domain.Projection, error) {
-	root, rel, key, err := ensureJournalNote(req.VaultPath, period, req)
+	root, rel, key, err := s.ensureJournalNote(req.VaultPath, period, req)
 	if err != nil {
 		return errorProjection(period+".show", err), err
 	}
@@ -131,7 +131,7 @@ func (s *Service) showJournal(ctx context.Context, period string, req DailyReque
 }
 
 func (s *Service) appendJournal(_ context.Context, period string, req DailyRequest) (domain.Projection, error) {
-	root, rel, key, err := ensureJournalNote(req.VaultPath, period, req)
+	root, rel, key, err := s.ensureJournalNote(req.VaultPath, period, req)
 	if err != nil {
 		return errorProjection(period+".append", err), err
 	}

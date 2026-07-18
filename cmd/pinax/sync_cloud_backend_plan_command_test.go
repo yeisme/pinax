@@ -534,7 +534,7 @@ func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
 			}
 			runID := stateJSON["last_sync_run_id"].(string)
 			receipt := readCLIFile(t, filepath.Join(root, ".pinax", "sync-runs", time.Now().UTC().Format("2006"), time.Now().UTC().Format("01"), runID+".json"))
-			combined := out + receipt
+			combined := out + receipt + readCLIFile(t, filepath.Join(root, ".pinax", "events.jsonl"))
 			if tc.wantPath && !strings.Contains(combined, "notes/policy-secret.md") {
 				t.Fatalf("default policy omitted path:\n%s", combined)
 			}
@@ -1266,4 +1266,46 @@ func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
 	if !strings.Contains(objectKeyCompletion, "pinax/manifest.json\tobject") || !strings.Contains(objectKeyCompletion, "ShellCompDirectiveNoFileComp") {
 		t.Fatalf("backend object stat key completion invalid:\n%s", objectKeyCompletion)
 	}
+}
+
+func TestSyncLogsTailFollowFlagAndJSONGuardCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	help := runCLI(t, "sync", "logs", "tail", "--help")
+	if !strings.Contains(help, "--follow") || !strings.Contains(help, "Continue streaming newly appended sync events") {
+		t.Fatalf("sync logs tail help missing follow flag:\n%s", help)
+	}
+	out, err := runCLIExpectError("sync", "logs", "tail", "--follow", "--json", "--vault", root)
+	if err == nil || !strings.Contains(out, "sync_logs_follow_mode") || !strings.Contains(out, "--events") {
+		t.Fatalf("follow json guard err=%v out=%s", err, out)
+	}
+}
+
+func TestSyncLogsTailShowsSyncedFilesInAllMachineSurfacesCLI(t *testing.T) {
+	root := t.TempDir()
+	objectRoot := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "live-sync.md"), "# Live Sync\nbody\n")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "ws_live", "--device", "dev_live", "--secret-ref", "test-live-secret", "--vault", root, "--json")
+	runCLI(t, "sync", "push", "--target", "cloud", "--yes", "--vault", root, "--json")
+
+	summary := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root)
+	for _, want := range []string{"Operation", "Path", "upload_blob", "notes/live-sync.md"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("sync logs summary missing %q:\n%s", want, summary)
+		}
+	}
+	agent := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root, "--agent")
+	for _, want := range []string{"event.1.type=sync.file", "kind=upload_blob", "path=notes/live-sync.md"} {
+		if !strings.Contains(agent, want) {
+			t.Fatalf("sync logs agent missing %q:\n%s", want, agent)
+		}
+	}
+	events := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root, "--events")
+	for _, want := range []string{`"type":"progress"`, `"event_type":"sync.file"`, `"kind":"upload_blob"`, `"path":"notes/live-sync.md"`} {
+		if !strings.Contains(events, want) {
+			t.Fatalf("sync logs events missing %q:\n%s", want, events)
+		}
+	}
+	assertNDJSONEvents(t, events, "sync.logs.tail")
 }

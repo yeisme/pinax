@@ -84,13 +84,17 @@ func (s *Service) TrashList(_ context.Context, req TrashRequest) (domain.Project
 	return projection, nil
 }
 
-func (s *Service) TrashRestore(_ context.Context, req TrashRequest) (domain.Projection, error) {
+func (s *Service) TrashRestore(ctx context.Context, req TrashRequest) (domain.Projection, error) {
 	root, tombstones, tombstone, err := resolveTrashTombstone(req.VaultPath, req.ObjectRef, "trash.restore")
 	if err != nil {
 		return errorProjection("trash.restore", err), err
 	}
 	objectID := trashObjectID(tombstone)
 	switch trashObjectKind(tombstone) {
+	case "note":
+		if err := restoreNoteFromTrash(ctx, root, tombstone); err != nil {
+			return errorProjection("trash.restore", err), err
+		}
 	case "project":
 		if err := restoreProjectFromTrash(root, tombstone); err != nil {
 			return errorProjection("trash.restore", err), err
@@ -308,6 +312,46 @@ func (s *Service) ProjectSubprojectDelete(_ context.Context, req ProjectSubproje
 	return projection, nil
 }
 
+func restoreNoteFromTrash(ctx context.Context, root string, tombstone domain.Tombstone) error {
+	targetRel := filepath.ToSlash(strings.TrimSpace(tombstone.OldPath))
+	trashRel := filepath.ToSlash(strings.TrimSpace(tombstone.TrashPath))
+	if targetRel == "" || trashRel == "" {
+		return &domain.CommandError{Code: "trash_backup_missing", Message: "note trash backup is incomplete", Hint: "Inspect the tombstone and restore from a version snapshot"}
+	}
+	target, err := safeJoin(root, targetRel)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(target); err == nil {
+		return &domain.CommandError{Code: "trash_restore_path_conflict", Message: "note restore target path is already occupied", Hint: "Move or rename the current object before restoring the trash entry"}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	trashPath, err := safeJoin(root, trashRel)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(trashPath, target); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &domain.CommandError{Code: "trash_backup_missing", Message: "note trash backup is missing", Hint: "Restore from a version snapshot or another synced device"}
+		}
+		return err
+	}
+	payload, err := os.ReadFile(target)
+	if err != nil {
+		return err
+	}
+	note := parseNote(targetRel, string(payload))
+	if note.ID == "" {
+		note.ID = trashObjectID(tombstone)
+	}
+	_, err = appendNoteRecordEvent(ctx, root, domain.RecordEventNoteRestored, "trash.restore:"+note.ID+":"+targetRel, note, tombstone.OldPath)
+	return err
+}
+
 func restoreProjectFromTrash(root string, tombstone domain.Tombstone) error {
 	var project domain.Project
 	if err := readJSONAsset(root, tombstone.RegistryPath, &project); err != nil {
@@ -442,7 +486,7 @@ func trashObjectKind(tombstone domain.Tombstone) string {
 }
 
 func trashID(objectID string) string {
-	return "trash_" + strings.TrimPrefix(stableNoteID(objectID), "note_")
+	return "trash_" + strings.TrimPrefix(deterministicShortID(objectID), "note_")
 }
 
 func normalizeTrashObjectRef(ref string) string {
@@ -615,6 +659,9 @@ func applyRemoteNoteDelete(root, objectID string, marker remoteTrashDeleteMarker
 	}
 	tombstone := domain.Tombstone{NoteID: note.ID, ObjectKind: "note", ObjectID: note.ID, TombstoneID: remoteTombstoneID(marker, note.ID), OldPath: note.Path, Title: note.Title, TrashPath: trashRel, DeletedAt: remoteDeletedAt(marker), Source: "sync.pull.delete", Evidence: []string{trashRel, tombstonesRel}}
 	if err := upsertTrashTombstone(root, tombstone); err != nil {
+		return remoteTrashDeleteResult{}, err
+	}
+	if _, err := appendNoteRecordEvent(context.Background(), root, domain.RecordEventNoteTrashed, "sync.pull.delete:"+note.ID+":"+remoteTombstoneID(marker, note.ID), note, note.Path, func(event *domain.RecordEvent) { event.TrashPath = trashRel }); err != nil {
 		return remoteTrashDeleteResult{}, err
 	}
 	_ = appendEvent(root, "sync.pull.delete", "success", map[string]string{"object_id": note.ID, "trash_path": trashRel})

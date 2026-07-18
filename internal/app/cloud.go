@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/yeisme/pinax/internal/domain"
+	pinaxprofile "github.com/yeisme/pinax/internal/profile"
 	pinaxcloud "github.com/yeisme/pinax/internal/remote"
 )
 
@@ -39,7 +40,11 @@ func (s *Service) CloudBackendSetS3(_ context.Context, req CloudBackendSetReques
 	if secretRef == "" && strings.TrimSpace(req.Profile) != "" {
 		secretRef = "profile://" + strings.TrimSpace(req.Profile)
 	}
-	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, EncryptionSecretRef: strings.TrimSpace(req.EncryptionSecretRef), BackendKind: "s3-direct", S3: &pinaxcloud.S3Config{Bucket: bucket, Prefix: prefix, Endpoint: endpointURL, Region: region, Profile: strings.TrimSpace(req.Profile), AddressingStyle: addressingStyle, PathStyle: pathStyle}})
+	encryptionSecretRef, err := persistentEncryptionSecretRef(root, workspaceID, req.EncryptionSecretRef)
+	if err != nil {
+		return errorProjection("cloud.backend.set", err), err
+	}
+	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, EncryptionSecretRef: encryptionSecretRef, BackendKind: "s3-direct", S3: &pinaxcloud.S3Config{Bucket: bucket, Prefix: prefix, Endpoint: endpointURL, Region: region, Profile: strings.TrimSpace(req.Profile), AddressingStyle: addressingStyle, PathStyle: pathStyle}})
 	if err != nil {
 		projection, commandErr := cloudBackendSetErrorProjection(err)
 		return projection, commandErr
@@ -177,6 +182,25 @@ func cloudS3PathStyle(endpointURL, addressingStyle string) bool {
 	return backendS3PathStyle(endpointURL)
 }
 
+func persistentEncryptionSecretRef(root, workspaceID, requested string) (string, error) {
+	if ref := strings.TrimSpace(requested); ref != "" {
+		return ref, nil
+	}
+	if existing, err := pinaxcloud.Load(root); err == nil {
+		if ref := strings.TrimSpace(existing.Config.EncryptionSecretRef); ref != "" {
+			return ref, nil
+		}
+		if ref := strings.TrimSpace(existing.Config.SecretRef); ref != "" {
+			return ref, nil
+		}
+	}
+	name := "capsa-sync-" + strings.Trim(strings.TrimSpace(workspaceID), " /\\")
+	if name == "capsa-sync-" {
+		name = "capsa-sync-default"
+	}
+	return pinaxprofile.EnsureStoredSecret(name)
+}
+
 func (s *Service) CloudLogin(_ context.Context, req CloudLoginRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
@@ -185,7 +209,11 @@ func (s *Service) CloudLogin(_ context.Context, req CloudLoginRequest) (domain.P
 	if err := ensureVaultAssets(root); err != nil {
 		return errorProjection("cloud.login", err), err
 	}
-	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: req.Endpoint, WorkspaceID: req.WorkspaceID, DeviceID: req.DeviceID, SecretRef: req.SecretRef, EncryptionSecretRef: req.EncryptionSecretRef})
+	encryptionSecretRef, err := persistentEncryptionSecretRef(root, req.WorkspaceID, req.EncryptionSecretRef)
+	if err != nil {
+		return errorProjection("cloud.login", err), err
+	}
+	state, err := pinaxcloud.Login(root, pinaxcloud.LoginRequest{Endpoint: req.Endpoint, WorkspaceID: req.WorkspaceID, DeviceID: req.DeviceID, SecretRef: req.SecretRef, EncryptionSecretRef: encryptionSecretRef})
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "unsupported remote scheme") || strings.Contains(msg, "invalid endpoint URI") || strings.Contains(msg, "endpoint URI must specify a scheme") {
@@ -303,7 +331,13 @@ func addCloudStateFacts(projection *domain.Projection, state pinaxcloud.State) {
 	projection.Facts["device_id"] = state.Config.DeviceID
 	projection.Facts["session_status"] = state.Session.Status
 	projection.Facts["secret_ref_configured"] = fmt.Sprint(strings.TrimSpace(state.Config.SecretRef) != "")
-	projection.Facts["encryption_secret_ref_configured"] = fmt.Sprint(strings.TrimSpace(pinaxcloud.EncryptionSecretRef(state.Config)) != "")
+	encryptionSecretRef := strings.TrimSpace(pinaxcloud.EncryptionSecretRef(state.Config))
+	projection.Facts["encryption_secret_ref_configured"] = fmt.Sprint(encryptionSecretRef != "")
+	if strings.HasPrefix(encryptionSecretRef, "stored://") {
+		projection.Facts["encryption_secret_persistence"] = "user_config"
+	} else if encryptionSecretRef != "" {
+		projection.Facts["encryption_secret_persistence"] = "configured_ref"
+	}
 }
 
 func cloudStateErrorProjection(command, root string, err error) (domain.Projection, error) {

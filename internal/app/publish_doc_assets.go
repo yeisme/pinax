@@ -30,7 +30,7 @@ const remoteAssetMaxBytes = 10 * 1024 * 1024 // 10MB
 // publishDocDownloadRemoteAsset 下载远程 SVG URL，返回 SVG 源码文本（供 whiteboard --input_format svg）。
 // 以 Content-Type 为权威判定（image/svg*）；无 Content-Type 时回退到 URL 扩展名。
 // 非 SVG 返回稳定 error；调用方降级为 warning，不阻塞发布。
-func publishDocDownloadRemoteAsset(ctx context.Context, root, assetURL string) (string, error) {
+func publishDocDownloadRemoteAsset(ctx context.Context, assetURL string) (string, error) {
 	body, mediaType, err := publishDocFetchRemote(ctx, assetURL)
 	if err != nil {
 		return "", err

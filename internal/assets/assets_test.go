@@ -145,6 +145,31 @@ func TestAddWithOptionsCopyAndRegisterModes(t *testing.T) {
 	}
 }
 
+func TestRegisterReusesObjectIDForExistingPath(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "assets", "existing.txt")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first, err := AddWithOptions(root, path, AddOptions{Mode: AddModeRegister})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("second"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second, err := AddWithOptions(root, path, AddOptions{Mode: AddModeRegister})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ObjectID != first.ObjectID {
+		t.Fatalf("object id changed for existing path: first=%q second=%q", first.ObjectID, second.ObjectID)
+	}
+}
+
 func TestVerifyClassifiesMissingChangedAndUnmanagedAssets(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "assets"), 0o755); err != nil {

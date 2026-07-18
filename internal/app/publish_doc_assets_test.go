@@ -20,8 +20,7 @@ func TestPublishDocDownloadRemoteAssetSVG(t *testing.T) {
 	defer svc.Close()
 	assetURL := useSafeRemoteAssetTestServer(t, svc)
 
-	root := t.TempDir()
-	source, err := publishDocDownloadRemoteAsset(context.Background(), root, assetURL+"/diagram.svg")
+	source, err := publishDocDownloadRemoteAsset(context.Background(), assetURL+"/diagram.svg")
 	if err != nil {
 		t.Fatalf("download svg: %v", err)
 	}
@@ -38,7 +37,7 @@ func TestPublishDocDownloadRemoteAssetRejectsNonSVG(t *testing.T) {
 	defer svc.Close()
 	assetURL := useSafeRemoteAssetTestServer(t, svc)
 
-	if _, err := publishDocDownloadRemoteAsset(context.Background(), t.TempDir(), assetURL+"/diagram.svg"); err == nil {
+	if _, err := publishDocDownloadRemoteAsset(context.Background(), assetURL+"/diagram.svg"); err == nil {
 		t.Fatalf("expected error for non-SVG content-type")
 	}
 }

@@ -77,12 +77,12 @@ func TestResolveVaultObjectScopes(t *testing.T) {
 		t.Fatalf("refresh index: %v", err)
 	}
 
-	assertResolvedKinds(t, svc, root, "registered", "all", "shared", []domain.VaultObjectKind{domain.VaultObjectKindNote})
-	assertResolvedKinds(t, svc, root, "adoptable", "all", "shared", []domain.VaultObjectKind{domain.VaultObjectKindFile})
-	assertResolvedKinds(t, svc, root, "assets", "all", "shared", []domain.VaultObjectKind{domain.VaultObjectKindAsset})
-	assertResolvedKinds(t, svc, root, "registered_or_adoptable", "all", "shared", []domain.VaultObjectKind{domain.VaultObjectKindNote, domain.VaultObjectKindFile})
-	assertResolvedKinds(t, svc, root, "all", "all", "shared", []domain.VaultObjectKind{domain.VaultObjectKindAsset, domain.VaultObjectKindNote, domain.VaultObjectKindFile})
-	assertResolvedKinds(t, svc, root, "all", "note", "shared", []domain.VaultObjectKind{domain.VaultObjectKindNote})
+	assertResolvedKinds(t, svc, root, "registered", "all", []domain.VaultObjectKind{domain.VaultObjectKindNote})
+	assertResolvedKinds(t, svc, root, "adoptable", "all", []domain.VaultObjectKind{domain.VaultObjectKindFile})
+	assertResolvedKinds(t, svc, root, "assets", "all", []domain.VaultObjectKind{domain.VaultObjectKindAsset})
+	assertResolvedKinds(t, svc, root, "registered_or_adoptable", "all", []domain.VaultObjectKind{domain.VaultObjectKindNote, domain.VaultObjectKindFile})
+	assertResolvedKinds(t, svc, root, "all", "all", []domain.VaultObjectKind{domain.VaultObjectKindAsset, domain.VaultObjectKindNote, domain.VaultObjectKindFile})
+	assertResolvedKinds(t, svc, root, "all", "note", []domain.VaultObjectKind{domain.VaultObjectKindNote})
 
 	if err := os.Remove(filepath.Join(root, ".pinax", "index.sqlite")); err != nil {
 		t.Fatalf("remove index: %v", err)
@@ -96,9 +96,9 @@ func TestResolveVaultObjectScopes(t *testing.T) {
 	}
 }
 
-func assertResolvedKinds(t *testing.T, svc *Service, root, scope, kind, query string, want []domain.VaultObjectKind) {
+func assertResolvedKinds(t *testing.T, svc *Service, root, scope, kind string, want []domain.VaultObjectKind) {
 	t.Helper()
-	result, err := svc.ResolveVaultObject(context.Background(), ResolverRequest{VaultPath: root, Query: query, Scope: scope, Kind: kind})
+	result, err := svc.ResolveVaultObject(context.Background(), ResolverRequest{VaultPath: root, Query: "shared", Scope: scope, Kind: kind})
 	if err != nil {
 		t.Fatalf("resolve scope=%s kind=%s: %v", scope, kind, err)
 	}
@@ -187,9 +187,9 @@ func TestResolveVaultObjectIntegrationDisambiguatesNoteAssetAndUnmanagedConflict
 	data := all.Data.(map[string]any)
 	assertCandidateKinds(t, data["candidates"].([]domain.VaultObjectCandidate), []domain.VaultObjectKind{domain.VaultObjectKindAsset, domain.VaultObjectKindFile, domain.VaultObjectKindNote})
 
-	assertResolvedKinds(t, svc, root, "registered", "note", "shared", []domain.VaultObjectKind{domain.VaultObjectKindNote})
-	assertResolvedKinds(t, svc, root, "assets", "asset", "shared", []domain.VaultObjectKind{domain.VaultObjectKindAsset})
-	assertResolvedKinds(t, svc, root, "adoptable", "file", "shared", []domain.VaultObjectKind{domain.VaultObjectKindFile})
+	assertResolvedKinds(t, svc, root, "registered", "note", []domain.VaultObjectKind{domain.VaultObjectKindNote})
+	assertResolvedKinds(t, svc, root, "assets", "asset", []domain.VaultObjectKind{domain.VaultObjectKindAsset})
+	assertResolvedKinds(t, svc, root, "adoptable", "file", []domain.VaultObjectKind{domain.VaultObjectKindFile})
 	if _, err := svc.ResolveVaultObjectForWrite(ctx, ResolverRequest{VaultPath: root, Query: "shared", Scope: "registered_or_adoptable", Kind: "all"}); err == nil || !hasCommandCode(err, domain.ErrorCodeVaultObjectRefAmbiguous) {
 		t.Fatalf("write guard conflict err = %v", err)
 	}
@@ -266,5 +266,20 @@ func assertCandidateKinds(t *testing.T, candidates []domain.VaultObjectCandidate
 		if count != 0 {
 			t.Fatalf("unexpected kind %s in %#v", kind, candidates)
 		}
+	}
+}
+
+func TestResolveManagedObjectForMutationRejectsPathOnlyNote(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "notes", "path-only.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("---\nschema_version: pinax.note.v1\ntitle: Path Only\n---\n\n# Path Only\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := NewService().ResolveManagedObjectForMutation(context.Background(), ResolverRequest{VaultPath: root, Query: "notes/path-only.md", Scope: "registered", Kind: "note"})
+	if domain.ErrorCode(err) != "identity_migration_required" || len(result.Candidates) != 1 {
+		t.Fatalf("result = %#v, err = %v", result, err)
 	}
 }

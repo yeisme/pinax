@@ -793,25 +793,7 @@ func TestCoreNoteTemplateIndexAndSyncMVP(t *testing.T) {
 }
 
 func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T) {
-	ctx := context.Background()
-	root := t.TempDir()
-	svc := NewService()
-	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
-		t.Fatalf("init vault: %v", err)
-	}
-	writeFile(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\n\nserver backed push metadata\n")
-	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
-	defer server.Close()
-	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
-		t.Fatalf("cloud login: %v", err)
-	}
-	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
-	if err != nil {
-		t.Fatalf("server sync push: %v", err)
-	}
-	if push.Facts["remote_write"] != "true" {
-		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
-	}
+	assertServerBackedSyncPush(t, "notes/alpha.md", "# Alpha\n\nserver backed push metadata\n")
 }
 
 func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
@@ -825,7 +807,7 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 	writeFile(t, filepath.Join(root, "notes", "alpha.md"), body)
 	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
 	defer server.Close()
-	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token", EncryptionSecretRef: "plain:session-token"}); err != nil {
 		t.Fatalf("cloud login: %v", err)
 	}
 	manifest, err := pinaxcloud.BuildManifest(root)
@@ -864,13 +846,18 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 }
 
 func TestServerBackedSyncPushAllowsEmptyNoteObjectRef(t *testing.T) {
+	assertServerBackedSyncPush(t, "notes/empty.md", "")
+}
+
+func assertServerBackedSyncPush(t *testing.T, notePath, body string) {
+	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
-	writeFile(t, filepath.Join(root, "notes", "empty.md"), "")
+	writeFile(t, filepath.Join(root, filepath.FromSlash(notePath)), body)
 	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
 	defer server.Close()
 	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
@@ -878,10 +865,10 @@ func TestServerBackedSyncPushAllowsEmptyNoteObjectRef(t *testing.T) {
 	}
 	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
 	if err != nil {
-		t.Fatalf("empty note server sync push: %v", err)
+		t.Fatalf("server sync push: %v", err)
 	}
 	if push.Facts["remote_write"] != "true" {
-		t.Fatalf("empty note push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
+		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
 	}
 }
 
@@ -1014,7 +1001,7 @@ func TestTagNoteWritesRecordAndRefreshesIndexFacts(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"record_event":   string(domain.RecordEventNoteMetadataUpdated),
-		"ledger_seq":     "2",
+		"ledger_seq":     "3",
 		"index_updated":  "true",
 		"ledger_status":  "updated",
 		"record_version": "2",

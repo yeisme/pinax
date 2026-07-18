@@ -2,6 +2,8 @@ package profile
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -48,6 +50,96 @@ func ConfigDir() string {
 // ProfilesPath returns the path to profiles.yaml.
 func ProfilesPath() string {
 	return filepath.Join(ConfigDir(), "profiles.yaml")
+}
+
+func SecretsPath() string {
+	return filepath.Join(ConfigDir(), "secrets.yaml")
+}
+
+// EnsureStoredSecret returns a stable user-level secret reference, creating the
+// secret once when it does not exist. The secret value never enters project or
+// vault state.
+func EnsureStoredSecret(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsAny(name, `/\\`) {
+		return "", fmt.Errorf("invalid stored secret name")
+	}
+	secrets, err := loadSecrets()
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(secrets[name]) == "" {
+		raw := make([]byte, 32)
+		if _, err := rand.Read(raw); err != nil {
+			return "", fmt.Errorf("generate stored secret: %w", err)
+		}
+		secrets[name] = base64.RawURLEncoding.EncodeToString(raw)
+		if err := saveSecrets(secrets); err != nil {
+			return "", err
+		}
+	}
+	return "stored://" + name, nil
+}
+
+// SetStoredSecret stores a specific plaintext value under name in the user-level
+// secret store and returns a stored:// reference. Used by the sync repo compiler
+// to persist a freshly unlocked secret as a device-local reference so the
+// plaintext never enters the generated runtime config. The value never enters
+// project or vault state.
+func SetStoredSecret(name, value string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsAny(name, `/\\`) {
+		return "", fmt.Errorf("invalid stored secret name")
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("empty stored secret value")
+	}
+	secrets, err := loadSecrets()
+	if err != nil {
+		return "", err
+	}
+	secrets[name] = value
+	if err := saveSecrets(secrets); err != nil {
+		return "", err
+	}
+	return "stored://" + name, nil
+}
+
+func loadSecrets() (map[string]string, error) {
+	data, err := os.ReadFile(SecretsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf("read secrets file: %w", err)
+	}
+	var cfg struct {
+		Secrets map[string]string `yaml:"secrets"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse secrets file: %w", err)
+	}
+	if cfg.Secrets == nil {
+		cfg.Secrets = map[string]string{}
+	}
+	return cfg.Secrets, nil
+}
+
+func saveSecrets(secrets map[string]string) error {
+	if err := os.MkdirAll(ConfigDir(), 0o700); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	data, err := yaml.Marshal(struct {
+		Secrets map[string]string `yaml:"secrets"`
+	}{Secrets: secrets})
+	if err != nil {
+		return fmt.Errorf("marshal secrets: %w", err)
+	}
+	if err := os.WriteFile(SecretsPath(), data, 0o600); err != nil {
+		return fmt.Errorf("write secrets file: %w", err)
+	}
+	return nil
 }
 
 // Load reads profiles from disk.
@@ -103,6 +195,17 @@ func ResolveSecretRef(ref string) (string, error) {
 	case strings.HasPrefix(ref, "keychain://"):
 		account := strings.TrimPrefix(ref, "keychain://")
 		return resolveKeychain(account)
+	case strings.HasPrefix(ref, "stored://"):
+		name := strings.TrimPrefix(ref, "stored://")
+		secrets, err := loadSecrets()
+		if err != nil {
+			return "", err
+		}
+		value := strings.TrimSpace(secrets[name])
+		if value == "" {
+			return "", fmt.Errorf("stored secret %s is not configured", name)
+		}
+		return value, nil
 	case strings.HasPrefix(ref, "plain:"):
 		return strings.TrimPrefix(ref, "plain:"), nil
 	case strings.HasPrefix(ref, "profile://"):

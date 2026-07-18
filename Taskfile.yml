@@ -35,6 +35,31 @@ tasks:
     cmds:
       - go run ./internal/testkit/integrationevidence
 
+  integration:identity:
+    desc: Run identity-first kernel integration tests with redacted evidence.
+    cmds:
+      - go run ./internal/testkit/integrationevidence --profile identity
+
+  integration:identity:benchmark:
+    desc: Run identity-first kernel benchmarks with redacted evidence.
+    cmds:
+      - go run ./internal/testkit/integrationevidence --profile identity-benchmark
+
+  integration:agent-memory:
+    desc: Run agent memory runtime integration tests with redacted evidence.
+    cmds:
+      - go run ./internal/testkit/integrationevidence --profile agent-memory
+
+  integration:agent-continuity:
+    desc: Run agent continuity experience integration tests with redacted evidence.
+    cmds:
+      - go run ./internal/testkit/integrationevidence --profile agent-continuity
+
+  integration:sync-real:
+    desc: Run credential-safe real sync smoke when PINAX_SYNC_REAL_ENDPOINT is configured.
+    cmds:
+      - go run ./internal/testkit/syncrealevidence
+
   kb:sidecar:test:
     desc: Run Python LanceDB KB sidecar tests.
     deps: [kb:sidecar:protocol]

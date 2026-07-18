@@ -17,6 +17,45 @@ func renderEvents(w io.Writer, p domain.Projection) error {
 		"type":         "start",
 		"seq":          1,
 	}
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(start); err != nil {
+		return err
+	}
+
+	seq := 2
+	if p.Command == "sync.logs.tail" {
+		if data, ok := p.Data.(map[string]any); ok {
+			if events, ok := data["events"].([]map[string]any); ok {
+				for _, event := range events {
+					payload := map[string]any{
+						"spec_version": p.SpecVersion,
+						"mode":         "events",
+						"command":      p.Command,
+						"type":         "progress",
+						"seq":          seq,
+					}
+					for key, value := range event {
+						switch key {
+						case "type":
+							payload["event_type"] = value
+						case "command":
+							payload["source_command"] = value
+						case "seq":
+							payload["timeline_seq"] = value
+						default:
+							payload[key] = value
+						}
+					}
+					if err := enc.Encode(payload); err != nil {
+						return err
+					}
+					seq++
+				}
+			}
+		}
+	}
+
 	endType := "end"
 	if p.Status == "failed" {
 		endType = "error"
@@ -26,7 +65,7 @@ func renderEvents(w io.Writer, p domain.Projection) error {
 		"mode":         "events",
 		"command":      p.Command,
 		"type":         endType,
-		"seq":          2,
+		"seq":          seq,
 		"status":       p.Status,
 		"summary":      p.Summary,
 	}
@@ -41,11 +80,6 @@ func renderEvents(w io.Writer, p domain.Projection) error {
 	}
 	if p.Error != nil {
 		end["error"] = p.Error
-	}
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(start); err != nil {
-		return err
 	}
 	return enc.Encode(end)
 }

@@ -13,12 +13,12 @@ stdout '"ledger_status":"updated"'
 exec pinax record adopt --vault vault --agent
 stdout 'command=record.adopt'
 stdout 'fact.adopted=0'
-stdout 'fact.records=1'
+stdout 'fact.records=2'
 
 exec pinax record status --vault vault --json
 stdout '"command":"record.status"'
-stdout '"records":"1"'
-stdout '"ledger_seq":"1"'
+stdout '"records":"2"'
+stdout '"ledger_seq":"2"'
 
 exec pinax record history alpha.md --vault vault --agent
 stdout 'command=record.history'

@@ -174,7 +174,7 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 			receipt.RevisionID = rev
 		}
 		receipt.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))}}
-		receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, syncplan.Plan{Direction: syncplan.Direction("all"), Target: syncOutputTarget(target), RemoteWrite: receipt.RemoteWrite}, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
+		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, syncplan.Plan{Direction: syncplan.Direction("all"), Target: syncOutputTarget(target), RemoteWrite: receipt.RemoteWrite}, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
 		if receiptErr == nil {
 			_ = writeCurrentSyncState(root, state, receipt, receipt.RevisionID)
 			projection.Facts["run_id"] = receipt.RunID

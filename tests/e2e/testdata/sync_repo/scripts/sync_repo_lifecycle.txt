@@ -1,0 +1,49 @@
+# Test the declarative sync repository configuration lifecycle.
+# Verifies init, secret set/list, bootstrap (pull-only), plan (no writes),
+# doctor (drift), and that plaintext never leaks into runtime config or output.
+
+# init vault
+exec pinax init vault --title Repo --json
+stdout '"command":"vault.init"'
+
+# init sync repo declaration
+exec pinax sync repo init --backend-kind s3-direct --endpoint s3://test-bucket/repo --workspace personal --tenant t1 --app pinax --credential-id tencent-cos-pinax --encryption-key-id personal-sync-key --remote-delete-policy deny --vault vault --json
+stdout '"command":"sync.repo.init"'
+stdout '"status":"success"'
+stdout '"workspace_id":"personal"'
+stdout '"encryption_key_id":"personal-sync-key"'
+! stdout 'PLAINTEXT'
+! stdout 'password'
+! stdout 'secret_key'
+
+# secret set (encrypted)
+exec pinax sync repo secret set --name personal-sync-key --kind encryption_key --value plain-key-value --provider fake --vault vault --json
+stdout '"command":"sync.repo.secret"'
+stdout '"status":"success"'
+! stdout 'plain-key-value'
+
+# secret list (metadata only)
+exec pinax sync repo secret list --vault vault --json
+stdout '"command":"sync.repo.secret"'
+stdout '"count":"1"'
+! stdout 'plain-key-value'
+
+# bootstrap a new device (pull-only)
+exec pinax sync repo bootstrap --device desktop-1 --vault vault --json
+stdout '"command":"sync.repo.bootstrap"'
+stdout '"status":"success"'
+stdout '"device_id":"desktop-1"'
+stdout '"pull_only":"true"'
+
+# plan must not write and must report drift state
+exec pinax sync repo plan --device desktop-1 --vault vault --json
+stdout '"command":"sync.repo.plan"'
+stdout '"runtime_configured":"true"'
+
+# doctor after bootstrap should be healthy (declaration == runtime)
+exec pinax sync repo doctor --vault vault --json
+stdout '"command":"sync.repo.doctor"'
+stdout '"code":"healthy"'
+
+# runtime config must not contain the plaintext key
+exec sh -c 'grep -q plain-key-value vault/.pinax/cloud/config.yaml && exit 1 || exit 0'

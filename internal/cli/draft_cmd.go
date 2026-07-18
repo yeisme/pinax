@@ -63,7 +63,7 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 	draftCreateCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm remote draft creation when using --api-url")
 	_ = draftCreateCmd.RegisterFlagCompletionFunc("folder", folderPathCompletion(func() string { return *ctx.vaultPath }))
 	_ = draftCreateCmd.RegisterFlagCompletionFunc("kind", staticCompletion("kind", "fleeting", "reference", "project", "daily", "draft"))
-	_ = draftCreateCmd.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "note_template", true, true))
+	_ = draftCreateCmd.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "note_template", true))
 	draftCmd.AddCommand(draftCreateCmd)
 
 	// 2. draft list
@@ -240,7 +240,7 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	for _, c := range []*cobra.Command{draftIndexPreviewCmd, draftIndexCreateCmd, draftIndexRefreshCmd} {
 		c.Flags().StringVar(&indexTemplate, "template", "index.drafts", "Custom review index page template")
-		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true, true))
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true))
 		draftIndexCmd.AddCommand(c)
 	}
 	draftCmd.AddCommand(draftIndexCmd)

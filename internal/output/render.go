@@ -872,7 +872,7 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 	case "sync.logs.list":
 		return renderSummaryDataList(w, theme, p.Data, []string{"runs"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Started", Path: "started_at", MaxWidth: 22}})
 	case "sync.logs.tail":
-		return renderSummaryDataList(w, theme, p.Data, []string{"events"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Time", Path: "ts", MaxWidth: 22}})
+		return renderSummaryDataList(w, theme, p.Data, []string{"events"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Operation", Path: "kind", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Time", Path: "ts", MaxWidth: 22}})
 	case "sync.logs.prune":
 		return renderSummaryNamedDataList(w, theme, "Delete candidates", p.Data, []string{"delete_candidates"}, deleteCandidateSummaryColumns())
 	case "sync.diff", "sync.push", "sync.pull":

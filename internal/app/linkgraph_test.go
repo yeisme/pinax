@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -446,5 +447,104 @@ func TestParseNoteLinksIgnoresNonMarkdown(t *testing.T) {
 	links := parseRawLinksFromBody(body)
 	if len(links) != 0 {
 		t.Fatalf("expected 0 links for non-md, got %d", len(links))
+	}
+}
+
+func TestLinksProjectionExposesObjectIdentityWithoutForgingAmbiguousTarget(t *testing.T) {
+	root := t.TempDir()
+	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
+	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
+	writeAppFixture(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+sourceID+"\ntitle: Source\nkind: reference\n---\n\n# Source\n\n[[Target|Alias]]\n[[Duplicate]]\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "target.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+targetID+"\ntitle: Target\nkind: reference\n---\n\n# Target\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "duplicate-a.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_dup_a\ntitle: Duplicate\nkind: reference\n---\n\n# Duplicate\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "duplicate-b.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_dup_b\ntitle: Duplicate\nkind: reference\n---\n\n# Duplicate\n")
+	projection, err := NewService().QueryOutgoingLinks(context.Background(), NoteLinkGraphRequest{VaultPath: root, NoteRef: sourceID, IncludeIgnored: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := projection.Data.(map[string]any)["links"].([]domain.NoteLink)
+	if len(links) != 2 {
+		t.Fatalf("links = %#v", links)
+	}
+	for _, link := range links {
+		if link.SourceObjectID != sourceID || link.SourceNoteID != sourceID {
+			t.Fatalf("source identity = %#v", link)
+		}
+		if link.Target == "Target" && (link.TargetObjectID != targetID || link.TargetNoteID != targetID || link.TargetAlias != "Alias") {
+			t.Fatalf("resolved link = %#v", link)
+		}
+		if link.Target == "Duplicate" && (link.Status != string(domain.LinkStatusAmbiguous) || link.TargetObjectID != "") {
+			t.Fatalf("ambiguous link forged target identity: %#v", link)
+		}
+	}
+}
+
+func TestRenameAndMoveBacklinkKeepObjectEdgeAndReturnRewritePlan(t *testing.T) {
+	root := t.TempDir()
+	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
+	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
+	sourcePath := filepath.Join(root, "notes", "source.md")
+	writeAppFixture(t, sourcePath, "---\nschema_version: pinax.note.v1\nnote_id: "+sourceID+"\ntitle: Source\nkind: reference\n---\n\n# Source\n\n[[Target]]\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "target.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+targetID+"\ntitle: Target\nkind: reference\n---\n\n# Target\n")
+	svc := NewService()
+	if _, err := svc.IndexRefresh(context.Background(), IndexRefreshRequest{VaultPath: root}); err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := svc.RenameNote(context.Background(), NoteMutationRequest{VaultPath: root, NoteRef: targetID, Title: "Renamed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Facts["link_rewrite_operations"] != "1" {
+		t.Fatalf("rename projection = %#v", renamed)
+	}
+	backlinks, err := svc.QueryBacklinks(context.Background(), NoteBacklinkGraphRequest{VaultPath: root, NoteRef: targetID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := backlinks.Data.(map[string]any)["backlinks"].([]domain.NoteLink)
+	if len(links) != 1 || links[0].TargetObjectID != targetID || links[0].TargetPath != "notes/renamed.md" {
+		t.Fatalf("rename backlinks = %#v", links)
+	}
+	moved, err := svc.MoveNote(context.Background(), NoteMutationRequest{VaultPath: root, NoteRef: targetID, TargetDir: "archive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Facts["link_rewrite_operations"] != "1" {
+		t.Fatalf("move projection = %#v", moved)
+	}
+	backlinks, err = svc.QueryBacklinks(context.Background(), NoteBacklinkGraphRequest{VaultPath: root, NoteRef: targetID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	links = backlinks.Data.(map[string]any)["backlinks"].([]domain.NoteLink)
+	if len(links) != 1 || links[0].TargetPath != "notes/archive/renamed.md" {
+		t.Fatalf("move backlinks = %#v", links)
+	}
+	payload, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), "[[Target]]") {
+		t.Fatalf("source body was rewritten without approval:\n%s", payload)
+	}
+}
+
+func TestRenameWithEmptySlugUsesFinalFallbackInRewritePlan(t *testing.T) {
+	root := t.TempDir()
+	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
+	writeAppFixture(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: 018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101\ntitle: Source\nkind: reference\n---\n\n[[Target]]\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "target.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+targetID+"\ntitle: Target\nkind: reference\n---\n\n# Target\n")
+
+	projection, err := NewService().RenameNote(context.Background(), NoteMutationRequest{VaultPath: root, NoteRef: targetID, Title: "!!!"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operations := projection.Data.(map[string]any)["link_rewrite_operations"].([]domain.PlanOperation)
+	if len(operations) != 1 {
+		t.Fatalf("rewrite operations = %#v", operations)
+	}
+	want := filepath.ToSlash(filepath.Join("notes", deterministicShortID("!!!")+".md"))
+	if operations[0].Target != want {
+		t.Fatalf("rewrite target = %q, want %q", operations[0].Target, want)
 	}
 }

@@ -28,6 +28,7 @@ func newTaskRecord(db *gorm.DB, opts ...gen.DOOption) taskRecord {
 	tableName := _taskRecord.taskRecordDo.TableName()
 	_taskRecord.ALL = field.NewAsterisk(tableName)
 	_taskRecord.ID = field.NewUint(tableName, "id")
+	_taskRecord.ObjectID = field.NewString(tableName, "object_id")
 	_taskRecord.NotePath = field.NewString(tableName, "note_path")
 	_taskRecord.NoteID = field.NewString(tableName, "note_id")
 	_taskRecord.Title = field.NewString(tableName, "title")
@@ -51,6 +52,7 @@ type taskRecord struct {
 
 	ALL       field.Asterisk
 	ID        field.Uint
+	ObjectID  field.String
 	NotePath  field.String
 	NoteID    field.String
 	Title     field.String
@@ -80,6 +82,7 @@ func (t taskRecord) As(alias string) *taskRecord {
 func (t *taskRecord) updateTableName(table string) *taskRecord {
 	t.ALL = field.NewAsterisk(table)
 	t.ID = field.NewUint(table, "id")
+	t.ObjectID = field.NewString(table, "object_id")
 	t.NotePath = field.NewString(table, "note_path")
 	t.NoteID = field.NewString(table, "note_id")
 	t.Title = field.NewString(table, "title")
@@ -108,8 +111,9 @@ func (t *taskRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (t *taskRecord) fillFieldMap() {
-	t.fieldMap = make(map[string]field.Expr, 13)
+	t.fieldMap = make(map[string]field.Expr, 14)
 	t.fieldMap["id"] = t.ID
+	t.fieldMap["object_id"] = t.ObjectID
 	t.fieldMap["note_path"] = t.NotePath
 	t.fieldMap["note_id"] = t.NoteID
 	t.fieldMap["title"] = t.Title

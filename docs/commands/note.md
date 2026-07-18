@@ -79,3 +79,17 @@ pinax note attachments "Authentication Plan" --vault ./my-notes --json
 `<note>` supports note id, in-vault path, stem, historical `notes/foo.md` compatibility input, or a unique title. If a title has multiple candidates, an ambiguity error is returned; it does not guess automatically.
 
 User-visible note paths use vault-relative canonical paths: by default, regular notes are output as root-level `foo.md`; after using `--dir work` or moving, they are output as `work/foo.md`. CLI, JSON, agent, search, record ledger, and MCP output all use canonical paths; compatibility paths belong only to the resolver input layer.
+
+## Stable identity and trash restore
+
+新 note 和 journal 使用 canonical UUIDv7 `object_id`；`note_id` 保持为兼容字段和 frontmatter 镜像。rename/move 只改变当前 path，不改变对象 ID。所有 managed-object mutation 先走统一 resolver；缺少对象身份时返回 `identity_migration_required`。
+
+```bash
+pinax note show <object-id> --display card --vault ./my-notes --json
+pinax note rename <object-id> "New title" --vault ./my-notes --json
+pinax note move <object-id> archive --vault ./my-notes --json
+pinax note delete <object-id> --vault ./my-notes --yes --json
+pinax trash restore <object-id> --vault ./my-notes --json
+```
+
+restore 恢复原 object ID 和原 path；如果原 path 已被其他对象占用，返回 `trash_restore_path_conflict`。

@@ -291,3 +291,9 @@ func TestPublishDocNativeInsertAssetsUsesManifestCleanup(t *testing.T) {
 		t.Fatalf("cleanup must not target fetched unmanaged cloud blocks:\n%s", log)
 	}
 }
+
+func TestPublishDocExecutableUsesOfficialNotionCLI(t *testing.T) {
+	if got := publishDocExecutable(domain.PublishDocTargetNotionPage); got != "ntn" {
+		t.Fatalf("publishDocExecutable(notion-page) = %q, want ntn", got)
+	}
+}

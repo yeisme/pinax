@@ -94,10 +94,7 @@ type TemplatePackMetadata struct {
 
 func ParseDocument(name, content string) (TemplateDocument, error) {
 	metaRaw, body, hasFrontmatter, closed := splitYAMLFrontmatter(content)
-	body, fencedQueries, err := extractFencedQueries(body)
-	if err != nil {
-		return TemplateDocument{}, err
-	}
+	body, fencedQueries := extractFencedQueries(body)
 	if hasFrontmatter && !closed {
 		return TemplateDocument{}, &Error{Code: "template_frontmatter_unclosed", Message: "frontmatter 未闭合"}
 	}
@@ -205,7 +202,7 @@ func validateOutputPathPattern(pattern string) error {
 
 var fencedQueryPattern = regexp.MustCompile("(?ms)^```pinax-sql[ \t]+([A-Za-z_][A-Za-z0-9_:-]*)[ \t]*\n(.*?)\n```[ \t]*(?:\n|$)")
 
-func extractFencedQueries(body string) (string, map[string]TemplateQueryDeclaration, error) {
+func extractFencedQueries(body string) (string, map[string]TemplateQueryDeclaration) {
 	queries := map[string]TemplateQueryDeclaration{}
 	rewritten := fencedQueryPattern.ReplaceAllStringFunc(body, func(block string) string {
 		match := fencedQueryPattern.FindStringSubmatch(block)
@@ -216,9 +213,9 @@ func extractFencedQueries(body string) (string, map[string]TemplateQueryDeclarat
 		return ""
 	})
 	if len(queries) == 0 {
-		return body, nil, nil
+		return body, nil
 	}
-	return strings.TrimLeft(rewritten, "\n"), queries, nil
+	return strings.TrimLeft(rewritten, "\n"), queries
 }
 
 func mergeQueries(frontmatter, fenced map[string]TemplateQueryDeclaration) map[string]TemplateQueryDeclaration {

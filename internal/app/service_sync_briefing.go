@@ -192,57 +192,40 @@ func (s *Service) SyncDiff(ctx context.Context, req SyncRequest) (domain.Project
 }
 
 func (s *Service) SyncPush(ctx context.Context, req SyncRequest) (domain.Projection, error) {
-	root, target, err := cleanSyncRequest(req)
-	if err != nil {
-		return errorProjection("sync.push", err), err
-	}
-	req.Target = target
-	lock, err := syncdaemon.AcquireOperationLock(root, "sync.push")
-	if err != nil {
-		return commandErrorProjection("sync.push", err)
-	}
-	defer lock.Release()
-	if isCapsaSyncTarget(target) {
-		if !req.Yes && !req.DryRun {
-			err := &domain.CommandError{Code: "approval_required", Message: "sync push requires --yes or --dry-run", Hint: fmt.Sprintf("Review the plan first with pinax sync push --target %s --dry-run, then add --yes after confirming", syncOutputTarget(target))}
-			projection := domain.NewErrorProjection("sync.push", err)
-			_ = writeApprovalRequiredSyncRun(root, req, "sync.push", syncplan.DirectionPush, err, &projection)
-			return projection, err
-		}
-		return buildCloudSyncProjection(ctx, "sync.push", root, req, syncplan.DirectionPush)
-	}
-	if !req.Yes {
-		err := &domain.CommandError{Code: "approval_required", Message: "sync push requires --yes", Hint: "Review the plan first with pinax sync diff, then add --yes after confirming"}
-		return domain.NewErrorProjection("sync.push", err), err
-	}
-	return writeSyncState(root, target, "push")
+	return s.syncTransfer(ctx, req, syncplan.DirectionPush)
 }
 
 func (s *Service) SyncPull(ctx context.Context, req SyncRequest) (domain.Projection, error) {
+	return s.syncTransfer(ctx, req, syncplan.DirectionPull)
+}
+
+func (s *Service) syncTransfer(ctx context.Context, req SyncRequest, direction syncplan.Direction) (domain.Projection, error) {
+	verb := string(direction)
+	command := "sync." + verb
 	root, target, err := cleanSyncRequest(req)
 	if err != nil {
-		return errorProjection("sync.pull", err), err
+		return errorProjection(command, err), err
 	}
 	req.Target = target
-	lock, err := syncdaemon.AcquireOperationLock(root, "sync.pull")
+	lock, err := syncdaemon.AcquireOperationLock(root, command)
 	if err != nil {
-		return commandErrorProjection("sync.pull", err)
+		return commandErrorProjection(command, err)
 	}
 	defer lock.Release()
 	if isCapsaSyncTarget(target) {
 		if !req.Yes && !req.DryRun {
-			err := &domain.CommandError{Code: "approval_required", Message: "sync pull requires --yes or --dry-run", Hint: fmt.Sprintf("Review the plan first with pinax sync pull --target %s --dry-run, then add --yes after confirming", syncOutputTarget(target))}
-			projection := domain.NewErrorProjection("sync.pull", err)
-			_ = writeApprovalRequiredSyncRun(root, req, "sync.pull", syncplan.DirectionPull, err, &projection)
+			err := &domain.CommandError{Code: "approval_required", Message: fmt.Sprintf("sync %s requires --yes or --dry-run", verb), Hint: fmt.Sprintf("Review the plan first with pinax sync %s --target %s --dry-run, then add --yes after confirming", verb, syncOutputTarget(target))}
+			projection := domain.NewErrorProjection(command, err)
+			_ = writeApprovalRequiredSyncRun(root, req, command, direction, err, &projection)
 			return projection, err
 		}
-		return buildCloudSyncProjection(ctx, "sync.pull", root, req, syncplan.DirectionPull)
+		return buildCloudSyncProjection(ctx, command, root, req, direction)
 	}
 	if !req.Yes {
-		err := &domain.CommandError{Code: "approval_required", Message: "sync pull requires --yes", Hint: "Review the plan first with pinax sync diff, then add --yes after confirming"}
-		return domain.NewErrorProjection("sync.pull", err), err
+		err := &domain.CommandError{Code: "approval_required", Message: fmt.Sprintf("sync %s requires --yes", verb), Hint: "Review the plan first with pinax sync diff, then add --yes after confirming"}
+		return domain.NewErrorProjection(command, err), err
 	}
-	return writeSyncState(root, target, "pull")
+	return writeSyncState(root, target, verb)
 }
 
 // Sync request normalization and sync-state projection helpers.

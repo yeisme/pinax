@@ -44,7 +44,7 @@ func TestPublishDocNativePushCreatesDocxMapping(t *testing.T) {
 	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"), "lark")
+	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"))
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// 新 profile 默认 renderer=native-docx。
@@ -83,7 +83,7 @@ func TestPublishDocNativePushRejectsMarkdownFileMappingMigration(t *testing.T) {
 	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"), "lark")
+	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"))
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// 先用 markdown-file 发布，建立 file mapping。
@@ -108,7 +108,7 @@ func TestPublishDocStatusShowsRendererAndObjectType(t *testing.T) {
 	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"), "lark")
+	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"))
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	runCLI(t, "publish", "doc", "profile", "set", "lark-doc", "--folder", "fld_test", "--as", "user", "--vault", root, "--json")
@@ -181,7 +181,7 @@ func TestPublishDocIndexPageNativeCreatesDocxIndex(t *testing.T) {
 	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"), "lark")
+	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"))
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	// index-page + native-docx → index 应为原生文档。

@@ -25,10 +25,10 @@ var whiteboardTokenAttrRe = regexp.MustCompile(`\stoken="([^"]+)"`)
 // 返回 plan 和 domain 层 render warnings（写入 package 和 mapping）。
 // 复杂转换逻辑（AST、资产解析）委托给 publishdocast 包；app 层只负责 note → body 编排。
 func publishDocBuildPlan(note domain.Note, profile domain.PublishDocProfile) (publishdocast.NativePlan, []domain.PublishDocRenderWarning) {
-	return publishDocBuildPlanFromMarkdown(note, profile, publishDocRenderedMarkdown(note, profile))
+	return publishDocBuildPlanFromMarkdown(note, publishDocRenderedMarkdown(note, profile))
 }
 
-func publishDocBuildPlanFromMarkdown(note domain.Note, profile domain.PublishDocProfile, body string) (publishdocast.NativePlan, []domain.PublishDocRenderWarning) {
+func publishDocBuildPlanFromMarkdown(note domain.Note, body string) (publishdocast.NativePlan, []domain.PublishDocRenderWarning) {
 	title := strings.TrimSpace(note.Title)
 	if title == "" {
 		title = note.ID
@@ -198,7 +198,7 @@ func publishDocNativeInsertAssets(ctx context.Context, root string, profile doma
 	for _, asset := range plan.Assets {
 		switch asset.Kind {
 		case "svg":
-			blockID, w := publishDocInsertWhiteboardAsset(ctx, profile, docToken, "svg", asset.Source, asset.Alt)
+			blockID, w := publishDocInsertWhiteboardAsset(ctx, profile, docToken, "svg", asset.Source)
 			if w != nil {
 				warnings = append(warnings, *w)
 			}
@@ -211,7 +211,7 @@ func publishDocNativeInsertAssets(ctx context.Context, root string, profile doma
 				warnings = append(warnings, domain.PublishDocRenderWarning{Code: domain.PublishDocWarningSVGUnavailable, Message: "SVG file could not be read for rendering", Detail: asset.Source})
 				continue
 			}
-			blockID, w := publishDocInsertWhiteboardAsset(ctx, profile, docToken, "svg", source, asset.Alt)
+			blockID, w := publishDocInsertWhiteboardAsset(ctx, profile, docToken, "svg", source)
 			if w != nil {
 				warnings = append(warnings, *w)
 			}
@@ -219,12 +219,12 @@ func publishDocNativeInsertAssets(ctx context.Context, root string, profile doma
 				assetBlocks = append(assetBlocks, blockID)
 			}
 		case "remote-svg":
-			source, dlErr := publishDocDownloadRemoteAsset(ctx, root, asset.Source)
+			source, dlErr := publishDocDownloadRemoteAsset(ctx, asset.Source)
 			if dlErr != nil {
 				warnings = append(warnings, domain.PublishDocRenderWarning{Code: "remote_image_download_failed", Message: "Remote SVG could not be downloaded for rendering", Detail: firstLineSafe(asset.Source)})
 				continue
 			}
-			blockID, w := publishDocInsertWhiteboardAsset(ctx, profile, docToken, "svg", source, asset.Alt)
+			blockID, w := publishDocInsertWhiteboardAsset(ctx, profile, docToken, "svg", source)
 			if w != nil {
 				warnings = append(warnings, *w)
 			}
@@ -267,7 +267,7 @@ func publishDocNativeInsertAssets(ctx context.Context, root string, profile doma
 
 // publishDocInsertWhiteboardAsset 把 Mermaid/SVG 源码渲染为原生白板并插入文档。
 // 三步：(1) append 空白 whiteboard (2) fetch 拿 whiteboard token (3) whiteboard +update 服务端渲染。
-func publishDocInsertWhiteboardAsset(ctx context.Context, profile domain.PublishDocProfile, docToken, inputFormat, source, alt string) (string, *domain.PublishDocRenderWarning) {
+func publishDocInsertWhiteboardAsset(ctx context.Context, profile domain.PublishDocProfile, docToken, inputFormat, source string) (string, *domain.PublishDocRenderWarning) {
 	if strings.TrimSpace(source) == "" {
 		return "", nil
 	}
@@ -278,7 +278,7 @@ func publishDocInsertWhiteboardAsset(ctx context.Context, profile domain.Publish
 	if ref.Token == "" {
 		return "", &domain.PublishDocRenderWarning{Code: warnCodeForFormat(inputFormat), Message: inputFormat + " diagram inserted but token could not be resolved", Detail: firstLineSafe(source)}
 	}
-	sourcePath, cleanup, writeErr := publishDocWriteAssetSource(docToken, ref.Token, source)
+	sourcePath, cleanup, writeErr := publishDocWriteAssetSource(ref.Token, source)
 	if writeErr != nil {
 		return "", &domain.PublishDocRenderWarning{Code: warnCodeForFormat(inputFormat), Message: inputFormat + " diagram source could not be staged", Detail: firstLineSafe(source)}
 	}
@@ -399,7 +399,7 @@ func publishDocReadVaultAsset(root, relPath string) (string, error) {
 }
 
 // publishDocWriteAssetSource 把 mermaid/svg 源码写入临时文件，供 --source @file 使用。
-func publishDocWriteAssetSource(docToken, wbToken, source string) (string, func(), *domain.CommandError) {
+func publishDocWriteAssetSource(wbToken, source string) (string, func(), *domain.CommandError) {
 	dir, err := os.MkdirTemp(".", ".pinax-publish-asset-*")
 	if err != nil {
 		return "", func() {}, &domain.CommandError{Code: "publish_temp_file_failed", Message: "Failed to create temporary asset directory", Hint: "Check current directory permissions"}

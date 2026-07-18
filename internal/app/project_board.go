@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/identity"
 	noteindex "github.com/yeisme/pinax/internal/index"
 )
 
@@ -582,7 +583,14 @@ func (s *Service) TaskAdopt(_ context.Context, req TaskAdoptRequest) (domain.Pro
 		return domain.NewErrorProjection("task.adopt", err), err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	adoption := domain.TaskAdoption{SchemaVersion: domain.TaskAdoptionSchemaVersion, TaskID: item.ItemID, Title: item.Title, Project: item.Project, Subproject: item.Subproject, SourcePath: item.Path, SourceLine: item.SourceLine, SourceStatus: "adopted", Column: item.Column, CreatedAt: now, UpdatedAt: now}
+	taskObjectID, err := s.allocateObjectID(identity.KindTask, root, item.SourceObjectID+":"+item.SourceAnchor)
+	if err != nil {
+		return errorProjection("task.adopt", err), err
+	}
+	if strings.TrimSpace(item.ObjectID) != "" {
+		taskObjectID = item.ObjectID
+	}
+	adoption := domain.TaskAdoption{ObjectID: taskObjectID, SourceObjectID: item.SourceObjectID, SourceAnchor: item.SourceAnchor, SchemaVersion: domain.TaskAdoptionSchemaVersion, TaskID: item.ItemID, Title: item.Title, Project: item.Project, Subproject: item.Subproject, SourcePath: item.Path, SourceLine: item.SourceLine, SourceStatus: "adopted", Column: item.Column, CreatedAt: now, UpdatedAt: now}
 	projection := domain.NewProjection("task.adopt", "Task adoption plan generated.")
 	projection.Facts["item_id"] = item.ItemID
 	projection.Facts["project"] = item.Project
@@ -809,25 +817,27 @@ func buildProjectBoard(root string, project domain.Project, workspace *domain.Pr
 			warnings = append(warnings, *warning)
 		}
 		item := domain.BoardItem{
-			ItemID:       boardItemID(note),
-			Title:        note.Title,
-			Column:       column,
-			SourceKind:   domain.BoardItemSourceNote,
-			SourceStatus: "managed",
-			NoteID:       note.ID,
-			Path:         note.Path,
-			Project:      note.Project,
-			Subproject:   note.Subproject,
-			Labels:       note.Labels,
-			Tags:         note.Tags,
-			Status:       note.Status,
-			Milestone:    strings.TrimSpace(note.Milestone),
-			Priority:     strings.TrimSpace(note.Priority),
-			Due:          strings.TrimSpace(note.Due),
-			DueAt:        strings.TrimSpace(firstBoardNonEmpty(note.DueAt, note.Due)),
-			BlockedBy:    note.BlockedBy,
-			EvidenceRefs: []string{note.Path},
-			Writable:     true,
+			ObjectID:       note.ID,
+			SourceObjectID: note.ID,
+			ItemID:         boardItemID(note),
+			Title:          note.Title,
+			Column:         column,
+			SourceKind:     domain.BoardItemSourceNote,
+			SourceStatus:   "managed",
+			NoteID:         note.ID,
+			Path:           note.Path,
+			Project:        note.Project,
+			Subproject:     note.Subproject,
+			Labels:         note.Labels,
+			Tags:           note.Tags,
+			Status:         note.Status,
+			Milestone:      strings.TrimSpace(note.Milestone),
+			Priority:       strings.TrimSpace(note.Priority),
+			Due:            strings.TrimSpace(note.Due),
+			DueAt:          strings.TrimSpace(firstBoardNonEmpty(note.DueAt, note.Due)),
+			BlockedBy:      note.BlockedBy,
+			EvidenceRefs:   []string{note.Path},
+			Writable:       true,
 		}
 		if workspace != nil {
 			item.WorkspacePath = workspace.WorkspacePath
@@ -855,9 +865,10 @@ func buildProjectBoard(root string, project domain.Project, workspace *domain.Pr
 		}
 		return items[i].Path < items[j].Path
 	})
-	board := domain.ProjectBoard{SchemaVersion: domain.ProjectBoardSchemaVersion, ProjectSlug: project.Slug, Title: project.Name, Columns: columns, Items: items, Facts: counts, Warnings: warnings, GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
+	board := domain.ProjectBoard{SchemaVersion: domain.ProjectBoardSchemaVersion, ProjectObjectID: project.ObjectID, ProjectSlug: project.Slug, Title: project.Name, Columns: columns, Items: items, Facts: counts, Warnings: warnings, GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 	if workspace != nil {
 		board.Subproject = workspace.Subproject
+		board.SubprojectObjectID = workspace.ObjectID
 		board.WorkspacePath = workspace.WorkspacePath
 		workspaceCopy := *workspace
 		board.Workspace = &workspaceCopy
@@ -882,38 +893,58 @@ func loadTaskAdoptionsForBoard(root, project string) map[string]domain.TaskAdopt
 			continue
 		}
 		out[adoption.TaskID] = adoption
+		if adoption.SourceObjectID != "" && adoption.SourceAnchor != "" {
+			out[adoption.SourceObjectID+"\x00"+adoption.SourceAnchor] = adoption
+		}
 	}
 	return out
 }
 
 func checklistBoardItems(note domain.Note, workspace *domain.ProjectWorkspace, columns []domain.BoardColumn, adoptions map[string]domain.TaskAdoption) []domain.BoardItem {
 	items := []domain.BoardItem{}
-	lines := strings.Split(note.Body, "\n")
-	for i, line := range lines {
+	occurrences := map[string]int{}
+	for i, line := range strings.Split(note.Body, "\n") {
 		title, ok := parseUncheckedChecklistTitle(line)
 		if !ok {
 			continue
 		}
-		itemID := checklistTaskID(note.Path, i+1, title)
+		anchorBase := checklistTaskAnchorBase(title)
+		occurrences[anchorBase]++
+		anchor := anchorBase
+		if !strings.HasPrefix(anchorBase, "block:") {
+			anchor = fmt.Sprintf("%s:%d", anchorBase, occurrences[anchorBase])
+		}
+		itemID := checklistTaskID(note.ID, anchor)
 		adoption, adopted := adoptions[itemID]
-		column := "inbox"
-		status := "inferred"
-		writable := false
+		if !adopted {
+			adoption, adopted = adoptions[note.ID+"\x00"+anchor]
+		}
+		column, status, writable, objectID := "inbox", "inferred", false, ""
 		if adopted {
-			column = adoption.Column
-			status = "adopted"
-			writable = true
+			column, status, writable, objectID = adoption.Column, "adopted", true, adoption.ObjectID
 		}
 		if !isKnownBoardColumnIn(column, columns) {
 			column = "inbox"
 		}
-		item := domain.BoardItem{ItemID: itemID, Title: title, Column: column, SourceKind: domain.BoardItemSourceInlineTask, SourceStatus: status, NoteID: note.ID, Path: note.Path, SourceLine: i + 1, Project: note.Project, Subproject: note.Subproject, Status: statusForBoardColumn(column), EvidenceRefs: []string{fmt.Sprintf("%s:%d", note.Path, i+1)}, Writable: writable}
+		item := domain.BoardItem{ObjectID: objectID, SourceObjectID: note.ID, SourceAnchor: anchor, ItemID: itemID, Title: title, Column: column, SourceKind: domain.BoardItemSourceInlineTask, SourceStatus: status, NoteID: note.ID, Path: note.Path, SourceLine: i + 1, Project: note.Project, Subproject: note.Subproject, Status: statusForBoardColumn(column), EvidenceRefs: []string{fmt.Sprintf("%s:%d", note.Path, i+1)}, Writable: writable}
 		if workspace != nil {
 			item.WorkspacePath = workspace.WorkspacePath
 		}
 		items = append(items, item)
 	}
 	return items
+}
+
+func checklistTaskAnchorBase(title string) string {
+	fields := strings.Fields(title)
+	for _, field := range fields {
+		if strings.HasPrefix(field, "^") && len(field) > 1 {
+			return "block:" + strings.TrimPrefix(field, "^")
+		}
+	}
+	normalized := strings.ToLower(strings.Join(fields, " "))
+	sum := sha1.Sum([]byte(normalized))
+	return "text:" + hex.EncodeToString(sum[:])[:12]
 }
 
 func parseUncheckedChecklistTitle(line string) (string, bool) {
@@ -925,9 +956,8 @@ func parseUncheckedChecklistTitle(line string) (string, bool) {
 	return title, title != ""
 }
 
-func checklistTaskID(path string, line int, title string) string {
-	input := fmt.Sprintf("%s:%d:%s", filepath.ToSlash(path), line, title)
-	sum := sha1.Sum([]byte(input))
+func checklistTaskID(sourceObjectID, anchor string) string {
+	sum := sha1.Sum([]byte(sourceObjectID + "\x00" + anchor))
 	return "task_" + hex.EncodeToString(sum[:])[:12]
 }
 
@@ -1004,7 +1034,7 @@ func patchProjectItemNote(_ context.Context, _ *Service, root string, note domai
 
 func projectItemProjection(command, summary string, note domain.Note, column string) domain.Projection {
 	projection := domain.NewProjection(command, summary)
-	item := domain.BoardItem{ItemID: boardItemID(note), Title: note.Title, Column: column, SourceKind: domain.BoardItemSourceNote, NoteID: note.ID, Path: note.Path, Project: note.Project, Subproject: note.Subproject, Tags: note.Tags, Labels: note.Labels, Status: statusForBoardColumn(column), Milestone: note.Milestone, Priority: note.Priority, Due: note.Due, DueAt: firstBoardNonEmpty(note.DueAt, note.Due), BlockedBy: note.BlockedBy, EvidenceRefs: []string{note.Path}, Writable: true}
+	item := domain.BoardItem{ObjectID: note.ID, SourceObjectID: note.ID, ItemID: boardItemID(note), Title: note.Title, Column: column, SourceKind: domain.BoardItemSourceNote, NoteID: note.ID, Path: note.Path, Project: note.Project, Subproject: note.Subproject, Tags: note.Tags, Labels: note.Labels, Status: statusForBoardColumn(column), Milestone: note.Milestone, Priority: note.Priority, Due: note.Due, DueAt: firstBoardNonEmpty(note.DueAt, note.Due), BlockedBy: note.BlockedBy, EvidenceRefs: []string{note.Path}, Writable: true}
 	if note.Subproject != "" {
 		item.WorkspacePath = note.Frontmatter["workspace_path"]
 	}
@@ -1347,7 +1377,7 @@ func boardItemID(note domain.Note) string {
 	if note.ID != "" {
 		return "item_" + strings.TrimPrefix(note.ID, "note_")
 	}
-	return "item_" + strings.TrimPrefix(stableNoteID(note.Path), "note_")
+	return "item_" + strings.TrimPrefix(deterministicShortID(note.Path), "note_")
 }
 
 func boardIndexState(root string, notes []domain.Note) (string, string) {

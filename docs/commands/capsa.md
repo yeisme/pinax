@@ -121,11 +121,13 @@ pinax capsa doctor --vault ./my-notes --json
 
 COS region endpoints: `cos.ap-guangzhou.myqcloud.com`, `cos.ap-beijing.myqcloud.com`, `cos.ap-shanghai.myqcloud.com`, `cos.ap-chengdu.myqcloud.com`, etc. Pinax suppresses checksum validation warnings for S3-compatible providers (commit `495978f`).
 
-### Weak encryption key warning
+### Persistent encryption key
 
-If you configure S3 direct or server transport without `--encryption-secret-ref`, Pinax warns `weak_encryption_key`. This means the encryption key is derived from the same credential reference used for transport auth (e.g., `profile://tencent-cos-pinax`).
+When `--encryption-secret-ref` is omitted, Pinax creates a random dedicated key once and stores it in the user-level secret store as `stored://capsa-sync-<workspace>`. The vault stores only the reference; the secret value stays outside the repository and vault. Later `capsa login`, `sync`, and daemon runs reuse the same key without prompting.
 
-For production use, always set a dedicated encryption key:
+For multiple devices, configure the same shared encryption secret reference on every device. A newly generated `stored://` secret on a second device is different and cannot decrypt the first device's remote data.
+
+For an explicit shared key, use a user-level secret reference:
 
 ```bash
 export PINAX_SYNC_SECRET="your-dedicated-encryption-secret"
@@ -152,7 +154,7 @@ pinax capsa doctor --vault ./my-notes --json
 
 Native Microsoft Graph / OneDrive OAuth is intentionally not part of the MVP. OneDrive examples should use rclone until a separate native Graph adapter design owns device-code login, token refresh, keychain storage, eTag conditional writes, and Graph-specific failure handling.
 
-`capsa login` requires the server configuration fields `--endpoint`, `--workspace`, `--device`, and `--secret-ref`. `--secret-ref` points to the Capsa auth token. `--encryption-secret-ref` points to the shared client-side sync encryption secret and falls back to `--secret-ref` only for older configs. For direct S3/rclone backends, Pinax stores provider references such as AWS profile or rclone remote name, not raw secrets.
+`capsa login` requires the server configuration fields `--endpoint`, `--workspace`, `--device`, and `--secret-ref`. `--secret-ref` points to the Capsa auth token. `--encryption-secret-ref` points to the shared client-side sync encryption secret. When omitted, Pinax creates and persists a dedicated user-level `stored://` secret. For direct S3/rclone backends, Pinax stores provider references such as AWS profile or rclone remote name, not raw secrets.
 
 Capsa Sync state is CLI-authored. The primary human-readable config is `.pinax/cloud/config.yaml`. For S3 direct backends, Pinax stores structured fields instead of an escaped endpoint URI:
 

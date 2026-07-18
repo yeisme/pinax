@@ -127,16 +127,31 @@ func Login(root string, req LoginRequest) (State, error) {
 	config := Config{SchemaVersion: ConfigSchemaVersion, BackendKind: backendKind, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, EncryptionSecretRef: encryptionSecretRef, S3: s3Config, CreatedAt: createdAt, UpdatedAt: now.Format(time.RFC3339)}
 	config = normalizeConfig(config)
 	session := DeviceSession{SchemaVersion: SessionSchemaVersion, SessionID: sessionID(root, workspaceID, deviceID, now), DeviceID: deviceID, Status: "active", IssuedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}
-	if err := writeYAML(configPath(root), configForDisk(config), 0o600); err != nil {
-		return State{}, err
-	}
-	if err := os.Remove(legacyConfigPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := WriteConfig(root, config); err != nil {
 		return State{}, err
 	}
 	if err := writeJSON(sessionPath(root), session, 0o600); err != nil {
 		return State{}, err
 	}
 	return State{Config: config, Session: session}, nil
+}
+
+// WriteConfig persists the Capsa runtime config through the application-layer
+// authoring boundary: atomic directory creation, restrictive permissions, and
+// removal of the legacy JSON path. The declaration→runtime compiler reuses this
+// writer so generated config never bypasses the canonical write path.
+func WriteConfig(root string, config Config) error {
+	root, err := cleanRoot(root)
+	if err != nil {
+		return err
+	}
+	if err := writeYAML(configPath(root), configForDisk(config), 0o600); err != nil {
+		return err
+	}
+	if err := os.Remove(legacyConfigPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func Load(root string) (State, error) {

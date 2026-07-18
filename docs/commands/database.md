@@ -66,3 +66,14 @@ pinax --api-url http://127.0.0.1:8787 database view render active-dv --json
 ```
 
 Remote handlers call the application service; they do not parse Markdown fences or `.pinax/views.json` directly.
+
+## Object-first SQL and Dataview
+
+`notes`、`tasks`、`links`、`properties` 等查询投影以 `object_id` 关联，同时保留 `note_id` 兼容列和当前 `path` 展示列。
+
+```bash
+pinax query run 'SELECT object_id, note_id, title, path FROM notes' --vault ./my-notes --json
+pinax dataview run 'TABLE object_id, title, path FROM #research' --vault ./my-notes --json
+```
+
+rename/move 后查询返回新 path，但 `object_id` 不变；双链和 relation projection 同时返回 source/target object ID。

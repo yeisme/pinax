@@ -67,6 +67,28 @@ type PublishRequest struct {
 	LiveEvents  PublishEventSink
 }
 
+func publishHostedDeployMissingCLI(policy publishops.DeployPolicy, code, message, hint string) (domain.Projection, error) {
+	cmdErr := &domain.CommandError{Code: code, Message: message, Hint: hint}
+	projection := domain.NewErrorProjection("publish.deploy", cmdErr)
+	projection.Facts["mode"] = string(policy.Mode)
+	projection.Facts["target"] = string(policy.Target)
+	projection.Facts["project"] = policy.Project
+	return projection, cmdErr
+}
+
+func publishHostedDeployProjection(policy publishops.DeployPolicy, result publishDeployResult) domain.Projection {
+	projection := domain.NewProjection("publish.deploy", "发布产物已部署。")
+	projection.Facts["mode"] = string(policy.Mode)
+	projection.Facts["target"] = string(policy.Target)
+	projection.Facts["project"] = policy.Project
+	projection.Facts["files"] = fmt.Sprint(result.Files)
+	if result.URL != "" {
+		projection.Facts["url"] = result.URL
+	}
+	projection.Data = map[string]any{"files": result.Files, "project": policy.Project, "url": result.URL}
+	return projection
+}
+
 type PublishEventSink func(PublishEvent)
 
 type PublishEvent struct {
@@ -124,7 +146,7 @@ func (s *Service) PublishProfileInit(ctx context.Context, req PublishRequest) (d
 	}
 	issues := publishops.ValidateProfile(profile)
 	if len(issues) > 0 {
-		cmdErr := publishValidationError("publish.profile.init", name, issues)
+		cmdErr := publishValidationError(name, issues)
 		return publishProfileProjection("publish.profile.init", profile, issues, "failed"), cmdErr
 	}
 	if err := writePublishProfile(root, profile); err != nil {
@@ -138,12 +160,12 @@ func (s *Service) PublishProfileInit(ctx context.Context, req PublishRequest) (d
 }
 
 func (s *Service) PublishProfileValidate(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.profile.validate")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.profile.validate", err), err
 	}
 	if len(issues) > 0 {
-		cmdErr := publishValidationError("publish.profile.validate", profile.Name, issues)
+		cmdErr := publishValidationError(profile.Name, issues)
 		return publishProfileProjection("publish.profile.validate", profile, issues, "failed"), cmdErr
 	}
 	projection := publishProfileProjection("publish.profile.validate", profile, nil, "success")
@@ -155,7 +177,7 @@ func (s *Service) PublishProfileValidate(ctx context.Context, req PublishRequest
 }
 
 func (s *Service) PublishProfileShow(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.profile.show")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.profile.show", err), err
 	}
@@ -183,7 +205,7 @@ func (s *Service) PublishProfileList(ctx context.Context, req PublishRequest) (d
 }
 
 func (s *Service) PublishDoctor(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.doctor")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.doctor", err), err
 	}
@@ -343,7 +365,7 @@ func publishDoctorDeployCommand(profile domain.PublishProfile, outArg string) st
 	}
 }
 
-func readPublishProfileRequest(req PublishRequest, command string) (domain.PublishProfile, []domain.PublishValidationIssue, error) {
+func readPublishProfileRequest(req PublishRequest) (domain.PublishProfile, []domain.PublishValidationIssue, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return domain.PublishProfile{}, nil, err
@@ -453,7 +475,7 @@ func listPublishProfiles(root string) ([]domain.PublishProfile, error) {
 	return profiles, nil
 }
 
-func publishValidationError(command, profile string, issues []domain.PublishValidationIssue) *domain.CommandError {
+func publishValidationError(profile string, issues []domain.PublishValidationIssue) *domain.CommandError {
 	return &domain.CommandError{Code: "publish_profile_invalid", Message: fmt.Sprintf("Publish profile %s has %d validation issue(s)", profile, len(issues)), Hint: "Fix the profile or recreate it with pinax publish profile init"}
 }
 
@@ -475,7 +497,7 @@ func publishProfileProjection(command string, profile domain.PublishProfile, iss
 		for i, issue := range issues {
 			projection.Facts[fmt.Sprintf("issue.%d.code", i+1)] = issue.Code
 		}
-		projection.Error = publishValidationError(command, profile.Name, issues)
+		projection.Error = publishValidationError(profile.Name, issues)
 	}
 	return projection
 }
@@ -497,12 +519,12 @@ func publishProfileMigrationPlan(profile domain.PublishProfile) domain.PublishPr
 }
 
 func (s *Service) PublishPlan(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.plan")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.plan", err), err
 	}
 	if len(issues) > 0 {
-		cmdErr := publishValidationError("publish.plan", profile.Name, issues)
+		cmdErr := publishValidationError(profile.Name, issues)
 		return publishProfileProjection("publish.plan", profile, issues, "failed"), cmdErr
 	}
 	if strings.TrimSpace(req.Target) != "" {
@@ -581,12 +603,12 @@ func (s *Service) PublishPlan(ctx context.Context, req PublishRequest) (domain.P
 }
 
 func (s *Service) PublishBuild(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.build")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.build", err), err
 	}
 	if len(issues) > 0 {
-		cmdErr := publishValidationError("publish.build", profile.Name, issues)
+		cmdErr := publishValidationError(profile.Name, issues)
 		return publishProfileProjection("publish.build", profile, issues, "failed"), cmdErr
 	}
 	if strings.TrimSpace(req.Target) != "" {
@@ -797,7 +819,7 @@ func (s *Service) PublishThemeEject(ctx context.Context, req PublishRequest) (do
 }
 
 func (s *Service) PublishDeploy(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.deploy")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.deploy", err), err
 	}
@@ -832,7 +854,7 @@ func (s *Service) PublishDeploy(ctx context.Context, req PublishRequest) (domain
 		profile.Deploy.Project = strings.TrimSpace(req.Project)
 	}
 	if len(issues) > 0 {
-		cmdErr := publishValidationError("publish.deploy", profile.Name, issues)
+		cmdErr := publishValidationError(profile.Name, issues)
 		return publishProfileProjection("publish.deploy", profile, issues, "failed"), cmdErr
 	}
 	root, err := cleanVaultPath(req.VaultPath)
@@ -901,53 +923,25 @@ func (s *Service) PublishDeploy(ctx context.Context, req PublishRequest) (domain
 	}
 	if policy.Mode == domain.PublishDeployModeVercel {
 		if _, err := exec.LookPath("vercel"); err != nil {
-			cmdErr := &domain.CommandError{Code: "publish_vercel_cli_missing", Message: "vercel CLI was not found on PATH", Hint: "Install Vercel CLI, authenticate with vercel login, and retry"}
-			projection := domain.NewErrorProjection("publish.deploy", cmdErr)
-			projection.Facts["mode"] = string(policy.Mode)
-			projection.Facts["target"] = string(policy.Target)
-			projection.Facts["project"] = policy.Project
-			return projection, cmdErr
+			return publishHostedDeployMissingCLI(policy, "publish_vercel_cli_missing", "vercel CLI was not found on PATH", "Install Vercel CLI, authenticate with vercel login, and retry")
 		}
 		result, err := publishDeployVercel(ctx, root, outDir, policy)
 		if err != nil {
 			cmdErr := &domain.CommandError{Code: "publish_deploy_failed", Message: publishRedactGitOutput(err.Error(), root), Hint: "Check Vercel CLI authentication and retry"}
 			return domain.NewErrorProjection("publish.deploy", cmdErr), cmdErr
 		}
-		projection := domain.NewProjection("publish.deploy", "发布产物已部署。")
-		projection.Facts["mode"] = string(policy.Mode)
-		projection.Facts["target"] = string(policy.Target)
-		projection.Facts["project"] = policy.Project
-		projection.Facts["files"] = fmt.Sprint(result.Files)
-		if result.URL != "" {
-			projection.Facts["url"] = result.URL
-		}
-		projection.Data = map[string]any{"files": result.Files, "project": policy.Project, "url": result.URL}
-		return projection, nil
+		return publishHostedDeployProjection(policy, result), nil
 	}
 	if policy.Mode == domain.PublishDeployModeCloudflarePages {
 		if _, err := exec.LookPath("wrangler"); err != nil {
-			cmdErr := &domain.CommandError{Code: "publish_wrangler_cli_missing", Message: "wrangler CLI was not found on PATH", Hint: "Install Wrangler, authenticate with wrangler login, and retry"}
-			projection := domain.NewErrorProjection("publish.deploy", cmdErr)
-			projection.Facts["mode"] = string(policy.Mode)
-			projection.Facts["target"] = string(policy.Target)
-			projection.Facts["project"] = policy.Project
-			return projection, cmdErr
+			return publishHostedDeployMissingCLI(policy, "publish_wrangler_cli_missing", "wrangler CLI was not found on PATH", "Install Wrangler, authenticate with wrangler login, and retry")
 		}
 		result, err := publishDeployCloudflarePages(ctx, root, outDir, policy)
 		if err != nil {
 			cmdErr := &domain.CommandError{Code: "publish_deploy_failed", Message: publishRedactGitOutput(err.Error(), root), Hint: "Check Wrangler authentication and retry"}
 			return domain.NewErrorProjection("publish.deploy", cmdErr), cmdErr
 		}
-		projection := domain.NewProjection("publish.deploy", "发布产物已部署。")
-		projection.Facts["mode"] = string(policy.Mode)
-		projection.Facts["target"] = string(policy.Target)
-		projection.Facts["project"] = policy.Project
-		projection.Facts["files"] = fmt.Sprint(result.Files)
-		if result.URL != "" {
-			projection.Facts["url"] = result.URL
-		}
-		projection.Data = map[string]any{"files": result.Files, "project": policy.Project, "url": result.URL}
-		return projection, nil
+		return publishHostedDeployProjection(policy, result), nil
 	}
 	if publishDeployRepoIsRemote(policy.Repo) {
 		cmdErr := &domain.CommandError{Code: "publish_deploy_remote_unsupported", Message: "Remote publish deploy is not implemented yet", Hint: "Use a local deploy repository path for this step"}
@@ -970,12 +964,12 @@ func (s *Service) PublishDeploy(ctx context.Context, req PublishRequest) (domain
 }
 
 func (s *Service) PublishPreviewApprove(ctx context.Context, req PublishRequest) (domain.Projection, error) {
-	profile, issues, err := readPublishProfileRequest(req, "publish.preview.approve")
+	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.preview.approve", err), err
 	}
 	if len(issues) > 0 {
-		cmdErr := publishValidationError("publish.preview.approve", profile.Name, issues)
+		cmdErr := publishValidationError(profile.Name, issues)
 		return publishProfileProjection("publish.preview.approve", profile, issues, "failed"), cmdErr
 	}
 	root, err := cleanVaultPath(req.VaultPath)

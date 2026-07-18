@@ -47,9 +47,29 @@ func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (dom
 	repo.ClearStopRequest()
 	state := syncdaemon.NewState(target, os.Getpid(), syncdaemon.DetectionWatch, syncdaemon.StatusRunning)
 	_ = repo.WriteState(state)
-	emitSyncDaemonEvent(repo, req.LiveEvents, syncdaemon.NewEvent("started", syncdaemon.StatusRunning, target))
+	manifestFacts, manifestErr := syncDaemonManifestPreflight(root)
+	if manifestErr != nil {
+		commandErr := commandErrorFromError(manifestErr)
+		state.Status = syncdaemon.StatusDegraded
+		state.LastErrorCode = commandErr.Code
+		state.Message = commandErr.Message
+		_ = repo.WriteState(state)
+		event := syncdaemon.NewEvent("manifest_write_blocked", syncdaemon.StatusDegraded, target)
+		event.ErrorCode = commandErr.Code
+		event.Message = commandErr.Message
+		event.Facts = manifestFacts
+		emitSyncDaemonEvent(repo, req.LiveEvents, event)
+		projection := syncDaemonProjection("sync.daemon.run", "Sync daemon remote writes blocked by manifest migration state.", root, state, nil)
+		projection.Facts["remote_write"] = "false"
+		projection.Actions = []domain.Action{{Name: "manifest_audit", Command: fmt.Sprintf("pinax sync manifest audit --vault %s --json", shellQuote(root))}}
+		return projection, commandErr
+	}
+	startedEvent := syncdaemon.NewEvent("started", syncdaemon.StatusRunning, target)
+	startedEvent.Facts = manifestFacts
+	emitSyncDaemonEvent(repo, req.LiveEvents, startedEvent)
 	loop := syncdaemon.Loop{Repo: repo, Target: target, Poller: cloudDaemonPoller{root: root, req: SyncRequest{VaultPath: root, Target: target}}, Executor: cloudDaemonExecutor{s: s, root: root, target: target}, PollInterval: defaultDaemonPollInterval(req.PollInterval), SyncTimeout: defaultDaemonSyncTimeout(req.SyncTimeout), EventSink: req.LiveEvents}
-	state, err = syncDaemonRunCycle(ctx, root, repo, loop, state, "startup")
+	envReloader := pinaxcloud.NewEnvReloader(root, nil)
+	state, err = syncDaemonRunCycle(ctx, root, repo, loop, state, "startup", envReloader, req.LiveEvents)
 	if req.Once || err != nil {
 		return syncDaemonProjection("sync.daemon.run", "Sync daemon cycle completed.", root, state, nil), err
 	}
@@ -82,7 +102,7 @@ func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (dom
 				for _, event := range events {
 					emitSyncDaemonEvent(repo, req.LiveEvents, syncdaemon.SyncDaemonEvent{Type: "local_change_detected", Status: state.Status, Target: target, Path: event.Path, Trigger: "local_change"})
 				}
-				state, _ = syncDaemonRunCycle(ctx, root, repo, loop, state, "local_change")
+				state, _ = syncDaemonRunCycle(ctx, root, repo, loop, state, "local_change", envReloader, req.LiveEvents)
 			}
 		case watchErr, ok := <-watchErrors:
 			if ok && watchErr != nil {
@@ -103,7 +123,7 @@ func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (dom
 				repo.ClearStopRequest()
 				return syncDaemonProjection("sync.daemon.run", "Sync daemon stopped.", root, state, nil), nil
 			}
-			state, _ = syncDaemonRunCycle(ctx, root, repo, loop, state, "poll")
+			state, _ = syncDaemonRunCycle(ctx, root, repo, loop, state, "poll", envReloader, req.LiveEvents)
 		}
 	}
 }
@@ -122,7 +142,7 @@ func (s *Service) SyncDaemonStart(_ context.Context, req SyncDaemonRequest) (dom
 		return errorProjection("sync.daemon.start", err), err
 	}
 	repo := syncdaemon.NewRepository(root)
-	if existing, readErr := repo.ReadState(); readErr == nil && existing.PID > 0 && (existing.Status == syncdaemon.StatusRunning || existing.Status == syncdaemon.StatusStopping) && syncdaemon.PIDAlive(existing.PID) {
+	if existing, readErr := repo.ReadState(); readErr == nil && existing.PID > 0 && (existing.Status != syncdaemon.StatusStopped) && syncdaemon.PIDAlive(existing.PID) {
 		err := &domain.CommandError{Code: "lock_held", Message: "sync daemon is already running", Hint: "Run pinax sync daemon status --vault <vault> --json to inspect the current runner"}
 		return domain.NewErrorProjection("sync.daemon.start", err), err
 	}
@@ -152,12 +172,13 @@ func (s *Service) SyncDaemonStart(_ context.Context, req SyncDaemonRequest) (dom
 	if err := cmd.Start(); err != nil {
 		return errorProjection("sync.daemon.start", err), err
 	}
+	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
-	state := syncdaemon.NewState(target, cmd.Process.Pid, syncdaemon.DetectionWatch, syncdaemon.StatusRunning)
+	state := syncdaemon.NewState(target, pid, syncdaemon.DetectionWatch, syncdaemon.StatusRunning)
 	_ = repo.WriteState(state)
 	_ = repo.AppendEvent(syncdaemon.NewEvent("start_requested", syncdaemon.StatusRunning, target))
 	projection := syncDaemonProjection("sync.daemon.start", "Sync daemon started.", root, state, nil)
-	projection.Facts["pid"] = fmt.Sprint(cmd.Process.Pid)
+	projection.Facts["pid"] = fmt.Sprint(pid)
 	return projection, nil
 }
 
@@ -171,9 +192,13 @@ func (s *Service) SyncDaemonStatus(_ context.Context, req SyncDaemonRequest) (do
 	if err != nil {
 		return errorProjection("sync.daemon.status", err), err
 	}
-	if state.PID > 0 && !syncdaemon.PIDAlive(state.PID) && state.Status == syncdaemon.StatusRunning {
+	if state.Status != syncdaemon.StatusStopped && (state.PID <= 0 || !syncdaemon.PIDAlive(state.PID)) {
+		state.PID = 0
 		state.Status = syncdaemon.StatusStopped
-		state.Message = "daemon process is not running"
+		if strings.TrimSpace(state.Message) == "" {
+			state.Message = "daemon process is not running"
+		}
+		repo.ClearStopRequest()
 		_ = repo.WriteState(state)
 	}
 	return syncDaemonProjection("sync.daemon.status", "Sync daemon status loaded.", root, state, nil), nil
@@ -189,11 +214,26 @@ func (s *Service) SyncDaemonStop(_ context.Context, req SyncDaemonRequest) (doma
 	if err != nil {
 		return errorProjection("sync.daemon.stop", err), err
 	}
-	_ = repo.RequestStop()
-	if state.PID > 0 {
-		if proc, findErr := os.FindProcess(state.PID); findErr == nil {
-			_ = proc.Signal(syscall.SIGTERM)
+	if state.PID <= 0 || !syncdaemon.PIDAlive(state.PID) || state.Status == syncdaemon.StatusStopped {
+		repo.ClearStopRequest()
+		state.PID = 0
+		state.Status = syncdaemon.StatusStopped
+		if strings.TrimSpace(state.Message) == "" {
+			state.Message = "daemon is not running"
 		}
+		_ = repo.WriteState(state)
+		_ = repo.AppendEvent(syncdaemon.NewEvent("stop_noop", syncdaemon.StatusStopped, state.Target))
+		return syncDaemonProjection("sync.daemon.stop", "Sync daemon already stopped.", root, state, nil), nil
+	}
+	if err := repo.RequestStop(); err != nil {
+		return errorProjection("sync.daemon.stop", err), err
+	}
+	proc, findErr := os.FindProcess(state.PID)
+	if findErr != nil {
+		return errorProjection("sync.daemon.stop", findErr), findErr
+	}
+	if err := proc.Signal(syscall.SIGTERM); err != nil && syncdaemon.PIDAlive(state.PID) {
+		return errorProjection("sync.daemon.stop", err), err
 	}
 	state.Status = syncdaemon.StatusStopping
 	_ = repo.WriteState(state)
@@ -237,8 +277,34 @@ func syncDaemonProjection(command, summary, root string, state syncdaemon.Daemon
 	projection.Facts["last_error_code"] = state.LastErrorCode
 	projection.Facts["next_retry_at"] = state.NextRetryAt
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "sync-daemon", "daemon.json"))}
+	if capability, err := readSyncManifestCapabilityState(root); err == nil {
+		projection.Facts["manifest_version"] = capability.ManifestVersion
+		projection.Facts["manifest_migration_status"] = capability.Status
+	}
 	projection.Data = map[string]any{"state": state, "events": events, "runtime_dir": filepath.ToSlash(filepath.Join(".pinax", "sync-daemon"))}
 	return projection
+}
+
+func syncDaemonManifestPreflight(root string) (map[string]any, error) {
+	facts := map[string]any{"remote_write": false}
+	if capability, err := readSyncManifestCapabilityState(root); err == nil {
+		facts["manifest_version"] = capability.ManifestVersion
+		facts["migration_status"] = capability.Status
+	} else if !os.IsNotExist(err) {
+		return facts, err
+	}
+	if err := syncManifestRemoteWriteGate(root); err != nil {
+		return facts, err
+	}
+	cloudState, _ := pinaxcloud.Load(root)
+	manifest, err := buildLocalCloudManifest(root, cloudState)
+	if err != nil {
+		return facts, err
+	}
+	facts["manifest_version"] = manifest.SchemaVersion
+	facts["object_count"] = len(manifest.Entries)
+	facts["tombstone_count"] = len(manifest.Deletes)
+	return facts, nil
 }
 
 func syncDaemonDefault(value, fallback string) string {
@@ -262,7 +328,21 @@ func defaultDaemonSyncTimeout(value time.Duration) time.Duration {
 	return value
 }
 
-func syncDaemonRunCycle(ctx context.Context, root string, repo syncdaemon.Repository, loop syncdaemon.Loop, state syncdaemon.DaemonState, trigger string) (syncdaemon.DaemonState, error) {
+func syncDaemonRunCycle(ctx context.Context, root string, repo syncdaemon.Repository, loop syncdaemon.Loop, state syncdaemon.DaemonState, trigger string, envReloader *pinaxcloud.EnvReloader, sink syncdaemon.EventSink) (syncdaemon.DaemonState, error) {
+	// Run-boundary env reload: check the encrypted env asset identity and, on
+	// change, unlock+parse a new snapshot for THIS run while retaining the last
+	// successful snapshot on failure. The reload never blocks on plaintext and
+	// emits a structured degraded event (no value leak) when it fails.
+	if envReloader != nil {
+		_, reloadStatus := envReloader.RunSnapshot()
+		if reloadStatus.Changed {
+			if reloadStatus.Loaded {
+				emitSyncDaemonEvent(repo, sink, syncdaemon.SyncDaemonEvent{Type: "sync_env_reloaded", Status: syncdaemon.StatusRunning, Target: state.Target, Trigger: trigger, Facts: map[string]any{"digest": envReloader.CurrentDigest()}})
+			} else if reloadStatus.Degraded {
+				emitSyncDaemonEvent(repo, sink, syncdaemon.SyncDaemonEvent{Type: "sync_env_reload_failed", Status: syncdaemon.StatusDegraded, Target: state.Target, ErrorCode: reloadStatus.Code, Trigger: trigger})
+			}
+		}
+	}
 	localHash, localDirty, hashErr := syncDaemonLocalDirty(root, state)
 	if hashErr != nil {
 		state.Status = syncdaemon.StatusDegraded
@@ -296,7 +376,8 @@ func syncDaemonLocalDirty(root string, state syncdaemon.DaemonState) (string, bo
 }
 
 func syncDaemonLocalHash(root string) (string, bool, error) {
-	manifest, err := pinaxcloud.BuildManifest(root)
+	cloudState, _ := pinaxcloud.Load(root)
+	manifest, err := buildLocalCloudManifest(root, cloudState)
 	if err != nil {
 		return "", false, err
 	}

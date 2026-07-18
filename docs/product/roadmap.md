@@ -19,7 +19,7 @@ Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它不�
 2. **Proof Loop 保护每次 agent 写入** — plan → snapshot → apply → receipt → restore 控制链，让每次写入都可审计、可预览、可回滚。Agent 读取默认返回 bounded projection（card/detail/context），不返回完整 body。
 3. **Cloud Sync 只协调密文** — 端侧 AES-256-GCM 加密，服务端只见 ciphertext revision，不保存明文、不执行本地工具。
 
-当前版本：**v0.1.5**。本地核心工作流已可用于日常使用，两个领域仍处于 Preview。
+当前版本：**v0.1.6**。本地核心工作流已可用于日常使用，两个领域仍处于 Preview。
 
 ---
 

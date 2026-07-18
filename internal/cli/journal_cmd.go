@@ -18,7 +18,7 @@ func addJournalCommands(root *cobra.Command, ctx commandBuildContext) {
 		c.Flags().BoolVar(ctx.journalPrev, "prev", false, "Read the previous day")
 		c.Flags().BoolVar(ctx.journalNext, "next", false, "Read the next day")
 		c.Flags().StringVar(ctx.noteTemplate, "template", "", "Journal template name")
-		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "journal_template", true, true))
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "journal_template", true))
 		if includeEditor {
 			c.Flags().StringVar(ctx.noteEditor, "editor", "", "Editor command; defaults to EDITOR")
 		}

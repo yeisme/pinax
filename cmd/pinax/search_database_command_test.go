@@ -425,9 +425,9 @@ func TestSearchLinkTargetCLI(t *testing.T) {
 func TestSearchLinkTargetAmbiguousCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	writeCLIFixture(t, filepath.Join(root, "Source.md"), pinaxNoteFixture("note_source", "Source", "[]", "Source links to [[Shared]].\n"))
-	writeCLIFixture(t, filepath.Join(root, "First.md"), pinaxNoteFixture("note_first", "Shared", "[]", "first\n"))
-	writeCLIFixture(t, filepath.Join(root, "Second.md"), pinaxNoteFixture("note_second", "Shared", "[]", "second\n"))
+	writeCLIFixture(t, filepath.Join(root, "Source.md"), pinaxNoteFixture("note_source", "Source", "Source links to [[Shared]].\n"))
+	writeCLIFixture(t, filepath.Join(root, "First.md"), pinaxNoteFixture("note_first", "Shared", "first\n"))
+	writeCLIFixture(t, filepath.Join(root, "Second.md"), pinaxNoteFixture("note_second", "Shared", "second\n"))
 
 	failed, err := runCLIExpectError("search", "Source", "--link-target", "Shared", "--vault", root, "--json")
 	if err == nil || !strings.Contains(failed, "link_target_ambiguous") || !strings.Contains(failed, "First.md") || !strings.Contains(failed, "Second.md") {

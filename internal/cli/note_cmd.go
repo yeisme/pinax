@@ -61,7 +61,7 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 		c.Flags().StringVar(ctx.noteKind, "kind", "", "Note kind, such as fleeting, reference, project, or daily")
 		c.Flags().StringVar(ctx.noteTags, "tags", "", "Comma-separated tags")
 		c.Flags().StringVar(ctx.noteTemplate, "template", "", "Template name")
-		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "note_template", true, true))
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "note_template", true))
 		c.Flags().StringArrayVar(ctx.templateVars, "var", nil, "Template variable in key=value format; repeatable")
 		c.Flags().StringVar(ctx.noteBody, "body", "", "Note body")
 		c.Flags().StringVar(ctx.noteFrom, "from", "", "Read the body from a Markdown file")

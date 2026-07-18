@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/identity"
 )
 
 var defaultProjectWorkspaceDirs = []string{
@@ -52,7 +53,7 @@ func (s *Service) ProjectSubprojectCreate(_ context.Context, req ProjectWorkspac
 	if err != nil {
 		return errorProjection("project.subproject.create", err), err
 	}
-	workspace, err := buildProjectWorkspace(root, project, subproject, req.Title, req.Template)
+	workspace, err := s.buildProjectWorkspace(root, project, subproject, req.Title, req.Template)
 	if err != nil {
 		return errorProjection("project.subproject.create", err), err
 	}
@@ -423,7 +424,7 @@ func validateSubprojectSlug(slug string) (string, *domain.CommandError) {
 	return value, nil
 }
 
-func buildProjectWorkspace(root string, project domain.Project, subproject, title, template string) (domain.ProjectWorkspace, error) {
+func (s *Service) buildProjectWorkspace(root string, project domain.Project, subproject, title, template string) (domain.ProjectWorkspace, error) {
 	if strings.TrimSpace(title) == "" {
 		title = subproject
 	}
@@ -435,10 +436,17 @@ func buildProjectWorkspace(root string, project domain.Project, subproject, titl
 		return domain.ProjectWorkspace{}, err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if existing, err := loadProjectWorkspace(root, project.Slug, subproject); err == nil {
-		now = existing.CreatedAt
+	objectID, err := s.allocateObjectID(identity.KindSubproject, root, project.Slug+":"+subproject)
+	if err != nil {
+		return domain.ProjectWorkspace{}, err
 	}
-	return domain.ProjectWorkspace{SchemaVersion: domain.ProjectWorkspaceSchemaVersion, Project: project.Slug, Subproject: subproject, Title: title, Template: template, WorkspacePath: workspacePath, Directories: workspaceDirectoryStatuses(root, workspacePath), Status: "active", CreatedAt: now, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}, nil
+	if existing, loadErr := loadProjectWorkspace(root, project.Slug, subproject); loadErr == nil {
+		now = existing.CreatedAt
+		if strings.TrimSpace(existing.ObjectID) != "" {
+			objectID = existing.ObjectID
+		}
+	}
+	return domain.ProjectWorkspace{ObjectID: objectID, ProjectObjectID: project.ObjectID, SchemaVersion: domain.ProjectWorkspaceSchemaVersion, Project: project.Slug, Subproject: subproject, Title: title, Template: template, WorkspacePath: workspacePath, Directories: workspaceDirectoryStatuses(root, workspacePath), Status: "active", CreatedAt: now, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}, nil
 }
 
 func workspaceDirectoryStatuses(root, workspacePath string) []domain.ProjectWorkspaceDirectory {

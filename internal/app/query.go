@@ -556,49 +556,34 @@ func stableViewID(name string) string {
 }
 
 func (s *Service) QueryRun(ctx context.Context, req QueryRequest) (projection domain.Projection, err error) {
-	root, err := cleanVaultPath(req.VaultPath)
-	if err != nil {
-		return errorProjection("query.run", err), err
-	}
-	facts := monitorQueryFacts("source", req.SQL)
-	facts["lazy_index"] = fmt.Sprint(req.LazyIndex)
-	facts["limit"] = fmt.Sprint(req.Limit)
-	rec := startMonitorRun(root, "query.run", facts)
-	defer func() {
-		runID, evidence := rec.Finish(projection.Status, err)
-		addMonitorProjectionFacts(&projection, runID, evidence)
-	}()
-	endStep := rec.BeginStep("query.parse", nil)
-	ast, err := searchops.ParseSQL(req.SQL)
-	if err != nil {
-		endStep(err)
-		return errorProjection("query.run", err), err
-	}
-	endStep(nil)
-	return s.runQueryAST(ctx, "query.run", "Query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast, rec)
+	return s.runParsedQuery(ctx, "query.run", "Query executed.", "query.parse", req.VaultPath, req.SQL, req.LazyIndex, req.Limit, req.Sort, req.Cursor, searchops.ParseSQL)
 }
 
 func (s *Service) DataviewRun(ctx context.Context, req DataviewRequest) (projection domain.Projection, err error) {
-	root, err := cleanVaultPath(req.VaultPath)
+	return s.runParsedQuery(ctx, "dataview.run", "Dataview query executed.", "dataview.parse", req.VaultPath, req.Query, req.LazyIndex, req.Limit, req.Sort, req.Cursor, searchops.ParseDataview)
+}
+
+func (s *Service) runParsedQuery(ctx context.Context, command, summary, parseStep, vaultPath, source string, lazyIndex bool, limit int, sort, cursor string, parse func(string) (domain.QueryAST, error)) (projection domain.Projection, err error) {
+	root, err := cleanVaultPath(vaultPath)
 	if err != nil {
-		return errorProjection("dataview.run", err), err
+		return errorProjection(command, err), err
 	}
-	facts := monitorQueryFacts("source", req.Query)
-	facts["lazy_index"] = fmt.Sprint(req.LazyIndex)
-	facts["limit"] = fmt.Sprint(req.Limit)
-	rec := startMonitorRun(root, "dataview.run", facts)
+	facts := monitorQueryFacts("source", source)
+	facts["lazy_index"] = fmt.Sprint(lazyIndex)
+	facts["limit"] = fmt.Sprint(limit)
+	rec := startMonitorRun(root, command, facts)
 	defer func() {
 		runID, evidence := rec.Finish(projection.Status, err)
 		addMonitorProjectionFacts(&projection, runID, evidence)
 	}()
-	endStep := rec.BeginStep("dataview.parse", nil)
-	ast, err := searchops.ParseDataview(req.Query)
+	endStep := rec.BeginStep(parseStep, nil)
+	ast, err := parse(source)
 	if err != nil {
 		endStep(err)
-		return errorProjection("dataview.run", err), err
+		return errorProjection(command, err), err
 	}
 	endStep(nil)
-	return s.runQueryAST(ctx, "dataview.run", "Dataview query executed.", root, req.LazyIndex, req.Limit, req.Sort, req.Cursor, ast, rec)
+	return s.runQueryAST(ctx, command, summary, root, lazyIndex, limit, sort, cursor, ast, rec)
 }
 
 func (s *Service) runQueryAST(ctx context.Context, command, summary, root string, lazyIndex bool, limit int, sort string, cursor string, ast domain.QueryAST, rec *monitorRecorder) (domain.Projection, error) {

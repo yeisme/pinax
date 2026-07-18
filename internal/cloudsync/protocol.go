@@ -11,11 +11,13 @@ import (
 )
 
 const (
-	EnvelopeSchemaVersion = "pinax.cloud.envelope.v1"
-	HeadSchemaVersion     = "pinax.cloud.head.v1"
-	RevisionSchemaVersion = "pinax.cloud.revision.v1"
-	ManifestSchemaVersion = "pinax.cloud.manifest.v1"
-	ConflictSchemaVersion = "pinax.cloud.conflict.v1"
+	EnvelopeSchemaVersion   = "pinax.cloud.envelope.v1"
+	HeadSchemaVersion       = "pinax.cloud.head.v1"
+	RevisionSchemaVersion   = "pinax.cloud.revision.v1"
+	ManifestSchemaVersionV1 = "pinax.cloud.manifest.v1"
+	ManifestSchemaVersionV2 = "pinax.cloud.manifest.v2"
+	ManifestSchemaVersion   = ManifestSchemaVersionV1
+	ConflictSchemaVersion   = "pinax.cloud.conflict.v1"
 )
 
 var (
@@ -73,6 +75,10 @@ type Manifest struct {
 }
 
 type ManifestEntry struct {
+	ObjectID    string `json:"object_id,omitempty"`
+	ObjectKind  string `json:"object_kind,omitempty"`
+	RevisionID  string `json:"revision_id,omitempty"`
+	DeviceID    string `json:"device_id,omitempty"`
 	Path        string `json:"path"`
 	BlobID      string `json:"blob_id"`
 	PlainSHA256 string `json:"plain_sha256"`
@@ -87,15 +93,26 @@ type ManifestDelete struct {
 	TombstoneID string `json:"tombstone_id"`
 	DeletedAt   string `json:"deleted_at,omitempty"`
 	TrashBlobID string `json:"trash_blob_id,omitempty"`
+	RevisionID  string `json:"revision_id,omitempty"`
+	DeviceID    string `json:"device_id,omitempty"`
 }
 
 func (m Manifest) Validate() error {
-	if m.SchemaVersion != ManifestSchemaVersion {
+	if m.SchemaVersion != ManifestSchemaVersionV1 && m.SchemaVersion != ManifestSchemaVersionV2 {
 		return fmt.Errorf("invalid_manifest")
 	}
+	objectIDs := map[string]bool{}
+	paths := map[string]bool{}
 	for _, entry := range m.Entries {
 		if strings.TrimSpace(entry.Path) == "" || unsafePlaintextToken(entry.BlobID) || strings.TrimSpace(entry.BlobID) == "" || strings.TrimSpace(entry.PlainSHA256) == "" {
 			return fmt.Errorf("invalid_manifest")
+		}
+		if m.SchemaVersion == ManifestSchemaVersionV2 {
+			if strings.TrimSpace(entry.ObjectID) == "" || strings.TrimSpace(entry.ObjectKind) == "" || strings.TrimSpace(entry.RevisionID) == "" || strings.TrimSpace(entry.DeviceID) == "" || objectIDs[entry.ObjectID] || paths[entry.Path] {
+				return fmt.Errorf("invalid_manifest")
+			}
+			objectIDs[entry.ObjectID] = true
+			paths[entry.Path] = true
 		}
 	}
 	for _, deleteMarker := range m.Deletes {
@@ -103,6 +120,9 @@ func (m Manifest) Validate() error {
 			return fmt.Errorf("invalid_manifest")
 		}
 		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" && unsafePlaintextToken(deleteMarker.TrashBlobID) {
+			return fmt.Errorf("invalid_manifest")
+		}
+		if m.SchemaVersion == ManifestSchemaVersionV2 && (strings.TrimSpace(deleteMarker.ObjectID) == "" || strings.TrimSpace(deleteMarker.RevisionID) == "" || strings.TrimSpace(deleteMarker.DeviceID) == "") {
 			return fmt.Errorf("invalid_manifest")
 		}
 	}

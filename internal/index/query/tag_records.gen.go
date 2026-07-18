@@ -28,6 +28,7 @@ func newTagRecord(db *gorm.DB, opts ...gen.DOOption) tagRecord {
 	tableName := _tagRecord.tagRecordDo.TableName()
 	_tagRecord.ALL = field.NewAsterisk(tableName)
 	_tagRecord.ID = field.NewUint(tableName, "id")
+	_tagRecord.ObjectID = field.NewString(tableName, "object_id")
 	_tagRecord.NotePath = field.NewString(tableName, "note_path")
 	_tagRecord.Tag = field.NewString(tableName, "tag")
 
@@ -41,6 +42,7 @@ type tagRecord struct {
 
 	ALL      field.Asterisk
 	ID       field.Uint
+	ObjectID field.String
 	NotePath field.String
 	Tag      field.String
 
@@ -60,6 +62,7 @@ func (t tagRecord) As(alias string) *tagRecord {
 func (t *tagRecord) updateTableName(table string) *tagRecord {
 	t.ALL = field.NewAsterisk(table)
 	t.ID = field.NewUint(table, "id")
+	t.ObjectID = field.NewString(table, "object_id")
 	t.NotePath = field.NewString(table, "note_path")
 	t.Tag = field.NewString(table, "tag")
 
@@ -78,8 +81,9 @@ func (t *tagRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (t *tagRecord) fillFieldMap() {
-	t.fieldMap = make(map[string]field.Expr, 3)
+	t.fieldMap = make(map[string]field.Expr, 4)
 	t.fieldMap["id"] = t.ID
+	t.fieldMap["object_id"] = t.ObjectID
 	t.fieldMap["note_path"] = t.NotePath
 	t.fieldMap["tag"] = t.Tag
 }

@@ -15,7 +15,7 @@ func TestPublishDocLarkWorkflowCreatesMappingAndStatus(t *testing.T) {
 	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"), "lark")
+	writeFakePublishCLI(t, filepath.Join(fakeBin, "lark-cli"))
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	profileOut := runCLI(t, "publish", "doc", "profile", "set", "lark-doc", "--space", "spc_test", "--folder", "fld_test", "--as", "user", "--vault", root, "--json")
@@ -83,8 +83,9 @@ func TestPublishDocLarkWorkflowCreatesMappingAndStatus(t *testing.T) {
 	}
 }
 
-func writeFakePublishCLI(t *testing.T, path, provider string) {
+func writeFakePublishCLI(t *testing.T, path string) {
 	t.Helper()
+	const provider = "lark"
 	body := "#!/bin/sh\n" +
 		"if [ \"$1\" = \"drive\" ] && [ \"$2\" = \"+create-folder\" ]; then\n" +
 		"  echo '{\"status\":\"ok\",\"id\":\"fld_fake_child\",\"url\":\"https://example.test/folder/fld_fake_child\"}'\n" +

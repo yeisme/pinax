@@ -25,11 +25,10 @@ func findProjectionWarning(projection domain.Projection, code string) *domain.Pr
 	return nil
 }
 
-// TestWeakKeyWarningOnProfileCredentialRef mirrors the acceptance case: setting
-// an S3 backend via --profile without a dedicated --encryption-secret-ref yields
-// a weak_encryption_key warning, because the encryption key is derived from the
-// provider credential reference.
-func TestWeakKeyWarningOnProfileCredentialRef(t *testing.T) {
+// TestProfileCredentialRefGetsPersistentEncryptionSecret verifies that an S3
+// backend without an explicit encryption ref gets a stable user-level secret.
+func TestProfileCredentialRefGetsPersistentEncryptionSecret(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 	root := newWeakKeyVault(t)
 	svc := NewService()
 	projection, err := svc.CapsaBackendSetS3(context.Background(), CloudBackendSetRequest{
@@ -45,12 +44,46 @@ func TestWeakKeyWarningOnProfileCredentialRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CapsaBackendSetS3: %v", err)
 	}
-	warning := findProjectionWarning(projection, "weak_encryption_key")
-	if warning == nil {
-		t.Fatalf("expected weak_encryption_key warning, projection warnings = %#v", projection.Warnings)
+	if warning := findProjectionWarning(projection, "weak_encryption_key"); warning != nil {
+		t.Fatalf("did not expect weak_encryption_key after automatic persistence: %#v", warning)
 	}
-	if warning.Hint == "" {
-		t.Errorf("weak_encryption_key warning should carry a remediation hint")
+	if projection.Facts["encryption_secret_persistence"] != "user_config" {
+		t.Fatalf("encryption_secret_persistence = %#v", projection.Facts["encryption_secret_persistence"])
+	}
+	ref, err := persistentEncryptionSecretRef(root, "personal", "")
+	if err != nil || ref != "stored://capsa-sync-personal" {
+		t.Fatalf("persistent ref = %q, err=%v", ref, err)
+	}
+}
+
+func TestExistingEncryptionSecretRefIsReused(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	root := newWeakKeyVault(t)
+	svc := NewService()
+	request := CloudBackendSetRequest{
+		VaultPath:           root,
+		Kind:                "s3",
+		Bucket:              "notes",
+		Region:              "us-east-1",
+		Prefix:              "pinax-sync/",
+		Profile:             "work",
+		WorkspaceID:         "personal",
+		DeviceID:            "laptop",
+		EncryptionSecretRef: "plain:original-sync-key",
+	}
+	if _, err := svc.CapsaBackendSetS3(context.Background(), request); err != nil {
+		t.Fatalf("initial CapsaBackendSetS3: %v", err)
+	}
+	request.EncryptionSecretRef = ""
+	if _, err := svc.CapsaBackendSetS3(context.Background(), request); err != nil {
+		t.Fatalf("repeat CapsaBackendSetS3: %v", err)
+	}
+	state, err := pinaxcloud.Load(root)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if state.Config.EncryptionSecretRef != "plain:original-sync-key" {
+		t.Fatalf("encryption secret ref changed to %q", state.Config.EncryptionSecretRef)
 	}
 }
 
@@ -174,11 +207,12 @@ func TestDoctorEncryptionKeyMatchNoWarning(t *testing.T) {
 	root := newWeakKeyVault(t)
 	svc := NewService()
 	if _, err := svc.CloudLogin(context.Background(), CloudLoginRequest{
-		VaultPath:   root,
-		Endpoint:    "file://" + filepath.Join(t.TempDir(), "store"),
-		WorkspaceID: "ws",
-		DeviceID:    "laptop",
-		SecretRef:   "plain:current-secret",
+		VaultPath:           root,
+		Endpoint:            "file://" + filepath.Join(t.TempDir(), "store"),
+		WorkspaceID:         "ws",
+		DeviceID:            "laptop",
+		SecretRef:           "plain:current-secret",
+		EncryptionSecretRef: "plain:current-secret",
 	}); err != nil {
 		t.Fatalf("CloudLogin: %v", err)
 	}

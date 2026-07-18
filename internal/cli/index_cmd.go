@@ -108,7 +108,7 @@ func addIndexCommands(root *cobra.Command, ctx commandBuildContext) {
 	pageCmd := &cobra.Command{Use: "page", Short: "Generate and refresh index pages"}
 	addPageTemplateFlag := func(c *cobra.Command) {
 		c.Flags().StringVar(&pageTemplate, "template", "", "Index page template name")
-		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true, true))
+		_ = c.RegisterFlagCompletionFunc("template", templateNameCompletion(func() string { return *ctx.vaultPath }, "index_template", true))
 	}
 	pagePreviewCmd := &cobra.Command{Use: "preview <name>", Short: "Preview an index page without writing files", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		projection, err := ctx.svc.PreviewIndexPage(cmd.Context(), app.IndexPageRequest{VaultPath: *ctx.vaultPath, Name: args[0], Template: pageTemplate})

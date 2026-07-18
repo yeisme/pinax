@@ -172,6 +172,12 @@ func (s *Service) QueryBacklinks(ctx context.Context, req NoteBacklinkGraphReque
 	}
 	_, incoming := BuildEnhancedLinkGraph(notes)
 	backlinks := incoming[note.Path]
+	engine, indexStatus := linkGraphEngineStatus(root)
+	if engine == "index" && strings.TrimSpace(note.ID) != "" {
+		if indexed, indexErr := noteindex.LinksByTargetObjectID(root, note.ID); indexErr == nil {
+			backlinks = indexedBacklinks(indexed, notes)
+		}
+	}
 	if !req.IncludeBroken {
 		backlinks = filterLinks(backlinks, false, "", "", true)
 		backlinks = filterByStatus(backlinks, "broken", false)
@@ -179,7 +185,6 @@ func (s *Service) QueryBacklinks(ctx context.Context, req NoteBacklinkGraphReque
 	if req.Limit > 0 && len(backlinks) > req.Limit {
 		backlinks = backlinks[:req.Limit]
 	}
-	engine, indexStatus := linkGraphEngineStatus(root)
 	projection := domain.NewProjection("note.backlinks", "Note backlinks listed.")
 	projection.Facts["path"] = note.Path
 	projection.Facts["note_id"] = note.ID
@@ -343,6 +348,20 @@ func linkGraphEngineStatus(root string) (engine, indexStatus string) {
 		return "index", "fresh"
 	}
 	return "scan", "stale"
+}
+
+func indexedBacklinks(rows []noteindex.LinkRecord, notes []domain.Note) []domain.NoteLink {
+	byID := map[string]domain.Note{}
+	for _, note := range notes {
+		byID[note.ID] = note
+	}
+	links := make([]domain.NoteLink, 0, len(rows))
+	for _, row := range rows {
+		source := byID[row.SourceObjectID]
+		links = append(links, domain.NoteLink{SourceObjectID: row.SourceObjectID, TargetObjectID: row.TargetObjectID, SourceNoteID: row.SourceNoteID, TargetNoteID: row.TargetNoteID, SourcePath: row.NotePath, SourceTitle: source.Title, Target: row.Target, TargetPath: row.TargetPath, TargetTitle: row.TargetTitle, TargetRaw: row.TargetRaw, TargetAlias: row.TargetAlias, TargetHeading: row.TargetHeading, Kind: row.Kind, Broken: row.Broken, Status: row.Status, Line: row.Line, Evidence: row.Evidence})
+	}
+	notelinks.SortNoteLinks(links)
+	return links
 }
 
 func noteGraphNoteSummary(note domain.Note) domain.Note {

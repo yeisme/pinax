@@ -28,3 +28,7 @@ pinax proof loop run --vault ./my-notes --apply --yes --json
 `pinax proof loop run` is the compact command for agent-safe maintenance review. It must not hide the underlying approval model: apply mode is not the default, and high-risk repairs or organize actions still require an explicit `--apply --yes` request after the user has reviewed the plan and snapshot requirement.
 
 For lower-level maintenance commands, see [`vault`](./vault.md), [`metadata`](./metadata.md), [`repair`](./repair.md), [`organize`](./organize.md), [`version`](./version.md), and [`record`](./record.md).
+
+## Object-bound plans and apply receipts
+
+repair、organize 和 metadata plan 会携带 canonical `object_id`、`expected_record_version`、`expected_content_revision` 与 `observed_path`。apply 后写入 `.pinax/receipts/<receipt-id>.json`，包含 before/after revision、ledger sequence、snapshot、changed paths 和 `sync_ready`，但不包含 note body、凭据、provider payload 或隐藏参数。

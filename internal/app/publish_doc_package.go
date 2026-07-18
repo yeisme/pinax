@@ -34,7 +34,7 @@ func buildPublishDocPackage(root string, profile domain.PublishDocProfile, note 
 	if profile.Target == domain.PublishDocTargetLarkDoc {
 		pkg.Renderer = profile.ResolveDocRenderer()
 		if pkg.Renderer == domain.PublishDocRendererNativeDocx {
-			plan, warnings := publishDocBuildPlanFromMarkdown(note, profile, pkg.BodyMarkdown)
+			plan, warnings := publishDocBuildPlanFromMarkdown(note, pkg.BodyMarkdown)
 			planBody, marshalErr := publishdocast.MarshalNativePlan(plan)
 			if marshalErr != nil {
 				return domain.PublishDocPackage{}, domain.PublishDocCrossDocSummary{}, marshalErr

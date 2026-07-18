@@ -503,3 +503,22 @@ func containsSurface(surfaces []string, want string) bool {
 	}
 	return false
 }
+
+func TestRPCNoteReadReturnsCanonicalObjectFacts(t *testing.T) {
+	root := t.TempDir()
+	objectID := "01982d84-2b48-7000-8000-000000000061"
+	notePath := filepath.Join(root, "notes", "object.md")
+	if err := os.MkdirAll(filepath.Dir(notePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notePath, []byte("---\nschema_version: pinax.note.v1\nnote_id: "+objectID+"\ntitle: Object\n---\n\n# Object\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := NewRPCDispatcher(app.NewService(), root).Call(context.Background(), RPCRequest{Method: "Pinax.Note.Read", Params: map[string]any{"ref": "notes/object.md", "display": "card"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Facts["object_id"] != objectID || projection.Facts["object_kind"] != "note" {
+		t.Fatalf("facts = %#v", projection.Facts)
+	}
+}

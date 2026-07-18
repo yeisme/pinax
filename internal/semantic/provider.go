@@ -54,10 +54,12 @@ var providerRegistry = map[string]providerRegistration{
 	},
 	"openai": {
 		info: func() ProviderInfo {
-			return ProviderInfo{Name: "openai", DefaultModel: OpenAIDefaultModel, Configured: strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) != "", CredentialSource: "env:OPENAI_API_KEY", RequiresCredential: true}
+			key, source := resolveOpenAIAPIKey()
+			return ProviderInfo{Name: "openai", DefaultModel: OpenAIDefaultModel, Configured: key != "", CredentialSource: source, RequiresCredential: true}
 		},
 		factory: func(model string) (Provider, error) {
-			return OpenAIProvider{APIKey: strings.TrimSpace(os.Getenv("OPENAI_API_KEY")), ModelName: model, BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))}, nil
+			key, _ := resolveOpenAIAPIKey()
+			return OpenAIProvider{APIKey: key, ModelName: model, BaseURL: strings.TrimSpace(os.Getenv("OPENAI_BASE_URL"))}, nil
 		},
 	},
 	"ollama": {

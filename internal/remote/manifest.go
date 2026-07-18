@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"mime"
 	"os"
@@ -15,7 +16,11 @@ import (
 	"github.com/yeisme/pinax/internal/vaultignore"
 )
 
-const ManifestSchemaVersion = "pinax.cloud.manifest.v1"
+const (
+	ManifestSchemaVersionV1 = "pinax.cloud.manifest.v1"
+	ManifestSchemaVersionV2 = "pinax.cloud.manifest.v2"
+	ManifestSchemaVersion   = ManifestSchemaVersionV1
+)
 
 const MaxManifestFileBytes = 100 * 1024 * 1024
 
@@ -28,6 +33,9 @@ type Manifest struct {
 }
 
 type ManifestEntry struct {
+	ObjectID   string `json:"object_id,omitempty"`
+	RevisionID string `json:"revision_id,omitempty"`
+	DeviceID   string `json:"device_id,omitempty"`
 	Path       string `json:"path"`
 	PathHash   string `json:"path_hash"`
 	BlobID     string `json:"blob_id"`
@@ -36,6 +44,7 @@ type ManifestEntry struct {
 	ObjectKind string `json:"object_kind,omitempty"`
 	Mode       uint32 `json:"mode,omitempty"`
 	MediaType  string `json:"media_type,omitempty"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 type ManifestDelete struct {
@@ -45,6 +54,8 @@ type ManifestDelete struct {
 	TombstoneID string `json:"tombstone_id"`
 	DeletedAt   string `json:"deleted_at,omitempty"`
 	TrashBlobID string `json:"trash_blob_id,omitempty"`
+	RevisionID  string `json:"revision_id,omitempty"`
+	DeviceID    string `json:"device_id,omitempty"`
 }
 
 func BuildManifest(root string) (Manifest, error) {
@@ -96,7 +107,7 @@ func BuildManifest(root string) (Manifest, error) {
 		if err := writeBlobCache(root, blobID, b); err != nil {
 			return err
 		}
-		entries = append(entries, ManifestEntry{Path: rel, PathHash: PathHash(rel), BlobID: blobID, Size: int64(len(b)), SHA256: contentSHA256(b), ObjectKind: manifestObjectKind(rel), Mode: uint32(info.Mode().Perm()), MediaType: mediaType(rel)})
+		entries = append(entries, ManifestEntry{Path: rel, PathHash: PathHash(rel), BlobID: blobID, Size: int64(len(b)), SHA256: contentSHA256(b), ObjectKind: manifestObjectKind(rel), Mode: uint32(info.Mode().Perm()), MediaType: mediaType(rel), UpdatedAt: info.ModTime().UTC().Format(time.RFC3339Nano)})
 		return nil
 	}); err != nil {
 		return Manifest{}, err
@@ -246,4 +257,79 @@ func writeBlobCache(root, blobID string, content []byte) error {
 		return err
 	}
 	return os.WriteFile(path, content, 0o600)
+}
+
+type ManifestIdentity struct {
+	ObjectID   string
+	ObjectKind string
+}
+
+func BuildManifestV2(root, deviceID string, identities map[string]ManifestIdentity) (Manifest, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return Manifest{}, fmt.Errorf("manifest_device_required")
+	}
+	manifest, err := BuildManifest(root)
+	if err != nil {
+		return Manifest{}, err
+	}
+	seenObjectIDs := make(map[string]string, len(manifest.Entries))
+	for index := range manifest.Entries {
+		entry := &manifest.Entries[index]
+		identityFact, ok := identities[entry.Path]
+		if !ok || strings.TrimSpace(identityFact.ObjectID) == "" || strings.TrimSpace(identityFact.ObjectKind) == "" {
+			return Manifest{}, fmt.Errorf("manifest_identity_required: %s", entry.Path)
+		}
+		objectID := strings.TrimSpace(identityFact.ObjectID)
+		if previousPath, duplicate := seenObjectIDs[objectID]; duplicate {
+			return Manifest{}, fmt.Errorf("manifest_duplicate_object_id: %s: %s, %s", objectID, previousPath, entry.Path)
+		}
+		seenObjectIDs[objectID] = entry.Path
+		entry.ObjectID = objectID
+		entry.ObjectKind = strings.TrimSpace(identityFact.ObjectKind)
+		entry.RevisionID = manifestEntryRevisionID(objectID, entry.BlobID)
+		entry.DeviceID = deviceID
+	}
+	for index := range manifest.Deletes {
+		deleteMarker := &manifest.Deletes[index]
+		if strings.TrimSpace(deleteMarker.ObjectID) == "" {
+			return Manifest{}, fmt.Errorf("manifest_tombstone_identity_required: %s", deleteMarker.TombstoneID)
+		}
+		deleteMarker.RevisionID = manifestEntryRevisionID(deleteMarker.ObjectID, deleteMarker.TombstoneID+":"+deleteMarker.TrashBlobID)
+		deleteMarker.DeviceID = deviceID
+	}
+	manifest.SchemaVersion = ManifestSchemaVersionV2
+	return manifest, manifest.ValidateV2()
+}
+
+func (manifest Manifest) ValidateV2() error {
+	if manifest.SchemaVersion != ManifestSchemaVersionV2 {
+		return fmt.Errorf("invalid_manifest_version")
+	}
+	objectIDs := make(map[string]struct{}, len(manifest.Entries))
+	paths := make(map[string]struct{}, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		if strings.TrimSpace(entry.ObjectID) == "" || strings.TrimSpace(entry.ObjectKind) == "" || strings.TrimSpace(entry.Path) == "" || strings.TrimSpace(entry.RevisionID) == "" || strings.TrimSpace(entry.DeviceID) == "" || strings.TrimSpace(entry.UpdatedAt) == "" {
+			return fmt.Errorf("invalid_manifest_v2_entry")
+		}
+		if _, exists := objectIDs[entry.ObjectID]; exists {
+			return fmt.Errorf("duplicate_manifest_object_id")
+		}
+		if _, exists := paths[entry.Path]; exists {
+			return fmt.Errorf("duplicate_manifest_path")
+		}
+		objectIDs[entry.ObjectID] = struct{}{}
+		paths[entry.Path] = struct{}{}
+	}
+	for _, deleteMarker := range manifest.Deletes {
+		if strings.TrimSpace(deleteMarker.ObjectID) == "" || strings.TrimSpace(deleteMarker.ObjectKind) == "" || strings.TrimSpace(deleteMarker.RevisionID) == "" || strings.TrimSpace(deleteMarker.DeviceID) == "" {
+			return fmt.Errorf("invalid_manifest_v2_tombstone")
+		}
+	}
+	return nil
+}
+
+func manifestEntryRevisionID(objectID, contentFact string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(objectID) + "\x00" + strings.TrimSpace(contentFact)))
+	return "revision_" + hex.EncodeToString(digest[:])
 }

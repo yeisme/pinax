@@ -216,6 +216,10 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 			if cmd.Name() == "help" || cmd.CommandPath() == "pinax completion" {
 				return nil
 			}
+			// Attach the credentialctl shared credential resolver so the
+			// OpenAI embedding provider can fall back to the shared credential
+			// when OPENAI_API_KEY is unset. No-op when no backend is available.
+			enableSharedCredentials()
 			if err := validateOutputMode(cmd, jsonMode, agentMode, eventsMode, explainMode); err != nil {
 				return err
 			}
@@ -276,6 +280,9 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addKBCommands(cmd, ctx)
 	addMemoryCommands(cmd, ctx)
 	addBrainCommands(cmd, ctx)
+	addAgentCommands(cmd, ctx)
+	addContinueCommands(cmd, ctx)
+	addReviewCommands(cmd, ctx)
 	addQueryCommands(cmd, ctx)
 	addDataviewCommands(cmd, ctx)
 	addDatabaseCommands(cmd, ctx)
@@ -334,6 +341,9 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"kb":         "Organization and search",
 		"memory":     "Organization and search",
 		"brain":      "Organization and search",
+		"agent":      "Organization and search",
+		"continue":   "Organization and search",
+		"review":     "Organization and search",
 		"graph":      "Organization and search",
 		"dataview":   "Organization and search",
 		"proof":      "Organization and search",
@@ -1281,11 +1291,11 @@ func completionNotePath(root, ref string) (string, error) {
 	return matched, nil
 }
 
-func templateNameCompletion(vaultPathValue func() string, kind string, includeBuiltins, includeLocal bool) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+func templateNameCompletion(vaultPathValue func() string, kind string, includeBuiltins bool) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		// Template completion reads metadata only: it does not render templates, execute SQL, or write the vault; it only returns names and source descriptions.
 		root := completionVaultRoot(vaultPathValue())
-		items := app.TemplateCompletionItems(root, kind, includeBuiltins, includeLocal)
+		items := app.TemplateCompletionItems(root, kind, includeBuiltins, true)
 		return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
@@ -1363,15 +1373,12 @@ func assetRefCompletion(vaultPathValue func() string) func(*cobra.Command, []str
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		root := completionVaultRoot(vaultPathValue())
-		items, err := assetCompletionItems(root)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
+		items := assetCompletionItems(root)
 		return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
-func assetCompletionItems(root string) ([]string, error) {
+func assetCompletionItems(root string) []string {
 	assets, _, err := noteindex.ListAssets(root)
 	if err != nil || len(assets) == 0 {
 		manifest, manifestErr := pinaxassets.Load(root)
@@ -1422,7 +1429,7 @@ func assetCompletionItems(root string) ([]string, error) {
 		}
 	}
 	sort.Strings(items)
-	return items, nil
+	return items
 }
 
 func projectSubprojectCompletionItems(root, project string) ([]string, error) {

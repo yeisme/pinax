@@ -27,6 +27,7 @@ func newNoteRecord(db *gorm.DB, opts ...gen.DOOption) noteRecord {
 
 	tableName := _noteRecord.noteRecordDo.TableName()
 	_noteRecord.ALL = field.NewAsterisk(tableName)
+	_noteRecord.ObjectID = field.NewString(tableName, "object_id")
 	_noteRecord.Path = field.NewString(tableName, "path")
 	_noteRecord.NoteID = field.NewString(tableName, "note_id")
 	_noteRecord.Title = field.NewString(tableName, "title")
@@ -56,6 +57,7 @@ type noteRecord struct {
 	noteRecordDo
 
 	ALL             field.Asterisk
+	ObjectID        field.String
 	Path            field.String
 	NoteID          field.String
 	Title           field.String
@@ -91,6 +93,7 @@ func (n noteRecord) As(alias string) *noteRecord {
 
 func (n *noteRecord) updateTableName(table string) *noteRecord {
 	n.ALL = field.NewAsterisk(table)
+	n.ObjectID = field.NewString(table, "object_id")
 	n.Path = field.NewString(table, "path")
 	n.NoteID = field.NewString(table, "note_id")
 	n.Title = field.NewString(table, "title")
@@ -126,7 +129,8 @@ func (n *noteRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (n *noteRecord) fillFieldMap() {
-	n.fieldMap = make(map[string]field.Expr, 19)
+	n.fieldMap = make(map[string]field.Expr, 20)
+	n.fieldMap["object_id"] = n.ObjectID
 	n.fieldMap["path"] = n.Path
 	n.fieldMap["note_id"] = n.NoteID
 	n.fieldMap["title"] = n.Title

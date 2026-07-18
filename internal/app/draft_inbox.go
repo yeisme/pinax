@@ -82,7 +82,7 @@ func inferLifecycleStatus(status string, path string, kind string) string {
 
 // transitionNoteLifecycle handles validation, approval checking, path updates/movement, frontmatter patching, index updates, and event logging.
 func (s *Service) transitionNoteLifecycle(ctx context.Context, vaultPath string, noteRef string, toStatus string, group, folder, kind string, yes bool, dryRun bool, command string, successSummary string) (domain.Projection, error) {
-	root, note, path, content, meta, _, err := s.loadMutableNoteForWrite(ctx, vaultPath, noteRef)
+	root, note, path, content, meta, err := s.loadMutableNoteForWrite(ctx, vaultPath, noteRef)
 	if err != nil {
 		return errorProjection(command, err), err
 	}

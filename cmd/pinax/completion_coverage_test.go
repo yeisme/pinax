@@ -20,7 +20,7 @@ func TestHighValueCompletionCoverageCLI(t *testing.T) {
 	runCLI(t, "backend", "add", "local", "local-dev", "--root", filepath.Join(stateRoot, "backend"), "--vault", root, "--json")
 	runCLI(t, "profile", "add", "cloud-work", "--endpoint", "https://pinax.example.test", "--workspace", "ws_test", "--device", "laptop", "--secret-ref", "env://PINAX_TEST_TOKEN")
 	runCLI(t, "prompt", "import", "--from", writePromptAssetFixture(t, stateRoot, "storyboard_prompt_v1"), "--vault", root, "--json")
-	runCLI(t, "plugin", "install", writePluginFixture(t, stateRoot, "project-dashboard"), "--scope", "vault", "--vault", root, "--json")
+	runCLI(t, "plugin", "install", writePluginFixture(t, stateRoot), "--scope", "vault", "--vault", root, "--json")
 	bundle := writeContentBundleFixture(t, stateRoot)
 	runCLI(t, "collection", "import", "--from", bundle, "--yes", "--vault", root, "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "research", "alpha.20260625101010.conflict.md"), "# Conflict\n")

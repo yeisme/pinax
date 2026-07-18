@@ -28,6 +28,8 @@ func newLinkRecord(db *gorm.DB, opts ...gen.DOOption) linkRecord {
 	tableName := _linkRecord.linkRecordDo.TableName()
 	_linkRecord.ALL = field.NewAsterisk(tableName)
 	_linkRecord.ID = field.NewUint(tableName, "id")
+	_linkRecord.SourceObjectID = field.NewString(tableName, "source_object_id")
+	_linkRecord.TargetObjectID = field.NewString(tableName, "target_object_id")
 	_linkRecord.NotePath = field.NewString(tableName, "note_path")
 	_linkRecord.Target = field.NewString(tableName, "target")
 	_linkRecord.TargetPath = field.NewString(tableName, "target_path")
@@ -51,22 +53,24 @@ func newLinkRecord(db *gorm.DB, opts ...gen.DOOption) linkRecord {
 type linkRecord struct {
 	linkRecordDo
 
-	ALL           field.Asterisk
-	ID            field.Uint
-	NotePath      field.String
-	Target        field.String
-	TargetPath    field.String
-	Kind          field.String
-	Broken        field.Bool
-	SourceNoteID  field.String
-	TargetNoteID  field.String
-	TargetTitle   field.String
-	TargetRaw     field.String
-	TargetAlias   field.String
-	TargetHeading field.String
-	Status        field.String
-	Line          field.Int
-	Evidence      field.String
+	ALL            field.Asterisk
+	ID             field.Uint
+	SourceObjectID field.String
+	TargetObjectID field.String
+	NotePath       field.String
+	Target         field.String
+	TargetPath     field.String
+	Kind           field.String
+	Broken         field.Bool
+	SourceNoteID   field.String
+	TargetNoteID   field.String
+	TargetTitle    field.String
+	TargetRaw      field.String
+	TargetAlias    field.String
+	TargetHeading  field.String
+	Status         field.String
+	Line           field.Int
+	Evidence       field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -84,6 +88,8 @@ func (l linkRecord) As(alias string) *linkRecord {
 func (l *linkRecord) updateTableName(table string) *linkRecord {
 	l.ALL = field.NewAsterisk(table)
 	l.ID = field.NewUint(table, "id")
+	l.SourceObjectID = field.NewString(table, "source_object_id")
+	l.TargetObjectID = field.NewString(table, "target_object_id")
 	l.NotePath = field.NewString(table, "note_path")
 	l.Target = field.NewString(table, "target")
 	l.TargetPath = field.NewString(table, "target_path")
@@ -114,8 +120,10 @@ func (l *linkRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (l *linkRecord) fillFieldMap() {
-	l.fieldMap = make(map[string]field.Expr, 15)
+	l.fieldMap = make(map[string]field.Expr, 17)
 	l.fieldMap["id"] = l.ID
+	l.fieldMap["source_object_id"] = l.SourceObjectID
+	l.fieldMap["target_object_id"] = l.TargetObjectID
 	l.fieldMap["note_path"] = l.NotePath
 	l.fieldMap["target"] = l.Target
 	l.fieldMap["target_path"] = l.TargetPath

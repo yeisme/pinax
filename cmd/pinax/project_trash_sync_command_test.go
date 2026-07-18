@@ -101,7 +101,7 @@ func TestProjectSubprojectDeleteRequiresSnapshotAndRestoresWorkspace(t *testing.
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "history-learning", "--name", "History Learning", "--notes-prefix", "notes/history-learning", "--vault", root, "--json")
 	runCLI(t, "project", "subproject", "create", "history-learning", "history-info", "--title", "History Info", "--vault", root, "--json")
-	writeCLIFixture(t, filepath.Join(root, "notes", "projects", "history-learning", "history-info", "brief.md"), pinaxNoteFixture("note_history_info", "History Info", "[]", "workspace body"))
+	writeCLIFixture(t, filepath.Join(root, "notes", "projects", "history-learning", "history-info", "brief.md"), pinaxNoteFixture("note_history_info", "History Info", "workspace body"))
 
 	refused, err := runCLIExpectError("project", "subproject", "delete", "history-learning", "history-info", "--vault", root, "--json")
 	if err == nil {

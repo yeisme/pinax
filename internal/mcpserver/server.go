@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/yeisme/pinax/internal/agentprotocol"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
 )
@@ -50,12 +51,13 @@ type Resource struct {
 }
 
 type Server struct {
-	service *app.Service
-	vault   string
+	service  *app.Service
+	vault    string
+	agentMem *app.AgentMemoryService
 }
 
 func NewServer(service *app.Service, vault string) *Server {
-	return &Server{service: service, vault: vault}
+	return &Server{service: service, vault: vault, agentMem: app.NewAgentMemoryService()}
 }
 
 func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
@@ -93,6 +95,10 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			{Name: "pinax.task.adopt_plan", Description: "Preview inferred task adoption without writing"},
 			{Name: "pinax.organize.plan", Description: "Preview organize operations"},
 			{Name: "pinax.git.snapshot_plan", Description: "Show snapshot command"},
+			// Agent memory runtime — experimental, read-only by default.
+			{Name: "pinax.agent.context", Description: "Read bounded permission-first agent context pack (experimental)"},
+			{Name: "pinax.agent.memory_recall", Description: "Recall bounded agent memories (experimental, readonly)"},
+			{Name: "pinax.agent.handoff_read", Description: "Read bounded cross-agent handoff working state (experimental, readonly)"},
 		}
 		return resp, nil
 	case "tools/call":
@@ -284,9 +290,71 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 	case "pinax.git.snapshot_plan":
 		resp.Result = map[string]any{"status": "success", "command": fmt.Sprintf("pinax version snapshot --vault %s --message '整理前快照'", s.vault)}
 		return resp, nil
+	case "pinax.agent.context":
+		pack, err := s.agentMem.AgentContextRuntime(ctx, app.AgentContextRequest{
+			VaultPath: s.vault,
+			Principal: agentprotocol.DefaultAdapterPrincipal("mcp-client", "mcp"),
+			Scope:     agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: mcpStringArg(args, "workspace")},
+			Entities:  mcpStringSliceArg(args, "entities"),
+			MaxItems:  20,
+			MaxChars:  8000,
+		})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = map[string]any{"status": "success", "command": "agent.context", "body_exposure": "bounded_projection", "pack": pack}
+		return resp, nil
+	case "pinax.agent.memory_recall":
+		results, err := s.agentMem.AgentMemoryRecallQuery(ctx, s.vault, app.RecallQuery{
+			Scope: agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: mcpStringArg(args, "workspace")},
+			Kinds: mcpKindSliceArg(args, "kinds"),
+		})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = map[string]any{"status": "success", "command": "agent.memory.recall", "body_exposure": "bounded_projection", "count": len(results), "memories": results}
+		return resp, nil
+	case "pinax.agent.handoff_read":
+		list, err := s.agentMem.AgentHandoffList(ctx, s.vault, agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: mcpStringArg(args, "workspace")})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = map[string]any{"status": "success", "command": "agent.handoff.read", "body_exposure": "bounded_projection", "count": len(list), "handoffs": list}
+		return resp, nil
 	default:
 		return resp, &MCPError{Code: "approval_required", Message: "MVP MCP surface 只允许只读工具"}
 	}
+}
+
+// mcpStringArg 提取 string 参数，缺省返回空。
+func mcpStringArg(args map[string]any, key string) string {
+	v, _ := args[key].(string)
+	return v
+}
+
+// mcpStringSliceArg 提取 string 切片参数。
+func mcpStringSliceArg(args map[string]any, key string) []string {
+	raw, ok := args[key].([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// mcpKindSliceArg 提取 MemoryKind 切片参数。
+func mcpKindSliceArg(args map[string]any, key string) []agentprotocol.MemoryKind {
+	strs := mcpStringSliceArg(args, key)
+	kinds := make([]agentprotocol.MemoryKind, 0, len(strs))
+	for _, s := range strs {
+		kinds = append(kinds, agentprotocol.MemoryKind(s))
+	}
+	return kinds
 }
 
 func brainTool(name, description string) Tool {

@@ -15,8 +15,8 @@ type publishDocCrossDocResult struct {
 
 // publishDocResolveCrossDocLinks 把 note 正文里对其他 note 的引用改写为目标 note 的飞书文档 URL。
 // 仅改写已发布到同一 target 且 mapping 有 URL 的引用；未发布/未解析/歧义引用保留原样。
-func publishDocResolveCrossDocLinks(root string, source domain.Note, body string, target domain.PublishDocTarget) (string, int) {
-	result := publishDocAnalyzeCrossDocLinks(root, source, body, target)
+func publishDocResolveCrossDocLinks(root string, source domain.Note, body string) (string, int) {
+	result := publishDocAnalyzeCrossDocLinks(root, source, body, domain.PublishDocTargetLarkDoc)
 	return result.Body, result.Summary.Rewritten
 }
 

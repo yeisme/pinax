@@ -142,3 +142,7 @@ Local REST/RPC exposes read projections and controlled write plans for dashboard
 Project Workspace remains local-first. The API does not become a remote issue tracker, does not write provider issues, and does not parse Markdown directly in handlers.
 
 See also [`plan`](./plan.md) for personal daily/weekly/monthly plans and TaskBridge action drafts, and [`api`](./api.md) for local projection access.
+
+## Project and task object identity
+
+project、subproject、board item 和 managed task 都有稳定 `object_id`。note-backed board item 复用 note object ID；Markdown checklist task 使用 source note object ID + stable anchor 作为来源，再由 adoption 分配 canonical task UUID。项目目录、board column 或 note path 变化不应创建新对象。

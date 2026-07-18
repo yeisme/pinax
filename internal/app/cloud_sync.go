@@ -49,7 +49,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		return cloudStateErrorProjection(command, root, err)
 	}
 	receipt := syncRunStart(command, direction, state, pathPolicy, outputTarget)
-	localManifest, err := pinaxcloud.BuildManifest(root)
+	localManifest, err := buildLocalCloudManifest(root, state)
 	if err != nil {
 		projection := errorProjection(command, err)
 		return projection, err
@@ -85,6 +85,16 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 	if remoteRevision == "" {
 		remoteRevision = baseRevision
 	}
+	if err := negotiateSyncManifestCapability(localManifest, remoteSnapshot.Manifest); err != nil {
+		projection := errorProjection(command, err)
+		addCloudSyncFacts(&projection, state, syncplan.Plan{})
+		projection.Facts["local_manifest_version"] = localManifest.SchemaVersion
+		projection.Facts["remote_manifest_version"] = remoteSnapshot.Manifest.SchemaVersion
+		return projection, err
+	}
+	if localManifest.SchemaVersion != "" && baseManifest.SchemaVersion != localManifest.SchemaVersion {
+		baseManifest = pinaxcloud.Manifest{SchemaVersion: localManifest.SchemaVersion}
+	}
 	plan, planErr := syncplan.BuildPlan(syncplan.Request{Direction: direction, Target: outputTarget, LocalManifest: localManifest, BaseManifest: baseManifest, RemoteManifest: remoteSnapshot.Manifest, BaseRevision: baseRevision, RemoteRevision: remoteRevision, DryRun: req.DryRun, Yes: req.Yes})
 	localDiffPlan, localDiffErr := syncplan.BuildPlan(syncplan.Request{Direction: syncplan.DirectionDiff, Target: outputTarget, LocalManifest: localManifest, BaseManifest: baseManifest, RemoteManifest: remoteSnapshot.Manifest, BaseRevision: baseRevision, RemoteRevision: remoteRevision, DryRun: true, Yes: true})
 	if localDiffErr != nil && planErr == nil {
@@ -94,7 +104,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		commandErr := &domain.CommandError{Code: "REVISION_CONFLICT", Message: "cloud revision conflict", Hint: "Review the conflict queue and resolve manually, then retry sync"}
 		projection := domain.NewErrorProjection(command, commandErr)
 		projection.Actions = append(syncConflictActions(root, nil), domain.Action{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))})
-		receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
+		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 		if receiptErr == nil {
 			_ = writeCurrentSyncState(root, state, receipt, "")
 			projection.Facts["run_id"] = receipt.RunID
@@ -111,6 +121,12 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		return projection, planErr
 	}
 	if direction == syncplan.DirectionPush && req.Yes && !req.DryRun && isExecutableCloudState(state) {
+		if gateErr := syncManifestRemoteWriteGate(root); gateErr != nil {
+			projection := errorProjection(command, gateErr)
+			projection.Facts["remote_write"] = "false"
+			projection.Actions = []domain.Action{{Name: "manifest_status", Command: fmt.Sprintf("pinax sync manifest audit --vault %s --json", shellQuote(root))}}
+			return projection, gateErr
+		}
 		rebaseResult, execErr := runCloudPushRebase(cloudRebasePlan{
 			commit: func(base string) (cloudsync.CommitResult, error) {
 				return executeCloudPush(ctx, root, state, localManifest, base)
@@ -118,7 +134,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			pull:          func() (cloudRemoteSnapshot, error) { return loadCloudRemoteSnapshot(ctx, state) },
 			localManifest: localManifest,
 			baseManifest:  baseManifest,
-			baseRevision:  req.BaseRevision,
+			baseRevision:  baseRevision,
 			yes:           req.Yes,
 		})
 		if len(rebaseResult.Conflicts) > 0 {
@@ -129,7 +145,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			commandErr := &domain.CommandError{Code: "conflict_required", Message: "sync push hit a content conflict after auto-rebase", Hint: fmt.Sprintf("Resolve conflicts with pinax sync conflicts list --vault %s, then rerun pinax sync push --yes", shellQuote(root))}
 			projection := domain.NewErrorProjection(command, commandErr)
 			projection.Actions = syncConflictActions(root, conflicts)
-			receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
+			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
 				_ = writeCurrentSyncState(root, state, receipt, "")
 				projection.Facts["run_id"] = receipt.RunID
@@ -147,7 +163,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			commandErr := commandErrorFromError(execErr)
 			projection := domain.NewErrorProjection(command, commandErr)
 			projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax %s doctor --vault %s --json", syncConfigCommand(req.Target), shellQuote(root))}}
-			receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
+			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
 				_ = writeCurrentSyncState(root, state, receipt, "")
 				projection.Facts["run_id"] = receipt.RunID
@@ -161,15 +177,20 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		receipt.RemoteWrite = commit.RemoteWrite
 		receipt.RevisionID = commit.RevisionID
 		receipt.ManifestBlobID = commit.ManifestBlobID
+		if localManifest.SchemaVersion == pinaxcloud.ManifestSchemaVersionV2 && commit.RemoteWrite {
+			if err := recordFirstV2RemoteRevision(root, commit.RevisionID); err != nil {
+				return errorProjection(command, err), err
+			}
+		}
 		receipt.Counts["blobs"] = len(localManifest.Entries) + manifestTrashBackupCount(localManifest)
 		receipt.Counts["delete_markers"] = len(localManifest.Deletes)
 		receipt.Counts["trash_backup_blobs"] = manifestTrashBackupCount(localManifest)
 		projection := domain.NewProjection(command, "Capsa sync push completed through configured backend.")
 		projection.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))}}
-		if _, err := writeCloudManifestCache(root, commit.RevisionID, localManifest); err != nil {
+		if err := writeCloudManifestCache(root, commit.RevisionID, localManifest); err != nil {
 			return errorProjection(command, err), err
 		}
-		receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "success", nil, projection.Actions, pathPolicy, started)
+		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "success", nil, projection.Actions, pathPolicy, started)
 		if receiptErr != nil {
 			return errorProjection(command, receiptErr), receiptErr
 		}
@@ -190,7 +211,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			commandErr := &domain.CommandError{Code: "LOCAL_UNPUSHED_CHANGES", Message: "local changes have not been pushed", Hint: fmt.Sprintf("Run pinax sync --target %s --yes to merge and push local moves before pulling again", outputTarget)}
 			projection := domain.NewErrorProjection(command, commandErr)
 			projection.Actions = []domain.Action{{Name: "sync", Command: fmt.Sprintf("pinax sync --target %s --vault %s --yes", outputTarget, shellQuote(root))}, {Name: "diff", Command: fmt.Sprintf("pinax sync diff --target %s --vault %s --json", outputTarget, shellQuote(root))}}
-			receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, localDiffPlan, "failed", commandErr, projection.Actions, pathPolicy, started)
+			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, localDiffPlan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
 				_ = writeCurrentSyncState(root, state, receipt, "")
 				projection.Facts["run_id"] = receipt.RunID
@@ -207,7 +228,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			commandErr := commandErrorFromError(execErr)
 			projection := domain.NewErrorProjection(command, commandErr)
 			projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax %s doctor --vault %s --json", syncConfigCommand(req.Target), shellQuote(root))}}
-			receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
+			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
 				_ = writeCurrentSyncState(root, state, receipt, "")
 				projection.Facts["run_id"] = receipt.RunID
@@ -227,10 +248,10 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		if len(pullResult.Conflicts) > 0 {
 			projection.Actions = append(projection.Actions, syncConflictActions(root, pullResult.Conflicts)...)
 		}
-		if _, err := writeCloudManifestCache(root, pullResult.RevisionID, pullResult.Manifest); err != nil {
+		if err := writeCloudManifestCache(root, pullResult.RevisionID, pullResult.Manifest); err != nil {
 			return errorProjection(command, err), err
 		}
-		receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, "success", nil, projection.Actions, pathPolicy, started)
+		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "success", nil, projection.Actions, pathPolicy, started)
 		if receiptErr != nil {
 			return errorProjection(command, receiptErr), receiptErr
 		}
@@ -269,7 +290,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 	if status == "approval_required" {
 		commandErr = &domain.CommandError{Code: "approval_required", Message: "sync requires approval", Hint: "Rerun with --yes or --dry-run"}
 	}
-	receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, plan, status, commandErr, projection.Actions, pathPolicy, started)
+	receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, status, commandErr, projection.Actions, pathPolicy, started)
 	if receiptErr != nil {
 		return errorProjection(command, receiptErr), receiptErr
 	}
@@ -291,6 +312,8 @@ func commandErrorFromError(err error) *domain.CommandError {
 	rawMessage := err.Error()
 	message := syncops.SanitizeString(rawMessage)
 	switch {
+	case strings.Contains(strings.ToLower(rawMessage), "key id mismatch"):
+		return &domain.CommandError{Code: "encryption_key_mismatch", Message: "remote data was encrypted with a different sync key", Hint: "Restore the previous encryption secret; do not push or rotate keys until the remote state is verified"}
 	case strings.Contains(rawMessage, "lock_held"):
 		return &domain.CommandError{Code: "lock_held", Message: message, Hint: "Retry after the current Capsa sync finishes"}
 	case strings.Contains(rawMessage, "transport_unavailable"), isRcloneCommandFailure(rawMessage):
@@ -426,10 +449,14 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 		}
 	}
 	entries := manifestEntriesByPath(manifest)
+	entriesByObjectID := manifestEntriesByObjectID(manifest)
 	for _, op := range plan.Operations {
 		switch op.Kind {
 		case "download_blob":
 			entry, ok := entries[op.Path]
+			if op.ObjectID != "" {
+				entry, ok = entriesByObjectID[op.ObjectID]
+			}
 			if !ok {
 				continue
 			}
@@ -439,18 +466,50 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			}
 			if applied {
 				filesApplied++
+				if err := recordRemoteManifestEntry(ctx, root, entry, ""); err != nil {
+					return directPullResult{}, err
+				}
 			}
 			conflicts = append(conflicts, newConflicts...)
 		case "delete_local":
-			applied, err := deleteLocalManifestPath(root, op.Path)
+			applied, err := deleteLocalManifestObject(root, op.ObjectID, op.Path)
 			if err != nil {
 				return directPullResult{}, err
 			}
 			if applied {
 				filesApplied++
 			}
-		case "conflict":
+		case "move":
+			entry, ok := entriesByObjectID[op.ObjectID]
+			if !ok {
+				continue
+			}
+			moved, moveErr := moveLocalManifestObject(root, op.ObjectID, entry.Path)
+			if moveErr != nil {
+				return directPullResult{}, moveErr
+			}
+			if moved {
+				filesApplied++
+			}
+			preserveConflict := op.BaseRevision == "" || op.LocalRevision != op.BaseRevision
+			applied, newConflicts, applyErr := applyRemoteManifestEntryWithPolicy(ctx, root, transport, key, entry, preserveConflict)
+			if applyErr != nil {
+				return directPullResult{}, applyErr
+			}
+			if applied {
+				filesApplied++
+			}
+			if moved || applied {
+				if err := recordRemoteManifestEntry(ctx, root, entry, op.FromPath); err != nil {
+					return directPullResult{}, err
+				}
+			}
+			conflicts = append(conflicts, newConflicts...)
+		case "conflict", "revision_conflict":
 			entry, ok := entries[op.Path]
+			if op.ObjectID != "" {
+				entry, ok = entriesByObjectID[op.ObjectID]
+			}
 			if ok {
 				applied, newConflicts, err := applyRemoteManifestEntry(ctx, root, transport, key, entry)
 				if err != nil {
@@ -484,7 +543,68 @@ func manifestEntriesByPath(manifest pinaxcloud.Manifest) map[string]pinaxcloud.M
 	return entries
 }
 
+func manifestEntriesByObjectID(manifest pinaxcloud.Manifest) map[string]pinaxcloud.ManifestEntry {
+	entries := make(map[string]pinaxcloud.ManifestEntry, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		if strings.TrimSpace(entry.ObjectID) != "" {
+			entries[entry.ObjectID] = entry
+		}
+	}
+	return entries
+}
+
+func localManifestObjectPath(root, objectID, fallback string) string {
+	if strings.TrimSpace(objectID) != "" {
+		notes, err := scanNotes(root)
+		if err == nil {
+			for _, note := range notes {
+				if note.ID == objectID {
+					return note.Path
+				}
+			}
+		}
+	}
+	return fallback
+}
+
+func moveLocalManifestObject(root, objectID, targetRel string) (bool, error) {
+	currentRel := localManifestObjectPath(root, objectID, "")
+	if currentRel == "" || currentRel == targetRel {
+		return false, nil
+	}
+	current, err := safeCloudSyncPath(root, currentRel)
+	if err != nil {
+		return false, err
+	}
+	target, err := safeCloudSyncPath(root, targetRel)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(current); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(target); err == nil {
+		return false, &domain.CommandError{Code: "sync_path_collision", Message: "remote object path is occupied by another local file", Hint: "Review sync conflicts before retrying"}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return false, err
+	}
+	return true, os.Rename(current, target)
+}
+
+func deleteLocalManifestObject(root, objectID, fallback string) (bool, error) {
+	return deleteLocalManifestPath(root, localManifestObjectPath(root, objectID, fallback))
+}
+
 func applyRemoteManifestEntry(ctx context.Context, root string, transport cloudsync.Transport, key pinaxcloud.CryptoKey, entry pinaxcloud.ManifestEntry) (bool, []domain.SyncConflictEntry, error) {
+	return applyRemoteManifestEntryWithPolicy(ctx, root, transport, key, entry, true)
+}
+
+func applyRemoteManifestEntryWithPolicy(ctx context.Context, root string, transport cloudsync.Transport, key pinaxcloud.CryptoKey, entry pinaxcloud.ManifestEntry, preserveConflict bool) (bool, []domain.SyncConflictEntry, error) {
 	blobEnvelope, err := transport.GetBlob(ctx, entry.BlobID)
 	if err != nil {
 		return false, nil, err
@@ -512,12 +632,14 @@ func applyRemoteManifestEntry(ctx context.Context, root string, transport clouds
 			}
 			return false, nil, nil
 		}
-		conflict, err := writeConflictCopy(root, path, existing, fileMode, time.Now().UTC())
-		if err != nil {
-			return false, nil, err
-		}
-		if conflict != nil {
-			conflicts = append(conflicts, *conflict)
+		if preserveConflict {
+			conflict, err := writeConflictCopy(root, path, existing, fileMode, time.Now().UTC())
+			if err != nil {
+				return false, nil, err
+			}
+			if conflict != nil {
+				conflicts = append(conflicts, *conflict)
+			}
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -527,6 +649,32 @@ func applyRemoteManifestEntry(ctx context.Context, root string, transport clouds
 		return false, nil, err
 	}
 	return true, conflicts, nil
+}
+
+func recordRemoteManifestEntry(ctx context.Context, root string, entry pinaxcloud.ManifestEntry, oldPath string) error {
+	if entry.ObjectKind != "note" || strings.TrimSpace(entry.ObjectID) == "" {
+		return nil
+	}
+	path, err := safeCloudSyncPath(root, entry.Path)
+	if err != nil {
+		return err
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	note := parseNote(entry.Path, string(payload))
+	if note.ID == "" {
+		note.ID = entry.ObjectID
+	}
+	kind := domain.RecordEventNoteMetadataUpdated
+	idempotency := "sync.pull.update:" + note.ID + ":" + entry.RevisionID
+	if strings.TrimSpace(oldPath) != "" && filepath.ToSlash(oldPath) != entry.Path {
+		kind = domain.RecordEventNoteMoved
+		idempotency = "sync.pull.move:" + note.ID + ":" + filepath.ToSlash(oldPath) + ":" + entry.Path + ":" + entry.RevisionID
+	}
+	_, err = appendNoteRecordEvent(ctx, root, kind, idempotency, note, filepath.ToSlash(oldPath))
+	return err
 }
 
 func deleteLocalManifestPath(root, rel string) (bool, error) {
@@ -655,12 +803,12 @@ func readCachedCloudManifest(root string, cloudState pinaxcloud.State) (pinaxclo
 	return manifest, revision, nil
 }
 
-func writeCloudManifestCache(root, revision string, manifest pinaxcloud.Manifest) (string, error) {
+func writeCloudManifestCache(root, revision string, manifest pinaxcloud.Manifest) error {
 	if strings.TrimSpace(revision) == "" {
-		return "", nil
+		return nil
 	}
 	rel := syncManifestCacheRel(revision)
-	return rel, writeJSONAsset(filepath.Join(root, filepath.FromSlash(rel)), manifest)
+	return writeJSONAsset(filepath.Join(root, filepath.FromSlash(rel)), manifest)
 }
 
 func syncManifestCacheRel(revision string) string {

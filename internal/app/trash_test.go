@@ -69,3 +69,29 @@ func TestTrashServiceRestorePurgeDryRunAndPathBoundary(t *testing.T) {
 		t.Fatalf("purge hard left trash path: %v", err)
 	}
 }
+
+func TestTrashRestoreNoteKeepsObjectIDAndOriginalPath(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	created, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "Restore Me", Body: "body"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectID := created.Facts["note_id"]
+	originalPath := created.Facts["path"]
+	deleted, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: root, NoteRef: objectID, Yes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.TrashRestore(ctx, TrashRequest{VaultPath: root, ObjectRef: objectID}); err != nil {
+		t.Fatal(err)
+	}
+	note, err := svc.ShowNote(ctx, ShowNoteRequest{VaultPath: root, NoteRef: objectID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.ID != objectID || note.Path != originalPath {
+		t.Fatalf("note = %#v, delete = %#v", note, deleted)
+	}
+}

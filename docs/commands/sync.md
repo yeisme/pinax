@@ -1,5 +1,4 @@
 # sync Command
-
 `pinax sync` generates, records, and executes sync plans. Explicit `diff`/`push`/`pull` commands are short-lived workflows; `pinax sync daemon` is the local long-running process for automatic Capsa Sync.
 
 For `--target capsa`, the protocol is distributed: every device keeps a local vault, and the selected Capsa Sync transport coordinates encrypted blob, manifest, and revision exchange. The content manifest is selected by `.pinaxignore` and can include Markdown, scripts, assets, attachments, and other regular files. The transport can be Capsa Server, S3-compatible direct storage, rclone direct storage, or embedded Go API/local RPC. This differs from `pinax api serve`, which is centralized remote access to one server-side vault.
@@ -22,6 +21,10 @@ The backup mirror boundary also excludes realtime daemon and conflict policy cha
 | `pinax sync daemon status` | Reads local daemon state. | Read-only. |
 | `pinax sync daemon stop` | Requests graceful daemon shutdown. | Writes a local stop request. |
 | `pinax sync daemon logs` | Reads redacted daemon events. | Read-only. |
+| `pinax sync logs list` | Lists recent sync run receipts. | Read-only. |
+| `pinax sync logs show <run-id>` | Shows one sync receipt and its redacted operations. | Read-only. |
+| `pinax sync logs tail` | Shows run and file-level sync timeline events. | Read-only. |
+| `pinax sync logs tail --follow` | Streams newly appended redacted sync events until canceled. | Read-only. |
 | `pinax sync conflicts list` | Lists local conflict copies. | Read-only. |
 | `pinax sync conflicts diff <file>` | Shows a diff between a conflict copy and its trunk file. | Read-only. |
 | `pinax sync conflicts show <file>` | Shows conflict content for manual or agent merge workflows. | Read-only. |
@@ -164,6 +167,16 @@ pinax sync daemon start --target capsa --vault ./my-notes --yes
 
 The first daemon release detects local file changes with a local watcher and detects remote changes by polling the Capsa Sync head. Redacted daemon state and event logs live under `.pinax/sync-daemon/` and can be inspected with `pinax sync daemon logs --vault ./my-notes --limit 20 --json`. It is a local process, not a hosted service, and it does not change the Capsa Sync plaintext boundary: transports still coordinate encrypted blobs, encrypted manifests, and revision metadata only.
 
+Inspect which files a completed sync planned and follow later sync activity in another terminal:
+
+```bash
+pinax sync logs tail --vault ./my-notes --limit 50
+pinax sync logs tail --vault ./my-notes --follow
+pinax sync logs tail --vault ./my-notes --follow --events
+```
+
+The timeline contains a `sync.file` item for each non-manifest operation and a final `sync.run` summary. File items include the run ID, direction, operation kind, final run status, and the path allowed by the run's `path_policy`. `--path-policy hash` emits `path_sha256:...`; `--path-policy omitted` keeps the operation but removes the path. `--follow` supports default human output, `--agent`, and `--events`; use non-follow `--json` when a single JSON envelope is required.
+
 These apply commands use the same sync engine as direct object-store transports. If the selected backend is unavailable, the commit fails, or the configured scheme is unsupported, the command must return a structured partial/error such as `transport_unavailable`, `unsupported_scheme`, or `revision_conflict` with `remote_write=false`. It must not silently no-op, produce a dummy revision, or emit `remote_write=true`.
 
 ## Daemon service installation
@@ -269,10 +282,11 @@ Another device pushed a newer revision since your last pull. Run `pinax sync --v
 
 ### `encryption_key_mismatch`
 
-The encryption key has changed since the last sync. This can happen after upgrading from the older Pinax-local crypto path (`pinax-cloud-sync-salt-v1`) to the shared Capsa SDK crypto path (`capsa-sync-salt-v1`). Existing COS/S3 objects encrypted by the old path must be re-pushed with the current key. Run `pinax capsa doctor --vault ./my-notes` to confirm, then re-push:
+The encryption key reference differs from the key used by the remote manifest. Pinax persists a generated key as a user-level `stored://capsa-sync-<workspace>` secret when no explicit reference is supplied, so normal subsequent commands do not prompt for a new key. On another device, configure the same shared secret reference; do not generate a new local secret with the same workspace name. Restore the original secret before retrying. Do not push with an unknown key, because that can make existing remote blobs unreadable.
 
 ```bash
-pinax sync push --vault ./my-notes --yes
+pinax capsa doctor --vault ./my-notes --json
+pinax sync status --vault ./my-notes --json
 ```
 
 ### `LOCAL_UNPUSHED_CHANGES`
@@ -286,3 +300,108 @@ No Capsa backend is configured for this vault. Run `pinax capsa backend set s3 .
 ### Checksum warnings in logs
 
 Pinax sets `RequestChecksumCalculationWhenRequired` and `ResponseChecksumValidationWhenRequired` for S3-compatible providers. This suppresses per-object `x-amz-checksum-*` WARN messages from services like Tencent COS that don't return checksum headers. No action needed.
+
+## Manifest v2 migration
+
+manifest v1 继续作为兼容 decoder；object-first 多端同步需要显式 promotion 到 v2。
+
+```bash
+pinax sync manifest audit --vault ./my-notes --json
+pinax sync manifest plan --save --vault ./my-notes --json
+pinax sync manifest promote --plan manifest-plan-<id> --remote-capability v2 --vault ./my-notes --yes --json
+pinax sync manifest rollback --vault ./my-notes --yes --json
+```
+
+v2 entry 必须包含 `object_id`、`object_kind`、当前 `path`、`revision_id` 和 `device_id`。同 ID 路径变化产生 move；不同 ID 占用同一路径产生 `path_collision`；共同 base 上的双向内容变化产生 `revision_conflict`。daemon 不会自动 promotion，migration pending 或 unresolved identity 会阻止 remote write。
+
+## Real transport evidence
+
+真实 S3-compatible/server transport smoke 不从命令行接收明文凭据。先通过用户级配置或环境变量提供 endpoint/secret reference，再运行证据入口：
+
+```bash
+PINAX_SYNC_REAL_ENDPOINT=https://sync.example.invalid \
+PINAX_SYNC_REAL_WORKSPACE=personal-smoke \
+PINAX_SYNC_REAL_SECRET_REF=env:PINAX_SYNC_SECRET \
+task integration:sync-real
+```
+
+每次运行写入 `temp/integration-test-runs/<run-id>/`；stdout、stderr、env 和 summary 会脱敏。没有配置 endpoint 时命令明确失败，不把 skipped test 伪装成真实同步证据。
+
+## Declarative sync repository configuration (experimental)
+
+`pinax sync repo` is an **experimental** declarative configuration layer that lets you commit sync topology to the repository as a structured asset, so a new device or remote dev container can bootstrap by clone + unlock + one command instead of re-entering backend flags. It is additive: existing `pinax sync`/`pinax capsa` commands keep working and are unaffected.
+
+### Three-layer model
+
+| Layer | File | Committed? | Contents |
+| --- | --- | --- | --- |
+| Repository declaration | `.pinax/pinax-sync.yaml` | Yes | Backend topology, workspace/namespace, logical credential & encryption-key identities, sync policy. No plaintext credentials. |
+| Encrypted secrets | `.pinax/pinax-sync.secrets.yaml` | Yes | Ciphertext only; plaintext exists only during an authenticated runtime unlock. |
+| Device runtime state | `.pinax/cloud/` | No (gitignored) | Generated `config.yaml`, source marker, session, blob cache, receipts. |
+
+Logical identities (`credential_id`, `encryption_key_id`) are resolved per-device to local profiles, keychain or a secret manager. The actual credential value is never written to the repository. All assets under `.pinax/` are protected from content-manifest upload by default `.pinaxignore` rules.
+
+### Commands
+
+| Command | Purpose | Writes/External effects |
+| --- | --- | --- |
+| `pinax sync repo init` | Creates/updates the repository declaration. | Writes `.pinax/pinax-sync.yaml` and updates `.gitignore` device-state protection. Idempotent: re-running preserves the encryption key identity. |
+| `pinax sync repo secret set` | Stores an encrypted secret value under a logical identity. | Writes `.pinax/pinax-sync.secrets.yaml` (ciphertext only). Plaintext is transient. |
+| `pinax sync repo secret list` | Lists secret metadata (name, identity, provider). | Read-only; never shows plaintext. |
+| `pinax sync repo secret remove` | Removes an encrypted secret. | Mutates the encrypted asset. |
+| `pinax sync repo bootstrap` | First device run: unlocks secrets, compiles + writes the runtime config, writes the source marker. New devices default to **pull-only**. | Writes `.pinax/cloud/config.yaml`; does not upload local deletions on a fresh device. |
+| `pinax sync repo plan` | Reports intended config changes and drift. | No writes. |
+| `pinax sync repo apply` | Regenerates the runtime config from the declaration on an initialized device. | Requires `--yes` for high-risk changes (workspace, backend namespace, encryption key identity, remote-delete policy). Backs up the prior runtime config for rollback. |
+| `pinax sync repo doctor` | Diagnoses declaration/runtime drift, key identity and device state. | Read-only. |
+
+### Security defaults
+
+- Plaintext credentials, tokens, passwords and encryption keys are rejected at declaration validation time (`plaintext_sensitive_field`).
+- A new device with no local sync receipt is pull-only; it does not upload local deletions or replace remote state.
+- Bootstrap fails closed with `sync_repo_unlock_required` when no unlock identity is available, and never guesses or auto-generates a replacement encryption key.
+- `plan` never writes; `apply` is the only normal path that regenerates runtime state.
+- All sync-repo assets are protected from content-manifest upload (see `.pinaxignore` defaults).
+
+### First-version unlock providers
+
+The first version ships a deterministic `fake` AES-GCM provider (keyed by `PINAX_SYNC_FAKE_KEY`) and an `env` provider (reads `PINAX_SYNC_SECRET_<IDENTITY>`). These make the layer testable end-to-end and support CI/ephemeral bootstrap. Production deployments should register a reviewed provider (age/keychain); `doctor` flags the fake provider. The provider is an abstraction boundary, so swapping implementations does not change the CLI contract.
+
+### Namespace facts (not server RBAC)
+
+`tenant_id` and `app_id` produce a deterministic, collision-resistant remote namespace (`EffectiveNamespace`), but direct S3/rclone transport does **not** provide server-side tenant authorization, quota, audit or rate limiting. Doctor and plan expose these facts transparently. Full multi-tenant authorization is a separate server control-plane capability.
+
+## Encrypted runtime dotenv loader (experimental)
+
+`pinax sync env` is an **experimental** runtime env layer that lets a repository carry an encrypted dotenv asset, so a clone-and-unlock can self-describe the provider/environment variables a sync run needs — without requiring the calling shell to pre-set them and without committing plaintext. It is additive and coexists with `.pinax/pinax-sync.secrets.yaml` (use dotenv for groups of provider/environment keys; use the logical secret API for single values).
+
+### Asset model
+
+| Layer | File | Committed? | Contents |
+| --- | --- | --- | --- |
+| Encrypted dotenv asset | `.pinax/pinax-sync.env.age` | Yes | Ciphertext + redacted metadata (key names, digest) only. Plaintext never required to be committed. |
+| Materialized plaintext (optional) | `.pinax/runtime/pinax-sync.env` | No (gitignored, `0600`) | Only written by explicit `unlock --materialize`; removed by `clean`. |
+
+The encrypted asset path is **fixed** (not user-selectable) to prevent path-escape and protected-path bypass. Plaintext lives only in an immutable in-memory `EnvSnapshot` resolved at command or daemon run boundaries.
+
+### Commands
+
+| Command | Purpose | Writes/External effects |
+| --- | --- | --- |
+| `pinax sync env init` | Initializes the encrypted env asset and the managed `.gitignore` block. | Writes `.pinax/pinax-sync.env.age` (empty ciphertext) and updates `.gitignore`. Never creates plaintext. |
+| `pinax sync env set KEY` | Stores an encrypted env value. | Re-encrypts the whole document. Plaintext is transient; never echoed in stdout/stderr/receipts. |
+| `pinax sync env list` | Lists declared key names (metadata only). | Read-only; never shows values. |
+| `pinax sync env unlock` | Resolves the snapshot in memory. | No writes by default. `--materialize` writes `.pinax/runtime/pinax-sync.env` at `0600`. |
+| `pinax sync env clean` | Removes only the managed materialized file. | Never removes arbitrary user files; refuses symlinks. |
+| `pinax sync env doctor` | Diagnoses asset, permissions, Git tracked-secret and reload state. | Read-only; reports `tracked_secret_env` with a `git rm --cached` remediation when plaintext env is already tracked. |
+
+### Security defaults
+
+- **Plaintext is never committed.** `init` and `set` write ciphertext only; `unlock` stays in memory by default; `--materialize` is the explicit compatibility exit at a fixed `0600` path.
+- **Strict dotenv subset.** The parser accepts `KEY=value`, `KEY="quoted"`, `KEY='quoted'` only and rejects shell execution, `$(...)`, backticks, `${...}`, include/source directives, NUL/control characters, duplicate and empty keys. Errors report line number and key name only — never the rejected value.
+- **Runtime injection precedence.** Explicit CLI flags > explicit process environment > decrypted env snapshot > project/user config > defaults. Child processes receive only allowlisted keys; the full decrypted environment is never copied to subprocesses.
+- **Plaintext env is Git-ignored and Capsa-protected.** A managed `.gitignore` block ignores `.env`, `.env.*`, `*.env`, `.pinax/runtime/` and re-includes the encrypted asset plus `.env.example` templates. The content manifest hard-denies plaintext env paths so a user re-include can never upload secrets as ordinary content.
+- **Daemon reload is run-boundary and fail-safe.** The daemon checks the encrypted asset digest between sync runs; on change it unlocks+parses a new snapshot for the next run. The current run retains its original snapshot. On failure it keeps the last successful snapshot and reports `sync_env_reload_failed` without leaking plaintext.
+
+### First-version unlock providers
+
+The env loader reuses the same unlock providers as `pinax sync repo secret`. The deterministic `fake` AES-GCM provider (keyed by `PINAX_SYNC_FAKE_KEY`) makes the layer testable end-to-end; the `env` provider resolves values from `PINAX_SYNC_SECRET_*`. Production deployments should register a reviewed provider (age/keychain).
