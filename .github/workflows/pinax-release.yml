@@ -72,7 +72,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: "~> v2"
+          version: "v2.17.0"
           args: check
 
       - name: task check
@@ -104,7 +104,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: "~> v2"
+          version: "v2.17.0"
           args: release --snapshot --clean --skip=publish
 
       - name: upload snapshot artifacts
@@ -178,7 +178,7 @@ jobs:
           PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
         with:
           distribution: goreleaser
-          version: "~> v2"
+          version: "v2.17.0"
           args: release --clean
 
       - name: upload release artifacts

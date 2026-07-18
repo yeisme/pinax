@@ -65,12 +65,12 @@ Agent plan 会绑定 object ID、observed path、expected content revision 和 r
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.1.6`）：
+从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.1.7`）：
 
 ```bash
 # linux x86_64（请按你的平台调整 os/arch：darwin、windows；x86_64、aarch64）
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.6/pinax_0.1.6_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.6/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.7/pinax_0.1.7_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.7/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
