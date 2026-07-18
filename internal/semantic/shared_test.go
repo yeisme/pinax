@@ -3,15 +3,15 @@ package semantic
 import (
 	"testing"
 
-	"github.com/yeisme/credentialctl/pkg/credentials"
+	"github.com/yeisme/pinax/internal/sharedcredentials"
 )
 
 type fakeResolver struct {
 	secret []byte
 }
 
-func (f fakeResolver) Resolve(consumer, capability string, ref credentials.Ref) (credentials.Resolution, error) {
-	return credentials.Resolution{Secret: f.secret, Backend: "fake", Ref: ref}, nil
+func (f fakeResolver) Resolve(consumer, capability string, ref sharedcredentials.Ref) (sharedcredentials.Resolution, error) {
+	return sharedcredentials.Resolution{Secret: f.secret, Backend: "fake", Ref: ref}, nil
 }
 
 func TestResolveOpenAIAPIKeyPrecedence(t *testing.T) {

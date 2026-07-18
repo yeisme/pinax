@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/yeisme/credentialctl/pkg/credentials"
+	"github.com/yeisme/pinax/internal/sharedcredentials"
 )
 
 // openAISharedRef is the default shared credential ref used for the OpenAI
@@ -14,12 +14,12 @@ const openAISharedRef = "yeisme-credential://openai/personal-default"
 // sharedResolver is an optional credentialctl fallback for the OpenAI embedding
 // provider. It is attached via EnableSharedResolver from application startup.
 // Tests may also set it directly (and reset to nil via t.Cleanup).
-var sharedResolver credentials.Resolver
+var sharedResolver sharedcredentials.Resolver
 
 // EnableSharedResolver attaches the credentialctl shared credential resolver so
 // the OpenAI embedding provider falls back to the shared credential when
 // OPENAI_API_KEY is unset. Passing nil disables the fallback.
-func EnableSharedResolver(r credentials.Resolver) {
+func EnableSharedResolver(r sharedcredentials.Resolver) {
 	sharedResolver = r
 }
 
@@ -33,7 +33,7 @@ func resolveOpenAIAPIKey() (string, string) {
 		return v, "env:OPENAI_API_KEY"
 	}
 	if sharedResolver != nil {
-		if ref, err := credentials.ParseRef(openAISharedRef); err == nil {
+		if ref, err := sharedcredentials.ParseRef(openAISharedRef); err == nil {
 			if res, err := sharedResolver.Resolve("pinax", "embedding", ref); err == nil && len(res.Secret) > 0 {
 				return string(res.Secret), "shared:" + openAISharedRef
 			}

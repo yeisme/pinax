@@ -2,12 +2,14 @@ package semantic
 
 import (
 	"context"
-
-	"github.com/yeisme/lance"
 )
 
-// Compile-time guarantee that KBDomain satisfies lance.Domain.
-var _ lance.Domain = KBDomain{}
+type PermissionFilter = map[string]any
+
+type Record struct {
+	ID       string
+	Metadata map[string]any
+}
 
 // KBDomain is the pinax knowledge-base adapter for the shared lance vector +
 // RAG platform. It knows the table name, the redaction policy for note
@@ -64,7 +66,7 @@ func (KBDomain) Redact(record map[string]any) map[string]any {
 //
 // A missing or empty filter dimension matches everything (no restriction).
 // Records with no metadata pass unless a filter dimension is set.
-func (KBDomain) ResolvePermission(_ context.Context, records []lance.Record, filter lance.PermissionFilter) []string {
+func (KBDomain) ResolvePermission(_ context.Context, records []Record, filter PermissionFilter) []string {
 	statusSet := toStringSet(filter["note_status"])
 	kindSet := toStringSet(filter["note_kind"])
 
