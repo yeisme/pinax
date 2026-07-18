@@ -266,6 +266,271 @@ func TestCloudSyncPullPreservesScriptMode(t *testing.T) {
 	}
 }
 
+func TestCloudSyncPullDoesNotRestoreLocallyMovedPath(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+	}
+	writeFile(t, filepath.Join(deviceA, "index", "home.md"), "# Home\n\noriginal index note\n")
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync pull: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(deviceB, "notes"), 0o755); err != nil {
+		t.Fatalf("mkdir notes: %v", err)
+	}
+	if err := os.Rename(filepath.Join(deviceB, "index", "home.md"), filepath.Join(deviceB, "notes", "home.md")); err != nil {
+		t.Fatalf("move note locally: %v", err)
+	}
+
+	projection, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if !hasCommandCode(err, "LOCAL_UNPUSHED_CHANGES") {
+		t.Fatalf("sync pull should protect local move, err=%v projection=%#v", err, projection)
+	}
+	if fileExistsApp(filepath.Join(deviceB, "index", "home.md")) {
+		t.Fatalf("sync pull restored stale index path")
+	}
+	if got := readFile(t, filepath.Join(deviceB, "notes", "home.md")); !strings.Contains(got, "original index note") {
+		t.Fatalf("local moved note missing body:\n%s", got)
+	}
+}
+
+func TestCloudSyncAllPushesLocalMoveAndRemoteDeviceDeletesOldPath(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+	}
+	writeFile(t, filepath.Join(deviceA, "index", "home.md"), "# Home\n\nmove me out of index\n")
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync pull: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(deviceB, "notes"), 0o755); err != nil {
+		t.Fatalf("mkdir notes: %v", err)
+	}
+	if err := os.Rename(filepath.Join(deviceB, "index", "home.md"), filepath.Join(deviceB, "notes", "home.md")); err != nil {
+		t.Fatalf("move note locally: %v", err)
+	}
+
+	syncAll, err := svc.SyncAll(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync all after local move: %v projection=%#v", err, syncAll)
+	}
+	if syncAll.Facts["remote_write"] != "true" {
+		t.Fatalf("sync all did not push local move: %#v", syncAll.Facts)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("device A pull moved path: %v", err)
+	}
+	if fileExistsApp(filepath.Join(deviceA, "index", "home.md")) {
+		t.Fatalf("device A kept stale index path after remote move")
+	}
+	if got := readFile(t, filepath.Join(deviceA, "notes", "home.md")); !strings.Contains(got, "move me out of index") {
+		t.Fatalf("device A missing moved note body:\n%s", got)
+	}
+}
+
+func TestCloudSyncPullAppliesNoteSoftDeleteMarker(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+	}
+	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: deviceA, Title: "Delete Me", Body: "remote soft delete body", Dir: "notes", Slug: "delete-me"}); err != nil {
+		t.Fatalf("create note: %v", err)
+	}
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync push: %v", err)
+	}
+	if _, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("initial sync pull: %v", err)
+	}
+	if _, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: deviceA, NoteRef: "Delete Me", Yes: true}); err != nil {
+		t.Fatalf("soft delete on device A: %v", err)
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push note delete marker: %v", err)
+	}
+	pull, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync pull note delete marker: %v", err)
+	}
+	if pull.Facts["delete_markers_applied"] != "1" {
+		t.Fatalf("pull did not apply note delete marker: %#v", pull.Facts)
+	}
+	if fileExistsApp(filepath.Join(deviceB, "notes", "delete-me.md")) {
+		t.Fatalf("device B kept active note path after remote soft delete")
+	}
+	trash, err := svc.TrashList(ctx, TrashRequest{VaultPath: deviceB})
+	if err != nil {
+		t.Fatalf("trash list: %v", err)
+	}
+	if trash.Facts["entries"] != "1" || trash.Facts["entry.1.object_kind"] != "note" {
+		t.Fatalf("trash missing remote-deleted note: facts=%#v data=%#v", trash.Facts, trash.Data)
+	}
+	trashPath := filepath.Join(deviceB, filepath.FromSlash(trash.Facts["entry.1.trash_path"]))
+	if got := readFile(t, trashPath); !strings.Contains(got, "remote soft delete body") {
+		t.Fatalf("trash backup missing note body:\n%s", got)
+	}
+}
+
+func TestCloudSyncPullAppliesProjectDeleteMarker(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+		if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "history", Name: "History", NotesPrefix: "notes/history"}); err != nil {
+			t.Fatalf("create history project %s: %v", root, err)
+		}
+	}
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+
+	if _, err := svc.ProjectDelete(ctx, ProjectDeleteRequest{VaultPath: deviceA, Project: "history", Yes: true}); err != nil {
+		t.Fatalf("delete project on device A: %v", err)
+	}
+	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync push delete marker: %v", err)
+	}
+	if push.Facts["delete_markers"] != "1" || push.Facts["remote_write"] != "true" {
+		t.Fatalf("push facts missing delete marker: %#v", push.Facts)
+	}
+
+	pull, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync pull delete marker: %v", err)
+	}
+	if pull.Facts["delete_markers_applied"] != "1" {
+		t.Fatalf("pull facts missing applied delete marker: %#v", pull.Facts)
+	}
+	listed, err := svc.ListProjects(ctx, VaultRequest{VaultPath: deviceB})
+	if err != nil {
+		t.Fatalf("list projects after pull: %v", err)
+	}
+	if listed.Facts["projects"] != "0" || strings.Contains(fmt.Sprint(listed.Data), "history") {
+		t.Fatalf("deleted project still active after pull: facts=%#v data=%#v", listed.Facts, listed.Data)
+	}
+	trash, err := svc.TrashList(ctx, TrashRequest{VaultPath: deviceB})
+	if err != nil {
+		t.Fatalf("trash list after pull: %v", err)
+	}
+	if trash.Facts["entries"] != "1" || !strings.Contains(fmt.Sprint(trash.Data), "project/history") {
+		t.Fatalf("trash missing pulled tombstone: facts=%#v data=%#v", trash.Facts, trash.Data)
+	}
+	if _, err := svc.TrashRestore(ctx, TrashRequest{VaultPath: deviceB, ObjectRef: "project/history"}); err != nil {
+		t.Fatalf("restore pulled project tombstone: %v", err)
+	}
+	restored, err := svc.ListProjects(ctx, VaultRequest{VaultPath: deviceB})
+	if err != nil {
+		t.Fatalf("list projects after restore: %v", err)
+	}
+	if restored.Facts["projects"] != "1" || !strings.Contains(fmt.Sprint(restored.Data), "history") {
+		t.Fatalf("restored project missing: facts=%#v data=%#v", restored.Facts, restored.Data)
+	}
+}
+
+func TestCloudSyncPullDeleteMarkerReportsLocalContentConflict(t *testing.T) {
+	ctx := context.Background()
+	store := t.TempDir()
+	deviceA := filepath.Join(t.TempDir(), "device-a")
+	deviceB := filepath.Join(t.TempDir(), "device-b")
+	svc := NewService()
+	for _, root := range []string{deviceA, deviceB} {
+		if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+			t.Fatalf("init vault %s: %v", root, err)
+		}
+		if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "history", Name: "History", NotesPrefix: "notes/history"}); err != nil {
+			t.Fatalf("create history project %s: %v", root, err)
+		}
+	}
+	writeFile(t, filepath.Join(deviceB, "notes", "history", "local.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_local_history\ntitle: Local History\n---\n\nlocal unsynced edit\n")
+	for _, req := range []CloudLoginRequest{
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+	} {
+		if _, err := svc.CloudLogin(ctx, req); err != nil {
+			t.Fatalf("cloud login: %v", err)
+		}
+	}
+	if _, err := svc.ProjectDelete(ctx, ProjectDeleteRequest{VaultPath: deviceA, Project: "history", Yes: true}); err != nil {
+		t.Fatalf("delete project on device A: %v", err)
+	}
+	if _, err := svc.SyncPush(ctx, SyncRequest{VaultPath: deviceA, Target: "cloud", Yes: true}); err != nil {
+		t.Fatalf("sync push delete marker: %v", err)
+	}
+	pull, err := svc.SyncPull(ctx, SyncRequest{VaultPath: deviceB, Target: "cloud", Yes: true})
+	if err != nil {
+		t.Fatalf("sync pull delete marker: %v", err)
+	}
+	if pull.Facts["delete_markers_applied"] != "1" || pull.Facts["conflicts"] != "1" || pull.Facts["conflict.1.file"] == "" {
+		t.Fatalf("pull did not report local delete conflict: %#v", pull.Facts)
+	}
+	if !strings.Contains(fmt.Sprint(pull.Actions), "pinax trash restore project/history") {
+		t.Fatalf("pull conflict actions missing restore path: %#v", pull.Actions)
+	}
+	trashPath := pull.Facts["conflict.1.file"]
+	if got := readFile(t, filepath.Join(deviceB, filepath.FromSlash(trashPath), "local.md")); !strings.Contains(got, "local unsynced edit") {
+		t.Fatalf("local content was not preserved in trash conflict copy:\n%s", got)
+	}
+}
+
 func TestNoteProjectionRequiresPinaxNoteFrontmatter(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -528,25 +793,7 @@ func TestCoreNoteTemplateIndexAndSyncMVP(t *testing.T) {
 }
 
 func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T) {
-	ctx := context.Background()
-	root := t.TempDir()
-	svc := NewService()
-	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
-		t.Fatalf("init vault: %v", err)
-	}
-	writeFile(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\n\nserver backed push metadata\n")
-	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
-	defer server.Close()
-	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
-		t.Fatalf("cloud login: %v", err)
-	}
-	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
-	if err != nil {
-		t.Fatalf("server sync push: %v", err)
-	}
-	if push.Facts["remote_write"] != "true" {
-		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
-	}
+	assertServerBackedSyncPush(t, "notes/alpha.md", "# Alpha\n\nserver backed push metadata\n")
 }
 
 func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
@@ -560,7 +807,7 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 	writeFile(t, filepath.Join(root, "notes", "alpha.md"), body)
 	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
 	defer server.Close()
-	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token", EncryptionSecretRef: "plain:session-token"}); err != nil {
 		t.Fatalf("cloud login: %v", err)
 	}
 	manifest, err := pinaxcloud.BuildManifest(root)
@@ -599,13 +846,18 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 }
 
 func TestServerBackedSyncPushAllowsEmptyNoteObjectRef(t *testing.T) {
+	assertServerBackedSyncPush(t, "notes/empty.md", "")
+}
+
+func assertServerBackedSyncPush(t *testing.T, notePath, body string) {
+	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Device A"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
-	writeFile(t, filepath.Join(root, "notes", "empty.md"), "")
+	writeFile(t, filepath.Join(root, filepath.FromSlash(notePath)), body)
 	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
 	defer server.Close()
 	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
@@ -613,10 +865,10 @@ func TestServerBackedSyncPushAllowsEmptyNoteObjectRef(t *testing.T) {
 	}
 	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
 	if err != nil {
-		t.Fatalf("empty note server sync push: %v", err)
+		t.Fatalf("server sync push: %v", err)
 	}
 	if push.Facts["remote_write"] != "true" {
-		t.Fatalf("empty note push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
+		t.Fatalf("server push did not commit remotely: facts=%#v data=%#v", push.Facts, push.Data)
 	}
 }
 
@@ -749,7 +1001,7 @@ func TestTagNoteWritesRecordAndRefreshesIndexFacts(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"record_event":   string(domain.RecordEventNoteMetadataUpdated),
-		"ledger_seq":     "2",
+		"ledger_seq":     "3",
 		"index_updated":  "true",
 		"ledger_status":  "updated",
 		"record_version": "2",
@@ -842,6 +1094,101 @@ func hasVaultIssue(issues []domain.VaultIssue, code string) bool {
 	return false
 }
 
+func TestVaultDoctorAndRepairPlanReportMissingTrashBackup(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "history", Name: "History", NotesPrefix: "notes/history"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	deleted, err := svc.ProjectDelete(ctx, ProjectDeleteRequest{VaultPath: root, Project: "history", Yes: true})
+	if err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(deleted.Facts["trash_path"]))); err != nil {
+		t.Fatalf("remove trash backup: %v", err)
+	}
+
+	doctor, err := svc.VaultDoctor(ctx, VaultDoctorRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("vault doctor: %v", err)
+	}
+	doctorData, ok := doctor.Data.(domain.VaultDoctorReport)
+	if !ok {
+		t.Fatalf("doctor data = %#v", doctor.Data)
+	}
+	if doctor.Status != "partial" || !hasVaultIssue(doctorData.Issues, "trash_backup_missing") {
+		t.Fatalf("doctor missing trash_backup_missing: status=%s issues=%#v", doctor.Status, doctorData.Issues)
+	}
+
+	repair, err := svc.PlanRepair(ctx, RepairPlanRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("repair plan: %v", err)
+	}
+	plan, ok := repair.Data.(domain.RepairPlan)
+	if !ok {
+		t.Fatalf("repair data = %#v", repair.Data)
+	}
+	if !hasRepairOperation(plan.Operations, "trash_backup_missing") {
+		t.Fatalf("repair plan missing trash_backup_missing operation: %#v skipped=%#v", plan.Operations, plan.SkippedIssues)
+	}
+}
+
+func TestVaultDoctorAndRepairPlanReviewMissingActiveWorkspace(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateProject(ctx, ProjectRequest{VaultPath: root, Slug: "history", Name: "History", NotesPrefix: "notes/history"}); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	created, err := svc.ProjectSubprojectCreate(ctx, ProjectWorkspaceRequest{VaultPath: root, Project: "history", Subproject: "timeline", Title: "Timeline"})
+	if err != nil {
+		t.Fatalf("create subproject: %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(created.Facts["workspace_path"]))); err != nil {
+		t.Fatalf("remove workspace path: %v", err)
+	}
+
+	doctor, err := svc.VaultDoctor(ctx, VaultDoctorRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("vault doctor: %v", err)
+	}
+	doctorData := doctor.Data.(domain.VaultDoctorReport)
+	if !hasVaultIssue(doctorData.Issues, "project_workspace_missing") {
+		t.Fatalf("doctor missing project_workspace_missing: %#v", doctorData.Issues)
+	}
+	repair, err := svc.PlanRepair(ctx, RepairPlanRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("repair plan: %v", err)
+	}
+	plan := repair.Data.(domain.RepairPlan)
+	if !hasRepairOperation(plan.Operations, "project_workspace_missing") {
+		t.Fatalf("repair plan missing project_workspace_missing operation: %#v", plan.Operations)
+	}
+	listed, err := svc.ProjectSubprojectList(ctx, ProjectWorkspaceRequest{VaultPath: root, Project: "history"})
+	if err != nil {
+		t.Fatalf("subproject list after doctor: %v", err)
+	}
+	if listed.Facts["subprojects"] != "1" {
+		t.Fatalf("doctor/repair deleted active registry unexpectedly: %#v", listed.Facts)
+	}
+}
+
+func hasRepairOperation(ops []domain.RepairOperation, code string) bool {
+	for _, op := range ops {
+		if op.IssueCode == code {
+			return true
+		}
+	}
+	return false
+}
+
 func TestNoteUXServiceResolverListCreateAndMutate(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -907,6 +1254,33 @@ func TestNoteUXServiceResolverListCreateAndMutate(t *testing.T) {
 	deleted, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: root, NoteRef: "Created Renamed", Yes: true})
 	if err != nil || deleted.Facts["trash_path"] == "" {
 		t.Fatalf("delete projection=%#v err=%v", deleted, err)
+	}
+}
+
+func TestNoteSoftDeleteCreatesCloudDeleteMarker(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	if _, err := svc.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: "Trash Me", Body: "soft delete marker body", Dir: "notes", Slug: "trash-me"}); err != nil {
+		t.Fatalf("create note: %v", err)
+	}
+	deleted, err := svc.DeleteNote(ctx, NoteDeleteRequest{VaultPath: root, NoteRef: "Trash Me", Yes: true})
+	if err != nil {
+		t.Fatalf("soft delete note: %v", err)
+	}
+	manifest, err := pinaxcloud.BuildManifest(root)
+	if err != nil {
+		t.Fatalf("build manifest: %v", err)
+	}
+	if len(manifest.Deletes) != 1 {
+		t.Fatalf("delete markers = %#v", manifest.Deletes)
+	}
+	deleteMarker := manifest.Deletes[0]
+	if deleteMarker.ObjectKind != "note" || deleteMarker.ObjectID == "" || deleteMarker.PathHash != pinaxcloud.PathHash("notes/trash-me.md") || !strings.HasPrefix(deleteMarker.TrashBlobID, "blob_") {
+		t.Fatalf("note delete marker = %#v trash=%#v", deleteMarker, deleted.Facts)
 	}
 }
 
@@ -1990,6 +2364,33 @@ func TestIndexRefreshChangedSinceUsesVersionBackendWithoutDeletingUnchangedNotes
 	if len(lookup.Candidates) != 1 || lookup.Candidates[0].Path != "b.md" {
 		t.Fatalf("unchanged note projection was removed: %#v", lookup)
 	}
+}
+
+func TestScanIndexRefreshNotesReturnsStableOrdinaryNotesAndFailedPaths(t *testing.T) {
+	root := t.TempDir()
+	writeAppFixture(t, filepath.Join(root, "notes", "z.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_z\ntitle: Z\nkind: reference\nstatus: active\n---\n\n# Z\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "a.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_a\ntitle: A\nkind: reference\nstatus: active\n---\n\n# A\n")
+	writeAppFixture(t, filepath.Join(root, "index", "system.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_system\ntitle: System\nkind: index\nstatus: system\n---\n\n# System\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "bad.md"), "---\nschema_version: pinax.note.v1\ntitle: Bad\nkind: reference\nstatus: active\n---\n\n# Bad\n")
+
+	notes, failedPaths, err := scanIndexRefreshNotes(root)
+	if err != nil {
+		t.Fatalf("scan index refresh notes: %v", err)
+	}
+	if got, want := joinedNotePaths(notes), "notes/a.md,notes/z.md"; got != want {
+		t.Fatalf("note paths got=%s want=%s notes=%#v", got, want, notes)
+	}
+	if got, want := strings.Join(failedPaths, ","), "notes/bad.md"; got != want {
+		t.Fatalf("failed paths got=%s want=%s", got, want)
+	}
+}
+
+func joinedNotePaths(notes []domain.Note) string {
+	paths := make([]string, 0, len(notes))
+	for _, note := range notes {
+		paths = append(paths, note.Path)
+	}
+	return strings.Join(paths, ",")
 }
 
 func TestNoteReadPathsUseSharedResolverCandidates(t *testing.T) {

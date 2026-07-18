@@ -7,7 +7,7 @@ This centralized local API mode is intentionally separate from Pinax Cloud distr
 The long-term client target is CLI capability parity through registered routes and RPC methods. This must evolve additively: new client-visible commands are added to the capability registry, unsupported commands keep returning `remote_command_unsupported`, and local runtime-control commands remain local-only unless a dedicated safe capability is designed. See [Client CLI Parity and Realtime Sync](./client-cli-parity-and-sync.md).
 
 - `pinax api serve --port 0 --vault ./my-notes` binds to `127.0.0.1` by default, and the authentication mode defaults to a temp token (generated in process memory and printed once to stderr); it supports long-lived tokens with `--token-file` and unauthenticated mode with `--no-auth`.
-- Explicitly use `--allow-write` when folder mutation is needed.
+- Explicitly use `--allow-write` when folder, draft, inbox, sync, subproject, or memory mutation is needed. Dry-run memory capture remains non-persistent.
 - REST handlers and the RPC dispatcher only perform parameter parsing, status code mapping, and projection JSON serialization; they must not directly read or write Markdown, `.pinax/`, SQLite/GORM repositories, Git, or providers.
 - Auth middleware is a transport-layer concern and does not intrude into handler logic. Each route registers scope requirements by group.
 - `--expose` and `--hide` control the exposed route groups; routes that are not exposed return `route_not_found`.
@@ -43,6 +43,23 @@ Exported OpenAPI paths/methods must come from the REST route registry one by one
 - `x-pinax-approval-required`
 - `x-pinax-snapshot-required`
 
+## Agent Brain Capability Handoff
+
+Agent Brain local API support is additive and staged. Current discovery may expose existing read-only capabilities such as memory context, KB context, search, graph, project board, proof loop, and MCP-adjacent projections only when the corresponding CLI/API/MCP route is implemented. `pinax.brain.context`, `pinax.brain.answer`, `pinax.brain.sources`, and `pinax.brain.maintenance_plan` are implemented stdio MCP tools, not HTTP routes. Planned local API capability ids such as `brain.context.bundle`, `brain.answer.preview`, `brain.sources.list`, `brain.maintenance.plan`, and `brain.provider.cost_status` must use a clear `local_only_reason` such as `planned`, `future-contract`, or `future-owner` until an implemented route exists; OpenAPI export must not invent HTTP paths for planned capabilities.
+
+HTTP MCP, OAuth, hosted team/company KB mode, organization permission policy, and rate limit enforcement are future-owner concerns. `cli/pinax` may define local projection fields and failure codes, but production HTTP MCP or multi-user backend behavior must be owned by `mcp/gateway`, a hosted/backend subproject, or a later explicit OpenSpec. Without that owner and scope proof, Agent Brain routes must remain single-user local projections and return bounded failures such as `permission_unknown`, `scope_required`, `insufficient_scope`, or `future_owner_required` instead of synthesizing cross-user knowledge.
+
+Future team/company projections must carry permission metadata rather than relying on note paths alone:
+
+| Field | Meaning |
+| --- | --- |
+| `principal` | Current local user, service account, or future authenticated user subject. |
+| `workspace` | Local vault workspace or future organization workspace id. |
+| `source_acl` | Evidence of source-level access, when available. |
+| `visibility` | `private`, `shared`, `team`, `company`, or `unknown`. |
+| `redaction_policy` | Projection policy applied before returning snippets or claims. |
+| `audit_ref` | Local receipt, API audit entry, or future gateway audit reference. |
+
 ## Read Paths
 
 Current stable discovery and read paths:
@@ -65,6 +82,10 @@ GET /v1/inbox
 GET /v1/inbox/{ref}
 GET /v1/drafts
 GET /v1/drafts/{ref}
+GET /v1/memory
+GET /v1/memory:recall?query=memory
+GET /v1/memory:context?task=memory
+GET /v1/memory:stats
 RPC Pinax.ProjectBoard.Show
 RPC Pinax.Project.Subproject.List
 RPC Pinax.Project.Subproject.Show
@@ -76,6 +97,10 @@ RPC Pinax.Inbox.List
 RPC Pinax.Inbox.Show
 RPC Pinax.Draft.List
 RPC Pinax.Draft.Show
+RPC Pinax.Memory.List
+RPC Pinax.Memory.Recall
+RPC Pinax.Memory.Context
+RPC Pinax.Memory.Stats
 RPC Pinax.Sync.Push
 RPC Pinax.Sync.Pull
 ```
@@ -114,6 +139,16 @@ RPC Pinax.Project.Subproject.Create
 
 The default readonly server returns `write_disabled` for project workspace creates even if `yes=true` is present. When `--allow-write` is enabled, missing confirmation returns `approval_required`; successful writes create only the standard workspace directories and CLI-authored registry through the application service.
 
+Memory capture uses the same CLI memory service and never bypasses the ledger boundary:
+
+```text
+POST /v1/memory:capture?dry_run=true
+POST /v1/memory:capture?yes=true
+RPC Pinax.Memory.Capture
+```
+
+`dry_run=true` validates and returns a preview record without creating `.pinax/memory/ledger.sqlite`. Confirmed capture requires API write mode plus `yes=true`; otherwise the adapter returns `write_disabled` or `approval_required`.
+
 Inbox/Draft mutation routes reuse the lifecycle transition service:
 
 ```text
@@ -151,7 +186,7 @@ pinax note list --status active --limit 20 --json
 - An explicit `--vault` is rejected in remote mode with `remote_vault_conflict`; this prevents accidental fallback to a local vault.
 - Unsupported commands are rejected with `remote_command_unsupported`; remote mode must not silently execute unsupported commands locally.
 - When remote mode comes only from `remote.api_url`, local control/configuration commands (`config`, `api`, `token`, `profile`, `vault`, `cloud`, and `sync`) remain local so users can inspect/update endpoints and manage local-first Cloud Sync state without being hijacked by Remote API Mode.
-- Supported first-phase commands are the registered RPC capabilities for project board show, project subproject list/show/create, note list/read/show/preview, project item read and move/archive plan, folder list/show/create/rename/move/delete/adopt/repair, inbox list/show/capture/promote/discard, draft list/show/create/promote/archive/discard, and explicit `sync push` / `sync pull`.
+- Supported first-phase commands are the registered RPC capabilities for project board show, project subproject list/show/create, note list/read/show/preview, project item read and move/archive plan, folder list/show/create/rename/move/delete/adopt/repair, inbox list/show/capture/promote/discard, draft list/show/create/promote/archive/discard, memory list/capture/recall/context/stats, and explicit `sync push` / `sync pull`.
 - Full CLI parity is tracked as a capability-by-capability expansion, not a fallback to arbitrary local execution. Read/status/plan commands should be added before write/apply/deploy commands; risky writes must keep the same approval, snapshot, dry-run, receipt, and redaction gates as the CLI path.
 - `--json` renders the returned Projection envelope directly as JSON-only stdout; `--agent` renders the same Projection as key=value lines.
 

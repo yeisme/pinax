@@ -6,6 +6,9 @@ type Action struct {
 }
 
 const AgentContextSchemaVersion = "pinax.agent_context.v1"
+const AgentBrainContextBundleSchemaVersion = "pinax.agent_brain.context_bundle.v1"
+const AgentBrainAnswerSchemaVersion = "pinax.agent_brain.answer.v1"
+const AgentBrainMaintenancePlanSchemaVersion = "pinax.agent_brain.maintenance_plan.v1"
 
 type AgentContext struct {
 	SchemaVersion string                `json:"schema_version"`
@@ -30,6 +33,86 @@ type AgentContextSnippet struct {
 	Kind   string `json:"kind"`
 	Text   string `json:"text"`
 	Source string `json:"source,omitempty"`
+}
+
+type AgentBrainContextBundle struct {
+	SchemaVersion string                 `json:"schema_version"`
+	Task          string                 `json:"task"`
+	Entities      []string               `json:"entities,omitempty"`
+	MemoryRefs    []AgentContextRef      `json:"memory_refs,omitempty"`
+	SemanticRefs  []AgentContextRef      `json:"semantic_refs,omitempty"`
+	GraphRefs     []AgentContextRef      `json:"graph_refs,omitempty"`
+	QueryRefs     []AgentContextRef      `json:"query_refs,omitempty"`
+	Receipts      []AgentBrainReceiptRef `json:"receipts,omitempty"`
+	Freshness     AgentBrainFreshness    `json:"freshness"`
+	BodyExposure  string                 `json:"body_exposure"`
+	NextActions   []Action               `json:"next_actions,omitempty"`
+}
+
+type AgentBrainReceiptRef struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Path   string `json:"path,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+type AgentBrainFreshness struct {
+	GeneratedFrom string `json:"generated_from"`
+	IndexStatus   string `json:"index_status,omitempty"`
+	CheckedAt     string `json:"checked_at,omitempty"`
+}
+
+type AgentBrainAnswer struct {
+	SchemaVersion string                  `json:"schema_version"`
+	Answer        string                  `json:"answer"`
+	Claims        []AgentBrainClaim       `json:"claims"`
+	Sources       []AgentBrainSource      `json:"sources"`
+	OpenQuestions []string                `json:"open_questions"`
+	NextActions   []Action                `json:"next_actions"`
+	Cost          AgentBrainCost          `json:"cost"`
+	BodyExposure  string                  `json:"body_exposure"`
+	ContextBundle AgentBrainContextBundle `json:"context_bundle"`
+}
+
+type AgentBrainClaim struct {
+	Text       string            `json:"text"`
+	Confidence string            `json:"confidence"`
+	Sources    []AgentContextRef `json:"sources"`
+}
+
+type AgentBrainSource struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Title string `json:"title,omitempty"`
+}
+
+type AgentBrainCost struct {
+	CostClass        string `json:"cost_class"`
+	ProviderID       string `json:"provider_id"`
+	Model            string `json:"model,omitempty"`
+	LocalOnly        bool   `json:"local_only"`
+	NetworkRequired  bool   `json:"network_required"`
+	CredentialSource string `json:"credential_source"`
+	DryRunAvailable  bool   `json:"dry_run_available"`
+}
+
+type AgentBrainMaintenancePlan struct {
+	SchemaVersion string                           `json:"schema_version"`
+	PlanID        string                           `json:"plan_id"`
+	Operations    []AgentBrainMaintenanceOperation `json:"operations"`
+	BodyExposure  string                           `json:"body_exposure"`
+	Writes        bool                             `json:"writes"`
+	NextActions   []Action                         `json:"next_actions"`
+	SavedPath     string                           `json:"saved_path,omitempty"`
+}
+
+type AgentBrainMaintenanceOperation struct {
+	Kind       string   `json:"kind"`
+	Risk       string   `json:"risk"`
+	Status     string   `json:"status"`
+	Evidence   []string `json:"evidence"`
+	NextAction Action   `json:"next_action"`
 }
 
 type StableErrorCode = string
@@ -57,16 +140,26 @@ func (e *CommandError) Error() string {
 }
 
 type Projection struct {
-	SpecVersion string            `json:"spec_version"`
-	Mode        string            `json:"mode"`
-	Command     string            `json:"command"`
-	Status      string            `json:"status"`
-	Summary     string            `json:"summary,omitempty"`
-	Facts       map[string]string `json:"facts,omitempty"`
-	Actions     []Action          `json:"actions,omitempty"`
-	Evidence    []string          `json:"evidence,omitempty"`
-	Data        any               `json:"data,omitempty"`
-	Error       *CommandError     `json:"error,omitempty"`
+	SpecVersion string              `json:"spec_version"`
+	Mode        string              `json:"mode"`
+	Command     string              `json:"command"`
+	Status      string              `json:"status"`
+	Summary     string              `json:"summary,omitempty"`
+	Facts       map[string]string   `json:"facts,omitempty"`
+	Actions     []Action            `json:"actions,omitempty"`
+	Evidence    []string            `json:"evidence,omitempty"`
+	Data        any                 `json:"data,omitempty"`
+	Warnings    []ProjectionWarning `json:"warnings,omitempty"`
+	Error       *CommandError       `json:"error,omitempty"`
+}
+
+// ProjectionWarning is a non-fatal advisory attached to a projection. Unlike
+// Error, a warning does not change the command status; it surfaces a condition
+// the user should review (e.g. a weak encryption key).
+type ProjectionWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
 }
 
 // VaultObjectKind identifies the kind of vault object returned by shared resolver paths.
@@ -196,6 +289,7 @@ type VersionedFile struct {
 
 // Asset is the stable vault asset metadata shape stored in CLI-authored manifests and projections.
 type Asset struct {
+	ObjectID      string        `json:"object_id,omitempty"`
 	ID            string        `json:"id"`
 	Path          string        `json:"path"`
 	Filename      string        `json:"filename"`
@@ -294,16 +388,18 @@ type ProjectWorkspaceDirectory struct {
 }
 
 type ProjectWorkspace struct {
-	SchemaVersion string                      `json:"schema_version"`
-	Project       string                      `json:"project"`
-	Subproject    string                      `json:"subproject"`
-	Title         string                      `json:"title"`
-	Template      string                      `json:"template"`
-	WorkspacePath string                      `json:"workspace_path"`
-	Directories   []ProjectWorkspaceDirectory `json:"directories"`
-	Status        string                      `json:"status"`
-	CreatedAt     string                      `json:"created_at"`
-	UpdatedAt     string                      `json:"updated_at"`
+	ObjectID        string                      `json:"object_id,omitempty"`
+	ProjectObjectID string                      `json:"project_object_id,omitempty"`
+	SchemaVersion   string                      `json:"schema_version"`
+	Project         string                      `json:"project"`
+	Subproject      string                      `json:"subproject"`
+	Title           string                      `json:"title"`
+	Template        string                      `json:"template"`
+	WorkspacePath   string                      `json:"workspace_path"`
+	Directories     []ProjectWorkspaceDirectory `json:"directories"`
+	Status          string                      `json:"status"`
+	CreatedAt       string                      `json:"created_at"`
+	UpdatedAt       string                      `json:"updated_at"`
 }
 
 type CurrentWorkspace struct {
@@ -321,12 +417,17 @@ type Issue struct {
 }
 
 type PlanOperation struct {
-	Kind     string   `json:"kind"`
-	Path     string   `json:"path"`
-	Target   string   `json:"target,omitempty"`
-	Reason   string   `json:"reason"`
-	Status   string   `json:"status"`
-	Evidence []string `json:"evidence,omitempty"`
+	ObjectID                string          `json:"object_id,omitempty"`
+	ObjectKind              string          `json:"object_kind,omitempty"`
+	ObservedPath            string          `json:"observed_path,omitempty"`
+	ExpectedRecordVersion   uint64          `json:"expected_record_version,omitempty"`
+	ExpectedContentRevision ContentRevision `json:"expected_content_revision,omitempty"`
+	Kind                    string          `json:"kind"`
+	Path                    string          `json:"path"`
+	Target                  string          `json:"target,omitempty"`
+	Reason                  string          `json:"reason"`
+	Status                  string          `json:"status"`
+	Evidence                []string        `json:"evidence,omitempty"`
 }
 
 type RepairPlan struct {
@@ -346,17 +447,22 @@ type RepairPlan struct {
 }
 
 type RepairOperation struct {
-	OperationID string   `json:"operation_id"`
-	Kind        string   `json:"kind"`
-	Mode        string   `json:"mode"`
-	Risk        string   `json:"risk"`
-	Path        string   `json:"path,omitempty"`
-	Target      string   `json:"target,omitempty"`
-	NoteID      string   `json:"note_id,omitempty"`
-	IssueCode   string   `json:"issue_code"`
-	Reason      string   `json:"reason"`
-	Status      string   `json:"status"`
-	Evidence    []string `json:"evidence,omitempty"`
+	OperationID             string          `json:"operation_id"`
+	ObjectID                string          `json:"object_id,omitempty"`
+	ObjectKind              string          `json:"object_kind,omitempty"`
+	ObservedPath            string          `json:"observed_path,omitempty"`
+	ExpectedRecordVersion   uint64          `json:"expected_record_version,omitempty"`
+	ExpectedContentRevision ContentRevision `json:"expected_content_revision,omitempty"`
+	Kind                    string          `json:"kind"`
+	Mode                    string          `json:"mode"`
+	Risk                    string          `json:"risk"`
+	Path                    string          `json:"path,omitempty"`
+	Target                  string          `json:"target,omitempty"`
+	NoteID                  string          `json:"note_id,omitempty"`
+	IssueCode               string          `json:"issue_code"`
+	Reason                  string          `json:"reason"`
+	Status                  string          `json:"status"`
+	Evidence                []string        `json:"evidence,omitempty"`
 }
 
 // RestorePlan 是 version restore 生成的只读恢复计划，restore apply 据此把单个 vault
@@ -393,17 +499,22 @@ type OrganizePlan struct {
 }
 
 type OrganizeOperation struct {
-	OperationID string            `json:"operation_id"`
-	Kind        string            `json:"kind"`
-	Mode        string            `json:"mode"`
-	Risk        string            `json:"risk"`
-	Path        string            `json:"path,omitempty"`
-	Target      string            `json:"target,omitempty"`
-	Before      map[string]string `json:"before,omitempty"`
-	After       map[string]string `json:"after,omitempty"`
-	Reason      string            `json:"reason"`
-	Evidence    []string          `json:"evidence,omitempty"`
-	Status      string            `json:"status"`
+	OperationID             string            `json:"operation_id"`
+	ObjectID                string            `json:"object_id,omitempty"`
+	ObjectKind              string            `json:"object_kind,omitempty"`
+	ObservedPath            string            `json:"observed_path,omitempty"`
+	ExpectedRecordVersion   uint64            `json:"expected_record_version,omitempty"`
+	ExpectedContentRevision ContentRevision   `json:"expected_content_revision,omitempty"`
+	Kind                    string            `json:"kind"`
+	Mode                    string            `json:"mode"`
+	Risk                    string            `json:"risk"`
+	Path                    string            `json:"path,omitempty"`
+	Target                  string            `json:"target,omitempty"`
+	Before                  map[string]string `json:"before,omitempty"`
+	After                   map[string]string `json:"after,omitempty"`
+	Reason                  string            `json:"reason"`
+	Evidence                []string          `json:"evidence,omitempty"`
+	Status                  string            `json:"status"`
 }
 
 type OrganizePlanSummary struct {
@@ -416,6 +527,7 @@ type OrganizePlanSummary struct {
 }
 
 type Project struct {
+	ObjectID    string `json:"object_id,omitempty"`
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -631,22 +743,25 @@ type NoteLink struct {
 	Broken      bool   `json:"broken"`
 
 	// 扩展字段：双联图谱增强。
-	SourceNoteID  string              `json:"source_note_id,omitempty"`
-	TargetNoteID  string              `json:"target_note_id,omitempty"`
-	TargetRaw     string              `json:"target_raw,omitempty"`
-	TargetAlias   string              `json:"target_alias,omitempty"`
-	TargetHeading string              `json:"target_heading,omitempty"`
-	Status        string              `json:"status,omitempty"`
-	Line          int                 `json:"line,omitempty"`
-	Evidence      string              `json:"evidence,omitempty"`
-	Candidates    []NoteLinkCandidate `json:"candidates,omitempty"`
+	SourceObjectID string              `json:"source_object_id,omitempty"`
+	TargetObjectID string              `json:"target_object_id,omitempty"`
+	SourceNoteID   string              `json:"source_note_id,omitempty"`
+	TargetNoteID   string              `json:"target_note_id,omitempty"`
+	TargetRaw      string              `json:"target_raw,omitempty"`
+	TargetAlias    string              `json:"target_alias,omitempty"`
+	TargetHeading  string              `json:"target_heading,omitempty"`
+	Status         string              `json:"status,omitempty"`
+	Line           int                 `json:"line,omitempty"`
+	Evidence       string              `json:"evidence,omitempty"`
+	Candidates     []NoteLinkCandidate `json:"candidates,omitempty"`
 }
 
 // NoteLinkCandidate 描述歧义链接的候选目标。
 type NoteLinkCandidate struct {
-	Path   string `json:"path"`
-	Title  string `json:"title"`
-	NoteID string `json:"note_id,omitempty"`
+	ObjectID string `json:"object_id,omitempty"`
+	Path     string `json:"path"`
+	Title    string `json:"title"`
+	NoteID   string `json:"note_id,omitempty"`
 }
 
 // NoteGraphProjection 描述图谱查询的完整投影。

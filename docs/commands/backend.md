@@ -17,6 +17,9 @@
 | `backend remove <name>` | Remove a backend profile. | Writes backend metadata. |
 | `backend object list <name> [prefix]` | List objects for the specified backend. | Does not write. |
 | `backend object stat <name> <key>` | View the status of the specified backend object. | Does not write. |
+| `backend notes summary [name] [prefix]` | Summarize Markdown note-like objects visible in the backend; omitting `name` uses the default backend. | Does not write. |
+| `backend notes list [name] [prefix]` | List Markdown note-like objects visible in the backend; omitting `name` uses the default backend. | Does not write. |
+| `backend notes stat <name> <path>` | View one backend note object's revision/status. | Does not write. |
 
 ## Common Workflow
 
@@ -25,6 +28,9 @@ pinax backend add s3 work-s3 --bucket notes --region us-east-1 --profile work --
 pinax backend ls --vault ./my-notes --json
 pinax backend show work-s3 --vault ./my-notes
 pinax backend doctor work-s3 --vault ./my-notes
+pinax backend notes summary --vault ./my-notes --json
+pinax backend notes list work-s3 notes/ --vault ./my-notes --json
+pinax backend notes stat work-s3 notes/cloud-sync.md --vault ./my-notes --json
 pinax backend object list work-s3 pinax/ --vault ./my-notes --json
 pinax backend object stat work-s3 pinax/manifest.json --vault ./my-notes --json
 pinax backend diff work-s3 --vault ./my-notes --json

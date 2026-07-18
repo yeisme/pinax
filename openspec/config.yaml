@@ -2,7 +2,7 @@ schema: spec-driven
 context: |
   语言：中文（简体）
   所有 OpenSpec 产物必须用简体中文撰写。
-  本目录是 Pinax CLI 子项目，负责本地优先 Markdown 笔记 vault、索引投影、Git 版本建议、CLI-backed Provider adapter、agent 输出合同、MCP stdio 和 briefing workflow 的实现设计与任务管理。
+  本目录是 Pinax CLI 子项目，负责本地优先 Markdown 笔记 vault、索引投影、Git 版本建议、agent 输出合同、MCP stdio、proof loop 和 bounded Agent Brain context 的实现设计与任务管理。
   新的计划、任务清单、执行证据和归档必须使用 OpenSpec：
   - 当前进行中的变更放在 openspec/changes/<change-id>/
   - 已完成变更归档到 openspec/changes/archive/YYYY-MM-DD-<change-id>/

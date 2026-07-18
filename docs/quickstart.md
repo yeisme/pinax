@@ -2,7 +2,7 @@
 
 本指南带你在 5 分钟内完成从安装到验证 Proof Loop 的最小流程。你将创建一个本地 Markdown vault、写入笔记、运行只读 proof loop 预览、生成并应用修复计划、并验证可回滚。
 
-本指南只覆盖本地核心流程，不涉及 Cloud Sync、MCP server、Templates、Project Boards 等高级能力（见 [命令手册](./commands/README.md)）。
+本指南只覆盖本地核心流程，不涉及 Cloud Sync、MCP server、Templates、Project Boards 等高级能力。需要从空 vault 串到 sync/API/publish/plugin 的完整路线时，读 [完整使用样例](./usage/full-example.md)；命令索引见 [命令手册](./commands/README.md)。
 
 ## 前置条件
 
@@ -21,12 +21,12 @@ go install github.com/yeisme/pinax/cmd/pinax@latest
 
 **方式 B：下载 GitHub Release archive（无需 Go）**
 
-从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.2_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
+从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.5_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
 
 ```bash
 # 示例：Linux x86_64
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.2/pinax_0.1.2_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.2/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.6/pinax_0.1.6_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.6/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz pinax
 chmod +x pinax
@@ -102,5 +102,6 @@ pinax version restore apply --vault ./my-notes --plan <restore_id> --yes --json
 ## 下一步
 
 - 浏览 [命令手册](./commands/README.md) 了解每个 workflow 的推荐入口。
+- 按 [完整使用样例](./usage/full-example.md) 继续验证项目、API、sync、backend、publish 和 plugin dry-run。
 - 阅读 [本地开发](./operations/local-development.md) 了解 `task check`、`task release:local` 等开发任务。
 - 高级能力（Cloud Sync、MCP server、Templates、Project Boards）不在本快速开始范围，见对应命令文档。

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -67,24 +68,22 @@ func addTokenCommands(root *cobra.Command, ctx commandBuildContext) {
 			if err != nil {
 				return renderCommandError(cmd, ctx.outputMode(), "token.list", "list_error", err.Error(), "")
 			}
-			if len(tokens) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No tokens.")
-				return nil
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-15s %-20s %-10s %s\n", "ID", "Label", "Created", "Scope", "Expires")
+			items := make([]map[string]any, 0, len(tokens))
 			for _, t := range tokens {
 				scopes := make([]string, 0, len(t.Scope))
 				for s := range t.Scope {
 					scopes = append(scopes, string(s))
 				}
-				expires := "-"
-				if t.ExpiresAt != "" {
-					expires = t.ExpiresAt
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-20s %-15s %-20s %-10s %s\n",
-					t.ID, t.Label, t.CreatedAt, strings.Join(scopes, ","), expires)
+				sort.Strings(scopes)
+				items = append(items, map[string]any{"id": t.ID, "label": t.Label, "created_at": t.CreatedAt, "scope": strings.Join(scopes, ","), "expires_at": t.ExpiresAt})
 			}
-			return nil
+			projection := domain.NewProjection("token.list", "Tokens listed.")
+			if len(items) == 0 {
+				projection.Summary = "No tokens."
+			}
+			projection.Facts["tokens"] = fmt.Sprint(len(items))
+			projection.Data = map[string]any{"tokens": items}
+			return ctx.renderProjection(cmd, projection, nil)
 		},
 	}
 
@@ -100,8 +99,10 @@ func addTokenCommands(root *cobra.Command, ctx commandBuildContext) {
 			if err := store.Delete(args[0]); err != nil {
 				return renderCommandError(cmd, ctx.outputMode(), "token.revoke", "delete_error", err.Error(), "")
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Revoked token: %s\n", args[0])
-			return nil
+			projection := domain.NewProjection("token.revoke", "Revoked token: "+args[0])
+			projection.Facts["token_id"] = args[0]
+			projection.Data = map[string]any{"token_id": args[0]}
+			return ctx.renderProjection(cmd, projection, nil)
 		},
 	}
 

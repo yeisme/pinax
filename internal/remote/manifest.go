@@ -3,6 +3,8 @@ package remote
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io/fs"
 	"mime"
 	"os"
@@ -14,18 +16,26 @@ import (
 	"github.com/yeisme/pinax/internal/vaultignore"
 )
 
-const ManifestSchemaVersion = "pinax.cloud.manifest.v1"
+const (
+	ManifestSchemaVersionV1 = "pinax.cloud.manifest.v1"
+	ManifestSchemaVersionV2 = "pinax.cloud.manifest.v2"
+	ManifestSchemaVersion   = ManifestSchemaVersionV1
+)
 
 const MaxManifestFileBytes = 100 * 1024 * 1024
 
 type Manifest struct {
-	SchemaVersion string          `json:"schema_version"`
-	GeneratedAt   string          `json:"generated_at"`
-	EntryCount    int             `json:"entry_count"`
-	Entries       []ManifestEntry `json:"entries"`
+	SchemaVersion string           `json:"schema_version"`
+	GeneratedAt   string           `json:"generated_at"`
+	EntryCount    int              `json:"entry_count"`
+	Entries       []ManifestEntry  `json:"entries"`
+	Deletes       []ManifestDelete `json:"deletes,omitempty"`
 }
 
 type ManifestEntry struct {
+	ObjectID   string `json:"object_id,omitempty"`
+	RevisionID string `json:"revision_id,omitempty"`
+	DeviceID   string `json:"device_id,omitempty"`
 	Path       string `json:"path"`
 	PathHash   string `json:"path_hash"`
 	BlobID     string `json:"blob_id"`
@@ -34,6 +44,18 @@ type ManifestEntry struct {
 	ObjectKind string `json:"object_kind,omitempty"`
 	Mode       uint32 `json:"mode,omitempty"`
 	MediaType  string `json:"media_type,omitempty"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type ManifestDelete struct {
+	PathHash    string `json:"path_hash"`
+	ObjectKind  string `json:"object_kind"`
+	ObjectID    string `json:"object_id,omitempty"`
+	TombstoneID string `json:"tombstone_id"`
+	DeletedAt   string `json:"deleted_at,omitempty"`
+	TrashBlobID string `json:"trash_blob_id,omitempty"`
+	RevisionID  string `json:"revision_id,omitempty"`
+	DeviceID    string `json:"device_id,omitempty"`
 }
 
 func BuildManifest(root string) (Manifest, error) {
@@ -85,7 +107,7 @@ func BuildManifest(root string) (Manifest, error) {
 		if err := writeBlobCache(root, blobID, b); err != nil {
 			return err
 		}
-		entries = append(entries, ManifestEntry{Path: rel, PathHash: PathHash(rel), BlobID: blobID, Size: int64(len(b)), SHA256: contentSHA256(b), ObjectKind: manifestObjectKind(rel), Mode: uint32(info.Mode().Perm()), MediaType: mediaType(rel)})
+		entries = append(entries, ManifestEntry{Path: rel, PathHash: PathHash(rel), BlobID: blobID, Size: int64(len(b)), SHA256: contentSHA256(b), ObjectKind: manifestObjectKind(rel), Mode: uint32(info.Mode().Perm()), MediaType: mediaType(rel), UpdatedAt: info.ModTime().UTC().Format(time.RFC3339Nano)})
 		return nil
 	}); err != nil {
 		return Manifest{}, err
@@ -93,7 +115,11 @@ func BuildManifest(root string) (Manifest, error) {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].PathHash < entries[j].PathHash
 	})
-	return Manifest{SchemaVersion: ManifestSchemaVersion, GeneratedAt: time.Now().UTC().Format(time.RFC3339), EntryCount: len(entries), Entries: entries}, nil
+	deletes, err := buildManifestDeletes(root)
+	if err != nil {
+		return Manifest{}, err
+	}
+	return Manifest{SchemaVersion: ManifestSchemaVersion, GeneratedAt: time.Now().UTC().Format(time.RFC3339), EntryCount: len(entries), Entries: entries, Deletes: deletes}, nil
 }
 
 type ManifestFileTooLargeError struct {
@@ -147,10 +173,163 @@ func mediaType(rel string) string {
 	return "application/octet-stream"
 }
 
+func buildManifestDeletes(root string) ([]ManifestDelete, error) {
+	path := filepath.Join(root, ".pinax", "records", "tombstones.json")
+	payload, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	tombstones := map[string]struct {
+		ObjectKind  string `json:"object_kind"`
+		ObjectID    string `json:"object_id"`
+		TombstoneID string `json:"tombstone_id"`
+		OldPath     string `json:"old_path"`
+		TrashPath   string `json:"trash_path"`
+		DeletedAt   string `json:"deleted_at"`
+	}{}
+	if err := json.Unmarshal(payload, &tombstones); err != nil {
+		return nil, err
+	}
+	deletes := make([]ManifestDelete, 0, len(tombstones))
+	for key, tombstone := range tombstones {
+		objectID := strings.TrimSpace(tombstone.ObjectID)
+		if objectID == "" {
+			objectID = key
+		}
+		objectKind := strings.TrimSpace(tombstone.ObjectKind)
+		if objectKind == "" {
+			objectKind = "note"
+		}
+		tombstoneID := strings.TrimSpace(tombstone.TombstoneID)
+		if tombstoneID == "" {
+			tombstoneID = "trash_" + strings.TrimPrefix(PathHash(objectID), "path_")[:12]
+		}
+		pathHashSource := objectID
+		if strings.TrimSpace(tombstone.OldPath) != "" && objectKind == "note" {
+			pathHashSource = tombstone.OldPath
+		}
+		deleteMarker := ManifestDelete{PathHash: PathHash(pathHashSource), ObjectKind: objectKind, ObjectID: objectID, TombstoneID: tombstoneID, DeletedAt: tombstone.DeletedAt}
+		if strings.TrimSpace(tombstone.TrashPath) != "" {
+			trashPath, joinErr := safeManifestJoin(root, tombstone.TrashPath)
+			if joinErr != nil {
+				return nil, joinErr
+			}
+			if info, statErr := os.Stat(trashPath); statErr == nil && !info.IsDir() {
+				content, readErr := os.ReadFile(trashPath)
+				if readErr != nil {
+					return nil, readErr
+				}
+				deleteMarker.TrashBlobID = BlobID(content)
+				if err := writeBlobCache(root, deleteMarker.TrashBlobID, content); err != nil {
+					return nil, err
+				}
+			} else if statErr == nil && info.IsDir() {
+				deleteMarker.TrashBlobID = PathHash(tombstone.TrashPath)
+			}
+		}
+		deletes = append(deletes, deleteMarker)
+	}
+	sort.Slice(deletes, func(i, j int) bool { return deletes[i].PathHash < deletes[j].PathHash })
+	return deletes, nil
+}
+
+func safeManifestJoin(root, rel string) (string, error) {
+	if filepath.IsAbs(rel) || strings.Contains(filepath.ToSlash(rel), "../") || strings.HasPrefix(filepath.ToSlash(rel), "..") {
+		return "", &ManifestUnsafePathError{Path: rel}
+	}
+	path := filepath.Clean(filepath.Join(root, filepath.FromSlash(rel)))
+	if path != root && !strings.HasPrefix(path, root+string(os.PathSeparator)) {
+		return "", &ManifestUnsafePathError{Path: rel}
+	}
+	return path, nil
+}
+
+type ManifestUnsafePathError struct{ Path string }
+
+func (e *ManifestUnsafePathError) Error() string { return "unsafe_manifest_path: " + e.Path }
+
 func writeBlobCache(root, blobID string, content []byte) error {
 	path := filepath.Join(root, ".pinax", "cloud", "blob-cache", blobID)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	return os.WriteFile(path, content, 0o600)
+}
+
+type ManifestIdentity struct {
+	ObjectID   string
+	ObjectKind string
+}
+
+func BuildManifestV2(root, deviceID string, identities map[string]ManifestIdentity) (Manifest, error) {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return Manifest{}, fmt.Errorf("manifest_device_required")
+	}
+	manifest, err := BuildManifest(root)
+	if err != nil {
+		return Manifest{}, err
+	}
+	seenObjectIDs := make(map[string]string, len(manifest.Entries))
+	for index := range manifest.Entries {
+		entry := &manifest.Entries[index]
+		identityFact, ok := identities[entry.Path]
+		if !ok || strings.TrimSpace(identityFact.ObjectID) == "" || strings.TrimSpace(identityFact.ObjectKind) == "" {
+			return Manifest{}, fmt.Errorf("manifest_identity_required: %s", entry.Path)
+		}
+		objectID := strings.TrimSpace(identityFact.ObjectID)
+		if previousPath, duplicate := seenObjectIDs[objectID]; duplicate {
+			return Manifest{}, fmt.Errorf("manifest_duplicate_object_id: %s: %s, %s", objectID, previousPath, entry.Path)
+		}
+		seenObjectIDs[objectID] = entry.Path
+		entry.ObjectID = objectID
+		entry.ObjectKind = strings.TrimSpace(identityFact.ObjectKind)
+		entry.RevisionID = manifestEntryRevisionID(objectID, entry.BlobID)
+		entry.DeviceID = deviceID
+	}
+	for index := range manifest.Deletes {
+		deleteMarker := &manifest.Deletes[index]
+		if strings.TrimSpace(deleteMarker.ObjectID) == "" {
+			return Manifest{}, fmt.Errorf("manifest_tombstone_identity_required: %s", deleteMarker.TombstoneID)
+		}
+		deleteMarker.RevisionID = manifestEntryRevisionID(deleteMarker.ObjectID, deleteMarker.TombstoneID+":"+deleteMarker.TrashBlobID)
+		deleteMarker.DeviceID = deviceID
+	}
+	manifest.SchemaVersion = ManifestSchemaVersionV2
+	return manifest, manifest.ValidateV2()
+}
+
+func (manifest Manifest) ValidateV2() error {
+	if manifest.SchemaVersion != ManifestSchemaVersionV2 {
+		return fmt.Errorf("invalid_manifest_version")
+	}
+	objectIDs := make(map[string]struct{}, len(manifest.Entries))
+	paths := make(map[string]struct{}, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		if strings.TrimSpace(entry.ObjectID) == "" || strings.TrimSpace(entry.ObjectKind) == "" || strings.TrimSpace(entry.Path) == "" || strings.TrimSpace(entry.RevisionID) == "" || strings.TrimSpace(entry.DeviceID) == "" || strings.TrimSpace(entry.UpdatedAt) == "" {
+			return fmt.Errorf("invalid_manifest_v2_entry")
+		}
+		if _, exists := objectIDs[entry.ObjectID]; exists {
+			return fmt.Errorf("duplicate_manifest_object_id")
+		}
+		if _, exists := paths[entry.Path]; exists {
+			return fmt.Errorf("duplicate_manifest_path")
+		}
+		objectIDs[entry.ObjectID] = struct{}{}
+		paths[entry.Path] = struct{}{}
+	}
+	for _, deleteMarker := range manifest.Deletes {
+		if strings.TrimSpace(deleteMarker.ObjectID) == "" || strings.TrimSpace(deleteMarker.ObjectKind) == "" || strings.TrimSpace(deleteMarker.RevisionID) == "" || strings.TrimSpace(deleteMarker.DeviceID) == "" {
+			return fmt.Errorf("invalid_manifest_v2_tombstone")
+		}
+	}
+	return nil
+}
+
+func manifestEntryRevisionID(objectID, contentFact string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(objectID) + "\x00" + strings.TrimSpace(contentFact)))
+	return "revision_" + hex.EncodeToString(digest[:])
 }

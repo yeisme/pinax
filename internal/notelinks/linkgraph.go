@@ -172,15 +172,16 @@ func BuildResolverSnapshot(notes []domain.Note) ResolverSnapshot {
 func ResolveLinkTarget(source domain.Note, rawLink RawLink, snap ResolverSnapshot) ResolveResult {
 	result := ResolveResult{}
 	link := domain.NoteLink{
-		SourcePath:    source.Path,
-		SourceTitle:   source.Title,
-		SourceNoteID:  source.ID,
-		Target:        rawLink.Target,
-		TargetRaw:     rawLink.Raw,
-		TargetAlias:   rawLink.Alias,
-		TargetHeading: rawLink.Heading,
-		Kind:          rawLink.Kind,
-		Line:          rawLink.Line,
+		SourcePath:     source.Path,
+		SourceTitle:    source.Title,
+		SourceObjectID: source.ID,
+		SourceNoteID:   source.ID,
+		Target:         rawLink.Target,
+		TargetRaw:      rawLink.Raw,
+		TargetAlias:    rawLink.Alias,
+		TargetHeading:  rawLink.Heading,
+		Kind:           rawLink.Kind,
+		Line:           rawLink.Line,
 	}
 	target := rawLink.Target
 
@@ -211,7 +212,7 @@ func ResolveLinkTarget(source domain.Note, rawLink RawLink, snap ResolverSnapsho
 		link.Evidence = fmt.Sprintf("ambiguous: %d notes with same title", count)
 		for _, n := range snap.notes {
 			if strings.ToLower(n.Title) == lowerTarget {
-				result.Candidates = append(result.Candidates, domain.NoteLinkCandidate{Path: n.Path, Title: n.Title, NoteID: n.ID})
+				result.Candidates = append(result.Candidates, domain.NoteLinkCandidate{ObjectID: n.ID, Path: n.Path, Title: n.Title, NoteID: n.ID})
 			}
 		}
 		link.Candidates = result.Candidates
@@ -227,7 +228,7 @@ func ResolveLinkTarget(source domain.Note, rawLink RawLink, snap ResolverSnapsho
 		link.Broken = false
 		link.Evidence = fmt.Sprintf("ambiguous: %d candidates by alias", len(candidates))
 		for _, n := range candidates {
-			result.Candidates = append(result.Candidates, domain.NoteLinkCandidate{Path: n.Path, Title: n.Title, NoteID: n.ID})
+			result.Candidates = append(result.Candidates, domain.NoteLinkCandidate{ObjectID: n.ID, Path: n.Path, Title: n.Title, NoteID: n.ID})
 		}
 		link.Candidates = result.Candidates
 		result.Link = link
@@ -278,6 +279,7 @@ func SortNoteLinks(links []domain.NoteLink) {
 func resolved(link domain.NoteLink, note domain.Note, evidence string) ResolveResult {
 	link.TargetPath = note.Path
 	link.TargetTitle = note.Title
+	link.TargetObjectID = note.ID
 	link.TargetNoteID = note.ID
 	link.Status = string(domain.LinkStatusResolved)
 	link.Broken = false

@@ -76,10 +76,12 @@ func ExtractAssetRows(notes []domain.Note) []domain.DatabaseRow {
 func linkRecordRow(link LinkRecord, source domain.QuerySource) domain.DatabaseRow {
 	values := map[string]domain.PropertyValue{}
 	putRowValue(values, "source_path", domain.PropertyTypeString, link.NotePath, link.NotePath, "link")
+	putRowValue(values, "source_object_id", domain.PropertyTypeString, firstNonEmptyIndexValue(link.SourceObjectID, link.SourceNoteID), firstNonEmptyIndexValue(link.SourceObjectID, link.SourceNoteID), "link")
 	putRowValue(values, "source_note_id", domain.PropertyTypeString, link.SourceNoteID, link.SourceNoteID, "link")
 	putRowValue(values, "target", domain.PropertyTypeString, link.Target, link.Target, "link")
 	putRowValue(values, "target_raw", domain.PropertyTypeString, link.TargetRaw, link.TargetRaw, "link")
 	putRowValue(values, "target_path", domain.PropertyTypeString, link.TargetPath, link.TargetPath, "link")
+	putRowValue(values, "target_object_id", domain.PropertyTypeString, firstNonEmptyIndexValue(link.TargetObjectID, link.TargetNoteID), firstNonEmptyIndexValue(link.TargetObjectID, link.TargetNoteID), "link")
 	putRowValue(values, "target_note_id", domain.PropertyTypeString, link.TargetNoteID, link.TargetNoteID, "link")
 	putRowValue(values, "target_title", domain.PropertyTypeString, link.TargetTitle, link.TargetTitle, "link")
 	putRowValue(values, "target_alias", domain.PropertyTypeString, link.TargetAlias, link.TargetAlias, "link")

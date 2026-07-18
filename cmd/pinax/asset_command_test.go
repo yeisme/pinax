@@ -317,6 +317,22 @@ func TestAssetCommandContractsCLI(t *testing.T) {
 			t.Fatalf("asset list agent missing %q:\n%s", want, listAgent)
 		}
 	}
+	for _, want := range []string{"asset.1.path=", "asset.1.filename=diagram-source.png", "asset.1.media_type=image/png", "asset.1.size_bytes="} {
+		if !strings.Contains(listAgent, want) {
+			t.Fatalf("asset list agent missing data row %q:\n%s", want, listAgent)
+		}
+	}
+	defaultListOut := runCLI(t, "asset", "list", "--vault", root)
+	for _, want := range []string{"Assets", "Path", "Filename", "Media type", "Size", "Status", "diagram-source.png", "image/png"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("asset list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	for _, unwanted := range []string{"Asset 1", "asset.1.path", "pinax-binary"} {
+		if strings.Contains(defaultListOut, unwanted) {
+			t.Fatalf("asset list default output should render a bounded table, found %q:\n%s", unwanted, defaultListOut)
+		}
+	}
 
 	showOut := runCLI(t, "asset", "show", filepath.Base(assetPath), "--vault", root, "--json")
 	var showEnvelope map[string]any
@@ -326,6 +342,18 @@ func TestAssetCommandContractsCLI(t *testing.T) {
 	showFacts := showEnvelope["facts"].(map[string]any)
 	if showEnvelope["command"] != "asset.show" || showFacts["asset_path"] != assetPath || strings.Contains(showOut, "pinax-binary") {
 		t.Fatalf("asset show envelope = %#v\n%s", showEnvelope, showOut)
+	}
+	showDefaultOut := runCLI(t, "asset", "show", filepath.Base(assetPath), "--vault", root)
+	for _, want := range []string{"Asset details", "Field", "Value", "Path", "Filename", "Media type", "Size", "Status", assetPath, "diagram-source.png", "image/png"} {
+		if !strings.Contains(showDefaultOut, want) {
+			t.Fatalf("asset show default output missing %q:\n%s", want, showDefaultOut)
+		}
+	}
+	showAgentOut := runCLI(t, "asset", "show", filepath.Base(assetPath), "--vault", root, "--agent")
+	for _, want := range []string{"command=asset.show", "fact.asset_path=" + assetPath, "asset_detail.path=" + assetPath, "asset_detail.filename=diagram-source.png", "asset_detail.media_type=image/png", "asset_detail.size_bytes="} {
+		if !strings.Contains(showAgentOut, want) {
+			t.Fatalf("asset show agent missing %q:\n%s", want, showAgentOut)
+		}
 	}
 
 	verifyOut := runCLI(t, "asset", "verify", "--vault", root, "--json")

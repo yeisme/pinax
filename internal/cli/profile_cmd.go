@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/profile"
 )
 
@@ -44,8 +46,18 @@ func addProfileCommands(root *cobra.Command, ctx commandBuildContext) {
 			if err := profile.Save(cfg); err != nil {
 				return renderCommandError(cmd, ctx.outputMode(), "profile.add", "save_error", err.Error(), "")
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Added profile: %s\n", name)
-			return nil
+			projection := domain.NewProjection("profile.add", "Added profile: "+name)
+			projection.Facts["profile"] = name
+			projection.Facts["endpoint"] = endpoint
+			projection.Facts["workspace"] = workspace
+			if device != "" {
+				projection.Facts["device"] = device
+			}
+			if defaultScope != "" {
+				projection.Facts["default_scope"] = defaultScope
+			}
+			projection.Data = map[string]any{"profile": map[string]any{"name": name, "endpoint": endpoint, "workspace": workspace, "device": device, "default_scope": defaultScope}}
+			return ctx.renderProjection(cmd, projection, nil)
 		},
 	}
 	profileAddCmd.Flags().String("endpoint", "", "Backend storage address")
@@ -62,23 +74,33 @@ func addProfileCommands(root *cobra.Command, ctx commandBuildContext) {
 			if err != nil {
 				return renderCommandError(cmd, ctx.outputMode(), "profile.list", "load_error", err.Error(), "")
 			}
-			if len(cfg.Profiles) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No profiles. ")
-				return nil
+			profiles := make([]map[string]any, 0, len(cfg.Profiles))
+			names := make([]string, 0, len(cfg.Profiles))
+			for name := range cfg.Profiles {
+				names = append(names, name)
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-15s %-40s %-15s %-15s %s\n", "Name", "Endpoint", "Workspace", "Device", "Scope")
-			for name, p := range cfg.Profiles {
-				ep := p.Endpoint
-				if len(ep) > 40 {
-					ep = ep[:37] + "..."
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%-15s %-40s %-15s %-15s %s\n",
-					name, ep, p.Workspace, p.Device, p.DefaultScope)
+			sort.Strings(names)
+			for _, name := range names {
+				p := cfg.Profiles[name]
+				profiles = append(profiles, map[string]any{
+					"name":          name,
+					"endpoint":      p.Endpoint,
+					"workspace":     p.Workspace,
+					"device":        p.Device,
+					"default_scope": p.DefaultScope,
+					"default":       cfg.Defaults.Profile == name,
+				})
 			}
+			projection := domain.NewProjection("profile.list", "Profiles listed.")
+			if len(profiles) == 0 {
+				projection.Summary = "No profiles."
+			}
+			projection.Facts["profiles"] = fmt.Sprint(len(profiles))
 			if cfg.Defaults.Profile != "" {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nDefault profile: %s\n", cfg.Defaults.Profile)
+				projection.Facts["default_profile"] = cfg.Defaults.Profile
 			}
-			return nil
+			projection.Data = map[string]any{"profiles": profiles}
+			return ctx.renderProjection(cmd, projection, nil)
 		},
 	}
 
@@ -96,24 +118,28 @@ func addProfileCommands(root *cobra.Command, ctx commandBuildContext) {
 			if !ok {
 				return renderCommandError(cmd, ctx.outputMode(), "profile.show", "not_found", "profile not found: "+args[0], "")
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "name:       %s\n", args[0])
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Endpoint:   %s\n", p.Endpoint)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Workspace:  %s\n", p.Workspace)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Device:     %s\n", p.Device)
+			projection := domain.NewProjection("profile.show", "Profile shown.")
+			projection.Facts["profile"] = args[0]
+			projection.Facts["endpoint"] = p.Endpoint
+			projection.Facts["workspace"] = p.Workspace
+			if p.Device != "" {
+				projection.Facts["device"] = p.Device
+			}
 			if p.SecretRef != "" {
 				// Show type but not value
 				if strings.HasPrefix(p.SecretRef, "env://") {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Secret:     %s\n", p.SecretRef)
+					projection.Facts["secret_ref"] = p.SecretRef
 				} else if strings.HasPrefix(p.SecretRef, "keychain://") {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Secret:     %s\n", p.SecretRef)
+					projection.Facts["secret_ref"] = p.SecretRef
 				} else {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Secret:     [configured]\n")
+					projection.Facts["secret_ref"] = "configured"
 				}
 			}
 			if p.DefaultScope != "" {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Default scope: %s\n", p.DefaultScope)
+				projection.Facts["default_scope"] = p.DefaultScope
 			}
-			return nil
+			projection.Data = map[string]any{"profile": map[string]any{"name": args[0], "endpoint": p.Endpoint, "workspace": p.Workspace, "device": p.Device, "default_scope": p.DefaultScope}}
+			return ctx.renderProjection(cmd, projection, nil)
 		},
 	}
 
@@ -134,8 +160,10 @@ func addProfileCommands(root *cobra.Command, ctx commandBuildContext) {
 			if err := profile.Save(cfg); err != nil {
 				return renderCommandError(cmd, ctx.outputMode(), "profile.remove", "save_error", err.Error(), "")
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Deleted profile: %s\n", args[0])
-			return nil
+			projection := domain.NewProjection("profile.remove", "Deleted profile: "+args[0])
+			projection.Facts["profile"] = args[0]
+			projection.Data = map[string]any{"profile": args[0]}
+			return ctx.renderProjection(cmd, projection, nil)
 		},
 	}
 

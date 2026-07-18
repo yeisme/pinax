@@ -13,18 +13,19 @@ Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。三个�
 Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可复现 proof loop。每个阶段都保持 bounded：projection 只返回事实和下一步，不返回完整 note body、token 或 provider payload；写入只能通过 plan -> snapshot -> apply -> receipt -> restore 控制链发生。
 
 - [Demo Proof Loop](./demo-proof-loop.md)：复制合成 messy vault fixture，端到端运行 diagnose -> plan -> snapshot -> apply -> restore。
+- [完整使用样例](./usage/full-example.md)：从空 vault 开始串起 capture、retrieve、proof loop、project/database、API、sync、backend、publish 和 plugin dry-run。
 - [文档设计](./overview/documentation-design.md)：说明读者路径、章节归属、命令文档形态和 Pinax 文档维护规则。
 
 ## 当前状态
 
 - 当前阶段：本地优先 notebook workflow 已可通过 CLI 使用，适合外部开发者评估。
-- 当前实现边界：支持 local init、vault validate、daily/inbox/draft、note add/create/list/read/edit/rename/move/archive/delete/tag、共享 `NoteDisplay`、project workspace/board、task adoption plan、长期学习项目初始化、组织维度浏览、database saved views 的 table/board/list/calendar render、saved-view Markdown tabs、SQLite/GORM index、search、`pinax note links`/`pinax note backlinks`/`pinax note orphans`、`search --link-target`、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize plan/list/apply、version snapshot、asset manifest registration/validation/planning、read-only dashboard repair/database-tab views、read-only MCP、localhost REST/RPC projection adapter，以及 server/file/S3/rclone Cloud Sync transport。Obsidian-style vault compatibility 是 preview；Provider automation 和 briefing delivery 仍是 experimental。
+- 当前实现边界：支持 local init、vault validate、daily/inbox/draft、note add/create/list/read/edit/rename/move/archive/delete/tag、共享 `NoteDisplay`、project workspace/board、task adoption plan、长期学习项目初始化、组织维度浏览、database saved views 的 table/board/list/calendar render、saved-view Markdown tabs、SQLite/GORM index、search、`pinax note links`/`pinax note backlinks`/`pinax note orphans`、`search --link-target`、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize plan/list/apply、version snapshot、asset manifest registration/validation/planning、read-only dashboard repair/database-tab views、read-only MCP、localhost REST/RPC projection adapter，以及 server/file/S3/rclone Cloud Sync transport。Obsidian-style vault compatibility 是 preview。
 - 用户可见 note path 使用 vault-relative canonical path。默认普通 note 是根级 `foo.md`，子目录 note 是 `work/foo.md`；历史 `notes/foo.md` 只作为 resolver-compatible 输入，不是 CLI、JSON、agent、record、search 或 MCP 的主要输出。
 - 计划和实现跟踪放在 `openspec/`；外部贡献者先读 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
 ## 双向关系入口
 
-- `pinax note links <ref>` 显示 outgoing links，支持 `--broken-only`、`--kind`、`--include-ignored` 和 `--limit`。
+- `pinax note links <ref>` 显示 outgoing links；`pinax note links --all --kind wiki --status ambiguous` 可全库查看 `[[...]]` 歧义。支持 `--broken-only`、`--kind`、`--status`、`--include-ignored`、`--limit` 和 `--all`。
 - `pinax note backlinks <ref>` 显示 backlinks，支持 `--include-broken` 和 `--limit`。
 - `pinax note orphans --mode full|no-incoming|no-outgoing` 分别显示完全孤立 note、无 incoming link 的 note、无 outgoing link 的 note。
 - `pinax search <query> --link-target <note-id|path|title|raw-target>` 按关系目标过滤搜索结果；目标有歧义时返回 `link_target_ambiguous`，不会自动替用户选择候选项。
@@ -46,7 +47,6 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - `pinax database view save|render` 存储 query/view 配置，并返回 bounded table、board、list、calendar 或 database-tab projection。Markdown `pinax-database-view <name>` fences 由 app service 渲染，不让 client 解析 `.pinax/**`，也不持久化 result rows。
 - `pinax note read/show --display card|detail|context|body`、project board、dashboard、MCP、REST 和 RPC 共用同一个 `NoteDisplay` projection；默认 bounded display 不输出完整 body。
 - `pinax api routes`、`pinax api status`、`pinax api schema export` 和 `pinax api serve --readonly --port 0` 是 local REST/RPC projection adapter。服务默认绑定 `127.0.0.1`，不提供 public hosted API、CORS、TLS、多用户权限或 token auth。
-- [Pinax Web 开放设计](./product/web-open-design.md) 是未来独立客户端的合同设计，不表示当前 CLI 已包含 Web UI；对应 OpenSpec 是 `pinax-web-open-design-client-contracts`。
 - Client CLI parity 和 realtime sync 是同一边界下的两条链路：Remote API Mode 让 CLI client 和本地工具通过已注册 capability 操作一台服务端 vault；`pinax sync daemon` 让多个本地 vault 通过加密 Cloud Sync revision 收敛。详见 [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)。
 - `pinax prompt` 存储可复用的 `yeisme.prompt_asset.v1` prompt assets，解析 `pinax://prompt/<id>` 引用，记录 Pinax-owned lifecycle decision，并导入 Eikona 等工具的 metadata-only usage feedback。
 - Cloud Sync 是独立分布式同步设计：每台设备保留本地 vault，Cloud backend 协调 encrypted revision、blob 和 conflict。详见 [Cloud Sync Architecture](./architecture/cloud-sync-design.md)。
@@ -57,7 +57,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [文档设计](./overview/documentation-design.md)
 - [长期资料源笔记](./overview/durable-source-notes.md)
 - [产品定位](./overview/product-positioning.md)
-- [Pinax Web 开放设计](./product/web-open-design.md)
+- [通用 Agent 记忆系统 PRD](./product/general-agent-memory-prd.md)
 - [架构边界](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
@@ -67,6 +67,8 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [Demo Proof Loop](./demo-proof-loop.md)
 - [命令手册](./commands/README.md)
 - [本地开发运行手册](./operations/local-development.md)
+- [模块审查与 TDD 手册](./operations/module-review-tdd.md)
+- [完整使用样例](./usage/full-example.md)
 - [Release Packaging](./operations/release-packaging.md)
 - [中文文档地图](./README.zh-CN.md)
 - [贡献指南](../CONTRIBUTING.zh-CN.md)
@@ -76,7 +78,6 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 
 - [命令地图](./commands/README.md)：说明每个 root command 所属工作流。
 - [prompt](./commands/prompt.md)：说明 prompt asset lifecycle、`pinax://prompt/<id>` 解析、跨项目边界和 feedback import。
-- [publish](./commands/publish.md)：说明安全的 GitHub Pages/Wiki 发布面、Hugo/theme 使用、deploy gate，以及为什么 vault 仍是真源。
 - [organize](./commands/organize.md)：说明整理流程、写入边界和 `pinax organize plan/list/apply` 的 snapshot 保护。
 - [version](./commands/version.md)、[asset](./commands/asset.md)、[index](./commands/index.md) 和其他 root commands 在 [命令手册](./commands/README.md) 中维护独立页面。
 

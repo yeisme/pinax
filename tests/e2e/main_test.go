@@ -46,12 +46,17 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to compile fake-lark-cli: %v\n%s", err, string(out))
 	}
 
-	// 5. Compile fake-ntn
+	// 5. Compile fake-ntn and expose it under both historical ntn and document-publish notion names.
 	ntnBin := filepath.Join(sharedBinDir, "ntn")
 	cmdNtn := exec.Command("go", "build", "-trimpath", "-o", ntnBin, "./tests/e2e/fakes/fake-ntn")
 	cmdNtn.Dir = repoRoot
 	if out, err := cmdNtn.CombinedOutput(); err != nil {
 		log.Fatalf("failed to compile fake-ntn: %v\n%s", err, string(out))
+	}
+	if err := os.Link(ntnBin, filepath.Join(sharedBinDir, "notion")); err != nil {
+		if err := copyFile(ntnBin, filepath.Join(sharedBinDir, "notion")); err != nil {
+			log.Fatalf("failed to expose fake notion cli: %v", err)
+		}
 	}
 
 	// 6. Run all tests in the package
@@ -219,4 +224,12 @@ func cmdValidateCleanStdout(ts *testscript.TestScript, neg bool, args []string) 
 	if neg {
 		ts.Fatalf("file does not contain ANSI escape sequences, but expected to contain them")
 	}
+}
+
+func copyFile(src, dst string) error {
+	body, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, body, 0o755)
 }

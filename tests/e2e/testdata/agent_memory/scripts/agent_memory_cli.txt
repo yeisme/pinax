@@ -1,0 +1,68 @@
+# Agent memory runtime CLI smoke: propose → approve → recall → context → handoff → feedback.
+# All commands must produce valid JSON envelopes, stable English keys,
+# and must NOT leak note bodies, secrets, or chain-of-thought sentinels.
+
+# Initialize a vault for agent memory operations.
+exec sh -c 'pinax init vault --title AgentMemory --json > init.json'
+validate-json-envelope init.json
+grep '"status":"success"' init.json
+
+# Agent status on empty vault must succeed.
+exec sh -c 'pinax agent status --vault vault --json > status_empty.json'
+validate-json-envelope status_empty.json
+grep '"command":"agent.status"' status_empty.json
+grep '"status":"success"' status_empty.json
+
+# Propose a memory (adapter can only propose; must return approval_required).
+exec sh -c 'pinax agent memory propose --vault vault --kind fact --subject "GORMGen" --summary "Gen replaces raw SQL" --sources "note:ref_gorm" --json > propose.json'
+validate-json-envelope propose.json
+grep '"command":"agent.memory.propose"' propose.json
+grep '"status":"approval_required"' propose.json
+
+# Extract proposal_id for approve step.
+exec sh -c 'grep -o "\"proposal_id\":\"[^\"]*\"" propose.json | head -1 | cut -d\" -f4 > proposal_id.txt'
+
+# Approve requires --yes; without it must fail.
+! exec sh -c 'pinax agent memory approve $(cat proposal_id.txt) --vault vault --json'
+
+# Approve with --yes must confirm and return memory_id + receipt_id.
+exec sh -c 'pinax agent memory approve $(cat proposal_id.txt) --vault vault --yes --json > approve_yes.json'
+validate-json-envelope approve_yes.json
+grep '"command":"agent.memory.approve"' approve_yes.json
+grep '"status":"success"' approve_yes.json
+grep '"lifecycle_to":"confirmed"' approve_yes.json
+grep '"receipt_id"' approve_yes.json
+
+# Recall must find the confirmed memory.
+exec sh -c 'pinax agent memory recall --vault vault --json > recall.json'
+validate-json-envelope recall.json
+grep '"command":"agent.memory.recall"' recall.json
+grep 'GORMGen' recall.json
+
+# Context pack must be bounded and not leak body.
+exec sh -c 'pinax agent context --vault vault --entities "GORM" --json > context.json'
+validate-json-envelope context.json
+grep '"command":"agent.context"' context.json
+grep 'agent_context_pack' context.json
+
+# Handoff create must produce a handoff_id.
+exec sh -c 'pinax agent handoff create --vault vault --objective "ReviewGORMGen" --json > handoff.json'
+validate-json-envelope handoff.json
+grep '"command":"agent.handoff.create"' handoff.json
+grep '"handoff_id"' handoff.json
+
+# Feedback add must produce a feedback_id.
+exec sh -c 'pinax agent feedback add --vault vault --kind useful --memory-id testmem --comment "good" --json > feedback.json'
+validate-json-envelope feedback.json
+grep '"command":"agent.feedback.add"' feedback.json
+grep '"feedback_id"' feedback.json
+
+# Security: no secrets, Authorization headers, or raw prompts in any output.
+! grep Authorization propose.json
+! grep Authorization approve_yes.json
+! grep Authorization context.json
+! grep Authorization handoff.json
+! grep raw_prompt propose.json
+! grep raw_prompt context.json
+! grep chain_of_thought recall.json
+! grep chain_of_thought context.json

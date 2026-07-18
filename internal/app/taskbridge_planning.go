@@ -182,7 +182,7 @@ func renderTaskBridgeDailyMarkdown(snapshot domain.PlanningSnapshot, decision do
 
 func writeDailyPlanningBlock(root string, capturedAt time.Time, body string) (string, error) {
 	date := capturedAt.UTC().Format("2006-01-02")
-	root, rel, _, err := ensureJournalNote(root, "daily", DailyRequest{Date: date})
+	root, rel, _, err := ensureJournalNote(root, DailyRequest{Date: date})
 	if err != nil {
 		return "", err
 	}
@@ -197,7 +197,7 @@ func writeDailyPlanningBlock(root string, capturedAt time.Time, body string) (st
 	content := string(contentBytes)
 	blocks, err := templateengine.InspectManagedBlocks(content)
 	if err != nil {
-		return rel, planningBlockConflict(err)
+		return rel, planningBlockConflict()
 	}
 	found := false
 	for _, block := range blocks {
@@ -210,7 +210,7 @@ func writeDailyPlanningBlock(root string, capturedAt time.Time, body string) (st
 	if found {
 		updated, err = templateengine.ReplaceManagedBlock(content, planningDailyBlockName, body)
 		if err != nil {
-			return rel, planningBlockConflict(err)
+			return rel, planningBlockConflict()
 		}
 	} else {
 		updated = strings.TrimRight(content, "\n") + "\n\n" + managedBlock(planningDailyBlockName, body) + "\n"
@@ -273,7 +273,7 @@ func (s *Service) planDailyTaskReview(_ context.Context, root string, capturedAt
 			projection.Actions = []domain.Action{{Name: "add_marker", Command: missing.Hint}}
 			return projection, missing
 		}
-		return errorProjection("plan.daily", planningBlockConflict(err)), planningBlockConflict(err)
+		return errorProjection("plan.daily", planningBlockConflict()), planningBlockConflict()
 	}
 	if !yes {
 		return projection, nil
@@ -406,7 +406,7 @@ func writeTaskReviewSection(b *strings.Builder, title string, items []domain.Boa
 var osReadFile = os.ReadFile
 var osWriteFile = os.WriteFile
 
-func planningBlockConflict(err error) error {
+func planningBlockConflict() error {
 	return &domain.CommandError{Code: "PLANNING_BLOCK_CONFLICT", Message: "Daily planning managed block is invalid", Hint: "Open the daily note and keep exactly one closed planning-daily managed block"}
 }
 

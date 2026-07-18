@@ -28,6 +28,7 @@ func newPropertyValueRecord(db *gorm.DB, opts ...gen.DOOption) propertyValueReco
 	tableName := _propertyValueRecord.propertyValueRecordDo.TableName()
 	_propertyValueRecord.ALL = field.NewAsterisk(tableName)
 	_propertyValueRecord.ID = field.NewUint(tableName, "id")
+	_propertyValueRecord.ObjectID = field.NewString(tableName, "object_id")
 	_propertyValueRecord.NotePath = field.NewString(tableName, "note_path")
 	_propertyValueRecord.Name = field.NewString(tableName, "name")
 	_propertyValueRecord.Type = field.NewString(tableName, "type")
@@ -45,6 +46,7 @@ type propertyValueRecord struct {
 
 	ALL      field.Asterisk
 	ID       field.Uint
+	ObjectID field.String
 	NotePath field.String
 	Name     field.String
 	Type     field.String
@@ -68,6 +70,7 @@ func (p propertyValueRecord) As(alias string) *propertyValueRecord {
 func (p *propertyValueRecord) updateTableName(table string) *propertyValueRecord {
 	p.ALL = field.NewAsterisk(table)
 	p.ID = field.NewUint(table, "id")
+	p.ObjectID = field.NewString(table, "object_id")
 	p.NotePath = field.NewString(table, "note_path")
 	p.Name = field.NewString(table, "name")
 	p.Type = field.NewString(table, "type")
@@ -90,8 +93,9 @@ func (p *propertyValueRecord) GetFieldByName(fieldName string) (field.OrderExpr,
 }
 
 func (p *propertyValueRecord) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 7)
+	p.fieldMap = make(map[string]field.Expr, 8)
 	p.fieldMap["id"] = p.ID
+	p.fieldMap["object_id"] = p.ObjectID
 	p.fieldMap["note_path"] = p.NotePath
 	p.fieldMap["name"] = p.Name
 	p.fieldMap["type"] = p.Type

@@ -20,8 +20,10 @@ type NoteLinkGraphService struct{}
 type NoteLinkGraphRequest struct {
 	VaultPath      string
 	NoteRef        string
+	All            bool
 	BrokenOnly     bool
 	Kind           string // wiki|markdown|""(all)
+	Status         string // resolved|broken|ambiguous|external|ignored|""(all)
 	IncludeIgnored bool
 	Limit          int
 }
@@ -97,36 +99,58 @@ func (s *Service) QueryOutgoingLinks(ctx context.Context, req NoteLinkGraphReque
 	if err != nil {
 		return errorProjection("note.links", err), err
 	}
+	if err := validateNoteLinkFilters(req.Kind, req.Status); err != nil {
+		return errorProjection("note.links", err), err
+	}
 	notes, err := scanNotes(root)
 	if err != nil {
 		return errorProjection("note.links", err), err
+	}
+	outgoing, _ := BuildEnhancedLinkGraph(notes)
+	engine, indexStatus := linkGraphEngineStatus(root)
+	if req.All {
+		links := make([]domain.NoteLink, 0)
+		for _, note := range notes {
+			links = append(links, filterLinks(outgoing[note.Path], req.BrokenOnly, req.Kind, req.Status, req.IncludeIgnored)...)
+		}
+		notelinks.SortNoteLinks(links)
+		if req.Limit > 0 && len(links) > req.Limit {
+			links = links[:req.Limit]
+		}
+		projection := domain.NewProjection("note.links", "Vault note links listed.")
+		projection.Facts["all"] = "true"
+		projection.Facts["notes"] = fmt.Sprint(len(notes))
+		publishNoteLinkFacts(&projection, links, engine, indexStatus)
+		if req.Kind != "" {
+			projection.Facts["kind"] = req.Kind
+		}
+		if req.Status != "" {
+			projection.Facts["status_filter"] = req.Status
+		}
+		addLinkConflictActions(&projection, root, links)
+		projection.Data = map[string]any{"links": links}
+		return projection, nil
 	}
 	note, err := s.ResolveNote(ctx, ShowNoteRequest{VaultPath: root, NoteRef: req.NoteRef})
 	if err != nil {
 		return errorProjection("note.links", err), err
 	}
-	outgoing, _ := BuildEnhancedLinkGraph(notes)
-	links := filterLinks(outgoing[note.Path], req.BrokenOnly, req.Kind, req.IncludeIgnored)
+	links := filterLinks(outgoing[note.Path], req.BrokenOnly, req.Kind, req.Status, req.IncludeIgnored)
 	if req.Limit > 0 && len(links) > req.Limit {
 		links = links[:req.Limit]
 	}
-	engine, indexStatus := linkGraphEngineStatus(root)
 	projection := domain.NewProjection("note.links", "Note links listed.")
 	projection.Facts["path"] = note.Path
 	projection.Facts["note_id"] = note.ID
-	projection.Facts["links"] = fmt.Sprint(len(links))
-	projection.Facts["resolved"] = fmt.Sprint(countLinksWithStatus(links, "resolved"))
-	projection.Facts["broken"] = fmt.Sprint(countLinksWithStatus(links, "broken"))
-	projection.Facts["ambiguous"] = fmt.Sprint(countLinksWithStatus(links, "ambiguous"))
-	projection.Facts["engine"] = engine
+	publishNoteLinkFacts(&projection, links, engine, indexStatus)
+	if req.Kind != "" {
+		projection.Facts["kind"] = req.Kind
+	}
+	if req.Status != "" {
+		projection.Facts["status_filter"] = req.Status
+	}
 	addLinkCompatibilityFacts(projection.Facts)
-	if indexStatus != "" {
-		projection.Facts["index_status"] = indexStatus
-	}
-	if countLinksWithStatus(links, "broken") > 0 || countLinksWithStatus(links, "ambiguous") > 0 {
-		projection.Status = "partial"
-		projection.Actions = []domain.Action{{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))}}
-	}
+	addLinkConflictActions(&projection, root, links)
 	agentCtx := graphAgentContext(note, links)
 	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "links": links, "agent_contexts": []domain.AgentContext{agentCtx}}
 	return projection, nil
@@ -148,14 +172,19 @@ func (s *Service) QueryBacklinks(ctx context.Context, req NoteBacklinkGraphReque
 	}
 	_, incoming := BuildEnhancedLinkGraph(notes)
 	backlinks := incoming[note.Path]
+	engine, indexStatus := linkGraphEngineStatus(root)
+	if engine == "index" && strings.TrimSpace(note.ID) != "" {
+		if indexed, indexErr := noteindex.LinksByTargetObjectID(root, note.ID); indexErr == nil {
+			backlinks = indexedBacklinks(indexed, notes)
+		}
+	}
 	if !req.IncludeBroken {
-		backlinks = filterLinks(backlinks, false, "", true)
+		backlinks = filterLinks(backlinks, false, "", "", true)
 		backlinks = filterByStatus(backlinks, "broken", false)
 	}
 	if req.Limit > 0 && len(backlinks) > req.Limit {
 		backlinks = backlinks[:req.Limit]
 	}
-	engine, indexStatus := linkGraphEngineStatus(root)
 	projection := domain.NewProjection("note.backlinks", "Note backlinks listed.")
 	projection.Facts["path"] = note.Path
 	projection.Facts["note_id"] = note.ID
@@ -321,18 +350,35 @@ func linkGraphEngineStatus(root string) (engine, indexStatus string) {
 	return "scan", "stale"
 }
 
+func indexedBacklinks(rows []noteindex.LinkRecord, notes []domain.Note) []domain.NoteLink {
+	byID := map[string]domain.Note{}
+	for _, note := range notes {
+		byID[note.ID] = note
+	}
+	links := make([]domain.NoteLink, 0, len(rows))
+	for _, row := range rows {
+		source := byID[row.SourceObjectID]
+		links = append(links, domain.NoteLink{SourceObjectID: row.SourceObjectID, TargetObjectID: row.TargetObjectID, SourceNoteID: row.SourceNoteID, TargetNoteID: row.TargetNoteID, SourcePath: row.NotePath, SourceTitle: source.Title, Target: row.Target, TargetPath: row.TargetPath, TargetTitle: row.TargetTitle, TargetRaw: row.TargetRaw, TargetAlias: row.TargetAlias, TargetHeading: row.TargetHeading, Kind: row.Kind, Broken: row.Broken, Status: row.Status, Line: row.Line, Evidence: row.Evidence})
+	}
+	notelinks.SortNoteLinks(links)
+	return links
+}
+
 func noteGraphNoteSummary(note domain.Note) domain.Note {
 	return domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Tags: note.Tags, Project: note.Project, Folder: note.Folder, Kind: note.Kind, Status: note.Status, CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt}
 }
 
 // filterLinks 按条件过滤链接列表。
-func filterLinks(links []domain.NoteLink, brokenOnly bool, kind string, includeIgnored bool) []domain.NoteLink {
+func filterLinks(links []domain.NoteLink, brokenOnly bool, kind string, status string, includeIgnored bool) []domain.NoteLink {
 	filtered := make([]domain.NoteLink, 0, len(links))
 	for _, link := range links {
-		if !includeIgnored && (link.Status == string(domain.LinkStatusIgnored) || link.Status == string(domain.LinkStatusExternal)) {
+		if brokenOnly && link.Status != string(domain.LinkStatusBroken) && !link.Broken {
 			continue
 		}
-		if brokenOnly && link.Status != string(domain.LinkStatusBroken) && !link.Broken {
+		if status != "" && !linkHasStatus(link, status) {
+			continue
+		}
+		if status == "" && !includeIgnored && (link.Status == string(domain.LinkStatusIgnored) || link.Status == string(domain.LinkStatusExternal)) {
 			continue
 		}
 		if kind != "" && link.Kind != kind {
@@ -344,6 +390,54 @@ func filterLinks(links []domain.NoteLink, brokenOnly bool, kind string, includeI
 }
 
 // filterByStatus 按状态过滤链接。
+func validateNoteLinkFilters(kind, status string) error {
+	kind = strings.TrimSpace(kind)
+	switch kind {
+	case "", "wiki", "markdown":
+	default:
+		return &domain.CommandError{Code: "invalid_link_kind", Message: "Link kind must be wiki or markdown", Hint: "Use --kind wiki or --kind markdown"}
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		return nil
+	}
+	if !domain.IsValidLinkStatus(status) {
+		return &domain.CommandError{Code: "invalid_link_status", Message: "Link status is not supported", Hint: "Use --status resolved, broken, ambiguous, external, or ignored"}
+	}
+	return nil
+}
+
+func publishNoteLinkFacts(projection *domain.Projection, links []domain.NoteLink, engine, indexStatus string) {
+	projection.Facts["links"] = fmt.Sprint(len(links))
+	projection.Facts["resolved"] = fmt.Sprint(countLinksWithStatus(links, "resolved"))
+	projection.Facts["broken"] = fmt.Sprint(countLinksWithStatus(links, "broken"))
+	projection.Facts["ambiguous"] = fmt.Sprint(countLinksWithStatus(links, "ambiguous"))
+	projection.Facts["engine"] = engine
+	addLinkCompatibilityFacts(projection.Facts)
+	if indexStatus != "" {
+		projection.Facts["index_status"] = indexStatus
+	}
+}
+
+func addLinkConflictActions(projection *domain.Projection, root string, links []domain.NoteLink) {
+	if countLinksWithStatus(links, "broken") == 0 && countLinksWithStatus(links, "ambiguous") == 0 {
+		return
+	}
+	projection.Status = "partial"
+	projection.Actions = []domain.Action{
+		{Name: "repair_plan", Command: fmt.Sprintf("pinax repair plan --vault %s", shellQuote(root))},
+		{Name: "wiki_ambiguous", Command: fmt.Sprintf("pinax note links --all --kind wiki --status ambiguous --vault %s --json", shellQuote(root))},
+		{Name: "wiki_broken", Command: fmt.Sprintf("pinax note links --all --kind wiki --status broken --vault %s --json", shellQuote(root))},
+	}
+}
+
+func linkHasStatus(link domain.NoteLink, status string) bool {
+	if link.Status == status {
+		return true
+	}
+	return status == "broken" && link.Broken && link.Status == ""
+}
+
 func filterByStatus(links []domain.NoteLink, status string, include bool) []domain.NoteLink {
 	filtered := make([]domain.NoteLink, 0, len(links))
 	for _, link := range links {

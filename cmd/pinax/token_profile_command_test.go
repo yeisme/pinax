@@ -36,17 +36,38 @@ func TestTokenCLICreateListRevoke(t *testing.T) {
 
 	// List with token
 	listOut = runCLI(t, "token", "list", "--vault", root)
-	if !strings.Contains(listOut, "test-agent") {
-		t.Fatalf("token list should show test-agent: %s", listOut)
+	for _, want := range []string{"Tokens", "ID", "Label", "Created", "Scope", "Expires", "test-agent", tokenID} {
+		if !strings.Contains(listOut, want) {
+			t.Fatalf("token list missing %q: %s", want, listOut)
+		}
 	}
-	if !strings.Contains(listOut, tokenID) {
-		t.Fatalf("token list should show ID %s: %s", tokenID, listOut)
+	listAgentOut := runCLI(t, "token", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=token.list", "fact.tokens=1", "token.1.id=" + tokenID, "token.1.label=test-agent", "token.1.scope=read"} {
+		if !strings.Contains(listAgentOut, want) {
+			t.Fatalf("token list agent missing %q:\n%s", want, listAgentOut)
+		}
 	}
 
 	// Revoke token
 	revokeOut := runCLI(t, "token", "revoke", tokenID, "--vault", root)
 	if !strings.Contains(revokeOut, "Revoked token:") {
 		t.Fatalf("token revoke output: %s", revokeOut)
+	}
+	revokeAgentOut := runCLI(t, "token", "create", "--label", "machine-revoke", "--scope", "read", "--vault", root, "--agent")
+	createdID := ""
+	for _, line := range strings.Split(revokeAgentOut, "\n") {
+		if strings.HasPrefix(line, "fact.token_id=") {
+			createdID = strings.TrimPrefix(line, "fact.token_id=")
+		}
+	}
+	if createdID == "" {
+		t.Fatalf("token create agent missing token id:\n%s", revokeAgentOut)
+	}
+	revokeAgentOut = runCLI(t, "token", "revoke", createdID, "--vault", root, "--agent")
+	for _, want := range []string{"command=token.revoke", "status=success", "fact.token_id=" + createdID} {
+		if !strings.Contains(revokeAgentOut, want) {
+			t.Fatalf("token revoke agent missing %q:\n%s", want, revokeAgentOut)
+		}
 	}
 
 	// List should be empty again
@@ -134,11 +155,25 @@ func TestProfileCLIAddListRemove(t *testing.T) {
 	if !strings.Contains(addOut, "Added profile:") {
 		t.Fatalf("profile add output: %s", addOut)
 	}
+	addAgentOut := runCLI(t, "profile", "add", "machine-s3", "--endpoint", "s3://bucket/machine", "--workspace", "machine", "--vault", root, "--agent")
+	for _, want := range []string{"command=profile.add", "status=success", "fact.profile=machine-s3", "fact.endpoint=s3://bucket/machine", "fact.workspace=machine"} {
+		if !strings.Contains(addAgentOut, want) {
+			t.Fatalf("profile add agent missing %q:\n%s", want, addAgentOut)
+		}
+	}
 
 	// List with profile
 	listOut = runCLI(t, "profile", "list", "--vault", root)
-	if !strings.Contains(listOut, "my-s3") {
-		t.Fatalf("profile list should show my-s3: %s", listOut)
+	for _, want := range []string{"Profiles", "Name", "Endpoint", "Workspace", "Device", "Scope", "my-s3", "machine-s3", "s3://bucket/path", "default"} {
+		if !strings.Contains(listOut, want) {
+			t.Fatalf("profile list missing %q: %s", want, listOut)
+		}
+	}
+	agentListOut := runCLI(t, "profile", "list", "--vault", root, "--agent")
+	for _, want := range []string{"command=profile.list", "fact.profiles=2", "profile.1.name=machine-s3", "profile.1.endpoint=s3://bucket/machine", "profile.1.workspace=machine", "profile.2.name=my-s3", "profile.2.endpoint=s3://bucket/path", "profile.2.workspace=default"} {
+		if !strings.Contains(agentListOut, want) {
+			t.Fatalf("profile list agent missing %q:\n%s", want, agentListOut)
+		}
 	}
 
 	// Show profile
@@ -146,11 +181,28 @@ func TestProfileCLIAddListRemove(t *testing.T) {
 	if !strings.Contains(showOut, "my-s3") || !strings.Contains(showOut, "s3://bucket/path") {
 		t.Fatalf("profile show output: %s", showOut)
 	}
+	for _, want := range []string{"Profile details", "Field", "Value", "Profile", "Endpoint", "Workspace", "Device", "Scope", "my-s3", "s3://bucket/path", "default"} {
+		if !strings.Contains(showOut, want) {
+			t.Fatalf("profile show default missing %q:\n%s", want, showOut)
+		}
+	}
+	showAgentOut := runCLI(t, "profile", "show", "my-s3", "--vault", root, "--agent")
+	for _, want := range []string{"command=profile.show", "fact.profile=my-s3", "fact.endpoint=s3://bucket/path", "fact.workspace=default", "profile_detail.name=my-s3", "profile_detail.endpoint=s3://bucket/path", "profile_detail.workspace=default"} {
+		if !strings.Contains(showAgentOut, want) {
+			t.Fatalf("profile show agent missing %q:\n%s", want, showAgentOut)
+		}
+	}
 
 	// Remove profile
 	removeOut := runCLI(t, "profile", "remove", "my-s3", "--vault", root)
 	if !strings.Contains(removeOut, "Deleted profile:") {
 		t.Fatalf("profile remove output: %s", removeOut)
+	}
+	removeAgentOut := runCLI(t, "profile", "remove", "machine-s3", "--vault", root, "--agent")
+	for _, want := range []string{"command=profile.remove", "status=success", "fact.profile=machine-s3"} {
+		if !strings.Contains(removeAgentOut, want) {
+			t.Fatalf("profile remove agent missing %q:\n%s", want, removeAgentOut)
+		}
 	}
 
 	// List should be empty again

@@ -10,6 +10,8 @@ task check
 task kb:sidecar:test
 ```
 
+Before changing behavior, read [Module Review And TDD](./module-review-tdd.md). It records the current cross-module review queue and the RED -> GREEN commands expected for profile/vault/config boundaries, remote cache safety, publish approval, provider adapter isolation, and integration evidence redaction.
+
 `task check` runs the offline LanceDB sidecar protocol gate. It validates the sidecar JSON protocol and redaction boundary without installing Python packages from PyPI. Use `task kb:sidecar:test` before release or when changing `tools/pinax-lancedb-sidecar`; that command installs the real `lancedb` dependency in a temporary venv and runs the real rebuild/search sidecar tests.
 
 If `task` is not installed, use Go and OpenSpec commands directly:
@@ -147,6 +149,8 @@ ls temp/integration-test-runs
 ```
 
 `task test:integration` runs project board e2e and REST/RPC component tests, and writes command/stdout/stderr/env evidence to `temp/integration-test-runs/<run-id>/`.
+
+Running a focused command such as `go test ./tests/e2e -run TestPublishDoc -count=1` validates behavior but does not write integration evidence by itself. When an OpenSpec task requires evidence, use `task test:integration` or a project evidence runner that writes `summary.json`, `command.txt`, `stdout.log`, `stderr.log`, `env.json`, and `artifacts/`.
 
 Plugin runtime tests are included in `task test:integration`. They validate CLI-authored registry/lock/audit assets and redaction for plugin manifests, permission grants, dry-run execution, and uninstall flows.
 

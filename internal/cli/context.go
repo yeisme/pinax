@@ -36,6 +36,7 @@ type commandBuildContext struct {
 	s3Prefix                 *string
 	s3Endpoint               *string
 	s3Profile                *string
+	s3AddressingStyle        *string
 	noteProject              *string
 	noteGroup                *string
 	noteFolder               *string
@@ -111,6 +112,8 @@ type commandBuildContext struct {
 	searchCreatedAfter       *string
 	searchUpdatedAfter       *string
 	searchAllowStale         *bool
+	searchEngine             *string
+	searchLazyIndex          *string
 	searchAt                 *string
 	searchChangedSince       *string
 	searchRevision           *string
@@ -121,7 +124,6 @@ type commandBuildContext struct {
 	backendName              *string
 	backendRoot              *string
 	backendRemote            *string
-	backendDryRun            *bool
 	planFromPeriod           *string
 	planWithTaskBridge       *bool
 	planTaskReview           *bool

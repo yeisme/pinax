@@ -31,18 +31,20 @@ const (
 )
 
 type ProjectBoard struct {
-	SchemaVersion    string                `json:"schema_version"`
-	ProjectSlug      string                `json:"project_slug"`
-	Subproject       string                `json:"subproject,omitempty"`
-	WorkspacePath    string                `json:"workspace_path,omitempty"`
-	Workspace        *ProjectWorkspace     `json:"workspace,omitempty"`
-	Title            string                `json:"title"`
-	Columns          []BoardColumn         `json:"columns"`
-	Items            []BoardItem           `json:"items"`
-	Facts            ProjectBoardFacts     `json:"facts"`
-	Warnings         []ProjectBoardWarning `json:"warnings,omitempty"`
-	SourceSnapshotID string                `json:"source_snapshot_id,omitempty"`
-	GeneratedAt      string                `json:"generated_at"`
+	SchemaVersion      string                `json:"schema_version"`
+	ProjectObjectID    string                `json:"project_object_id,omitempty"`
+	SubprojectObjectID string                `json:"subproject_object_id,omitempty"`
+	ProjectSlug        string                `json:"project_slug"`
+	Subproject         string                `json:"subproject,omitempty"`
+	WorkspacePath      string                `json:"workspace_path,omitempty"`
+	Workspace          *ProjectWorkspace     `json:"workspace,omitempty"`
+	Title              string                `json:"title"`
+	Columns            []BoardColumn         `json:"columns"`
+	Items              []BoardItem           `json:"items"`
+	Facts              ProjectBoardFacts     `json:"facts"`
+	Warnings           []ProjectBoardWarning `json:"warnings,omitempty"`
+	SourceSnapshotID   string                `json:"source_snapshot_id,omitempty"`
+	GeneratedAt        string                `json:"generated_at"`
 }
 
 type ProjectBoardConfig struct {
@@ -76,45 +78,51 @@ type BoardColumn struct {
 }
 
 type BoardItem struct {
-	ItemID        string              `json:"item_id"`
-	Title         string              `json:"title"`
-	Column        string              `json:"column"`
-	SourceKind    BoardItemSourceKind `json:"source_kind"`
-	SourceStatus  string              `json:"source_status,omitempty"`
-	NoteID        string              `json:"note_id,omitempty"`
-	Path          string              `json:"path,omitempty"`
-	SourceLine    int                 `json:"source_line,omitempty"`
-	Project       string              `json:"project,omitempty"`
-	Subproject    string              `json:"subproject,omitempty"`
-	WorkspacePath string              `json:"workspace_path,omitempty"`
-	Tags          []string            `json:"tags,omitempty"`
-	Labels        []string            `json:"labels,omitempty"`
-	Status        string              `json:"status,omitempty"`
-	Milestone     string              `json:"milestone,omitempty"`
-	Priority      string              `json:"priority,omitempty"`
-	Due           string              `json:"due,omitempty"`
-	DueAt         string              `json:"due_at,omitempty"`
-	BlockedBy     []string            `json:"blocked_by,omitempty"`
-	EvidenceRefs  []string            `json:"evidence_refs,omitempty"`
-	Writable      bool                `json:"writable"`
-	Note          *NoteDisplay        `json:"note,omitempty"`
-	AgentContext  *AgentContext       `json:"agent_context,omitempty"`
+	ObjectID       string              `json:"object_id,omitempty"`
+	SourceObjectID string              `json:"source_object_id,omitempty"`
+	SourceAnchor   string              `json:"source_anchor,omitempty"`
+	ItemID         string              `json:"item_id"`
+	Title          string              `json:"title"`
+	Column         string              `json:"column"`
+	SourceKind     BoardItemSourceKind `json:"source_kind"`
+	SourceStatus   string              `json:"source_status,omitempty"`
+	NoteID         string              `json:"note_id,omitempty"`
+	Path           string              `json:"path,omitempty"`
+	SourceLine     int                 `json:"source_line,omitempty"`
+	Project        string              `json:"project,omitempty"`
+	Subproject     string              `json:"subproject,omitempty"`
+	WorkspacePath  string              `json:"workspace_path,omitempty"`
+	Tags           []string            `json:"tags,omitempty"`
+	Labels         []string            `json:"labels,omitempty"`
+	Status         string              `json:"status,omitempty"`
+	Milestone      string              `json:"milestone,omitempty"`
+	Priority       string              `json:"priority,omitempty"`
+	Due            string              `json:"due,omitempty"`
+	DueAt          string              `json:"due_at,omitempty"`
+	BlockedBy      []string            `json:"blocked_by,omitempty"`
+	EvidenceRefs   []string            `json:"evidence_refs,omitempty"`
+	Writable       bool                `json:"writable"`
+	Note           *NoteDisplay        `json:"note,omitempty"`
+	AgentContext   *AgentContext       `json:"agent_context,omitempty"`
 }
 
 const TaskAdoptionSchemaVersion = "pinax.task_adoption.v1"
 
 type TaskAdoption struct {
-	SchemaVersion string `json:"schema_version"`
-	TaskID        string `json:"task_id"`
-	Title         string `json:"title"`
-	Project       string `json:"project"`
-	Subproject    string `json:"subproject,omitempty"`
-	SourcePath    string `json:"source_path"`
-	SourceLine    int    `json:"source_line"`
-	SourceStatus  string `json:"source_status"`
-	Column        string `json:"column"`
-	CreatedAt     string `json:"created_at"`
-	UpdatedAt     string `json:"updated_at"`
+	ObjectID       string `json:"object_id"`
+	SourceObjectID string `json:"source_object_id"`
+	SourceAnchor   string `json:"source_anchor"`
+	SchemaVersion  string `json:"schema_version"`
+	TaskID         string `json:"task_id"`
+	Title          string `json:"title"`
+	Project        string `json:"project"`
+	Subproject     string `json:"subproject,omitempty"`
+	SourcePath     string `json:"source_path"`
+	SourceLine     int    `json:"source_line"`
+	SourceStatus   string `json:"source_status"`
+	Column         string `json:"column"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type ProjectBoardWarning struct {

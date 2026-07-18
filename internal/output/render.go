@@ -33,6 +33,7 @@ type RenderOptions struct {
 	Width      int
 	Markdown   MarkdownOptions
 	IsTerminal bool
+	JSONIndent string
 }
 
 type MarkdownOptions struct {
@@ -74,6 +75,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 	case ModeJSON:
 		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
+		if jsonIndentEnabled(w, opts) {
+			enc.SetIndent("", "  ")
+		}
 		return enc.Encode(projection)
 	case ModeAgent:
 		return renderAgent(w, projection)
@@ -88,6 +92,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 
 func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
 	theme := newSummaryThemeWithOptions(w, opts)
+	if (p.Command == "project.list" || p.Command == "project.subproject.list") && p.Error == nil {
+		return renderSummaryProjectList(w, theme, p)
+	}
 	if p.Command == "note.preview" && p.Status == "success" && p.Error == nil {
 		return renderSummaryDataWithOptions(w, theme, p, opts)
 	}
@@ -105,6 +112,11 @@ func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptio
 		if err := renderSummaryTable(w, theme, []string{"Error", "Details"}, [][]string{{theme.failed.Render(p.Error.Code), defaultString(p.Error.Message, "-")}}); err != nil {
 			return err
 		}
+		if shouldRenderErrorData(p.Command) {
+			if err := renderSummaryDataWithOptions(w, theme, p, opts); err != nil {
+				return err
+			}
+		}
 		if p.Error.Hint != "" {
 			if _, err := fmt.Fprintln(w); err != nil {
 				return err
@@ -113,18 +125,19 @@ func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptio
 		}
 		return nil
 	}
-	if len(p.Facts) > 0 {
+	summaryFacts := summaryFactsForProjection(p)
+	if len(summaryFacts) > 0 {
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
-		if err := renderSummaryFacts(w, theme, p.Facts); err != nil {
+		if err := renderSummaryFacts(w, theme, summaryFacts); err != nil {
 			return err
 		}
 	}
 	if err := renderSummaryDataWithOptions(w, theme, p, opts); err != nil {
 		return err
 	}
-	if len(p.Evidence) > 0 {
+	if len(p.Evidence) > 0 && p.Command != "api.routes" {
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
@@ -172,6 +185,15 @@ func newSummaryThemeWithOptions(w io.Writer, opts RenderOptions) summaryTheme {
 		failed:   style(roles.Danger).Bold(true),
 		numeric:  style(roles.Value),
 		action:   style(roles.Link),
+	}
+}
+
+func shouldRenderErrorData(command string) bool {
+	switch command {
+	case "publish.profile.validate":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -225,6 +247,30 @@ func applyThemeRole(roles *ThemeRoles, role, color string) {
 	case "heading":
 		roles.Heading = color
 	}
+}
+
+// jsonIndentEnabled decides whether --json output is pretty-printed. Defaults to
+// indented on an interactive terminal (human inspection) and compact when piped,
+// redirected, or written to a buffer (scripts, CI, test snapshots). Callers can
+// force a mode via RenderOptions.JSONIndent or the PINAX_JSON env var.
+func jsonIndentEnabled(w io.Writer, opts RenderOptions) bool {
+	switch strings.ToLower(strings.TrimSpace(opts.JSONIndent)) {
+	case "pretty", "indent", "on", "1", "true", "yes", "always":
+		return true
+	case "compact", "off", "0", "false", "no", "never":
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PINAX_JSON"))) {
+	case "pretty", "indent", "on", "1", "true", "yes", "always":
+		return true
+	case "compact", "off", "0", "false", "no", "never":
+		return false
+	}
+	if opts.IsTerminal {
+		return true
+	}
+	file, ok := w.(*os.File)
+	return ok && term.IsTerminal(int(file.Fd()))
 }
 
 func summaryColorEnabledWithOptions(w io.Writer, opts RenderOptions) bool {
@@ -304,9 +350,21 @@ func renderSummaryTable(w io.Writer, theme summaryTheme, header []string, rows [
 		BorderStyle(theme.rule).
 		StyleFunc(summaryTableStyle(theme, header))
 	body := trimTrailingSpaceLines(tw.Render())
-	rule := strings.Repeat("━", maxRenderedLineWidth(body))
-	_, err := fmt.Fprintf(w, "%s\n%s\n%s\n", theme.rule.Render(rule), body, theme.rule.Render(rule))
+	_, err := fmt.Fprintln(w, indentBlock(body, "  "))
 	return err
+}
+
+// indentBlock left-pads every line of a multi-line block, used to give summary
+// tables a small visual margin without heavy framing rules.
+func indentBlock(value, pad string) string {
+	if pad == "" {
+		return value
+	}
+	lines := strings.Split(value, "\n")
+	for i, line := range lines {
+		lines[i] = pad + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func summaryTableStyle(theme summaryTheme, header []string) charmtable.StyleFunc {
@@ -339,19 +397,6 @@ func isNumericSummaryColumn(header string) bool {
 	}
 }
 
-func maxRenderedLineWidth(value string) int {
-	width := 0
-	for _, line := range strings.Split(value, "\n") {
-		if lineWidth := lipgloss.Width(line); lineWidth > width {
-			width = lineWidth
-		}
-	}
-	if width == 0 {
-		return 1
-	}
-	return width
-}
-
 func trimTrailingSpaceLines(value string) string {
 	lines := strings.Split(value, "\n")
 	for i, line := range lines {
@@ -376,7 +421,7 @@ func renderSummaryFacts(w io.Writer, theme summaryTheme, facts map[string]string
 	for key := range facts {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	sortFactKeys(keys)
 	rows := make([][]string, 0, len(keys))
 	for _, key := range keys {
 		rows = append(rows, []string{summaryFactLabel(key), summaryFactValue(key, facts[key])})
@@ -384,7 +429,43 @@ func renderSummaryFacts(w io.Writer, theme summaryTheme, facts map[string]string
 	return renderSummaryTable(w, theme, []string{"Metric", "Value"}, rows)
 }
 
+func summaryFactsForProjection(p domain.Projection) map[string]string {
+	excludePrefixes := map[string][]string{
+		"asset.list":         {"asset."},
+		"prompt.search":      {"prompt_asset."},
+		"publish.theme.list": {"theme."},
+		"trash.list":         {"entry."},
+	}
+	prefixes := excludePrefixes[p.Command]
+	if len(prefixes) == 0 {
+		return p.Facts
+	}
+	filtered := make(map[string]string, len(p.Facts))
+	for key, value := range p.Facts {
+		if hasAnyPrefix(key, prefixes) {
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
+}
+
+func hasAnyPrefix(value string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func summaryFactLabel(key string) string {
+	if label, ok := projectListFactLabel(key); ok {
+		return label
+	}
+	if label, ok := numberedProjectWorkspaceFactLabel(key); ok {
+		return label
+	}
 	labels := map[string]string{
 		"action_id":                "Action ID",
 		"adopted":                  "Adopted",
@@ -559,6 +640,7 @@ func summaryFactLabel(key string) string {
 		"source":                   "Source",
 		"source_decision":          "Source decision",
 		"source_path":              "Source path",
+		"subprojects":              "Subprojects",
 		"sources":                  "Sources",
 		"status":                   "Status",
 		"tags":                     "Tags",
@@ -601,6 +683,48 @@ func summaryFactLabel(key string) string {
 		return label
 	}
 	return strings.ReplaceAll(key, "_", " ")
+}
+
+func numberedProjectWorkspaceFactLabel(key string) (string, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 2 || parts[1] == "" || !isASCIIDigitString(parts[1]) {
+		return "", false
+	}
+	switch parts[0] {
+	case "subproject":
+		return "Subproject " + parts[1], true
+	case "workspace":
+		return "Workspace " + parts[1], true
+	default:
+		return "", false
+	}
+}
+
+func isASCIIDigitString(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if !isASCIIDigit(value[i]) {
+			return false
+		}
+	}
+	return value != ""
+}
+
+func projectListFactLabel(key string) (string, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 3 || parts[0] != "project" || parts[1] == "" {
+		return "", false
+	}
+	field := map[string]string{
+		"slug":         "slug",
+		"name":         "name",
+		"description":  "description",
+		"notes_prefix": "notes path prefix",
+		"created_at":   "created",
+	}[parts[2]]
+	if field == "" {
+		field = strings.ReplaceAll(parts[2], "_", " ")
+	}
+	return "Project " + parts[1] + " " + field, true
 }
 
 func summaryFactValue(key, value string) string {
@@ -717,8 +841,50 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 	switch p.Command {
 	case "note.search":
 		return renderSummarySearchResults(w, theme, p.Data)
+	case "api.routes":
+		return renderSummaryAPIRoutes(w, theme, p.Data)
 	case "note.list":
 		return renderSummaryNoteList(w, theme, p.Data, "notes")
+	case "inbox.list", "draft.list":
+		return renderSummaryNoteList(w, theme, p.Data, "notes")
+	case "template.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"templates"}, []summaryListColumn{{Header: "Template", Path: "name", MaxWidth: 28}, {Header: "Source", Path: "source", MaxWidth: 16}, {Header: "Kind", Path: "kind", MaxWidth: 16}, {Header: "Pack", Path: "pack.id", MaxWidth: 16}, {Header: "Maturity", Path: "maturity", MaxWidth: 18}})
+	case "template.validate":
+		return renderSummaryNamedDataList(w, theme, "Template issues", p.Data, []string{"issues"}, issueSummaryColumns())
+	case "template.runs.prune":
+		return renderSummaryNamedDataList(w, theme, "Render runs to delete", p.Data, []string{"delete_candidates"}, deleteCandidateSummaryColumns())
+	case "backend.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"registry", "backends"}, []summaryListColumn{{Header: "Backend", Path: "name", MaxWidth: 28}, {Header: "Kind", Path: "kind", MaxWidth: 12}, {Header: "Bucket", Path: "bucket", MaxWidth: 28}, {Header: "Region", Path: "region", MaxWidth: 18}, {Header: "Profile", Path: "profile", MaxWidth: 24}})
+	case "backend.show":
+		return renderSummaryBackendShow(w, theme, p.Data)
+	case "backend.capabilities":
+		return renderSummaryNamedDataList(w, theme, "Backend capabilities", p.Data, []string{"capabilities"}, []summaryListColumn{{Header: "Capability", Path: "name", MaxWidth: 28}, {Header: "Supported", Path: "supported", MaxWidth: 12}})
+	case "backend.doctor":
+		return renderSummaryNamedDataList(w, theme, "Backend issues", p.Data, []string{"issues"}, issueSummaryColumns())
+	case "backend.object.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"objects"}, []summaryListColumn{{Header: "Key", Path: "key", MaxWidth: 44}, {Header: "Size", Path: "size_bytes", MaxWidth: 12}, {Header: "Updated", Path: "updated_at", MaxWidth: 22}})
+	case "backend.notes.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"notes"}, []summaryListColumn{{Header: "Path", Path: "path", MaxWidth: 44}, {Header: "Size", Path: "size_bytes", MaxWidth: 12}, {Header: "Updated", Path: "updated_at", MaxWidth: 22}})
+	case "activity.list", "activity.tail":
+		return renderSummaryActivityList(w, theme, p.Data)
+	case "monitor.runs", "monitor.tail":
+		return renderSummaryMonitorRuns(w, theme, p.Data)
+	case "sync.logs.list":
+		return renderSummaryDataList(w, theme, p.Data, []string{"runs"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Started", Path: "started_at", MaxWidth: 22}})
+	case "sync.logs.tail":
+		return renderSummaryDataList(w, theme, p.Data, []string{"events"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Operation", Path: "kind", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Time", Path: "ts", MaxWidth: 22}})
+	case "sync.logs.prune":
+		return renderSummaryNamedDataList(w, theme, "Delete candidates", p.Data, []string{"delete_candidates"}, deleteCandidateSummaryColumns())
+	case "sync.diff", "sync.push", "sync.pull":
+		return renderSummaryNamedDataList(w, theme, "Sync operations", p.Data, []string{"plan", "operations"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "status", MaxWidth: 14}})
+	case "plan.daily", "plan.weekly", "plan.monthly":
+		return renderSummaryPlanningSelectedTasks(w, theme, p.Data)
+	case "plan.actions":
+		return renderSummaryNamedDataList(w, theme, "Action draft tasks", p.Data, []string{"draft", "tasks"}, []summaryListColumn{{Header: "Task ID", Path: "task_id", MaxWidth: 28}, {Header: "Kind", Path: "kind", MaxWidth: 12}, {Header: "Reason", Path: "reason", MaxWidth: 56}, {Header: "Confirm", Path: "requires_confirmation", MaxWidth: 10}})
+	case "brain.answer":
+		return renderSummaryNamedDataList(w, theme, "Brain sources", p.Data, []string{"sources"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 14}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Title", Path: "title", MaxWidth: 34}})
+	case "brain.maintenance_plan":
+		return renderSummaryNamedDataList(w, theme, "Brain maintenance operations", p.Data, []string{"operations"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 28}, {Header: "Risk", Path: "risk", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 14}, {Header: "Next action", Path: "next_action.command", MaxWidth: 58}})
 	case "note.orphans":
 		return renderSummaryNoteList(w, theme, p.Data, "orphans")
 	case "note.links":
@@ -729,10 +895,78 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryFolderList(w, theme, p.Data)
 	case "folder.show":
 		return renderSummaryFolderShow(w, theme, p.Data)
+	case "folder.repair":
+		return renderSummaryNamedDataList(w, theme, "Folder issues", p.Data, []string{"issues"}, folderIssueSummaryColumns())
+	case "folder.create", "folder.adopt", "folder.delete", "folder.rename", "folder.move":
+		return renderSummaryNamedDataList(w, theme, "Folder effects", p.Data, []string{"plan", "effects"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 24}, {Header: "Path", Path: "path", MaxWidth: 42}, {Header: "Target", Path: "target", MaxWidth: 42}, {Header: "Status", Path: "status", MaxWidth: 14}})
+	case "collection.import", "collection.diff":
+		return renderSummaryNamedDataList(w, theme, "Collection items", p.Data, []string{"plan", "plans"}, []summaryListColumn{{Header: "Item ID", Path: "item_id", MaxWidth: 24}, {Header: "Title", Path: "title", MaxWidth: 30}, {Header: "Note", Path: "note_path", MaxWidth: 44}, {Header: "Prompt", Path: "prompt_asset_id", MaxWidth: 34}, {Header: "Note status", Path: "note_status", MaxWidth: 14}, {Header: "Prompt status", Path: "prompt_status", MaxWidth: 16}})
+	case "graph.query":
+		return renderSummaryNamedDataList(w, theme, "Graph results", p.Data, []string{"results"}, []summaryListColumn{{Header: "Prompt ID", Path: "prompt_asset_id", MaxWidth: 38}, {Header: "Title", Path: "title", MaxWidth: 36}})
+	case "record.adopt":
+		return renderSummaryNamedDataList(w, theme, "Record candidates", p.Data, []string{"candidates"}, []summaryListColumn{{Header: "Kind", Path: "object_kind", MaxWidth: 12}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "managed_status", MaxWidth: 16}, {Header: "Score", Path: "score", MaxWidth: 8}})
+	case "metadata.plan":
+		return renderSummaryNamedDataList(w, theme, "Metadata operations", p.Data, []string{"operations"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 24}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "status", MaxWidth: 14}})
+	case "record.history":
+		return renderSummaryRecordHistory(w, theme, p.Data)
+	case "asset.list":
+		return renderSummaryNamedDataList(w, theme, "Assets", p.Data, []string{"assets"}, []summaryListColumn{{Header: "Path", Path: "path", MaxWidth: 42}, {Header: "Filename", Path: "filename", MaxWidth: 28}, {Header: "Media type", Path: "media_type", MaxWidth: 18}, {Header: "Size", Path: "size", MaxWidth: 12}, {Header: "Status", Path: "managed_status", MaxWidth: 16}})
+	case "asset.show":
+		return renderSummaryAssetShow(w, theme, p.Data)
+	case "memory.list":
+		return renderSummaryNamedDataList(w, theme, "Memory records", p.Data, []string{"records"}, []summaryListColumn{{Header: "Record ID", Path: "id", MaxWidth: 24}, {Header: "Type", Path: "type", MaxWidth: 12}, {Header: "Subject", Path: "subject", MaxWidth: 18}, {Header: "Predicate", Path: "predicate", MaxWidth: 24}, {Header: "Object", Path: "object", MaxWidth: 34}, {Header: "Status", Path: "status", MaxWidth: 14}})
+	case "memory.recall", "memory.context":
+		return renderSummaryNamedDataList(w, theme, "Memory matches", p.Data, []string{"matches"}, []summaryListColumn{{Header: "Record ID", Path: "id", MaxWidth: 24}, {Header: "Type", Path: "type", MaxWidth: 12}, {Header: "Subject", Path: "subject", MaxWidth: 18}, {Header: "Object", Path: "object", MaxWidth: 34}, {Header: "Score", Path: "score", MaxWidth: 10}, {Header: "Reason", Path: "recall_reason", MaxWidth: 42}})
+	case "plugin.list":
+		return renderSummaryNamedDataList(w, theme, "Plugins", p.Data, []string{"plugins"}, []summaryListColumn{{Header: "Plugin ID", Path: "id", MaxWidth: 28}, {Header: "Name", Path: "name", MaxWidth: 28}, {Header: "Version", Path: "version", MaxWidth: 14}, {Header: "Runtime", Path: "runtime", MaxWidth: 14}, {Header: "Enabled", Path: "enabled", MaxWidth: 10}, {Header: "Scope", Path: "scope", MaxWidth: 12}})
+	case "plugin.permissions.list":
+		return renderSummaryNamedDataList(w, theme, "Permission grants", p.Data, []string{"grants"}, []summaryListColumn{{Header: "Permission", Path: "permission", MaxWidth: 28}, {Header: "Capability", Path: "capability", MaxWidth: 28}, {Header: "Granted", Path: "granted_at", MaxWidth: 22}})
+	case "prompt.search":
+		return renderSummaryNamedDataList(w, theme, "Prompt assets", p.Data, []string{"prompt_assets"}, []summaryListColumn{{Header: "Prompt ID", Path: "PromptAssetID", MaxWidth: 34}, {Header: "Title", Path: "Title", MaxWidth: 30}, {Header: "Domain", Path: "Domain", MaxWidth: 24}, {Header: "Lifecycle", Path: "Lifecycle", MaxWidth: 14}, {Header: "Permission", Path: "Permission", MaxWidth: 16}})
+	case "database.schema.list":
+		return renderSummaryNamedDataList(w, theme, "Properties", p.Data, []string{"properties"}, []summaryListColumn{{Header: "Property", Path: "name", MaxWidth: 28}, {Header: "Type", Path: "type", MaxWidth: 14}, {Header: "Values", Path: "values", MaxWidth: 36}, {Header: "Updated", Path: "updated_at", MaxWidth: 22}})
+	case "database.schema.show":
+		return renderSummaryDatabaseSchemaShow(w, theme, p)
+	case "kb.provider.list":
+		return renderSummaryNamedDataList(w, theme, "Providers", p.Data, []string{"providers"}, []summaryListColumn{{Header: "Provider", Path: "name", MaxWidth: 16}, {Header: "Model", Path: "default_model", MaxWidth: 28}, {Header: "Configured", Path: "configured", MaxWidth: 12}, {Header: "Credential", Path: "credential_source", MaxWidth: 24}, {Header: "Local only", Path: "local_only", MaxWidth: 12}})
+	case "profile.list":
+		return renderSummaryNamedDataList(w, theme, "Profiles", p.Data, []string{"profiles"}, []summaryListColumn{{Header: "Name", Path: "name", MaxWidth: 24}, {Header: "Endpoint", Path: "endpoint", MaxWidth: 42}, {Header: "Workspace", Path: "workspace", MaxWidth: 18}, {Header: "Device", Path: "device", MaxWidth: 18}, {Header: "Scope", Path: "default_scope", MaxWidth: 20}, {Header: "Default", Path: "default", MaxWidth: 10}})
+	case "profile.show":
+		return renderSummaryProfileShow(w, theme, p.Data)
+	case "publish.doc.provider.list":
+		return renderSummaryNamedDataList(w, theme, "Document publish providers", p.Data, []string{"providers"}, []summaryListColumn{{Header: "Target", Path: "target", MaxWidth: 18}, {Header: "Provider", Path: "provider", MaxWidth: 16}})
+	case "publish.profile.validate":
+		return renderSummaryNamedDataList(w, theme, "Publish profile issues", p.Data, []string{"issues"}, publishIssueSummaryColumns())
+	case "publish.doctor":
+		return renderSummaryNamedDataList(w, theme, "Publish issues", p.Data, []string{"issues"}, publishIssueSummaryColumns())
+	case "publish.plan":
+		return renderSummaryNamedDataList(w, theme, "Publish selected items", p.Data, []string{"plan", "selected"}, []summaryListColumn{{Header: "Note ID", Path: "id", MaxWidth: 24}, {Header: "Kind", Path: "kind", MaxWidth: 12}, {Header: "Title", Path: "title", MaxWidth: 32}, {Header: "Source", Path: "source_path", MaxWidth: 42}, {Header: "Output", Path: "output_path", MaxWidth: 42}})
+	case "publish.doc.list":
+		return renderSummaryNamedDataList(w, theme, "Document publish mappings", p.Data, []string{"mappings"}, []summaryListColumn{{Header: "Note ID", Path: "note_id", MaxWidth: 24}, {Header: "Target", Path: "target", MaxWidth: 16}, {Header: "Provider", Path: "provider", MaxWidth: 14}, {Header: "Status", Path: "publish_status", MaxWidth: 18}, {Header: "Renderer", Path: "renderer", MaxWidth: 16}, {Header: "Remote path", Path: "remote_path", MaxWidth: 42}})
+	case "publish.theme.list":
+		return renderSummaryNamedDataList(w, theme, "Themes", p.Data, []string{"themes"}, []summaryListColumn{{Header: "Theme", Path: "name", MaxWidth: 28}, {Header: "Source", Path: "source", MaxWidth: 28}, {Header: "Contract", Path: "contract_version", MaxWidth: 28}})
+	case "publish.theme.eject":
+		return renderSummaryNamedScalarList(w, theme, "Theme files", p.Data, []string{"files"}, "Path", 72)
+	case "publish.profile.list":
+		return renderSummaryNamedDataList(w, theme, "Publish profiles", p.Data, []string{"profiles"}, []summaryListColumn{{Header: "Profile", Path: "name", MaxWidth: 24}, {Header: "Target", Path: "target", MaxWidth: 18}, {Header: "Renderer", Path: "renderer", MaxWidth: 16}, {Header: "Title", Path: "site.title", MaxWidth: 28}, {Header: "Theme", Path: "site.theme.value", MaxWidth: 30}})
+	case "repair.list":
+		return renderSummaryRepairList(w, theme, p.Data)
+	case "project.show":
+		return renderSummaryProjectShow(w, theme, p.Data)
+	case "project.list":
+		return renderSummaryProjectList(w, theme, p)
+	case "project.subproject.list":
+		return renderSummarySubprojectList(w, theme, p)
+	case "project.item.add", "project.item.move", "project.item.archive", "project.item.plan", "project.item.show":
+		return renderSummaryProjectItem(w, theme, p.Data)
 	case "project.board.show":
 		return renderSummaryProjectBoard(w, p)
 	case "tag.list", "kind.list", "group.list":
 		return renderSummaryDimensionList(w, theme, p.Data)
+	case "view.list", "database.view.list":
+		return renderSummaryNamedDataList(w, theme, "Views", p.Data, []string{"views"}, []summaryListColumn{{Header: "View", Path: "name", MaxWidth: 26}, {Header: "Group", Path: "group", MaxWidth: 16}, {Header: "Kind", Path: "kind", MaxWidth: 16}, {Header: "Status", Path: "status", MaxWidth: 14}, {Header: "Sort", Path: "sort", MaxWidth: 16}, {Header: "Display", Path: "display.mode", MaxWidth: 14}})
+	case "view.show", "database.view.show":
+		return renderSummaryDataList(w, theme, p.Data, []string{"result", "notes"}, []summaryListColumn{{Header: "Path", Path: "path", MaxWidth: 56}, {Header: "Title", Path: "title", MaxWidth: 32}, {Header: "Kind", Path: "kind", MaxWidth: 14}, {Header: "Tags", Path: "tags", MaxWidth: 24}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Updated", Path: "updated_at", MaxWidth: 20}})
 	case "organize.suggest":
 		return renderSummaryOrganizePlan(w, theme, p.Data)
 	case "organize.list":
@@ -743,6 +977,20 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryMarkdownDocument(w, p.Data, opts)
 	case "sync.conflicts.list":
 		return renderSummarySyncConflictList(w, theme, p.Data)
+	case "trash.list":
+		return renderSummaryNamedDataList(w, theme, "Trash entries", p.Data, []string{"entries"}, []summaryListColumn{{Header: "Kind", Path: "object_kind", MaxWidth: 14}, {Header: "Object", Path: "object_id", MaxWidth: 28}, {Header: "Title", Path: "title", MaxWidth: 28}, {Header: "Trash path", Path: "trash_path", MaxWidth: 42}, {Header: "Deleted", Path: "deleted_at", MaxWidth: 22}})
+	case "token.list":
+		return renderSummaryNamedDataList(w, theme, "Tokens", p.Data, []string{"tokens"}, []summaryListColumn{{Header: "ID", Path: "id", MaxWidth: 24}, {Header: "Label", Path: "label", MaxWidth: 24}, {Header: "Created", Path: "created_at", MaxWidth: 22}, {Header: "Scope", Path: "scope", MaxWidth: 18}, {Header: "Expires", Path: "expires_at", MaxWidth: 22}})
+	case "vault.doctor":
+		return renderSummaryNamedDataList(w, theme, "Vault issues", p.Data, []string{"issues"}, issueSummaryColumns())
+	case "index.doctor":
+		return renderSummaryNamedDataList(w, theme, "Index issues", p.Data, []string{"issues"}, issueSummaryColumns())
+	case "storage.doctor":
+		return renderSummaryNamedDataList(w, theme, "Storage issues", p.Data, []string{"issues"}, issueSummaryColumns())
+	case "vault.list":
+		return renderSummaryVaultList(w, theme, p.Data)
+	case "vault.remote.list":
+		return renderSummaryVaultRemoteList(w, theme, p.Data)
 	case "sync.conflicts.show":
 		return renderSummarySyncConflictShow(w, theme, p.Data)
 	case "sync.conflicts.diff":
@@ -750,6 +998,626 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 	default:
 		return nil
 	}
+}
+
+func issueSummaryColumns() []summaryListColumn {
+	return []summaryListColumn{{Header: "Severity", Path: "severity", MaxWidth: 12}, {Header: "Code", Paths: []string{"code", "issue_code"}, MaxWidth: 26}, {Header: "Path", Path: "path", MaxWidth: 42}, {Header: "Message", Path: "message", MaxWidth: 48}}
+}
+
+func publishIssueSummaryColumns() []summaryListColumn {
+	return []summaryListColumn{{Header: "Severity", Path: "severity", MaxWidth: 12}, {Header: "Code", Path: "code", MaxWidth: 28}, {Header: "Field", Path: "field", MaxWidth: 18}, {Header: "Message", Path: "message", MaxWidth: 52}}
+}
+
+func folderIssueSummaryColumns() []summaryListColumn {
+	return []summaryListColumn{{Header: "Code", Path: "code", MaxWidth: 26}, {Header: "Path", Path: "path", MaxWidth: 38}, {Header: "Operation", Path: "operation", MaxWidth: 18}, {Header: "Message", Path: "message", MaxWidth: 48}}
+}
+
+func deleteCandidateSummaryColumns() []summaryListColumn {
+	return []summaryListColumn{{Header: "Run ID", Paths: []string{"run_id", "name"}, MaxWidth: 32}, {Header: "Command", Path: "command", MaxWidth: 28}, {Header: "Status", Path: "status", MaxWidth: 18}, {Header: "Template", Path: "template", MaxWidth: 20}, {Header: "Created", Path: "created_at", MaxWidth: 22}}
+}
+
+func renderSummaryPlanningSelectedTasks(w io.Writer, theme summaryTheme, data any) error {
+	items := planningSelectedTaskRows(data)
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if err := renderSummaryTable(w, theme, []string{"Planning selected tasks"}, [][]string{{fmt.Sprintf("%d selected", len(items))}}); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+	rows := make([][]string, 0, limit)
+	for _, item := range items[:limit] {
+		rows = append(rows, []string{
+			summaryCell(dataPathString(item, "id"), 28),
+			summaryCell(dataPathString(item, "title"), 34),
+			summaryCell(firstDataPathString(item, "section_title", "section_id"), 24),
+			summaryCell(dataPathString(item, "priority"), 12),
+			summaryCell(dataPathString(item, "reason"), 42),
+		})
+	}
+	return renderSummaryTable(w, theme, []string{"Task ID", "Title", "Section", "Priority", "Reason"}, rows)
+}
+
+func planningSelectedTaskRows(data any) []map[string]any {
+	tasks := dataListMaps(data, "snapshot", "taskbridge", "tasks")
+	if len(tasks) == 0 {
+		return nil
+	}
+	selected := dataListScalars(data, "decision", "selected")
+	if len(selected) == 0 {
+		return nil
+	}
+	selectedSet := make(map[string]bool, len(selected))
+	for _, id := range selected {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			selectedSet[id] = true
+		}
+	}
+	items := make([]map[string]any, 0, len(selected))
+	for _, task := range tasks {
+		if selectedSet[dataPathString(task, "id")] {
+			items = append(items, task)
+		}
+	}
+	return items
+}
+
+func renderSummaryRecordHistory(w io.Writer, theme summaryTheme, data any) error {
+	record, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := [][]string{
+		{"Note ID", defaultString(dataPathString(record, "note_id"), "-")},
+		{"Path", defaultString(dataPathString(record, "path"), "-")},
+		{"Title", defaultString(dataPathString(record, "title"), "-")},
+		{"Lifecycle", defaultString(dataPathString(record, "lifecycle"), "-")},
+		{"Record version", defaultString(dataPathString(record, "record_version"), "-")},
+		{"Ledger sequence", defaultString(dataPathString(record, "ledger_seq"), "-")},
+	}
+	return renderSummaryTable(w, theme, []string{"Record details", "Value"}, rows)
+}
+
+func renderSummaryProjectItem(w io.Writer, theme summaryTheme, data any) error {
+	root, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	item, ok := dataMap(root["item"])
+	if !ok {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	rows := [][]string{
+		{"Item ID", defaultString(dataPathString(item, "item_id"), "-")},
+		{"Title", defaultString(dataPathString(item, "title"), "-")},
+		{"Column", defaultString(dataPathString(item, "column"), "-")},
+		{"Path", defaultString(dataPathString(item, "path"), "-")},
+		{"Project", defaultString(dataPathString(item, "project"), "-")},
+		{"Status", defaultString(dataPathString(item, "status"), "-")},
+		{"Source", defaultString(dataPathString(item, "source_kind"), "-")},
+		{"Writable", summaryBool(dataPathString(item, "writable") == "true")},
+	}
+	return renderSummaryTable(w, theme, []string{"Project item", "Value"}, rows)
+}
+
+func renderSummaryNamedDataList(w io.Writer, theme summaryTheme, title string, data any, listPath []string, columns []summaryListColumn) error {
+	items := dataListMaps(data, listPath...)
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render(title)); err != nil {
+		return err
+	}
+	return renderSummaryDataList(w, theme, data, listPath, columns)
+}
+
+func renderSummaryNamedScalarList(w io.Writer, theme summaryTheme, title string, data any, listPath []string, header string, maxWidth int) error {
+	items := dataListScalars(data, listPath...)
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render(title)); err != nil {
+		return err
+	}
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+	rows := make([][]string, 0, limit)
+	for _, item := range items[:limit] {
+		rows = append(rows, []string{summaryCell(item, maxWidth)})
+	}
+	return renderSummaryTable(w, theme, []string{header}, rows)
+}
+
+func renderSummaryActivityList(w io.Writer, theme summaryTheme, data any) error {
+	if err := renderSummaryDataList(w, theme, data, []string{"entries"}, []summaryListColumn{{Header: "Event ID", Path: "event_id", MaxWidth: 28}, {Header: "Source", Path: "source", MaxWidth: 18}, {Header: "Kind", Path: "kind", MaxWidth: 24}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Object", Path: "object_ref", MaxWidth: 28}, {Header: "Time", Path: "ts", MaxWidth: 22}}); err != nil {
+		return err
+	}
+	return renderSummaryNamedDataList(w, theme, "Activity warnings", data, []string{"warnings"}, []summaryListColumn{{Header: "Source", Path: "source", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 42}, {Header: "Line", Path: "line", MaxWidth: 8}, {Header: "Message", Path: "message", MaxWidth: 56}})
+}
+
+func renderSummaryMonitorRuns(w io.Writer, theme summaryTheme, data any) error {
+	if err := renderSummaryDataList(w, theme, data, []string{"runs"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Command", Path: "command", MaxWidth: 30}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Duration", Path: "duration_ms", MaxWidth: 12}, {Header: "Started", Path: "started_at", MaxWidth: 22}}); err != nil {
+		return err
+	}
+	return renderSummaryNamedDataList(w, theme, "Monitor warnings", data, []string{"warnings"}, []summaryListColumn{{Header: "Source", Path: "source", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 42}, {Header: "Line", Path: "line", MaxWidth: 8}, {Header: "Message", Path: "message", MaxWidth: 56}})
+}
+
+func renderSummaryAPIRoutes(w io.Writer, theme summaryTheme, data any) error {
+	routes := dataListMaps(data, "routes")
+	if len(routes) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("API routes")); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(routes))
+	for _, route := range routes {
+		endpoint := firstDataPathString(route, "path", "rpc_method")
+		rows = append(rows, []string{summaryCell(firstDataPathString(route, "method"), 8), summaryCell(endpoint, 42), summaryCell(firstDataPathString(route, "command"), 34), summaryCell(firstDataPathString(route, "surface"), 10)})
+	}
+	return renderSummaryTable(w, theme, []string{"Method", "Endpoint", "Command", "Surface"}, rows)
+}
+
+func renderSummaryProjectShow(w io.Writer, theme summaryTheme, data any) error {
+	root, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	project, ok := dataMap(root["project"])
+	if !ok {
+		return nil
+	}
+	rows := [][]string{
+		{"Slug", defaultString(firstDataPathString(project, "slug"), "-")},
+		{"Name", defaultString(firstDataPathString(project, "name"), "-")},
+		{"Description", defaultString(firstDataPathString(project, "description"), "-")},
+		{"Notes prefix", defaultString(firstDataPathString(project, "notes_prefix"), "-")},
+		{"Created", defaultString(firstDataPathString(project, "created_at"), "-")},
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Project details")); err != nil {
+		return err
+	}
+	return renderSummaryTable(w, theme, []string{"Field", "Value"}, rows)
+}
+
+func renderSummaryAssetShow(w io.Writer, theme summaryTheme, data any) error {
+	asset := assetMapFromData(data)
+	if asset == nil {
+		return nil
+	}
+	rows := [][]string{
+		{"Path", defaultString(firstDataPathString(asset, "path"), "-")},
+		{"Filename", defaultString(firstDataPathString(asset, "filename"), "-")},
+		{"Media type", defaultString(firstDataPathString(asset, "media_type"), "-")},
+		{"Size", defaultString(firstDataPathString(asset, "size_bytes", "size"), "-")},
+		{"Status", defaultString(firstDataPathString(asset, "managed_status"), "-")},
+		{"SHA-256", defaultString(firstDataPathString(asset, "sha256"), "-")},
+	}
+	if displayPath := firstDataPathString(asset, "display_path"); displayPath != "" {
+		rows = append(rows, []string{"Display path", displayPath})
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Asset details")); err != nil {
+		return err
+	}
+	return renderSummaryTable(w, theme, []string{"Field", "Value"}, rows)
+}
+
+func renderSummaryDatabaseSchemaShow(w io.Writer, theme summaryTheme, p domain.Projection) error {
+	root, ok := dataMap(p.Data)
+	if !ok {
+		return nil
+	}
+	property, ok := dataMap(root["property"])
+	if !ok {
+		return nil
+	}
+	validation, _ := dataMap(root["validation"])
+	rows := [][]string{
+		{"Property", defaultString(p.Facts["property"], "-")},
+		{"Type", defaultString(firstDataPathString(property, "type"), "-")},
+		{"Values", defaultString(firstDataPathString(property, "values"), "-")},
+		{"Updated", defaultString(firstDataPathString(property, "updated_at"), "-")},
+		{"Validation", defaultString(firstDataPathString(validation, "status"), "-")},
+		{"Checked values", defaultString(firstDataPathString(validation, "checked_values"), "0")},
+		{"Invalid values", defaultString(firstDataPathString(validation, "invalid_values"), "0")},
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Property schema")); err != nil {
+		return err
+	}
+	return renderSummaryTable(w, theme, []string{"Field", "Value"}, rows)
+}
+
+func renderSummaryProfileShow(w io.Writer, theme summaryTheme, data any) error {
+	profile := profileMapFromData(data)
+	if profile == nil {
+		return nil
+	}
+	rows := [][]string{
+		{"Profile", defaultString(firstDataPathString(profile, "name"), "-")},
+		{"Endpoint", defaultString(firstDataPathString(profile, "endpoint"), "-")},
+		{"Workspace", defaultString(firstDataPathString(profile, "workspace"), "-")},
+		{"Device", defaultString(firstDataPathString(profile, "device"), "-")},
+		{"Scope", defaultString(firstDataPathString(profile, "default_scope"), "-")},
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Profile details")); err != nil {
+		return err
+	}
+	return renderSummaryTable(w, theme, []string{"Field", "Value"}, rows)
+}
+
+func renderSummaryBackendShow(w io.Writer, theme summaryTheme, data any) error {
+	profile := profileMapFromData(data)
+	if profile == nil {
+		return nil
+	}
+	rows := [][]string{
+		{"Name", defaultString(firstDataPathString(profile, "name"), "-")},
+		{"Kind", defaultString(firstDataPathString(profile, "kind"), "-")},
+		{"Bucket", defaultString(firstDataPathString(profile, "bucket"), "-")},
+		{"Region", defaultString(firstDataPathString(profile, "region"), "-")},
+		{"Prefix", defaultString(firstDataPathString(profile, "prefix"), "-")},
+		{"Profile", defaultString(firstDataPathString(profile, "profile"), "-")},
+		{"Credential", defaultString(firstDataPathString(profile, "credential_source"), "-")},
+		{"Capabilities", defaultString(firstDataPathString(profile, "capabilities"), "-")},
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Backend details")); err != nil {
+		return err
+	}
+	return renderSummaryTable(w, theme, []string{"Field", "Value"}, rows)
+}
+
+func assetMapFromData(data any) map[string]any {
+	root, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	asset, ok := dataMap(root["asset"])
+	if !ok {
+		return nil
+	}
+	return asset
+}
+
+func profileMapFromData(data any) map[string]any {
+	root, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	profile, ok := dataMap(root["profile"])
+	if !ok {
+		return nil
+	}
+	return profile
+}
+
+func renderSummaryVaultList(w io.Writer, theme summaryTheme, data any) error {
+	root, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	defaultAlias, _ := root["default"].(string)
+	locals, ok := dataMap(root["locals"])
+	if ok && len(locals) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(w, theme.header.Render("Local vaults")); err != nil {
+			return err
+		}
+		aliases := sortedMapKeys(locals)
+		rows := make([][]string, 0, len(aliases))
+		for _, alias := range aliases {
+			entry, _ := dataMap(locals[alias])
+			isDefault := ""
+			if alias == defaultAlias {
+				isDefault = "*"
+			}
+			rows = append(rows, []string{isDefault, summaryCell(alias, 24), summaryCell(firstDataPathString(entry, "name"), 28), summaryCell(firstDataPathString(entry, "path"), 96)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Default", "Alias", "Name", "Path"}, rows); err != nil {
+			return err
+		}
+	}
+	remoteCache, ok := dataMap(root["remote_cache"])
+	if !ok || len(remoteCache) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Remote vaults")); err != nil {
+		return err
+	}
+	rows := [][]string{}
+	for _, profile := range sortedMapKeys(remoteCache) {
+		entry, _ := dataMap(remoteCache[profile])
+		vaults := dataListMaps(entry, "vaults")
+		for _, vault := range vaults {
+			rows = append(rows, []string{summaryCell(profile, 20), summaryCell(firstDataPathString(vault, "selector"), 28), summaryCell(firstDataPathString(vault, "label"), 28), summaryCell(firstDataPathString(vault, "workspace"), 24), summaryCell(firstDataPathString(vault, "revision"), 18)})
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return renderSummaryTable(w, theme, []string{"Profile", "Selector", "Label", "Workspace", "Revision"}, rows)
+}
+
+func renderSummaryVaultRemoteList(w io.Writer, theme summaryTheme, data any) error {
+	items := remoteVaultRows(data)
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Remote vaults")); err != nil {
+		return err
+	}
+	rows := make([][]string, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, []string{summaryCell(firstDataPathString(item, "profile"), 20), summaryCell(firstDataPathString(item, "selector"), 28), summaryCell(firstDataPathString(item, "label"), 28), summaryCell(firstDataPathString(item, "workspace"), 24), summaryCell(firstDataPathString(item, "revision"), 18)})
+	}
+	return renderSummaryTable(w, theme, []string{"Profile", "Selector", "Label", "Workspace", "Revision"}, rows)
+}
+
+func remoteVaultRows(data any) []map[string]any {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	var root struct {
+		Profiles map[string]struct {
+			Profile   string `json:"profile"`
+			Workspace string `json:"workspace"`
+			Vaults    []struct {
+				ID        string `json:"id"`
+				Label     string `json:"label"`
+				Selector  string `json:"selector"`
+				Workspace string `json:"workspace"`
+				Revision  string `json:"revision"`
+			} `json:"vaults"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(payload, &root); err != nil || len(root.Profiles) == 0 {
+		return nil
+	}
+	profiles := make([]string, 0, len(root.Profiles))
+	for profile := range root.Profiles {
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+	items := []map[string]any{}
+	for _, profileName := range profiles {
+		entry := root.Profiles[profileName]
+		profileValue := entry.Profile
+		if profileValue == "" {
+			profileValue = profileName
+		}
+		for _, vault := range entry.Vaults {
+			workspace := vault.Workspace
+			if workspace == "" {
+				workspace = entry.Workspace
+			}
+			items = append(items, map[string]any{"profile": profileValue, "selector": vault.Selector, "label": vault.Label, "workspace": workspace, "revision": vault.Revision, "id": vault.ID})
+		}
+	}
+	return items
+}
+
+func renderSummaryRepairList(w io.Writer, theme summaryTheme, data any) error {
+	plans := dataListMaps(data, "plans")
+	if len(plans) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Repair plans")); err != nil {
+		return err
+	}
+	limit := len(plans)
+	if limit > 10 {
+		limit = 10
+	}
+	rows := make([][]string, 0, limit)
+	for _, plan := range plans[:limit] {
+		rows = append(rows, []string{summaryCell(firstDataPathString(plan, "plan_id"), 28), summaryCell(firstDataPathString(plan, "status"), 14), fmt.Sprint(dataPathLen(plan, "operations")), summaryCell(firstDataPathString(plan, "created_at"), 22), summaryCell(firstDataPathString(plan, "expires_at"), 22)})
+	}
+	return renderSummaryTable(w, theme, []string{"Plan ID", "Status", "Operations", "Created", "Expires"}, rows)
+}
+
+func dataPathLen(item map[string]any, path string) int {
+	value := dataPathValue(item, path)
+	switch typed := value.(type) {
+	case []any:
+		return len(typed)
+	case []map[string]any:
+		return len(typed)
+	default:
+		if value == nil {
+			return 0
+		}
+		payload, err := json.Marshal(value)
+		if err != nil {
+			return 0
+		}
+		var items []any
+		if err := json.Unmarshal(payload, &items); err != nil {
+			return 0
+		}
+		return len(items)
+	}
+}
+
+func sortedMapKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func renderSummaryProjectList(w io.Writer, theme summaryTheme, p domain.Projection) error {
+	if p.Command == "project.subproject.list" {
+		return renderSummarySubprojectList(w, theme, p)
+	}
+	if p.Status == "success" {
+		if err := renderSummaryTable(w, theme, []string{"Highlights"}, [][]string{{defaultString(p.Summary, "-")}}); err != nil {
+			return err
+		}
+	} else if err := renderSummaryTable(w, theme, []string{"Status", "Highlights"}, [][]string{{summaryStatusCell(theme, p.Status), defaultString(p.Summary, "-")}}); err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	metricRows := [][]string{{"Current project", defaultString(p.Facts["current_project"], "-")}, {"Projects", defaultString(p.Facts["projects"], "0")}}
+	if vault := p.Facts["vault"]; vault != "" {
+		metricRows = append(metricRows, []string{"Vault", vault})
+	}
+	if err := renderSummaryTable(w, theme, []string{"Metric", "Value"}, metricRows); err != nil {
+		return err
+	}
+
+	registry, ok := projectRegistryFromData(p.Data)
+	if ok && len(registry.Projects) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		limit := len(registry.Projects)
+		if limit > 10 {
+			limit = 10
+		}
+		rows := make([][]string, 0, limit)
+		for _, project := range registry.Projects[:limit] {
+			current := ""
+			if project.Slug == registry.CurrentProject {
+				current = "*"
+			}
+			rows = append(rows, []string{current, summaryCell(project.Slug, 24), summaryCell(project.Name, 28), summaryCell(project.NotesPrefix, 36), summaryCell(project.Description, 44)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Current", "Slug", "Name", "Notes prefix", "Description"}, rows); err != nil {
+			return err
+		}
+	}
+
+	if len(p.Actions) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		return renderSummaryTable(w, theme, []string{"Recommended next step"}, [][]string{{p.Actions[0].Command}})
+	}
+	return nil
+}
+
+func renderSummarySubprojectList(w io.Writer, theme summaryTheme, p domain.Projection) error {
+	if p.Status == "success" {
+		if err := renderSummaryTable(w, theme, []string{"Highlights"}, [][]string{{defaultString(p.Summary, "-")}}); err != nil {
+			return err
+		}
+	} else if err := renderSummaryTable(w, theme, []string{"Status", "Highlights"}, [][]string{{summaryStatusCell(theme, p.Status), defaultString(p.Summary, "-")}}); err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if err := renderSummaryTable(w, theme, []string{"Metric", "Value"}, [][]string{{"Project", defaultString(p.Facts["project"], "-")}, {"Subprojects", defaultString(p.Facts["subprojects"], "0")}}); err != nil {
+		return err
+	}
+
+	items := dataListMaps(p.Data, "subprojects")
+	if len(items) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		limit := len(items)
+		if limit > 10 {
+			limit = 10
+		}
+		rows := make([][]string, 0, limit)
+		for _, item := range items[:limit] {
+			rows = append(rows, []string{summaryCell(firstDataPathString(item, "project"), 20), summaryCell(firstDataPathString(item, "subproject"), 28), summaryCell(firstDataPathString(item, "title"), 32), summaryCell(firstDataPathString(item, "workspace_path"), 48), summaryCell(firstDataPathString(item, "template"), 18)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Project", "Subproject", "Title", "Workspace path", "Template"}, rows); err != nil {
+			return err
+		}
+	}
+
+	if len(p.Actions) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		return renderSummaryTable(w, theme, []string{"Recommended next step"}, [][]string{{p.Actions[0].Command}})
+	}
+	return nil
+}
+
+func projectRegistryFromData(data any) (domain.ProjectRegistry, bool) {
+	if data == nil {
+		return domain.ProjectRegistry{}, false
+	}
+	if registry, ok := data.(domain.ProjectRegistry); ok {
+		return registry, true
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return domain.ProjectRegistry{}, false
+	}
+	var root struct {
+		Registry domain.ProjectRegistry `json:"registry"`
+	}
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return domain.ProjectRegistry{}, false
+	}
+	if len(root.Registry.Projects) == 0 && root.Registry.SchemaVersion == "" && root.Registry.CurrentProject == "" {
+		return domain.ProjectRegistry{}, false
+	}
+	return root.Registry, true
 }
 
 type summarySearchData struct {
@@ -760,6 +1628,136 @@ type summarySearchData struct {
 type summarySearchResult struct {
 	Note    domain.Note `json:"note"`
 	Snippet string      `json:"snippet"`
+}
+
+type summaryListColumn struct {
+	Header   string
+	Path     string
+	Paths    []string
+	MaxWidth int
+}
+
+func renderSummaryDataList(w io.Writer, theme summaryTheme, data any, listPath []string, columns []summaryListColumn) error {
+	items := dataListMaps(data, listPath...)
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+	headers := make([]string, 0, len(columns))
+	for _, column := range columns {
+		headers = append(headers, column.Header)
+	}
+	rows := make([][]string, 0, limit)
+	for _, item := range items[:limit] {
+		row := make([]string, 0, len(columns))
+		for _, column := range columns {
+			row = append(row, summaryCell(summaryColumnValue(item, column), column.MaxWidth))
+		}
+		rows = append(rows, row)
+	}
+	return renderSummaryTable(w, theme, headers, rows)
+}
+
+func summaryColumnValue(item map[string]any, column summaryListColumn) string {
+	if len(column.Paths) > 0 {
+		return firstDataPathString(item, column.Paths...)
+	}
+	return dataPathString(item, column.Path)
+}
+
+func dataListMaps(data any, path ...string) []map[string]any {
+	if data == nil || len(path) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	var root any
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil
+	}
+	current := root
+	for _, part := range path {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = obj[part]
+	}
+	items, ok := current.([]any)
+	if !ok {
+		return nil
+	}
+	maps := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if obj, ok := item.(map[string]any); ok {
+			maps = append(maps, obj)
+		}
+	}
+	return maps
+}
+
+func dataListScalars(data any, path ...string) []string {
+	if data == nil || len(path) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	var root any
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil
+	}
+	current := root
+	for _, part := range path {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = obj[part]
+	}
+	items, ok := current.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		value := agentScalarValue(item)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func dataPathString(item map[string]any, path string) string {
+	return agentScalarValue(dataPathValue(item, path))
+}
+
+func dataPathValue(item map[string]any, path string) any {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	var current any = item
+	for _, part := range strings.Split(path, ".") {
+		obj, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = obj[part]
+		if current == nil {
+			return nil
+		}
+	}
+	return current
 }
 
 func renderSummarySearchResults(w io.Writer, theme summaryTheme, data any) error {
@@ -870,9 +1868,12 @@ func renderSummaryLinkList(w io.Writer, theme summaryTheme, data any, key string
 	}
 	rows := make([][]string, 0, len(links))
 	for _, link := range links {
-		status := "broken"
-		if link.TargetPath != "" {
-			status = "resolved"
+		status := link.Status
+		if status == "" {
+			status = "broken"
+			if link.TargetPath != "" {
+				status = "resolved"
+			}
 		}
 		rows = append(rows, []string{
 			summaryCell(link.SourcePath, 48),
@@ -1396,158 +2397,66 @@ func renderSummarySyncConflictDiff(w io.Writer, data any) error {
 	return err
 }
 
-func renderAgent(w io.Writer, p domain.Projection) error {
-	lines := []string{
-		"spec_version=" + p.SpecVersion,
-		"mode=agent",
-		"command=" + p.Command,
-		"status=" + p.Status,
-	}
-	keys := make([]string, 0, len(p.Facts))
-	for key := range p.Facts {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		lines = append(lines, "fact."+key+"="+quoteAgentValue(p.Facts[key]))
-	}
-	if p.Error != nil {
-		lines = append(lines, "error.code="+quoteAgentValue(p.Error.Code))
-		if p.Error.Message != "" {
-			lines = append(lines, "error.message="+quoteAgentValue(p.Error.Message))
+func sortFactKeys(keys []string) {
+	sort.SliceStable(keys, func(i, j int) bool {
+		iRank := factKeyShapeRank(keys[i])
+		jRank := factKeyShapeRank(keys[j])
+		if iRank != jRank {
+			return iRank < jRank
 		}
-		if p.Error.Hint != "" {
-			lines = append(lines, "error.hint="+quoteAgentValue(p.Error.Hint))
-		}
-	}
-	if data, ok := p.Data.(map[string]any); ok {
-		if candidates, ok := data["candidates"].([]domain.Note); ok {
-			for i, note := range candidates {
-				prefix := fmt.Sprintf("candidate.%d.", i+1)
-				lines = append(lines, prefix+"path="+quoteAgentValue(note.Path))
-				lines = append(lines, prefix+"note_id="+quoteAgentValue(note.ID))
-				lines = append(lines, prefix+"title="+quoteAgentValue(note.Title))
-			}
-		}
-		if candidates, ok := data["candidates"].([]domain.VaultObjectCandidate); ok {
-			for i, candidate := range candidates {
-				prefix := fmt.Sprintf("candidate.%d.", i+1)
-				lines = append(lines, prefix+"object_kind="+quoteAgentValue(string(candidate.ObjectKind)))
-				lines = append(lines, prefix+"path="+quoteAgentValue(candidate.Path))
-				if candidate.NoteID != "" {
-					lines = append(lines, prefix+"note_id="+quoteAgentValue(candidate.NoteID))
-				}
-				if candidate.Title != "" {
-					lines = append(lines, prefix+"title="+quoteAgentValue(candidate.Title))
-				}
-				if candidate.ManagedStatus != "" {
-					lines = append(lines, prefix+"managed_status="+quoteAgentValue(candidate.ManagedStatus))
-				}
-			}
-		}
-	}
-	if report, ok := p.Data.(domain.VaultDoctorReport); ok {
-		for i, issue := range report.Issues {
-			prefix := fmt.Sprintf("issue.%d.", i+1)
-			lines = append(lines, prefix+"code="+quoteAgentValue(issue.Code))
-			lines = append(lines, prefix+"severity="+quoteAgentValue(issue.Severity))
-			if issue.Path != "" {
-				lines = append(lines, prefix+"path="+quoteAgentValue(issue.Path))
-			}
-		}
-	}
-	for _, action := range p.Actions {
-		lines = append(lines, "action."+action.Name+"="+quoteAgentValue(action.Command))
-	}
-	_, err := fmt.Fprintln(w, strings.Join(lines, "\n"))
-	return err
+		return naturalKeyLess(keys[i], keys[j])
+	})
 }
 
-func renderEvents(w io.Writer, p domain.Projection) error {
-	start := map[string]any{
-		"spec_version": p.SpecVersion,
-		"mode":         "events",
-		"command":      p.Command,
-		"type":         "start",
-		"seq":          1,
+func factKeyShapeRank(key string) int {
+	if strings.Contains(key, ".") {
+		return 1
 	}
-	endType := "end"
-	if p.Status == "failed" {
-		endType = "error"
-	}
-	end := map[string]any{
-		"spec_version": p.SpecVersion,
-		"mode":         "events",
-		"command":      p.Command,
-		"type":         endType,
-		"seq":          2,
-		"status":       p.Status,
-		"summary":      p.Summary,
-	}
-	if len(p.Facts) > 0 {
-		end["facts"] = p.Facts
-	}
-	if len(p.Actions) > 0 {
-		end["actions"] = p.Actions
-	}
-	if len(p.Evidence) > 0 {
-		end["evidence"] = p.Evidence
-	}
-	if p.Error != nil {
-		end["error"] = p.Error
-	}
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(start); err != nil {
-		return err
-	}
-	return enc.Encode(end)
+	return 0
 }
 
-func renderExplain(w io.Writer, p domain.Projection) error {
-	if _, err := fmt.Fprintf(w, "Conclusion: %s\n", defaultString(p.Summary, p.Status)); err != nil {
-		return err
-	}
-	evidence := p.Evidence
-	if len(evidence) == 0 && len(p.Facts) > 0 {
-		keys := make([]string, 0, len(p.Facts))
-		for key := range p.Facts {
-			keys = append(keys, key)
+func naturalKeyLess(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		ad, bd := isASCIIDigit(a[i]), isASCIIDigit(b[j])
+		if ad && bd {
+			ai, bj := i, j
+			for i < len(a) && isASCIIDigit(a[i]) {
+				i++
+			}
+			for j < len(b) && isASCIIDigit(b[j]) {
+				j++
+			}
+			an := strings.TrimLeft(a[ai:i], "0")
+			bn := strings.TrimLeft(b[bj:j], "0")
+			if an == "" {
+				an = "0"
+			}
+			if bn == "" {
+				bn = "0"
+			}
+			if len(an) != len(bn) {
+				return len(an) < len(bn)
+			}
+			if an != bn {
+				return an < bn
+			}
+			if i-ai != j-bj {
+				return i-ai < j-bj
+			}
+			continue
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			evidence = append(evidence, key+"="+p.Facts[key])
+		if a[i] != b[j] {
+			return a[i] < b[j]
 		}
+		i++
+		j++
 	}
-	if len(evidence) == 0 {
-		evidence = []string{"Command projection generated"}
-	}
-	if _, err := fmt.Fprintf(w, "Evidence: %s\n", strings.Join(evidence, "; ")); err != nil {
-		return err
-	}
-	if p.Error != nil {
-		if _, err := fmt.Fprintf(w, "Risk: %s\n", p.Error.Message); err != nil {
-			return err
-		}
-	}
-	if len(p.Actions) > 0 {
-		if _, err := fmt.Fprintf(w, "Recommended next step: %s\n", p.Actions[0].Command); err != nil {
-			return err
-		}
-	}
-	_, err := fmt.Fprintln(w, "Confidence: 0.8")
-	return err
+	return len(a) < len(b)
 }
 
-func quoteAgentValue(value string) string {
-	if strings.ContainsAny(value, " \t\n\"") {
-		b, _ := json.Marshal(value)
-		quoted := strings.ReplaceAll(string(b), "\\u003c", "<")
-		quoted = strings.ReplaceAll(quoted, "\\u003e", ">")
-		quoted = strings.ReplaceAll(quoted, "\\u0026", "&")
-		return quoted
-	}
-	return value
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 func defaultString(value, fallback string) string {

@@ -198,63 +198,38 @@ func TestAuthMiddleware_HiddenRouteReturnsNotFoundBeforeAuth(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_ExposeGroups(t *testing.T) {
-	ctx := backgroundContext(t)
-	root := t.TempDir()
-	svc := app.NewService()
-	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Test"}); err != nil {
-		t.Fatalf("init vault: %v", err)
+func TestAuthMiddleware_GroupVisibility(t *testing.T) {
+	tests := []struct {
+		name string
+		opts ServerOptions
+	}{
+		{name: "expose groups", opts: ServerOptions{ExposeGroups: []string{"capabilities"}}},
+		{name: "hide groups", opts: ServerOptions{HideGroups: []string{"folders"}}},
 	}
-	opts := ServerOptions{
-		AuthMode:     0,
-		ExposeGroups: []string{"capabilities"},
-	}
-	s := NewServerWithOptions(svc, root, opts)
-
-	// Capabilities should be available
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
-	s.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected 200 for exposed group, got %d", res.Code)
-	}
-
-	// Folders should be hidden (404)
-	res = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/v1/folders", nil)
-	s.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for hidden group, got %d", res.Code)
-	}
-}
-
-func TestAuthMiddleware_HideGroups(t *testing.T) {
-	ctx := backgroundContext(t)
-	root := t.TempDir()
-	svc := app.NewService()
-	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Test"}); err != nil {
-		t.Fatalf("init vault: %v", err)
-	}
-	opts := ServerOptions{
-		AuthMode:   0,
-		HideGroups: []string{"folders"},
-	}
-	s := NewServerWithOptions(svc, root, opts)
-
-	// Folders should be hidden
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/folders", nil)
-	s.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for hidden group, got %d", res.Code)
-	}
-
-	// Capabilities should still be available
-	res = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
-	s.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("expected 200 for non-hidden group, got %d", res.Code)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := backgroundContext(t)
+			root := t.TempDir()
+			svc := app.NewService()
+			if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Test"}); err != nil {
+				t.Fatalf("init vault: %v", err)
+			}
+			s := NewServerWithOptions(svc, root, test.opts)
+			for _, endpoint := range []struct {
+				path string
+				want int
+			}{
+				{path: "/v1/capabilities", want: http.StatusOK},
+				{path: "/v1/folders", want: http.StatusNotFound},
+			} {
+				res := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, endpoint.path, nil)
+				s.Handler().ServeHTTP(res, req)
+				if res.Code != endpoint.want {
+					t.Fatalf("%s status = %d, want %d", endpoint.path, res.Code, endpoint.want)
+				}
+			}
+		})
 	}
 }
 

@@ -64,10 +64,10 @@ func TestDoctorRepairAndOrganizeUseLinkEvidence(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	sourcePath := filepath.Join(root, "Source.md")
-	writeCLIFixture(t, sourcePath, pinaxNoteFixture("note_source", "Source", "[]", "[[Missing Target]]\n\n[[Shared]]\n"))
-	writeCLIFixture(t, filepath.Join(root, "First.md"), pinaxNoteFixture("note_first", "Shared", "[]", "first\n"))
-	writeCLIFixture(t, filepath.Join(root, "Second.md"), pinaxNoteFixture("note_second", "Shared", "[]", "second\n"))
-	writeCLIFixture(t, filepath.Join(root, "Orphan.md"), pinaxNoteFixture("note_orphan", "Orphan", "[]", "solo\n"))
+	writeCLIFixture(t, sourcePath, pinaxNoteFixture("note_source", "Source", "[[Missing Target]]\n\n[[Shared]]\n"))
+	writeCLIFixture(t, filepath.Join(root, "First.md"), pinaxNoteFixture("note_first", "Shared", "first\n"))
+	writeCLIFixture(t, filepath.Join(root, "Second.md"), pinaxNoteFixture("note_second", "Shared", "second\n"))
+	writeCLIFixture(t, filepath.Join(root, "Orphan.md"), pinaxNoteFixture("note_orphan", "Orphan", "solo\n"))
 	beforeSource := readCLIFile(t, sourcePath)
 
 	doctorOut := runCLI(t, "doctor", "--vault", root, "--json")
@@ -137,7 +137,7 @@ func TestDoctorRepairAndOrganizeUseLinkEvidence(t *testing.T) {
 func TestRepairApplyRequiresApprovalAndSnapshot(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	writeCLIFixture(t, filepath.Join(root, "No Tags.md"), pinaxNoteFixture("note_no_tags", "No Tags", "[]", "body\n"))
+	writeCLIFixture(t, filepath.Join(root, "No Tags.md"), pinaxNoteFixture("note_no_tags", "No Tags", "body\n"))
 	savedOut := runCLI(t, "repair", "plan", "--vault", root, "--save", "--json")
 	var savedEnvelope map[string]any
 	if err := json.Unmarshal([]byte(savedOut), &savedEnvelope); err != nil {
@@ -192,7 +192,7 @@ func TestRepairApplyLowRiskOperationsAndRejectsStalePlan(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "No Tags.md")
-	writeCLIFixture(t, notePath, pinaxNoteFixture("note_no_tags", "No Tags", "[]", "body\n"))
+	writeCLIFixture(t, notePath, pinaxNoteFixture("note_no_tags", "No Tags", "body\n"))
 	savedOut := runCLI(t, "repair", "plan", "--vault", root, "--save", "--json")
 	var savedEnvelope map[string]any
 	if err := json.Unmarshal([]byte(savedOut), &savedEnvelope); err != nil {
@@ -217,14 +217,14 @@ func TestRepairApplyLowRiskOperationsAndRejectsStalePlan(t *testing.T) {
 	staleRoot := t.TempDir()
 	runCLI(t, "init", staleRoot, "--title", "Vault", "--json")
 	staleNotePath := filepath.Join(staleRoot, "No Tags.md")
-	writeCLIFixture(t, staleNotePath, pinaxNoteFixture("note_no_tags", "No Tags", "[]", "body\n"))
+	writeCLIFixture(t, staleNotePath, pinaxNoteFixture("note_no_tags", "No Tags", "body\n"))
 	staleSavedOut := runCLI(t, "repair", "plan", "--vault", staleRoot, "--save", "--json")
 	var staleEnvelope map[string]any
 	if err := json.Unmarshal([]byte(staleSavedOut), &staleEnvelope); err != nil {
 		t.Fatalf("stale saved repair plan json invalid: %v\n%s", err, staleSavedOut)
 	}
 	stalePlanID := staleEnvelope["facts"].(map[string]any)["plan_id"].(string)
-	writeCLIFixture(t, staleNotePath, pinaxNoteFixture("note_no_tags", "No Tags", "[]", "changed\n"))
+	writeCLIFixture(t, staleNotePath, pinaxNoteFixture("note_no_tags", "No Tags", "changed\n"))
 	failed, err := runCLIExpectError("repair", "apply", "--vault", staleRoot, "--plan", stalePlanID, "--yes", "--snapshot-message", "repair 前快照", "--json")
 	if err == nil || !strings.Contains(failed, "plan_stale") || !strings.Contains(failed, "pinax repair plan") {
 		t.Fatalf("stale repair apply err=%v out=%s", err, failed)
@@ -234,7 +234,7 @@ func TestRepairApplyLowRiskOperationsAndRejectsStalePlan(t *testing.T) {
 func TestOrganizeSuggestCreatesReviewableAgentPlan(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	writeCLIFixture(t, filepath.Join(root, "Research Idea.md"), pinaxNoteFixture("note_research_idea", "Research Idea", "[]", "body #research [[Missing Target]]\n\n![Missing](missing.png)\n"))
+	writeCLIFixture(t, filepath.Join(root, "Research Idea.md"), pinaxNoteFixture("note_research_idea", "Research Idea", "body #research [[Missing Target]]\n\n![Missing](missing.png)\n"))
 	writeCLIFixture(t, filepath.Join(root, ".agents", "skills", "Internal.md"), "# Internal\n\nagent asset\n")
 	writeCLIFixture(t, filepath.Join(root, "docs", "Product.md"), "# Product\n\nproject doc\n")
 	writeCLIFixture(t, filepath.Join(root, "AGENTS.md"), "# Agent Rules\n\nproject rules\n")
@@ -347,7 +347,7 @@ func TestOrganizeApplySavedPlanRejectsStaleAndMoves(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	source := filepath.Join(root, "Research Idea.md")
-	writeCLIFixture(t, source, pinaxNoteFixture("note_research_idea", "Research Idea", "[]", "body #research\n"))
+	writeCLIFixture(t, source, pinaxNoteFixture("note_research_idea", "Research Idea", "body #research\n"))
 	savedOut := runCLI(t, "organize", "suggest", "--vault", root, "--save", "--json")
 	var savedEnvelope map[string]any
 	if err := json.Unmarshal([]byte(savedOut), &savedEnvelope); err != nil {
@@ -402,14 +402,14 @@ func TestOrganizeApplySavedPlanRejectsStaleAndMoves(t *testing.T) {
 	staleRoot := t.TempDir()
 	runCLI(t, "init", staleRoot, "--title", "Vault", "--json")
 	staleSource := filepath.Join(staleRoot, "Stale Note.md")
-	writeCLIFixture(t, staleSource, pinaxNoteFixture("note_stale", "Stale Note", "[]", "body\n"))
+	writeCLIFixture(t, staleSource, pinaxNoteFixture("note_stale", "Stale Note", "body\n"))
 	staleOut := runCLI(t, "organize", "suggest", "--vault", staleRoot, "--save", "--json")
 	var staleEnvelope map[string]any
 	if err := json.Unmarshal([]byte(staleOut), &staleEnvelope); err != nil {
 		t.Fatalf("stale organize suggest json invalid: %v\n%s", err, staleOut)
 	}
 	stalePlanID := staleEnvelope["facts"].(map[string]any)["plan_id"].(string)
-	writeCLIFixture(t, staleSource, pinaxNoteFixture("note_stale", "Stale Note", "[]", "changed\n"))
+	writeCLIFixture(t, staleSource, pinaxNoteFixture("note_stale", "Stale Note", "changed\n"))
 	failed, err = runCLIExpectError("organize", "apply", "--vault", staleRoot, "--plan", stalePlanID, "--yes", "--snapshot-message", "整理前快照", "--json")
 	if err == nil || !strings.Contains(failed, "plan_stale") || !strings.Contains(failed, "pinax organize plan") {
 		t.Fatalf("stale organize apply err=%v out=%s", err, failed)

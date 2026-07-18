@@ -27,6 +27,7 @@ func newAssetRecord(db *gorm.DB, opts ...gen.DOOption) assetRecord {
 
 	tableName := _assetRecord.assetRecordDo.TableName()
 	_assetRecord.ALL = field.NewAsterisk(tableName)
+	_assetRecord.ObjectID = field.NewString(tableName, "object_id")
 	_assetRecord.Path = field.NewString(tableName, "path")
 	_assetRecord.AssetID = field.NewString(tableName, "asset_id")
 	_assetRecord.Filename = field.NewString(tableName, "filename")
@@ -51,6 +52,7 @@ type assetRecord struct {
 	assetRecordDo
 
 	ALL           field.Asterisk
+	ObjectID      field.String
 	Path          field.String
 	AssetID       field.String
 	Filename      field.String
@@ -81,6 +83,7 @@ func (a assetRecord) As(alias string) *assetRecord {
 
 func (a *assetRecord) updateTableName(table string) *assetRecord {
 	a.ALL = field.NewAsterisk(table)
+	a.ObjectID = field.NewString(table, "object_id")
 	a.Path = field.NewString(table, "path")
 	a.AssetID = field.NewString(table, "asset_id")
 	a.Filename = field.NewString(table, "filename")
@@ -111,7 +114,8 @@ func (a *assetRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (a *assetRecord) fillFieldMap() {
-	a.fieldMap = make(map[string]field.Expr, 14)
+	a.fieldMap = make(map[string]field.Expr, 15)
+	a.fieldMap["object_id"] = a.ObjectID
 	a.fieldMap["path"] = a.Path
 	a.fieldMap["asset_id"] = a.AssetID
 	a.fieldMap["filename"] = a.Filename

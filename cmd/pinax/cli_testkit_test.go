@@ -338,9 +338,6 @@ func writeCLIFixture(t *testing.T, path, content string) {
 	}
 }
 
-func pinaxNoteFixture(id, title, tags, body string) string {
-	if strings.TrimSpace(tags) == "" {
-		tags = "[]"
-	}
-	return fmt.Sprintf("---\nschema_version: pinax.note.v1\nnote_id: %s\ntitle: %s\ntags: %s\n---\n\n# %s\n\n%s", id, title, tags, title, body)
+func pinaxNoteFixture(id, title, body string) string {
+	return fmt.Sprintf("---\nschema_version: pinax.note.v1\nnote_id: %s\ntitle: %s\ntags: []\n---\n\n# %s\n\n%s", id, title, title, body)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/app/syncdaemon"
+	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/output"
 	"github.com/yeisme/pinax/internal/profile"
 )
@@ -37,7 +38,7 @@ func resolveSyncRequest(req app.SyncRequest) app.SyncRequest {
 func syncTargetForEndpoint(endpoint string) string {
 	trimmed := strings.TrimSpace(endpoint)
 	switch trimmed {
-	case "git", "s3", "cloud":
+	case "git", "s3", "capsa", "cloud", "pinax-cloud":
 		return trimmed
 	}
 	u, err := url.Parse(trimmed)
@@ -46,7 +47,7 @@ func syncTargetForEndpoint(endpoint string) string {
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "http", "https":
-		return "cloud"
+		return "capsa"
 	case "s3":
 		return "s3"
 	default:
@@ -56,7 +57,9 @@ func syncTargetForEndpoint(endpoint string) string {
 
 func syncTargetCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	items := []string{
-		"cloud\tconfigured Cloud Sync backend",
+		"capsa\tCapsa encrypted sync backend",
+		"cloud\tlegacy alias for Capsa",
+		"pinax-cloud\tlegacy alias for Capsa",
 		"s3\tS3-compatible direct backend",
 		"git\tGit backend",
 	}
@@ -116,6 +119,7 @@ func writeSyncDaemonStreamEvent(w io.Writer, payload map[string]any) error {
 func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	var syncPathPolicy string
 	var syncLogLimit int
+	var syncLogFollow bool
 	var syncPruneKeep int
 	var syncPruneMaxAgeDays int
 	var daemonPollInterval time.Duration
@@ -134,7 +138,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncCmd.Flags().StringVar(ctx.syncTarget, "target", "cloud", "Sync target: git, s3, or cloud")
+	syncCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	_ = syncCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only run merge calculation")
 	syncCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync writes")
@@ -142,7 +146,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	syncInitCmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize cloud sync configuration",
+		Short: "Initialize Capsa sync configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projection, err := ctx.svc.SyncInit(cmd.Context(), app.SyncInitRequest{VaultPath: *ctx.vaultPath, Endpoint: *ctx.cloudEndpoint, WorkspaceID: *ctx.cloudWorkspace, DeviceID: *ctx.cloudDevice, SecretRef: *ctx.cloudSecretRef})
 			return ctx.renderProjection(cmd, projection, err)
@@ -172,10 +176,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncDiffCmd.Flags().StringVar(ctx.syncTarget, "target", "git", "Sync target: git, s3, or cloud")
+	syncDiffCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	syncDiffCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", true, "Only generate the sync plan; do not write the vault or remote")
-	syncDiffCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known cloud base revision")
-	syncDiffCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Cloud remote revision for tests or fake backends")
+	syncDiffCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
+	syncDiffCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	addPathPolicyFlag(syncDiffCmd)
 	_ = syncDiffCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.AddCommand(syncDiffCmd)
@@ -187,10 +191,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncPushCmd.Flags().StringVar(ctx.syncTarget, "target", "git", "Sync target: git, s3, or cloud")
+	syncPushCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	syncPushCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only generate the sync plan; do not write the vault or remote")
-	syncPushCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known cloud base revision")
-	syncPushCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Cloud remote revision for tests or fake backends")
+	syncPushCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
+	syncPushCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPushCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
 	addPathPolicyFlag(syncPushCmd)
 	_ = syncPushCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
@@ -203,10 +207,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	syncPullCmd.Flags().StringVar(ctx.syncTarget, "target", "git", "Sync target: git, s3, or cloud")
+	syncPullCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
 	syncPullCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only generate the sync plan; do not write the vault or remote")
-	syncPullCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known cloud base revision")
-	syncPullCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Cloud remote revision for tests or fake backends")
+	syncPullCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
+	syncPullCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPullCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
 	addPathPolicyFlag(syncPullCmd)
 	_ = syncPullCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
@@ -223,10 +227,18 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	logsTailCmd := &cobra.Command{Use: "tail", Short: "Tail the safe sync event timeline", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := ctx.svc.SyncLogsTail(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit})
-		return ctx.renderProjection(cmd, projection, err)
+		if !syncLogFollow {
+			projection, err := ctx.svc.SyncLogsTail(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit})
+			return ctx.renderProjection(cmd, projection, err)
+		}
+		mode := ctx.outputMode()
+		if mode == output.ModeJSON || mode == output.ModeExplain {
+			return renderCommandError(cmd, mode, "sync.logs.tail", "sync_logs_follow_mode", "Follow mode requires a streaming output format", "Use --events, --agent, or default human output with --follow")
+		}
+		return ctx.svc.SyncLogsFollow(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit}, newSyncLogFollowEmitter(cmd.OutOrStdout(), mode))
 	}}
 	logsTailCmd.Flags().IntVar(&syncLogLimit, "limit", 20, "Maximum events to read")
+	logsTailCmd.Flags().BoolVar(&syncLogFollow, "follow", false, "Continue streaming newly appended sync events")
 	logsPruneCmd := &cobra.Command{Use: "prune", Short: "Prune old sync run receipts", RunE: func(cmd *cobra.Command, args []string) error {
 		projection, err := ctx.svc.SyncLogsPrune(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Keep: syncPruneKeep, MaxAgeDays: syncPruneMaxAgeDays, Yes: *ctx.yes})
 		return ctx.renderProjection(cmd, projection, err)
@@ -237,7 +249,38 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsTailCmd, logsPruneCmd)
 	syncCmd.AddCommand(logsCmd)
 
-	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Cloud Sync daemon"}
+	var manifestDeviceID string
+	var manifestPlanID string
+	var manifestRemoteCapability string
+	var manifestSave bool
+	manifestCmd := &cobra.Command{Use: "manifest", Short: "Audit and migrate the object-first sync manifest"}
+	manifestAuditCmd := &cobra.Command{Use: "audit", Short: "Audit v1 manifest object identity without writing", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestAudit(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, DeviceID: manifestDeviceID})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestAuditCmd.Flags().StringVar(&manifestDeviceID, "device-id", "", "Device ID override for an unconfigured vault")
+	manifestPlanCmd := &cobra.Command{Use: "plan", Short: "Generate a manifest v2 migration plan", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestPlan(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, DeviceID: manifestDeviceID, Save: manifestSave})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestPlanCmd.Flags().StringVar(&manifestDeviceID, "device-id", "", "Device ID override for an unconfigured vault")
+	manifestPlanCmd.Flags().BoolVar(&manifestSave, "save", false, "Save the migration plan for explicit promotion")
+	manifestPromoteCmd := &cobra.Command{Use: "promote", Short: "Promote local sync manifest generation to v2", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestPromote(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, PlanID: manifestPlanID, RemoteCapability: manifestRemoteCapability, Yes: *ctx.yes})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestPromoteCmd.Flags().StringVar(&manifestPlanID, "plan", "", "Saved manifest migration plan ID")
+	manifestPromoteCmd.Flags().StringVar(&manifestRemoteCapability, "remote-capability", "", "Confirmed remote manifest capability: v2")
+	manifestPromoteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local manifest v2 promotion")
+	manifestRollbackCmd := &cobra.Command{Use: "rollback", Short: "Roll back local promotion before the first v2 remote write", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncManifestRollback(cmd.Context(), app.SyncManifestMigrationRequest{VaultPath: *ctx.vaultPath, Yes: *ctx.yes})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	manifestRollbackCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local manifest promotion rollback")
+	manifestCmd.AddCommand(manifestAuditCmd, manifestPlanCmd, manifestPromoteCmd, manifestRollbackCmd)
+	syncCmd.AddCommand(manifestCmd)
+
+	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Capsa sync daemon"}
 	daemonRunCmd := &cobra.Command{Use: "run", Short: "Run the sync daemon in the foreground", RunE: func(cmd *cobra.Command, args []string) error {
 		mode := ctx.outputMode()
 		streamSeq := 1
@@ -276,7 +319,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	for _, c := range []*cobra.Command{daemonRunCmd, daemonStartCmd} {
-		c.Flags().StringVar(ctx.syncTarget, "target", "cloud", "Sync target: cloud")
+		c.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, cloud, or pinax-cloud")
 		c.Flags().BoolVar(ctx.yes, "yes", false, "Confirm automatic sync writes")
 		c.Flags().DurationVar(&daemonPollInterval, "poll-interval", time.Second, "Remote head poll interval")
 		c.Flags().DurationVar(&daemonSyncTimeout, "sync-timeout", 30*time.Second, "Per-sync operation timeout")
@@ -284,10 +327,102 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	daemonRunCmd.Flags().BoolVar(&daemonOnce, "once", false, "Run one daemon sync cycle and exit")
 	daemonLogsCmd.Flags().IntVar(&syncLogLimit, "limit", 20, "Maximum daemon events to read")
-	daemonCmd.AddCommand(daemonRunCmd, daemonStartCmd, daemonStatusCmd, daemonStopCmd, daemonLogsCmd)
+	daemonInstallCmd := &cobra.Command{Use: "install", Short: "Install the sync daemon as a system service unit", RunE: func(cmd *cobra.Command, args []string) error {
+		if !*ctx.yes {
+			err := &domain.CommandError{Code: "approval_required", Message: "sync daemon install requires --yes", Hint: "Run pinax sync daemon install --vault <vault> --yes to write the service unit"}
+			return ctx.renderProjection(cmd, domain.NewErrorProjection("sync.daemon.install", err), err)
+		}
+		projection, err := ctx.svc.SyncDaemonInstall(cmd.Context(), app.SyncDaemonInstallRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonUninstallCmd := &cobra.Command{Use: "uninstall", Short: "Remove the sync daemon system service unit", RunE: func(cmd *cobra.Command, args []string) error {
+		if !*ctx.yes {
+			err := &domain.CommandError{Code: "approval_required", Message: "sync daemon uninstall requires --yes", Hint: "Run pinax sync daemon uninstall --vault <vault> --yes to remove the service unit"}
+			return ctx.renderProjection(cmd, domain.NewErrorProjection("sync.daemon.uninstall", err), err)
+		}
+		projection, err := ctx.svc.SyncDaemonUninstall(cmd.Context(), app.SyncDaemonInstallRequest{VaultPath: *ctx.vaultPath})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	daemonInstallCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm service unit install")
+	daemonUninstallCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm service unit removal")
+	daemonCmd.AddCommand(daemonRunCmd, daemonStartCmd, daemonStatusCmd, daemonStopCmd, daemonLogsCmd, daemonInstallCmd, daemonUninstallCmd)
 	syncCmd.AddCommand(daemonCmd)
 
 	addSyncConflictsCommands(syncCmd, ctx)
+	addSyncRepoCommands(syncCmd, ctx)
+	addSyncEnvCommands(syncCmd, ctx)
 
 	root.AddCommand(syncCmd)
+}
+
+func newSyncLogFollowEmitter(w io.Writer, mode output.Mode) func(map[string]any) error {
+	agentHeaderWritten := false
+	return func(event map[string]any) error {
+		projection := domain.NewProjection("sync.logs.tail", "Sync event streamed.")
+		projection.Data = event
+		output.ApplyProjectionRedaction(&projection)
+		if sanitized, ok := projection.Data.(map[string]any); ok {
+			event = sanitized
+		}
+		switch mode {
+		case output.ModeAgent:
+			if !agentHeaderWritten {
+				if _, err := fmt.Fprintln(w, "spec_version=1.0\nmode=agent\ncommand=sync.logs.tail\nstatus=success"); err != nil {
+					return err
+				}
+				agentHeaderWritten = true
+			}
+			seq := fmt.Sprint(event["seq"])
+			for _, key := range []string{"type", "run_id", "direction", "kind", "path", "path_hash", "from_path", "to_path", "operation_status", "status", "backend_kind", "ts"} {
+				if value := strings.TrimSpace(fmt.Sprint(event[key])); value != "" && value != "<nil>" {
+					if _, err := fmt.Fprintf(w, "event.%s.%s=%s\n", seq, key, syncLogAgentValue(value)); err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		case output.ModeEvents:
+			payload := map[string]any{"spec_version": "1.0", "mode": "events", "command": "sync.logs.tail", "type": "progress"}
+			for key, value := range event {
+				if key == "type" {
+					payload["event_type"] = value
+					continue
+				}
+				if key == "command" {
+					payload["source_command"] = value
+					continue
+				}
+				if key == "seq" {
+					payload["timeline_seq"] = value
+					continue
+				}
+				payload[key] = value
+			}
+			enc := json.NewEncoder(w)
+			enc.SetEscapeHTML(false)
+			return enc.Encode(payload)
+		default:
+			pathValue := firstSyncLogValue(event, "path", "path_hash", "to_path", "from_path")
+			_, err := fmt.Fprintf(w, "%s %s %s %s %s %s\n", firstSyncLogValue(event, "type"), firstSyncLogValue(event, "direction"), firstSyncLogValue(event, "kind"), pathValue, firstSyncLogValue(event, "status"), firstSyncLogValue(event, "run_id"))
+			return err
+		}
+	}
+}
+
+func firstSyncLogValue(event map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value := strings.TrimSpace(fmt.Sprint(event[key]))
+		if value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return "-"
+}
+
+func syncLogAgentValue(value string) string {
+	if strings.ContainsAny(value, " \t\n\r\"'=$`\\") {
+		encoded, _ := json.Marshal(value)
+		return string(encoded)
+	}
+	return value
 }

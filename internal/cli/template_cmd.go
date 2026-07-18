@@ -92,7 +92,7 @@ pinax template create weekly --engine go-template --body "# {{ .Title }}" --vaul
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	templateInspectCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true, true)
+	templateInspectCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true)
 	templateInspectCmd.Flags().BoolVar(ctx.templateRuns, "runs", false, "List template render runs")
 	templateCmd.AddCommand(templateInspectCmd)
 	templateValidateCmd := &cobra.Command{
@@ -111,7 +111,7 @@ pinax template create weekly --engine go-template --body "# {{ .Title }}" --vaul
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	templateValidateCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true, true)
+	templateValidateCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true)
 	templateValidateCmd.Flags().StringArrayVar(ctx.templateVars, "var", nil, "Template variable in key=value format; repeatable")
 	_ = templateValidateCmd.RegisterFlagCompletionFunc("var", templateVarCompletion(func() string { return *ctx.vaultPath }))
 	templateValidateCmd.Flags().StringVar(ctx.title, "title", "", "Template title")
@@ -130,7 +130,7 @@ pinax template create weekly --engine go-template --body "# {{ .Title }}" --vaul
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	templateDeleteCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", false, true)
+	templateDeleteCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", false)
 	templateDeleteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm template deletion")
 	templateCmd.AddCommand(templateDeleteCmd)
 	templateRenderCmd := &cobra.Command{
@@ -149,7 +149,7 @@ pinax template create weekly --engine go-template --body "# {{ .Title }}" --vaul
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	templateRenderCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true, true)
+	templateRenderCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true)
 	templateRenderCmd.Flags().StringVar(ctx.title, "title", "", "Template title")
 	templateRenderCmd.Flags().StringVar(ctx.noteProject, "project", "", "Project slug")
 	templateRenderCmd.Flags().StringVar(ctx.noteTags, "tags", "", "Comma-separated tags")
@@ -176,7 +176,7 @@ pinax template create weekly --engine go-template --body "# {{ .Title }}" --vaul
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
-	templatePreviewCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true, true)
+	templatePreviewCmd.ValidArgsFunction = templateNameCompletion(func() string { return *ctx.vaultPath }, "", true)
 	templatePreviewCmd.Flags().StringVar(ctx.title, "title", "", "Template title")
 	templatePreviewCmd.Flags().StringVar(ctx.noteProject, "project", "", "Project slug")
 	templatePreviewCmd.Flags().StringVar(ctx.noteTags, "tags", "", "Comma-separated tags")

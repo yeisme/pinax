@@ -5,6 +5,7 @@ This directory manages Pinax CLI command documentation. The root README keeps on
 ## How to Read
 
 - If you do not know where to start: first read the five core workflows below, then the command map.
+- If you want one runnable end-to-end path across local vault, proof loop, project/database, API, sync, backend, publish, and plugin dry-run, see [Full Usage Example](../usage/full-example.md).
 - To organize your note structure: see [organize](./organize.md).
 - If you only want to look up parameters for a specific command: run `pinax <command> --help`; help is the source of truth for the current binary.
 
@@ -36,7 +37,7 @@ Pinax is built around one agent-safe proof loop. Each path maps to a small set o
 | **Plan** | [`pinax repair plan --save`](./repair.md), [`pinax organize plan --save`](./organize.md) | Turn issues into reviewable saved plans. |
 | **Apply safely** | [`pinax version snapshot`](./version.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Snapshot first, then apply with explicit confirmation. |
 
-Cloud Sync (`pinax cloud`/`pinax sync`), daily briefing (`pinax briefing`), and provider expansion (`pinax backend`) are separate advanced workflows, not part of the local proof loop.
+Capsa Sync (`pinax capsa`/`pinax sync`), daily briefing (`pinax briefing`), and provider expansion (`pinax backend`) are separate advanced workflows, not part of the local proof loop.
 
 Project Workspace (`pinax project learning init ...`, `pinax project subproject ...`, `pinax project board ...`, `pinax project item ...`) is an advanced local workflow for managing research, learning, client, content, or tool-candidate work inside one vault. It stays local-first and writes only Markdown plus CLI-authored `.pinax` project metadata.
 
@@ -51,6 +52,7 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Local vault | [`pinax vault dashboard`](./vault.md) | Start a localhost read-only dashboard. |
 | Local vault | [`pinax record`](./record.md) | Manage the vault record ledger for registering and viewing record history. |
 | Local vault | [`pinax project`](./project.md) | Manage project partitions inside a vault. |
+| Local vault | [`pinax task`](./task.md) | Preview or adopt inferred checklist tasks into managed task evidence. |
 | Note workflow | [`pinax journal`](./journal.md) | Manage daily, weekly, and monthly journals. |
 | Note workflow | [`pinax inbox`](./inbox.md) | Quickly capture temporary content, then triage it into the formal note structure. |
 | Note workflow | [`pinax draft`](./draft.md) | Manage draft-box notes, with support for creating, advancing, archiving, and discarding. |
@@ -71,13 +73,15 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Organization and retrieval | [`pinax repair`](./repair.md) | Generate maintenance plans from doctor issues and apply only low-risk fixes. |
 | Organization and retrieval | [`pinax organize`](./organize.md) | Plan, save, list, and apply note-structure organization plans. |
 | Organization and retrieval | [`pinax proof`](./proof.md) | Run the local Capture -> Retrieve -> Diagnose -> Plan -> Snapshot -> Apply safely proof loop. |
+| Organization and retrieval | [`pinax brain`](./brain.md) | Agent Brain preview command group; `brain answer` is implemented as read-only extractive preview, while context/sources/maintain remain planned. |
 | Automation and integration | [`pinax briefing`](./briefing.md) | Manage daily trending-note briefing recipes, runs, and delivery. |
-| Automation and integration | [`pinax cloud`](./cloud.md) | Manage local state for cloud sync. |
+| Automation and integration | [`pinax capsa`](./capsa.md) | Manage local state for Capsa sync. |
 | Automation and integration | [`pinax sync`](./sync.md) | Generate and execute sync plans. |
 | Automation and integration | [`pinax plan`](./plan.md) | Manage personal daily, weekly, and monthly planning workflows. |
 | Automation and integration | [`pinax prompt`](./prompt.md) | Manage reusable prompt assets, lifecycle decisions, URI resolution, and prompt usage feedback. |
 | Automation and integration | [`pinax collection`](./collection.md) | Import, inspect, and export content bundle production pipelines. |
-| Automation and integration | [`pinax publish`](./publish.md) | Build safe GitHub Pages or GitHub Wiki publishing surfaces from the local vault. |
+| Automation and integration | [`pinax publish`](./publish.md) | Build safe Pages, Wiki, Gist, HTTP, Vercel, Cloudflare Pages, or local preview surfaces from the local vault with the canonical Pinax renderer. |
+| Automation and integration | [`pinax share`](./share.md) | Start an explicit read-only local or LAN Web/API share surface for published output or bounded vault metadata. |
 | Automation and integration | [`pinax plugin`](./plugin.md) | Validate, install, grant, run, diagnose, disable, and uninstall dynamic plugins through audited services. |
 | Automation and integration | [`pinax backend`](./backend.md) | Manage vault backend providers. |
 | Automation and integration | [`pinax mcp`](./mcp.md) | Start a read-only MCP surface. |
@@ -87,6 +91,8 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Configuration and maintenance | [`pinax config`](./config.md) | View, set, and diagnose Pinax configuration. |
 | Configuration and maintenance | [`pinax version`](./version.md) | View the version backend and create snapshot evidence. |
 | Configuration and maintenance | [`pinax asset`](./asset.md) | Manage vault multimedia and binary assets. |
+| Configuration and maintenance | [`pinax activity`](./activity.md) | Inspect unified vault activity across events, monitor runs, sync runs, API audit, and records. |
+| Configuration and maintenance | [`pinax monitor`](./monitor.md) | Inspect command performance monitor traces and maintenance status. |
 | Configuration and maintenance | [`pinax storage`](./storage.md) | Configure the vault storage backend. |
 | Configuration and maintenance | [`pinax index`](./index.md) | Manage local SQLite/GORM index projections. |
 
@@ -122,6 +128,24 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Create a read token | `pinax token create --label local-agent --scope read --expires 30d --vault ./my-notes --json` |
 | Register a local API profile | `pinax profile add local --endpoint http://127.0.0.1:8787 --workspace default --device laptop --secret-ref env://PINAX_API_TOKEN --vault ./my-notes --json` |
 
+## Agent Brain Staged Map
+
+Agent Brain is a staged capability, not a hosted/team backend. Current workflows should compose real commands; only implemented `pinax brain ...` examples may be shown as current. Planned entries are listed in [brain](./brain.md) and must stay marked `planned` until implemented.
+
+| Capability | Current entry point | Status |
+| --- | --- | --- |
+| Ingest | `pinax import markdown ./source --dry-run --vault ./my-notes --json` | implemented |
+| Memory context | `pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent` | implemented |
+| KB context | `pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json` | implemented |
+| Search | `pinax search "Alice" --vault ./my-notes --json` | implemented |
+| Graph evidence | `pinax note backlinks "Alice" --vault ./my-notes --json` and `pinax graph query --kind technique --match storyboard --vault ./my-notes --json` | implemented |
+| Query/database rows | `pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json` | implemented |
+| MCP/API access | `pinax mcp serve --vault ./my-notes` and `pinax api routes --vault ./my-notes --json` | implemented |
+| Maintenance review | `pinax proof loop run --vault ./my-notes --json` | implemented |
+| Answer synthesis | `pinax brain answer <question> --vault ./my-notes --json` | implemented extractive preview |
+| Maintenance dream cycle | `pinax brain maintain --vault ./my-notes --dry-run --json` | implemented plan-only preview |
+| Team/OAuth/rate-limit backend | No `cli/pinax` command | future-owner |
+
 ## Write Rules
 
 By default, Pinax commands can be divided into three categories:
@@ -138,4 +162,4 @@ By default, Pinax commands can be divided into three categories:
 
 `pinax --api-url http://127.0.0.1:8787 <supported-command>` forwards supported read/write-plan commands to `pinax api serve` through `POST /v1/rpc`. `PINAX_API_URL` enables the same mode for agents, and `pinax config set remote.api_url http://127.0.0.1:8787 --scope user` persists the default endpoint for ordinary supported commands. Use `--api-token`, `--api-token-file`, or `PINAX_API_TOKEN` when the server requires Bearer auth; do not store raw tokens in config. Remote mode rejects explicit `--vault` with `remote_vault_conflict` and rejects unsupported commands with `remote_command_unsupported` instead of falling back to local execution. Local control commands (`config`, `api`, `token`, `profile`, `vault`) stay local when the endpoint comes from `remote.api_url` so configuration remains editable.
 
-Cloud Sync is a different distributed workflow from Remote API Mode. Remote API Mode forwards commands to one running local vault. Cloud Sync (`pinax cloud` + `pinax sync --target cloud`) is intended to keep independent local vaults on each device converged through encrypted backend revisions and conflict handling.
+Capsa Sync is a different distributed workflow from Remote API Mode. Remote API Mode forwards commands to one running local vault. Capsa Sync (`pinax capsa` + `pinax sync --target capsa`) is intended to keep independent local vaults on each device converged through encrypted backend revisions and conflict handling.

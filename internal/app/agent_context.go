@@ -88,6 +88,103 @@ func graphAgentContext(note domain.Note, links []domain.NoteLink) domain.AgentCo
 	}
 }
 
+type AgentBrainContextBundleRequest struct {
+	Task      string
+	Contexts  []domain.AgentContext
+	Receipts  []domain.AgentBrainReceiptRef
+	Freshness domain.AgentBrainFreshness
+	Actions   []domain.Action
+}
+
+func BuildAgentBrainContextBundle(req AgentBrainContextBundleRequest) domain.AgentBrainContextBundle {
+	bundle := domain.AgentBrainContextBundle{
+		SchemaVersion: domain.AgentBrainContextBundleSchemaVersion,
+		Task:          strings.TrimSpace(req.Task),
+		Receipts:      append([]domain.AgentBrainReceiptRef{}, req.Receipts...),
+		Freshness:     req.Freshness,
+		BodyExposure:  "bounded_projection",
+	}
+	if bundle.Freshness.GeneratedFrom == "" {
+		bundle.Freshness.GeneratedFrom = "existing_projections"
+	}
+
+	seenEntities := map[string]bool{}
+	seenRefs := map[string]bool{}
+	seenActions := map[string]bool{}
+	addEntity := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seenEntities[value] {
+			return
+		}
+		seenEntities[value] = true
+		bundle.Entities = append(bundle.Entities, value)
+	}
+	addAction := func(action domain.Action) {
+		if strings.TrimSpace(action.Name) == "" || strings.TrimSpace(action.Command) == "" {
+			return
+		}
+		key := action.Name + "\x00" + action.Command
+		if seenActions[key] {
+			return
+		}
+		seenActions[key] = true
+		bundle.NextActions = append(bundle.NextActions, action)
+	}
+	addRef := func(bucket string, ref domain.AgentContextRef) {
+		if strings.TrimSpace(ref.Kind) == "" {
+			return
+		}
+		key := bucket + "\x00" + ref.Kind + "\x00" + ref.ID + "\x00" + ref.Path + "\x00" + ref.Title
+		if seenRefs[key] {
+			return
+		}
+		seenRefs[key] = true
+		safeRef := domain.AgentContextRef{Kind: ref.Kind, ID: ref.ID, Path: ref.Path, Title: ref.Title}
+		switch bucket {
+		case "memory":
+			bundle.MemoryRefs = append(bundle.MemoryRefs, safeRef)
+		case "semantic":
+			bundle.SemanticRefs = append(bundle.SemanticRefs, safeRef)
+		case "graph":
+			bundle.GraphRefs = append(bundle.GraphRefs, safeRef)
+		case "query":
+			bundle.QueryRefs = append(bundle.QueryRefs, safeRef)
+		}
+		addEntity(ref.Title)
+	}
+
+	for _, action := range req.Actions {
+		addAction(action)
+	}
+	for _, ctx := range req.Contexts {
+		addEntity(ctx.DisplayTitle)
+		bucket := agentBrainBucketForSource(ctx.SourceKind)
+		for _, ref := range ctx.Refs {
+			addRef(bucket, ref)
+		}
+		for _, action := range ctx.Actions {
+			addAction(action)
+		}
+	}
+	return bundle
+}
+
+func agentBrainBucketForSource(sourceKind string) string {
+	lower := strings.ToLower(strings.TrimSpace(sourceKind))
+	switch {
+	case strings.Contains(lower, "memory"):
+		return "memory"
+	case strings.Contains(lower, "kb") || strings.Contains(lower, "semantic") || strings.Contains(lower, "search"):
+		return "semantic"
+	case strings.Contains(lower, "graph") || strings.Contains(lower, "link") || strings.Contains(lower, "backlink"):
+		return "graph"
+	case strings.Contains(lower, "query") || strings.Contains(lower, "database") || strings.Contains(lower, "dataview"):
+		return "query"
+	default:
+		return "semantic"
+	}
+}
+
 func compactEvidence(note domain.Note) []string {
 	evidence := []string{}
 	if note.ID != "" {

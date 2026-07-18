@@ -56,13 +56,40 @@ func TestAPIServeLifecycleOutput(t *testing.T) {
 func TestAPIRoutesHumanOutputListsEndpointsCLI(t *testing.T) {
 	root := t.TempDir()
 	out := runCLI(t, "api", "routes", "--vault", root)
-	for _, want := range []string{"GET /v1/projects/{slug}/board", "CALL Pinax.Note.Read", "project.board.show"} {
+	for _, want := range []string{"API routes", "Method", "Endpoint", "Command", "Surface", "GET", "/v1/projects/{slug}/board", "CALL", "Pinax.Note.Read", "project.board.show"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("api routes human output missing %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "Evidence") {
+		t.Fatalf("api routes human output should render endpoint rows instead of evidence dump:\n%s", out)
+	}
 	if strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Fatalf("api routes human output should not be JSON:\n%s", out)
+	}
+	agentOut := runCLI(t, "api", "routes", "--vault", root, "--agent")
+	for _, want := range []string{"command=api.routes", "fact.routes=", "route.1.method=GET", "route.1.path=/v1/workbench/status", "route.1.command=workbench.status"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("api routes agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+}
+
+func TestAPIRoutesJSONExposesReleaseCoreCapabilitiesCLI(t *testing.T) {
+	root := t.TempDir()
+	out := runCLI(t, "api", "routes", "--vault", root, "--json")
+	// Every release core capability must be discoverable with its proof-loop
+	// metadata, including the local-only CLI capabilities that have no REST route.
+	for _, want := range []string{
+		`"release_core"`,
+		`"id":"repair.apply"`,
+		`"local_only_reason":"cli-proof-loop"`,
+		`"copy_command":"pinax repair apply --vault <vault> --plan <plan-id> --yes --json"`,
+		`"snapshot_required":true`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("api routes --json release core discovery missing %q:\n%s", want, out)
+		}
 	}
 }
 

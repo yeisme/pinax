@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -113,7 +114,13 @@ func builtInNoteTemplates() map[string]string {
 }
 
 func builtInNoteTemplate(name, title string, useCases, aliases []string, difficulty string, starter bool, pathPattern string, defaults map[string]string, body []string) string {
-	lines := []string{"---", "schema_version: pinax.template.v2", "kind: note_template", "name: " + name, "title: " + title, "engine: go-template", "use_cases:"}
+	scenarioID := workflowScenarioID(name)
+	maturity := workflowMaturity(name, templateengine.Metadata{Kind: "note_template"})
+	lines := []string{"---", "schema_version: pinax.template.v2", "kind: note_template", "template_kind: note_template", "name: " + name, "title: " + title, "engine: go-template", "scenario_id: " + scenarioID, "maturity: " + maturity, "lifecycle: published_executable", "pack:", "  id: " + difficulty, "  source: builtin", "  readiness: " + maturity, "intents:"}
+	for _, item := range append(append([]string{}, useCases...), aliases...) {
+		lines = append(lines, "  - "+item)
+	}
+	lines = append(lines, "use_cases:")
 	for _, item := range useCases {
 		lines = append(lines, "  - "+item)
 	}
@@ -127,7 +134,13 @@ func builtInNoteTemplate(name, title string, useCases, aliases []string, difficu
 	} else {
 		lines = append(lines, "starter: false")
 	}
-	lines = append(lines, "output:", "  path_pattern: \""+pathPattern+"\"", "defaults:")
+	lines = append(lines, "output:", "  path_pattern: \""+pathPattern+"\"", "output_policy:", "  path_pattern: \""+pathPattern+"\"", "  allow_override: true", "  write_boundary: vault-content", "  legacy_compatible: true", "proof_gate:", "  status: review_optional")
+	if name == "meeting.notes" || name == "decision.record" {
+		lines = append(lines, "  manual_review: true")
+	} else {
+		lines = append(lines, "  manual_review: false")
+	}
+	lines = append(lines, "  snapshot_required: false", "  receipt_required: false", "after_create_actions:", "  - name: proof_review", "    command: \"pinax proof loop run --vault <vault> --json\"", "defaults:")
 	keys := make([]string, 0, len(defaults))
 	for key := range defaults {
 		keys = append(keys, key)
@@ -208,14 +221,49 @@ func TemplateVariableCompletionItems(root, name string) []string {
 }
 
 type TemplateCatalogItem struct {
-	Name       string   `json:"name"`
-	Source     string   `json:"source"`
-	Kind       string   `json:"kind"`
-	Title      string   `json:"title,omitempty"`
-	UseCases   []string `json:"use_cases,omitempty"`
-	Aliases    []string `json:"aliases,omitempty"`
-	Difficulty string   `json:"difficulty,omitempty"`
-	Starter    bool     `json:"starter"`
+	Name               string                                     `json:"name"`
+	Source             string                                     `json:"source"`
+	Kind               string                                     `json:"kind"`
+	Title              string                                     `json:"title,omitempty"`
+	UseCases           []string                                   `json:"use_cases,omitempty"`
+	Aliases            []string                                   `json:"aliases,omitempty"`
+	Difficulty         string                                     `json:"difficulty,omitempty"`
+	Starter            bool                                       `json:"starter"`
+	ScenarioID         string                                     `json:"scenario_id,omitempty"`
+	TemplateKind       string                                     `json:"template_kind,omitempty"`
+	Intents            []string                                   `json:"intents,omitempty"`
+	VariableSchema     map[string]templateengine.VariableMetadata `json:"variable_schema,omitempty"`
+	OutputPolicy       templateengine.TemplateOutputPolicy        `json:"output_policy,omitempty"`
+	AfterCreateActions []templateengine.TemplateActionMetadata    `json:"after_create_actions,omitempty"`
+	Maturity           string                                     `json:"maturity,omitempty"`
+	ProofGate          templateengine.TemplateProofGate           `json:"proof_gate,omitempty"`
+	Pack               TemplatePack                               `json:"pack,omitempty"`
+	Lifecycle          string                                     `json:"lifecycle,omitempty"`
+	Replacement        string                                     `json:"replacement,omitempty"`
+	Metrics            map[string]string                          `json:"metrics,omitempty"`
+}
+
+type TemplatePack struct {
+	ID        string `json:"id,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Readiness string `json:"readiness,omitempty"`
+}
+
+type WorkflowRecommendation struct {
+	Template           string                                  `json:"template"`
+	ScenarioID         string                                  `json:"scenario_id,omitempty"`
+	Maturity           string                                  `json:"maturity,omitempty"`
+	Pack               TemplatePack                            `json:"pack,omitempty"`
+	FitReason          string                                  `json:"fit_reason,omitempty"`
+	PreviewCommand     string                                  `json:"preview_command,omitempty"`
+	CreateCommand      string                                  `json:"create_command,omitempty"`
+	EvidencePath       string                                  `json:"evidence_path,omitempty"`
+	ProofGate          templateengine.TemplateProofGate        `json:"proof_gate,omitempty"`
+	AfterCreateActions []templateengine.TemplateActionMetadata `json:"after_create_actions,omitempty"`
+	Lifecycle          string                                  `json:"lifecycle,omitempty"`
+	Executable         bool                                    `json:"executable"`
+	Replacement        string                                  `json:"replacement,omitempty"`
 }
 
 func templateCatalogItems(root string) []TemplateCatalogItem {
@@ -245,6 +293,7 @@ func templateCatalogItem(name, body, source string) (TemplateCatalogItem, bool) 
 	if err != nil {
 		return TemplateCatalogItem{}, false
 	}
+	meta := templateWorkflowMetadata(name, source, doc.Metadata)
 	kind := doc.Metadata.Kind
 	if kind == "" {
 		kind = "template"
@@ -253,7 +302,7 @@ func templateCatalogItem(name, body, source string) (TemplateCatalogItem, bool) 
 	if doc.Metadata.Starter != nil {
 		starter = *doc.Metadata.Starter
 	}
-	return TemplateCatalogItem{Name: name, Source: source, Kind: kind, Title: doc.Metadata.Title, UseCases: doc.Metadata.UseCases, Aliases: doc.Metadata.Aliases, Difficulty: doc.Metadata.Difficulty, Starter: starter}, true
+	return TemplateCatalogItem{Name: name, Source: source, Kind: kind, Title: doc.Metadata.Title, UseCases: doc.Metadata.UseCases, Aliases: doc.Metadata.Aliases, Difficulty: doc.Metadata.Difficulty, Starter: starter, ScenarioID: meta.ScenarioID, TemplateKind: meta.TemplateKind, Intents: meta.Intents, VariableSchema: meta.VariableSchema, OutputPolicy: meta.OutputPolicy, AfterCreateActions: meta.AfterCreateActions, Maturity: meta.Maturity, ProofGate: meta.ProofGate, Pack: templatePackFromMetadata(meta.Pack), Lifecycle: meta.Lifecycle, Replacement: meta.Replacement, Metrics: meta.Metrics}, true
 }
 
 func filterTemplateCatalog(items []TemplateCatalogItem, pack, useCase string) []TemplateCatalogItem {
@@ -261,7 +310,8 @@ func filterTemplateCatalog(items []TemplateCatalogItem, pack, useCase string) []
 	useCase = strings.ToLower(strings.TrimSpace(useCase))
 	filtered := make([]TemplateCatalogItem, 0, len(items))
 	for _, item := range items {
-		if pack == "starter" && !item.Starter {
+		matchesPack := pack == "" || pack == strings.ToLower(item.Pack.ID) || (pack == "starter" && item.Starter)
+		if !matchesPack {
 			continue
 		}
 		if useCase != "" && !templateCatalogMatches(item, useCase) {
@@ -275,26 +325,31 @@ func filterTemplateCatalog(items []TemplateCatalogItem, pack, useCase string) []
 func recommendTemplate(items []TemplateCatalogItem, intent string) TemplateCatalogItem {
 	needle := strings.ToLower(strings.TrimSpace(intent))
 	for _, item := range items {
-		if item.Kind == "note_template" && needle != "" && templateCatalogMatches(item, needle) {
+		if item.Kind == "note_template" && templateCatalogExecutable(item) && needle != "" && templateCatalogMatches(item, needle) {
 			return item
 		}
 	}
 	for _, item := range items {
-		if needle != "" && templateCatalogMatches(item, needle) {
+		if templateCatalogExecutable(item) && needle != "" && templateCatalogMatches(item, needle) {
 			return item
 		}
 	}
 	for _, fallback := range []string{"note.quick", "inbox.capture"} {
 		for _, item := range items {
-			if item.Name == fallback {
+			if item.Name == fallback && templateCatalogExecutable(item) {
 				return item
 			}
 		}
 	}
 	if len(items) > 0 {
+		for _, item := range items {
+			if templateCatalogExecutable(item) {
+				return item
+			}
+		}
 		return items[0]
 	}
-	return TemplateCatalogItem{Name: "note.quick", Source: "builtin", Kind: "note_template", Starter: true}
+	return TemplateCatalogItem{Name: "note.quick", Source: "builtin", Kind: "note_template", Starter: true, Lifecycle: "published_executable", Pack: TemplatePack{ID: "starter", Source: "builtin", Readiness: "mature"}}
 }
 
 func templateCatalogMatches(item TemplateCatalogItem, needle string) bool {
@@ -302,10 +357,159 @@ func templateCatalogMatches(item TemplateCatalogItem, needle string) bool {
 	values := []string{item.Name, item.Title, item.Kind, item.Difficulty}
 	values = append(values, item.UseCases...)
 	values = append(values, item.Aliases...)
+	values = append(values, item.Intents...)
+	values = append(values, item.TemplateKind, item.Pack.ID, item.Maturity, item.Lifecycle)
 	for _, value := range values {
 		if strings.Contains(strings.ToLower(value), needle) {
 			return true
 		}
 	}
 	return false
+}
+
+func templateCatalogExecutable(item TemplateCatalogItem) bool {
+	switch strings.ToLower(strings.TrimSpace(item.Lifecycle)) {
+	case "draft_design", "deprecated":
+		return false
+	default:
+		return true
+	}
+}
+
+func workflowRecommendations(items []TemplateCatalogItem, primary TemplateCatalogItem, intent, root string) []WorkflowRecommendation {
+	recs := []WorkflowRecommendation{}
+	if primary.Name != "" {
+		recs = append(recs, workflowRecommendation(primary, intent, root, true))
+	}
+	needle := strings.ToLower(strings.TrimSpace(intent))
+	for _, item := range items {
+		if len(recs) >= 4 {
+			break
+		}
+		if item.Name == primary.Name || (needle != "" && !templateCatalogMatches(item, needle)) {
+			continue
+		}
+		recs = append(recs, workflowRecommendation(item, intent, root, false))
+	}
+	return recs
+}
+
+func workflowRecommendation(item TemplateCatalogItem, intent, root string, primary bool) WorkflowRecommendation {
+	fit := "metadata match"
+	if strings.TrimSpace(intent) == "" {
+		fit = "fallback: no intent provided"
+	} else if !templateCatalogMatches(item, strings.ToLower(strings.TrimSpace(intent))) {
+		fit = "fallback: conservative capture workflow"
+	}
+	if item.Lifecycle == "draft_design" {
+		fit = "design-only draft; not executable"
+	} else if item.Lifecycle == "deprecated" {
+		fit = "deprecated; use replacement when available"
+	} else if primary {
+		fit = "primary local metadata match"
+	}
+	preview := fmt.Sprintf("pinax template preview %s --vault %s --json", shellQuote(item.Name), shellQuote(root))
+	create := fmt.Sprintf("pinax note add <title> --template %s --vault %s --json", shellQuote(item.Name), shellQuote(root))
+	if !templateCatalogExecutable(item) {
+		create = ""
+	}
+	return WorkflowRecommendation{Template: item.Name, ScenarioID: item.ScenarioID, Maturity: item.Maturity, Pack: item.Pack, FitReason: fit, PreviewCommand: preview, CreateCommand: create, EvidencePath: "command stdout JSON envelope", ProofGate: item.ProofGate, AfterCreateActions: item.AfterCreateActions, Lifecycle: item.Lifecycle, Executable: templateCatalogExecutable(item), Replacement: item.Replacement}
+}
+
+func templateWorkflowMetadata(name, source string, meta templateengine.Metadata) templateengine.Metadata {
+	if meta.TemplateKind == "" {
+		meta.TemplateKind = meta.Kind
+	}
+	if meta.TemplateKind == "" {
+		meta.TemplateKind = "template"
+	}
+	if meta.ScenarioID == "" {
+		meta.ScenarioID = workflowScenarioID(name)
+	}
+	if len(meta.Intents) == 0 {
+		meta.Intents = append([]string{}, meta.UseCases...)
+		meta.Intents = append(meta.Intents, meta.Aliases...)
+	}
+	if len(meta.VariableSchema) == 0 && len(meta.Variables) > 0 {
+		meta.VariableSchema = meta.Variables
+	}
+	if meta.Maturity == "" {
+		meta.Maturity = workflowMaturity(name, meta)
+	}
+	if meta.Lifecycle == "" {
+		meta.Lifecycle = "published_executable"
+	}
+	if meta.Pack.ID == "" {
+		meta.Pack.ID = workflowPackID(meta)
+	}
+	if meta.Pack.Source == "" {
+		if source == "local" {
+			meta.Pack.Source = "vault-local"
+		} else {
+			meta.Pack.Source = source
+		}
+	}
+	if meta.Pack.Readiness == "" {
+		meta.Pack.Readiness = meta.Maturity
+	}
+	if meta.ProofGate.Status == "" {
+		meta.ProofGate.Status = "review_optional"
+	}
+	if meta.OutputPolicy.PathPattern == "" {
+		meta.OutputPolicy.PathPattern = meta.Output.PathPattern
+	}
+	if meta.OutputPolicy.WriteBoundary == "" {
+		meta.OutputPolicy.WriteBoundary = "vault-content"
+	}
+	meta.OutputPolicy.LegacyCompatible = true
+	if len(meta.AfterCreateActions) == 0 && meta.Kind == "note_template" {
+		meta.AfterCreateActions = []templateengine.TemplateActionMetadata{{Name: "proof_review", Command: "pinax proof loop run --vault <vault> --json"}}
+	}
+	return meta
+}
+
+func templatePackFromMetadata(pack templateengine.TemplatePackMetadata) TemplatePack {
+	return TemplatePack{ID: pack.ID, Source: pack.Source, Version: pack.Version, Readiness: pack.Readiness}
+}
+
+func workflowScenarioID(name string) string {
+	switch {
+	case name == "meeting.notes" || name == "decision.record":
+		return "meeting-decision"
+	case name == "sticky.capture" || strings.HasPrefix(name, "sticky."):
+		return "capture-sticky"
+	case name == "idea.research_seed" || strings.HasPrefix(name, "idea."):
+		return "idea-research-seed"
+	case strings.HasPrefix(name, "learning.stock."):
+		return "stock-learning"
+	case strings.HasPrefix(name, "learning."):
+		return "learning-pack"
+	case strings.HasPrefix(name, "index."):
+		return "index-page"
+	default:
+		return strings.ReplaceAll(name, ".", "-")
+	}
+}
+
+func workflowMaturity(name string, meta templateengine.Metadata) string {
+	if strings.HasPrefix(name, "learning.stock.") {
+		return "exploratory"
+	}
+	if strings.HasPrefix(name, "idea.") || strings.HasPrefix(name, "learning.") {
+		return "first-support"
+	}
+	if meta.Kind == "template" || meta.Kind == "" {
+		return "first-support"
+	}
+	return "mature"
+}
+
+func workflowPackID(meta templateengine.Metadata) string {
+	if meta.Difficulty != "" {
+		return meta.Difficulty
+	}
+	if meta.Kind == "" || meta.Kind == "template" {
+		return "legacy"
+	}
+	return strings.TrimSuffix(meta.Kind, "_template")
 }

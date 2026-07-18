@@ -23,26 +23,6 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
-func TestGitSnapshotHiddenCompatibilityAliasCLI(t *testing.T) {
-	root := t.TempDir()
-	runCLI(t, "init", root, "--title", "Vault", "--json")
-
-	help := runCLI(t, "--help")
-	if strings.Contains(help, "git") || !strings.Contains(help, "version") {
-		t.Fatalf("root help should show version and hide git:\n%s", help)
-	}
-
-	out := runCLI(t, "git", "snapshot", "--vault", root, "--message", "compat", "--json")
-	var envelope map[string]any
-	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
-		t.Fatalf("git snapshot alias json invalid: %v\n%s", err, out)
-	}
-	facts := envelope["facts"].(map[string]any)
-	if envelope["command"] != "version.snapshot" || facts["version_backend"] != "local" || facts["snapshot_id"] == "" {
-		t.Fatalf("git snapshot alias envelope = %#v", envelope)
-	}
-}
-
 func TestVersionWorkflowContractsCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

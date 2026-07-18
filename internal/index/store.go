@@ -27,6 +27,7 @@ import (
 
 const SchemaVersion = "pinax.index.v2"
 const PropertySchemaVersion = "pinax.properties.v1"
+const defaultIndexBatchSize = 500
 
 // 以下类型别名指向 internal/index/model 中的 GORM 模型，保持本包公开 API 稳定。
 // 普通业务读写必须通过 internal/index/query 生成的类型化 DAO，模型定义集中在 model 包。
@@ -353,12 +354,13 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 			issues = append(issues, indexIssue("index_row_consistency", "warning", indexRelPath(), "索引 note/text projection 不一致", []string{"missing_note_text=" + record.Path}))
 		}
 	}
+	issues = append(issues, objectIdentityConsistencyIssues(q, records)...)
 	statusName := "fresh"
 	if len(issues) > 0 {
 		statusName = "partial"
 
 		for _, issue := range issues {
-			if issue.Code == "index_stale" || issue.Code == "index_schema_mismatch" {
+			if issue.Code == "index_stale" || issue.Code == "index_schema_mismatch" || issue.Code == "index_identity_consistency" {
 				statusName = "stale"
 				break
 			}
@@ -366,6 +368,36 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 	}
 	status := Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: issueEvidence(issues)}
 	return doctorReport(status, issues), nil
+}
+
+func objectIdentityConsistencyIssues(q *query.Query, notes []*model.NoteRecord) []Issue {
+	byPath := map[string]string{}
+	for _, note := range notes {
+		byPath[note.Path] = note.ObjectID
+		if note.ObjectID == "" || note.ObjectID != note.NoteID {
+			return []Issue{indexIssue("index_identity_consistency", "error", indexRelPath(), "索引 object/path projection 不一致", []string{"identity_consistency=failed", "note_path=" + note.Path})}
+		}
+	}
+	ctx := context.Background()
+	tags, err := q.TagRecord.WithContext(ctx).Find()
+	if err != nil {
+		return []Issue{indexIssue("index_identity_consistency", "error", indexRelPath(), "索引 identity consistency 不可读", []string{"identity_consistency=failed"})}
+	}
+	for _, row := range tags {
+		if row.ObjectID != byPath[row.NotePath] {
+			return []Issue{indexIssue("index_identity_consistency", "error", indexRelPath(), "Tag projection object identity 不一致", []string{"identity_consistency=failed", "note_path=" + row.NotePath})}
+		}
+	}
+	properties, err := q.PropertyValueRecord.WithContext(ctx).Find()
+	if err != nil {
+		return []Issue{indexIssue("index_identity_consistency", "error", indexRelPath(), "索引 identity consistency 不可读", []string{"identity_consistency=failed"})}
+	}
+	for _, row := range properties {
+		if row.ObjectID != byPath[row.NotePath] {
+			return []Issue{indexIssue("index_identity_consistency", "error", indexRelPath(), "Property projection object identity 不一致", []string{"identity_consistency=failed", "note_path=" + row.NotePath})}
+		}
+	}
+	return nil
 }
 
 func isSystemJournalNotePath(path string) bool {
@@ -481,50 +513,54 @@ func Rebuild(root string, notes []domain.Note) (Counts, error) {
 			return err
 		}
 		linkResolver := notelinks.BuildResolverSnapshot(notes)
+		noteRecords := make([]*model.NoteRecord, 0, len(notes))
+		textRecords := make([]*model.NoteTextRecord, 0, len(notes))
+		tagRecords := make([]*model.TagRecord, 0)
+		tokenRecords := make([]*model.SearchTokenRecord, 0)
+		linkRecords := make([]*model.LinkRecord, 0)
+		attachmentRecords := make([]*model.AttachmentRecord, 0)
+		assetLinkRecords := make([]*model.AssetLinkRecord, 0)
 		for _, note := range notes {
 			record := noteRecordFromDomain(note, 0, 0)
-			if err := q.NoteRecord.WithContext(ctx).Create(&record); err != nil {
-				return err
-			}
+			noteRecords = append(noteRecords, &record)
 			counts.Notes++
-			if err := q.NoteTextRecord.WithContext(ctx).Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}); err != nil {
-				return err
-			}
+			textRecords = append(textRecords, &model.NoteTextRecord{ObjectID: note.ID, NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))})
 			for _, tag := range uniqueTags(note) {
-				if err := q.TagRecord.WithContext(ctx).Create(&TagRecord{NotePath: note.Path, Tag: tag}); err != nil {
-					return err
-				}
+				tagRecords = append(tagRecords, &model.TagRecord{ObjectID: note.ID, NotePath: note.Path, Tag: tag})
 				counts.Tags++
 			}
 			for _, token := range noteTokens(note) {
-				if err := q.SearchTokenRecord.WithContext(ctx).Create(&SearchTokenRecord{NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}); err != nil {
-					return err
-				}
+				tokenRecords = append(tokenRecords, &model.SearchTokenRecord{ObjectID: note.ID, NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight})
 				counts.Tokens++
 			}
 			for _, link := range noteLinks(note, linkResolver) {
-				if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
-					return err
-				}
+				linkRecord := link
+				linkRecords = append(linkRecords, &linkRecord)
 				counts.Links++
 			}
 			for _, attachment := range noteAttachments(root, note) {
-				if err := q.AttachmentRecord.WithContext(ctx).Create(&attachment); err != nil {
-					return err
-				}
+				attachmentRecord := attachment
+				attachmentRecords = append(attachmentRecords, &attachmentRecord)
 				counts.Attachments++
 			}
 			for _, assetLink := range noteAssetLinks(root, note) {
-				if err := q.AssetLinkRecord.WithContext(ctx).Create(&assetLink); err != nil {
-					return err
-				}
+				assetLinkRecord := assetLink
+				assetLinkRecords = append(assetLinkRecords, &assetLinkRecord)
 			}
 		}
+		if err := createIndexProjectionBatches(q, ctx, noteRecords, textRecords, tagRecords, tokenRecords, linkRecords, attachmentRecords, assetLinkRecords); err != nil {
+			return err
+		}
+		dimensionRecords := make([]*model.DimensionCountRecord, 0)
 		for _, dimension := range noteDimensionCounts(notes) {
-			if err := q.DimensionCountRecord.WithContext(ctx).Create(&dimension); err != nil {
+			dimensionRecord := dimension
+			dimensionRecords = append(dimensionRecords, &dimensionRecord)
+		}
+		if len(dimensionRecords) > 0 {
+			if err := q.DimensionCountRecord.WithContext(ctx).CreateInBatches(dimensionRecords, defaultIndexBatchSize); err != nil {
 				return err
 			}
-			counts.Dimensions++
+			counts.Dimensions = len(dimensionRecords)
 		}
 		if err := rebuildVaultObjectProjection(tx, root, notes); err != nil {
 			return err
@@ -608,6 +644,45 @@ func Refresh(root string, notes []domain.Note, opts RefreshOptions) (RefreshResu
 	return result, err
 }
 
+func createIndexProjectionBatches(q *query.Query, ctx context.Context, notes []*model.NoteRecord, texts []*model.NoteTextRecord, tags []*model.TagRecord, tokens []*model.SearchTokenRecord, links []*model.LinkRecord, attachments []*model.AttachmentRecord, assetLinks []*model.AssetLinkRecord) error {
+	if len(notes) > 0 {
+		if err := q.NoteRecord.WithContext(ctx).CreateInBatches(notes, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	if len(texts) > 0 {
+		if err := q.NoteTextRecord.WithContext(ctx).CreateInBatches(texts, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	if len(tags) > 0 {
+		if err := q.TagRecord.WithContext(ctx).CreateInBatches(tags, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	if len(tokens) > 0 {
+		if err := q.SearchTokenRecord.WithContext(ctx).CreateInBatches(tokens, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	if len(links) > 0 {
+		if err := q.LinkRecord.WithContext(ctx).CreateInBatches(links, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	if len(attachments) > 0 {
+		if err := q.AttachmentRecord.WithContext(ctx).CreateInBatches(attachments, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	if len(assetLinks) > 0 {
+		if err := q.AssetLinkRecord.WithContext(ctx).CreateInBatches(assetLinks, defaultIndexBatchSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func RefreshChanged(root string, notes []domain.Note, changed []domain.ChangedPath, opts RefreshOptions) (RefreshResult, error) {
 	started := time.Now()
 	result := RefreshResult{Scanned: len(changed), Batches: refreshBatchCount(len(changed), opts.BatchSize), IndexStatus: "fresh"}
@@ -633,9 +708,26 @@ func RefreshChanged(root string, notes []domain.Note, changed []domain.ChangedPa
 		path := filepath.ToSlash(filepath.Clean(candidate.Path))
 		note, ok := notesByPath[path]
 		if !ok {
+			existing, found, lookupErr := firstNoteByPath(query.Use(db), path)
+			if lookupErr != nil {
+				result.Failed++
+				result.FailedPaths = append(result.FailedPaths, path)
+				result.IndexStatus = "partial"
+				return result, lookupErr
+			}
+			if !found {
+				continue
+			}
+			if _, err := deleteNoteWithDB(db, existing.Path); err != nil {
+				result.Failed++
+				result.FailedPaths = append(result.FailedPaths, path)
+				result.IndexStatus = "partial"
+				return result, err
+			}
+			result.Deleted++
 			continue
 		}
-		update, err := UpdateNote(root, NoteUpdate{Note: note, ModifiedUnix: candidate.ModifiedUnix, Size: candidate.SizeBytes})
+		update, err := updateNoteWithDB(db, root, NoteUpdate{Note: note, ModifiedUnix: candidate.ModifiedUnix, Size: candidate.SizeBytes})
 		if err != nil {
 			result.Failed++
 			result.FailedPaths = append(result.FailedPaths, path)
@@ -678,7 +770,7 @@ func rebuildPropertyProjection(tx *gorm.DB, notes []domain.Note) error {
 	}
 	for _, row := range rows {
 		for _, value := range row.Values {
-			record := PropertyValueRecord{NotePath: row.Note.Path, Name: value.Name, Type: string(value.Type), Raw: value.Raw, Value: value.String(), Source: value.Source}
+			record := PropertyValueRecord{ObjectID: row.Note.ID, NotePath: row.Note.Path, Name: value.Name, Type: string(value.Type), Raw: value.Raw, Value: value.String(), Source: value.Source}
 			if err := q.PropertyValueRecord.WithContext(ctx).Create(&record); err != nil {
 				return err
 			}
@@ -721,7 +813,7 @@ func Sync(root string, notes []domain.Note) (SyncResult, error) {
 				result.Skipped++
 				continue
 			}
-			if _, err := UpdateNote(root, NoteUpdate{Note: note}); err != nil {
+			if _, err := updateNoteWithDB(db, root, NoteUpdate{Note: note}); err != nil {
 				result.Failed++
 				return result, err
 			}
@@ -729,7 +821,7 @@ func Sync(root string, notes []domain.Note) (SyncResult, error) {
 			continue
 		}
 		if record, ok := byID[note.ID]; ok && strings.TrimSpace(note.ID) != "" {
-			if _, err := UpdateNote(root, NoteUpdate{OldPath: record.Path, Note: note}); err != nil {
+			if _, err := updateNoteWithDB(db, root, NoteUpdate{OldPath: record.Path, Note: note}); err != nil {
 				result.Failed++
 				return result, err
 			}
@@ -737,7 +829,7 @@ func Sync(root string, notes []domain.Note) (SyncResult, error) {
 			result.Moved++
 			continue
 		}
-		if _, err := UpdateNote(root, NoteUpdate{Note: note}); err != nil {
+		if _, err := updateNoteWithDB(db, root, NoteUpdate{Note: note}); err != nil {
 			result.Failed++
 			return result, err
 		}
@@ -747,7 +839,7 @@ func Sync(root string, notes []domain.Note) (SyncResult, error) {
 		if seen[record.Path] {
 			continue
 		}
-		if _, err := DeleteNote(root, NoteDelete{Path: record.Path}); err != nil {
+		if _, err := deleteNoteWithDB(db, record.Path); err != nil {
 			result.Failed++
 			return result, err
 		}
@@ -764,6 +856,10 @@ func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
 	if err := migrate(db); err != nil {
 		return IncrementalResult{}, err
 	}
+	return updateNoteWithDB(db, root, update)
+}
+
+func updateNoteWithDB(db *gorm.DB, root string, update NoteUpdate) (IncrementalResult, error) {
 	note := update.Note
 	hash := noteSourceHash(note)
 	result := IncrementalResult{NotePath: note.Path}
@@ -780,7 +876,7 @@ func UpdateNote(root string, update NoteUpdate) (IncrementalResult, error) {
 		result.Skipped = true
 		return result, nil
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		oldKeys := map[string]bool{}
 		if existingFound {
 			oldKeys = linkTargetKeysFromRecord(*existing)
@@ -819,9 +915,13 @@ func DeleteNote(root string, del NoteDelete) (IncrementalResult, error) {
 	if err := migrate(db); err != nil {
 		return IncrementalResult{}, err
 	}
-	path := filepath.ToSlash(filepath.Clean(del.Path))
+	return deleteNoteWithDB(db, del.Path)
+}
+
+func deleteNoteWithDB(db *gorm.DB, path string) (IncrementalResult, error) {
+	path = filepath.ToSlash(filepath.Clean(path))
 	result := IncrementalResult{NotePath: path}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		existing, found, lookupErr := firstNoteByPath(q, path)
 		if lookupErr != nil {
@@ -947,11 +1047,11 @@ func assetProjectionReady(root string) (Status, bool, error) {
 }
 
 func assetRecordFromDomain(asset domain.Asset) *AssetRecord {
-	return &AssetRecord{Path: asset.Path, AssetID: asset.ID, Filename: asset.Filename, Stem: asset.Stem, Extension: asset.Extension, MediaType: asset.MediaType, Size: asset.Size, ModifiedUnix: asset.ModifiedUnix, Width: asset.Width, Height: asset.Height, SHA256: asset.SHA256, ManagedStatus: asset.ManagedStatus, CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt}
+	return &AssetRecord{ObjectID: asset.ObjectID, Path: asset.Path, AssetID: asset.ID, Filename: asset.Filename, Stem: asset.Stem, Extension: asset.Extension, MediaType: asset.MediaType, Size: asset.Size, ModifiedUnix: asset.ModifiedUnix, Width: asset.Width, Height: asset.Height, SHA256: asset.SHA256, ManagedStatus: asset.ManagedStatus, CreatedAt: asset.CreatedAt, UpdatedAt: asset.UpdatedAt}
 }
 
 func assetRecordToDomain(record AssetRecord) domain.Asset {
-	return domain.Asset{ID: record.AssetID, Path: record.Path, Filename: record.Filename, Stem: record.Stem, Extension: record.Extension, MediaType: record.MediaType, Size: record.Size, ModifiedUnix: record.ModifiedUnix, Width: record.Width, Height: record.Height, SHA256: record.SHA256, ManagedStatus: domain.ManagedStatus(record.ManagedStatus), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
+	return domain.Asset{ObjectID: record.ObjectID, ID: record.AssetID, Path: record.Path, Filename: record.Filename, Stem: record.Stem, Extension: record.Extension, MediaType: record.MediaType, Size: record.Size, ModifiedUnix: record.ModifiedUnix, Width: record.Width, Height: record.Height, SHA256: record.SHA256, ManagedStatus: domain.ManagedStatus(record.ManagedStatus), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}
 }
 
 func ListAssetLinks(root string) ([]AssetLinkRecord, Status, error) {
@@ -1197,18 +1297,18 @@ func indexDirIsEmpty(path string) bool {
 	return err == nil && len(entries) == 0
 }
 
-func registeredNotePaths(notes []domain.Note) map[string]bool {
-	paths := map[string]bool{}
+func registeredNotePaths(notes []domain.Note) map[string]string {
+	paths := map[string]string{}
 	for _, note := range notes {
 		path := strings.TrimSpace(filepath.ToSlash(note.Path))
 		if path != "" {
-			paths[path] = true
+			paths[path] = note.ID
 		}
 	}
 	return paths
 }
 
-func scanVaultFiles(root string, registeredPaths map[string]bool) ([]VaultFileRecord, error) {
+func scanVaultFiles(root string, registeredPaths map[string]string) ([]VaultFileRecord, error) {
 	records := []VaultFileRecord{}
 	if _, err := os.Stat(root); err != nil {
 		return records, err
@@ -1245,7 +1345,7 @@ func scanVaultFiles(root string, registeredPaths map[string]bool) ([]VaultFileRe
 	return records, nil
 }
 
-func vaultFileRecord(rel string, info os.FileInfo, registeredPaths map[string]bool) VaultFileRecord {
+func vaultFileRecord(rel string, info os.FileInfo, registeredPaths map[string]string) VaultFileRecord {
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(rel)), ".")
 	kind := string(domain.VaultObjectKindFile)
 	if ext == "md" {
@@ -1255,14 +1355,15 @@ func vaultFileRecord(rel string, info os.FileInfo, registeredPaths map[string]bo
 	}
 	filename := filepath.Base(rel)
 	managedStatus := string(domain.ManagedStatusUnmanaged)
-	if registeredPaths[rel] {
+	objectID := registeredPaths[rel]
+	if objectID != "" {
 		managedStatus = string(domain.ManagedStatusRegistered)
 	}
-	return VaultFileRecord{Path: rel, Filename: filename, Stem: strings.TrimSuffix(filename, filepath.Ext(filename)), Extension: ext, MediaType: mediaType(rel), Size: info.Size(), ModifiedUnix: info.ModTime().Unix(), ObjectKind: kind, ManagedStatus: managedStatus}
+	return VaultFileRecord{ObjectID: objectID, Path: rel, Filename: filename, Stem: strings.TrimSuffix(filename, filepath.Ext(filename)), Extension: ext, MediaType: mediaType(rel), Size: info.Size(), ModifiedUnix: info.ModTime().Unix(), ObjectKind: kind, ManagedStatus: managedStatus}
 }
 
 func vaultFileAssetRecord(file VaultFileRecord) AssetRecord {
-	return AssetRecord{Path: file.Path, Filename: file.Filename, Stem: file.Stem, Extension: file.Extension, MediaType: file.MediaType, Size: file.Size, ModifiedUnix: file.ModifiedUnix, ManagedStatus: file.ManagedStatus}
+	return AssetRecord{ObjectID: file.ObjectID, Path: file.Path, Filename: file.Filename, Stem: file.Stem, Extension: file.Extension, MediaType: file.MediaType, Size: file.Size, ModifiedUnix: file.ModifiedUnix, ManagedStatus: file.ManagedStatus}
 }
 
 func Search(root string, req SearchRequest) (SearchResult, error) {
@@ -1275,60 +1376,84 @@ func Search(root string, req SearchRequest) (SearchResult, error) {
 	}
 	q := query.Use(db)
 	ctx := context.Background()
-	allRecords, err := q.NoteRecord.WithContext(ctx).Find()
+	queryTokens := searchTokens(req.Query)
+	tokenMatches := map[string]indexedTokenMatch{}
+	if strings.TrimSpace(req.Query) != "" {
+		matches, err := indexedTokenMatchesForQuery(q, ctx, queryTokens)
+		if err != nil {
+			return SearchResult{}, err
+		}
+		tokenMatches = matches
+		if len(tokenMatches) == 0 {
+			return SearchResult{Engine: "index", IndexStatus: "fresh", Total: 0, Returned: 0, Results: []ResultItem{}}, nil
+		}
+	}
+	noteQuery := q.NoteRecord.WithContext(ctx).Where(q.NoteRecord.IsSystem.Is(false))
+	if len(tokenMatches) > 0 {
+		noteQuery = noteQuery.Where(q.NoteRecord.ObjectID.In(indexedMatchObjectIDs(tokenMatches)...))
+	}
+	if req.Folder != "" {
+		noteQuery = noteQuery.Where(q.NoteRecord.Folder.Eq(req.Folder))
+	}
+	if req.Kind != "" {
+		noteQuery = noteQuery.Where(q.NoteRecord.Kind.Eq(req.Kind))
+	}
+	if req.Status != "" {
+		noteQuery = noteQuery.Where(q.NoteRecord.Status.Eq(req.Status))
+	}
+	allRecords, err := noteQuery.Find()
 	if err != nil {
 		return SearchResult{}, err
 	}
 	records := make([]NoteRecord, 0, len(allRecords))
 	for _, record := range allRecords {
-		if !record.IsSystem {
-			records = append(records, *record)
-		}
+		records = append(records, *record)
 	}
-	tagRows, err := q.TagRecord.WithContext(ctx).Find()
+	objectIDs := noteRecordObjectIDs(records)
+	tagRows, err := findTagsForObjectIDs(q, ctx, objectIDs)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	textRows, err := q.NoteTextRecord.WithContext(ctx).Find()
+	textRows, err := findTextsForObjectIDs(q, ctx, objectIDs)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	linkRows, err := q.LinkRecord.WithContext(ctx).Find()
+	linkRows, err := findLinksForObjectIDs(q, ctx, objectIDs)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	attachmentRows, err := q.AttachmentRecord.WithContext(ctx).Find()
+	attachmentRows, err := findAttachmentsForObjectIDs(q, ctx, objectIDs)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	tagsByPath := map[string][]string{}
+	tagsByObjectID := map[string][]string{}
 	for _, tag := range tagRows {
-		tagsByPath[tag.NotePath] = append(tagsByPath[tag.NotePath], tag.Tag)
+		tagsByObjectID[tag.ObjectID] = append(tagsByObjectID[tag.ObjectID], tag.Tag)
 	}
-	textByPath := map[string]NoteTextRecord{}
+	textByObjectID := map[string]NoteTextRecord{}
 	for _, text := range textRows {
-		textByPath[text.NotePath] = *text
+		textByObjectID[text.ObjectID] = *text
 	}
-	linksByPath := map[string][]LinkRecord{}
+	linksByObjectID := map[string][]LinkRecord{}
 	for _, link := range linkRows {
-		linksByPath[link.NotePath] = append(linksByPath[link.NotePath], *link)
+		linksByObjectID[link.SourceObjectID] = append(linksByObjectID[link.SourceObjectID], *link)
 	}
-	attachmentsByPath := map[string][]AttachmentRecord{}
+	attachmentsByObjectID := map[string][]AttachmentRecord{}
 	for _, attachment := range attachmentRows {
-		attachmentsByPath[attachment.NotePath] = append(attachmentsByPath[attachment.NotePath], *attachment)
+		attachmentsByObjectID[attachment.ObjectID] = append(attachmentsByObjectID[attachment.ObjectID], *attachment)
 	}
 	items := make([]ResultItem, 0)
 	queryText := strings.ToLower(strings.TrimSpace(req.Query))
 	for _, record := range records {
-		if !recordMatchesFilters(record, tagsByPath[record.Path], linksByPath[record.Path], attachmentsByPath[record.Path], req) {
+		if !recordMatchesFilters(record, tagsByObjectID[record.ObjectID], linksByObjectID[record.ObjectID], attachmentsByObjectID[record.ObjectID], req) {
 			continue
 		}
-		text := textByPath[record.Path]
-		score, fields := scoreRecord(record, text, tagsByPath[record.Path], queryText)
+		text := textByObjectID[record.ObjectID]
+		score, fields := scoreIndexedRecord(record, text, tagsByObjectID[record.ObjectID], queryText, tokenMatches[record.ObjectID])
 		if queryText != "" && score == 0 {
 			continue
 		}
-		items = append(items, ResultItem{Note: domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Tags: tagsByPath[record.Path], Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, Score: score, MatchedFields: fields, Snippet: snippet(text, queryText), LinkCount: len(linksByPath[record.Path]), AttachmentCount: len(attachmentsByPath[record.Path])})
+		items = append(items, ResultItem{Note: domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Tags: tagsByObjectID[record.ObjectID], Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, Score: score, MatchedFields: fields, Snippet: snippet(text, queryText), LinkCount: len(linksByObjectID[record.ObjectID]), AttachmentCount: len(attachmentsByObjectID[record.ObjectID])})
 	}
 	sortResults(items, req.Sort)
 	total := len(items)
@@ -1338,6 +1463,205 @@ func Search(root string, req SearchRequest) (SearchResult, error) {
 	}
 	items = items[:limit]
 	return SearchResult{Engine: "index", IndexStatus: "fresh", Total: total, Returned: len(items), Results: items}, nil
+}
+
+type indexedTokenMatch struct {
+	Score  int
+	Fields map[string]bool
+	Tokens map[string]bool
+}
+
+func searchTokens(query string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0)
+	for _, token := range tokens(query) {
+		if token == "" || seen[token] {
+			continue
+		}
+		seen[token] = true
+		out = append(out, token)
+	}
+	return out
+}
+
+func indexedTokenMatches(rows []*model.SearchTokenRecord, queryTokens []string) map[string]indexedTokenMatch {
+	matches := map[string]indexedTokenMatch{}
+	for _, row := range rows {
+		objectID := firstNonEmptyIndexValue(row.ObjectID, row.NotePath)
+		match := matches[objectID]
+		if match.Fields == nil {
+			match.Fields = map[string]bool{}
+			match.Tokens = map[string]bool{}
+		}
+		match.Fields[row.Field] = true
+		match.Tokens[row.Token] = true
+		match.Score += row.Weight * row.Count * 10
+		matches[objectID] = match
+	}
+	for path, match := range matches {
+		if len(queryTokens) > 1 && len(match.Tokens) < len(queryTokens) {
+			delete(matches, path)
+			continue
+		}
+		if len(queryTokens) > 1 {
+			match.Score += len(queryTokens) * 20
+			matches[path] = match
+		}
+	}
+	return matches
+}
+
+func indexedTokenMatchesForQuery(q *query.Query, ctx context.Context, queryTokens []string) (map[string]indexedTokenMatch, error) {
+	if len(queryTokens) == 0 {
+		return map[string]indexedTokenMatch{}, nil
+	}
+	orderedTokens, err := tokenLookupsByRarity(q, ctx, queryTokens)
+	if err != nil {
+		return nil, err
+	}
+	if len(orderedTokens) == 0 {
+		return map[string]indexedTokenMatch{}, nil
+	}
+	rows := make([]*model.SearchTokenRecord, 0)
+	candidateObjectIDs := []string(nil)
+	for i, lookup := range orderedTokens {
+		search := q.SearchTokenRecord.WithContext(ctx)
+		if lookup.like {
+			search = search.Where(q.SearchTokenRecord.Token.Like("%" + lookup.token + "%"))
+		} else {
+			search = search.Where(q.SearchTokenRecord.Token.Eq(lookup.token))
+		}
+		if i > 0 {
+			if len(candidateObjectIDs) == 0 {
+				return map[string]indexedTokenMatch{}, nil
+			}
+			search = search.Where(q.SearchTokenRecord.ObjectID.In(candidateObjectIDs...))
+		}
+		tokenRows, err := search.Find()
+		if err != nil {
+			return nil, err
+		}
+		if len(tokenRows) == 0 {
+			return map[string]indexedTokenMatch{}, nil
+		}
+		rows = append(rows, tokenRows...)
+		candidateObjectIDs = tokenRowObjectIDs(tokenRows)
+	}
+	return indexedTokenMatches(rows, queryTokens), nil
+}
+
+type tokenLookup struct {
+	token string
+	like  bool
+}
+
+func tokenLookupsByRarity(q *query.Query, ctx context.Context, queryTokens []string) ([]tokenLookup, error) {
+	type tokenCount struct {
+		lookup tokenLookup
+		count  int64
+	}
+	counts := make([]tokenCount, 0, len(queryTokens))
+	for _, token := range queryTokens {
+		count, err := q.SearchTokenRecord.WithContext(ctx).Where(q.SearchTokenRecord.Token.Eq(token)).Count()
+		if err != nil {
+			return nil, err
+		}
+		lookup := tokenLookup{token: token}
+		if count == 0 || containsNonASCII(token) {
+			likeCount, err := q.SearchTokenRecord.WithContext(ctx).Where(q.SearchTokenRecord.Token.Like("%" + token + "%")).Count()
+			if err != nil {
+				return nil, err
+			}
+			if likeCount == 0 {
+				return nil, nil
+			}
+			if likeCount > count {
+				count = likeCount
+				lookup.like = true
+			}
+		}
+		counts = append(counts, tokenCount{lookup: lookup, count: count})
+	}
+	sort.Slice(counts, func(i, j int) bool {
+		if counts[i].count == counts[j].count {
+			return counts[i].lookup.token < counts[j].lookup.token
+		}
+		return counts[i].count < counts[j].count
+	})
+	ordered := make([]tokenLookup, 0, len(counts))
+	for _, item := range counts {
+		ordered = append(ordered, item.lookup)
+	}
+	return ordered, nil
+}
+
+func containsNonASCII(value string) bool {
+	for _, r := range value {
+		if r > unicode.MaxASCII {
+			return true
+		}
+	}
+	return false
+}
+
+func tokenRowObjectIDs(rows []*model.SearchTokenRecord) []string {
+	seen := map[string]bool{}
+	objectIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		objectID := firstNonEmptyIndexValue(row.ObjectID, row.NotePath)
+		if objectID == "" || seen[objectID] {
+			continue
+		}
+		seen[objectID] = true
+		objectIDs = append(objectIDs, objectID)
+	}
+	sort.Strings(objectIDs)
+	return objectIDs
+}
+
+func indexedMatchObjectIDs(matches map[string]indexedTokenMatch) []string {
+	objectIDs := make([]string, 0, len(matches))
+	for objectID := range matches {
+		objectIDs = append(objectIDs, objectID)
+	}
+	sort.Strings(objectIDs)
+	return objectIDs
+}
+
+func noteRecordObjectIDs(records []NoteRecord) []string {
+	objectIDs := make([]string, 0, len(records))
+	for _, record := range records {
+		objectIDs = append(objectIDs, record.ObjectID)
+	}
+	return objectIDs
+}
+
+func findTagsForObjectIDs(q *query.Query, ctx context.Context, objectIDs []string) ([]*model.TagRecord, error) {
+	if len(objectIDs) == 0 {
+		return nil, nil
+	}
+	return q.TagRecord.WithContext(ctx).Where(q.TagRecord.ObjectID.In(objectIDs...)).Find()
+}
+
+func findTextsForObjectIDs(q *query.Query, ctx context.Context, objectIDs []string) ([]*model.NoteTextRecord, error) {
+	if len(objectIDs) == 0 {
+		return nil, nil
+	}
+	return q.NoteTextRecord.WithContext(ctx).Where(q.NoteTextRecord.ObjectID.In(objectIDs...)).Find()
+}
+
+func findLinksForObjectIDs(q *query.Query, ctx context.Context, objectIDs []string) ([]*model.LinkRecord, error) {
+	if len(objectIDs) == 0 {
+		return nil, nil
+	}
+	return q.LinkRecord.WithContext(ctx).Where(q.LinkRecord.SourceObjectID.In(objectIDs...)).Find()
+}
+
+func findAttachmentsForObjectIDs(q *query.Query, ctx context.Context, objectIDs []string) ([]*model.AttachmentRecord, error) {
+	if len(objectIDs) == 0 {
+		return nil, nil
+	}
+	return q.AttachmentRecord.WithContext(ctx).Where(q.AttachmentRecord.ObjectID.In(objectIDs...)).Find()
 }
 
 func sortResults(items []ResultItem, mode string) {
@@ -1388,7 +1712,179 @@ func open(root string) (*gorm.DB, error) {
 }
 
 func migrate(db *gorm.DB) error {
-	return db.AutoMigrate(model.AllModels()...)
+	if err := db.AutoMigrate(model.AllModels()...); err != nil {
+		return err
+	}
+	return backfillObjectIdentity(db)
+}
+
+func backfillObjectIdentity(db *gorm.DB) error {
+	ctx := context.Background()
+	q := query.Use(db)
+	notes, err := q.NoteRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	byPath := map[string]string{}
+	for _, note := range notes {
+		objectID := strings.TrimSpace(note.ObjectID)
+		if objectID == "" {
+			objectID = strings.TrimSpace(note.NoteID)
+			if objectID != "" {
+				if _, err := q.NoteRecord.WithContext(ctx).Where(q.NoteRecord.Path.Eq(note.Path)).Update(q.NoteRecord.ObjectID, objectID); err != nil {
+					return err
+				}
+			}
+		}
+		if objectID != "" {
+			byPath[note.Path] = objectID
+		}
+	}
+	texts, err := q.NoteTextRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range texts {
+		if row.ObjectID == "" && byPath[row.NotePath] != "" {
+			if _, err := q.NoteTextRecord.WithContext(ctx).Where(q.NoteTextRecord.NotePath.Eq(row.NotePath)).Update(q.NoteTextRecord.ObjectID, byPath[row.NotePath]); err != nil {
+				return err
+			}
+		}
+	}
+	tags, err := q.TagRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range tags {
+		if row.ObjectID == "" && byPath[row.NotePath] != "" {
+			if _, err := q.TagRecord.WithContext(ctx).Where(q.TagRecord.ID.Eq(row.ID)).Update(q.TagRecord.ObjectID, byPath[row.NotePath]); err != nil {
+				return err
+			}
+		}
+	}
+	links, err := q.LinkRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range links {
+		updates := map[string]any{}
+		if row.SourceObjectID == "" && byPath[row.NotePath] != "" {
+			updates["source_object_id"] = byPath[row.NotePath]
+		}
+		if row.TargetObjectID == "" && strings.TrimSpace(row.TargetNoteID) != "" {
+			updates["target_object_id"] = row.TargetNoteID
+		}
+		if len(updates) > 0 {
+			if _, err := q.LinkRecord.WithContext(ctx).Where(q.LinkRecord.ID.Eq(row.ID)).UpdateColumns(updates); err != nil {
+				return err
+			}
+		}
+	}
+	tokens, err := q.SearchTokenRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range tokens {
+		if row.ObjectID == "" && byPath[row.NotePath] != "" {
+			if _, err := q.SearchTokenRecord.WithContext(ctx).Where(q.SearchTokenRecord.ID.Eq(row.ID)).Update(q.SearchTokenRecord.ObjectID, byPath[row.NotePath]); err != nil {
+				return err
+			}
+		}
+	}
+	attachments, err := q.AttachmentRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range attachments {
+		if row.ObjectID == "" && byPath[row.NotePath] != "" {
+			if _, err := q.AttachmentRecord.WithContext(ctx).Where(q.AttachmentRecord.ID.Eq(row.ID)).Update(q.AttachmentRecord.ObjectID, byPath[row.NotePath]); err != nil {
+				return err
+			}
+		}
+	}
+	properties, err := q.PropertyValueRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range properties {
+		if row.ObjectID == "" && byPath[row.NotePath] != "" {
+			if _, err := q.PropertyValueRecord.WithContext(ctx).Where(q.PropertyValueRecord.ID.Eq(row.ID)).Update(q.PropertyValueRecord.ObjectID, byPath[row.NotePath]); err != nil {
+				return err
+			}
+		}
+	}
+	tasks, err := q.TaskRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range tasks {
+		if row.ObjectID == "" {
+			objectID := firstNonEmptyIndexValue(row.NoteID, byPath[row.NotePath])
+			if objectID != "" {
+				if _, err := q.TaskRecord.WithContext(ctx).Where(q.TaskRecord.ID.Eq(row.ID)).Update(q.TaskRecord.ObjectID, objectID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	assets, err := q.AssetRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	assetByPath := map[string]string{}
+	for _, row := range assets {
+		objectID := firstNonEmptyIndexValue(row.ObjectID, row.AssetID)
+		if row.ObjectID == "" && objectID != "" {
+			if _, err := q.AssetRecord.WithContext(ctx).Where(q.AssetRecord.Path.Eq(row.Path)).Update(q.AssetRecord.ObjectID, objectID); err != nil {
+				return err
+			}
+		}
+		if objectID != "" {
+			assetByPath[row.Path] = objectID
+		}
+	}
+	assetLinks, err := q.AssetLinkRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range assetLinks {
+		updates := map[string]any{}
+		if row.SourceObjectID == "" {
+			updates["source_object_id"] = firstNonEmptyIndexValue(row.SourceNoteID, byPath[row.SourcePath])
+		}
+		if row.AssetObjectID == "" && assetByPath[row.AssetPath] != "" {
+			updates["asset_object_id"] = assetByPath[row.AssetPath]
+		}
+		if len(updates) > 0 {
+			if _, err := q.AssetLinkRecord.WithContext(ctx).Where(q.AssetLinkRecord.ID.Eq(row.ID)).UpdateColumns(updates); err != nil {
+				return err
+			}
+		}
+	}
+	files, err := q.VaultFileRecord.WithContext(ctx).Find()
+	if err != nil {
+		return err
+	}
+	for _, row := range files {
+		if row.ObjectID == "" {
+			objectID := firstNonEmptyIndexValue(byPath[row.Path], assetByPath[row.Path])
+			if objectID != "" {
+				if _, err := q.VaultFileRecord.WithContext(ctx).Where(q.VaultFileRecord.Path.Eq(row.Path)).Update(q.VaultFileRecord.ObjectID, objectID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func firstNonEmptyIndexValue(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func upsertMeta(db *gorm.DB, key, value, now string) error {
@@ -1414,16 +1910,16 @@ func replaceNoteProjection(tx *gorm.DB, root string, note domain.Note) error {
 	if _, err := q.AssetLinkRecord.WithContext(ctx).Where(q.AssetLinkRecord.SourcePath.Eq(note.Path)).Delete(); err != nil {
 		return err
 	}
-	if err := q.NoteTextRecord.WithContext(ctx).Create(&NoteTextRecord{NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}); err != nil {
+	if err := q.NoteTextRecord.WithContext(ctx).Create(&NoteTextRecord{ObjectID: note.ID, NotePath: note.Path, TitleText: note.Title, BodyText: note.Body, Excerpt: excerpt(note.Body), WordCount: len(tokens(note.Body))}); err != nil {
 		return err
 	}
 	for _, tag := range uniqueTags(note) {
-		if err := q.TagRecord.WithContext(ctx).Create(&TagRecord{NotePath: note.Path, Tag: tag}); err != nil {
+		if err := q.TagRecord.WithContext(ctx).Create(&TagRecord{ObjectID: note.ID, NotePath: note.Path, Tag: tag}); err != nil {
 			return err
 		}
 	}
 	for _, token := range noteTokens(note) {
-		if err := q.SearchTokenRecord.WithContext(ctx).Create(&SearchTokenRecord{NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}); err != nil {
+		if err := q.SearchTokenRecord.WithContext(ctx).Create(&SearchTokenRecord{ObjectID: note.ID, NotePath: note.Path, Token: token.Token, Field: token.Field, Count: token.Count, Weight: token.Weight}); err != nil {
 			return err
 		}
 	}
@@ -1526,8 +2022,12 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 		return err
 	}
 	records := make([]NoteRecord, 0, len(noteRows))
+	var changed *model.NoteRecord
 	for _, record := range noteRows {
 		records = append(records, *record)
+		if record.Path == changedPath {
+			changed = record
+		}
 	}
 	resolver := resolverSnapshotFromRecords(records)
 	paths := make([]string, 0, len(affected))
@@ -1536,7 +2036,6 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		// 增量目标变化只重算受影响 source note 的 link edges，避免重写正文、token 和其它 projection。
 		note, ok, lookupErr := indexedNoteForLinkRebuild(tx, path)
 		if lookupErr != nil {
 			return lookupErr
@@ -1544,16 +2043,59 @@ func reclassifyAffectedLinkEdges(tx *gorm.DB, targetKeys map[string]bool, change
 		if !ok {
 			continue
 		}
+		previousRows, err := q.LinkRecord.WithContext(ctx).Where(q.LinkRecord.NotePath.Eq(path)).Find()
+		if err != nil {
+			return err
+		}
+		previous := map[string]*model.LinkRecord{}
+		for _, row := range previousRows {
+			previous[linkEdgeKey(*row)] = row
+		}
 		if _, err := q.LinkRecord.WithContext(ctx).Where(q.LinkRecord.NotePath.Eq(path)).Delete(); err != nil {
 			return err
 		}
 		for _, link := range noteLinks(note, resolver) {
+			if changed != nil && link.Status != string(domain.LinkStatusResolved) {
+				if old := previous[linkEdgeKey(link)]; old != nil && old.TargetObjectID == changed.ObjectID {
+					link.TargetObjectID = changed.ObjectID
+					link.TargetNoteID = changed.NoteID
+					link.TargetPath = changed.Path
+					link.TargetTitle = changed.Title
+					link.Status = string(domain.LinkStatusResolved)
+					link.Broken = false
+					link.Evidence = "preserved by object_id; link rewrite review required"
+				}
+			}
 			if err := q.LinkRecord.WithContext(ctx).Create(&link); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func linkEdgeKey(link LinkRecord) string {
+	return link.Kind + "\x00" + link.TargetRaw + "\x00" + link.TargetAlias + "\x00" + link.TargetHeading
+}
+
+func LinksByTargetObjectID(root, objectID string) ([]LinkRecord, error) {
+	db, err := open(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
+		return nil, err
+	}
+	q := query.Use(db)
+	rows, err := q.LinkRecord.WithContext(context.Background()).Where(q.LinkRecord.TargetObjectID.Eq(strings.TrimSpace(objectID))).Order(q.LinkRecord.NotePath, q.LinkRecord.Line).Find()
+	if err != nil {
+		return nil, err
+	}
+	links := make([]LinkRecord, 0, len(rows))
+	for _, row := range rows {
+		links = append(links, *row)
+	}
+	return links, nil
 }
 
 func indexedNoteForLinkRebuild(tx *gorm.DB, path string) (domain.Note, bool, error) {
@@ -1701,20 +2243,22 @@ func noteLinks(note domain.Note, resolver notelinks.ResolverSnapshot) []LinkReco
 
 func linkRecordFromDomainLink(note domain.Note, link domain.NoteLink) LinkRecord {
 	return LinkRecord{
-		NotePath:      note.Path,
-		SourceNoteID:  link.SourceNoteID,
-		Target:        link.Target,
-		TargetPath:    link.TargetPath,
-		Kind:          link.Kind,
-		Broken:        link.Broken,
-		TargetNoteID:  link.TargetNoteID,
-		TargetTitle:   link.TargetTitle,
-		TargetRaw:     link.TargetRaw,
-		TargetAlias:   link.TargetAlias,
-		TargetHeading: link.TargetHeading,
-		Status:        link.Status,
-		Line:          link.Line,
-		Evidence:      link.Evidence,
+		SourceObjectID: note.ID,
+		TargetObjectID: link.TargetObjectID,
+		NotePath:       note.Path,
+		SourceNoteID:   link.SourceNoteID,
+		Target:         link.Target,
+		TargetPath:     link.TargetPath,
+		Kind:           link.Kind,
+		Broken:         link.Broken,
+		TargetNoteID:   link.TargetNoteID,
+		TargetTitle:    link.TargetTitle,
+		TargetRaw:      link.TargetRaw,
+		TargetAlias:    link.TargetAlias,
+		TargetHeading:  link.TargetHeading,
+		Status:         link.Status,
+		Line:           link.Line,
+		Evidence:       link.Evidence,
 	}
 }
 
@@ -1731,7 +2275,7 @@ func noteAttachments(root string, note domain.Note) []AttachmentRecord {
 	attachments := make([]AttachmentRecord, 0, len(links))
 	for _, link := range links {
 		_, statErr := os.Stat(filepath.Join(root, filepath.FromSlash(link.AssetPath)))
-		attachments = append(attachments, AttachmentRecord{NotePath: note.Path, ReferenceText: link.RawReference, TargetPath: link.AssetPath, MediaType: mediaType(link.AssetPath), Exists: statErr == nil})
+		attachments = append(attachments, AttachmentRecord{ObjectID: note.ID, NotePath: note.Path, ReferenceText: link.RawReference, TargetPath: link.AssetPath, MediaType: mediaType(link.AssetPath), Exists: statErr == nil})
 	}
 	return attachments
 }
@@ -1744,7 +2288,7 @@ func noteAssetLinks(root string, note domain.Note) []AssetLinkRecord {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(link.AssetPath))); err != nil {
 			status = "missing"
 		}
-		records = append(records, AssetLinkRecord{AssetPath: link.AssetPath, SourceNoteID: link.SourceNoteID, SourcePath: link.SourcePath, RawReference: link.RawReference, LinkStyle: link.LinkStyle, LinkKind: link.LinkKind, Line: link.Line, Status: status, MediaType: mediaType(link.AssetPath)})
+		records = append(records, AssetLinkRecord{SourceObjectID: link.SourceNoteID, AssetPath: link.AssetPath, SourceNoteID: link.SourceNoteID, SourcePath: link.SourcePath, RawReference: link.RawReference, LinkStyle: link.LinkStyle, LinkKind: link.LinkKind, Line: link.Line, Status: status, MediaType: mediaType(link.AssetPath)})
 	}
 	return records
 }
@@ -1829,7 +2373,7 @@ func inferLifecycleStatus(status, kind string) string {
 func noteRecordFromDomain(note domain.Note, modifiedUnix, size int64) NoteRecord {
 	filename := filepath.Base(note.Path)
 	ext := filepath.Ext(filename)
-	return NoteRecord{Path: note.Path, NoteID: note.ID, Title: note.Title, Filename: filename, Stem: strings.TrimSuffix(filename, ext), Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, LifecycleStatus: inferLifecycleStatus(note.Status, note.Kind), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: noteSourceHash(note), ModifiedUnix: modifiedUnix, Size: size, IsSystem: isSystemIndexNote(note), ObjectKind: string(domain.VaultObjectKindNote), ManagedStatus: string(domain.ManagedStatusRegistered)}
+	return NoteRecord{ObjectID: note.ID, Path: note.Path, NoteID: note.ID, Title: note.Title, Filename: filename, Stem: strings.TrimSuffix(filename, ext), Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, LifecycleStatus: inferLifecycleStatus(note.Status, note.Kind), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: noteSourceHash(note), ModifiedUnix: modifiedUnix, Size: size, IsSystem: isSystemIndexNote(note), ObjectKind: string(domain.VaultObjectKindNote), ManagedStatus: string(domain.ManagedStatusRegistered)}
 }
 
 func noteSourceHash(note domain.Note) string {
@@ -1946,6 +2490,32 @@ func scoreRecord(record NoteRecord, text NoteTextRecord, tags []string, query st
 		fields = append(fields, "body")
 	}
 	return score, fields
+}
+
+func scoreIndexedRecord(record NoteRecord, text NoteTextRecord, tags []string, query string, tokenMatch indexedTokenMatch) (int, []string) {
+	if query == "" {
+		return scoreRecord(record, text, tags, query)
+	}
+	fields := map[string]bool{}
+	score := tokenMatch.Score
+	for field := range tokenMatch.Fields {
+		fields[field] = true
+	}
+	containsScore, containsFields := scoreRecord(record, text, tags, query)
+	score += containsScore
+	for _, field := range containsFields {
+		fields[field] = true
+	}
+	if score == 0 {
+		return 0, nil
+	}
+	ordered := make([]string, 0, len(fields))
+	for _, field := range []string{"title", "tag", "path", "body"} {
+		if fields[field] {
+			ordered = append(ordered, field)
+		}
+	}
+	return score, ordered
 }
 
 func recordMatchesFilters(record NoteRecord, tags []string, links []LinkRecord, attachments []AttachmentRecord, req SearchRequest) bool {

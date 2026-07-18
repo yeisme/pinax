@@ -105,6 +105,110 @@ func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
 	}
 }
 
+func TestTemplateWorkflowMetadata(t *testing.T) {
+	meetingBody := builtInTemplates()["meeting.notes"]
+	doc, err := templateengine.ParseDocument("meeting.notes", meetingBody)
+	if err != nil {
+		t.Fatalf("parse meeting.notes: %v", err)
+	}
+	if doc.Metadata.ScenarioID != "meeting-decision" {
+		t.Fatalf("scenario_id = %q", doc.Metadata.ScenarioID)
+	}
+	if doc.Metadata.TemplateKind != "note_template" || doc.Metadata.Maturity != "mature" || doc.Metadata.Lifecycle != "published_executable" {
+		t.Fatalf("workflow metadata = %#v", doc.Metadata)
+	}
+	if doc.Metadata.Pack.ID != "focused" || doc.Metadata.Pack.Source != "builtin" || doc.Metadata.Pack.Readiness == "" {
+		t.Fatalf("pack metadata = %#v", doc.Metadata.Pack)
+	}
+	if !doc.Metadata.ProofGate.ManualReview || len(doc.Metadata.AfterCreateActions) == 0 {
+		t.Fatalf("proof/actions metadata = proof:%#v actions:%#v", doc.Metadata.ProofGate, doc.Metadata.AfterCreateActions)
+	}
+	if len(doc.Metadata.Intents) == 0 || !containsString(doc.Metadata.Intents, "meeting") {
+		t.Fatalf("intents = %#v", doc.Metadata.Intents)
+	}
+
+	legacy, ok := templateCatalogItem("daily", builtInTemplates()["daily"], "builtin")
+	if !ok {
+		t.Fatal("legacy daily missing from catalog")
+	}
+	if legacy.Kind != "template" || legacy.Pack.ID != "legacy" || legacy.Lifecycle != "published_executable" || legacy.Maturity != "first-support" {
+		t.Fatalf("legacy defaults = %#v", legacy)
+	}
+}
+
+func TestTemplatePack(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := NewService()
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+
+	starter, err := svc.ListTemplateCatalog(ctx, TemplateRequest{VaultPath: root, Pack: "starter"})
+	if err != nil {
+		t.Fatalf("list starter: %v", err)
+	}
+	data := fmt.Sprint(starter.Data)
+	if !strings.Contains(data, "note.quick") || !strings.Contains(data, "sticky.capture") || strings.Contains(data, "meeting.notes") {
+		t.Fatalf("starter pack list = %#v", starter.Data)
+	}
+
+	localBody := strings.Join([]string{
+		"---",
+		"schema_version: pinax.template.v2",
+		"kind: note_template",
+		"name: meeting.notes",
+		"title: Local Meeting",
+		"engine: go-template",
+		"pack:",
+		"  id: local-workflows",
+		"  source: vault-local",
+		"  readiness: first-support",
+		"lifecycle: validated",
+		"output:",
+		"  path_pattern: local/{{ .Title | slug }}.md",
+		"defaults:",
+		"  kind: meeting",
+		"  status: active",
+		"---",
+		"# {{ .Title }}",
+	}, "\n")
+	if _, err := svc.CreateTemplate(ctx, TemplateRequest{VaultPath: root, Name: "meeting.notes", Body: localBody, Overwrite: true}); err != nil {
+		t.Fatalf("create local override: %v", err)
+	}
+	inspect, err := svc.InspectTemplate(ctx, TemplateRequest{VaultPath: root, Name: "meeting.notes"})
+	if err != nil {
+		t.Fatalf("inspect local override: %v", err)
+	}
+	if inspect.Facts["source"] != "vault-local" || inspect.Facts["lifecycle"] != "overridden" || inspect.Facts["pack"] != "local-workflows" {
+		t.Fatalf("override inspect facts = %#v", inspect.Facts)
+	}
+}
+
+func TestTemplateLifecycle(t *testing.T) {
+	items := []TemplateCatalogItem{
+		{Name: "meeting.draft", Kind: "note_template", Title: "Draft", Lifecycle: "draft_design", ScenarioID: "meeting-decision", Intents: []string{"meeting"}, Pack: TemplatePack{ID: "local", Source: "vault-local"}},
+		{Name: "meeting.old", Kind: "note_template", Title: "Old", Lifecycle: "deprecated", Replacement: "meeting.notes", ScenarioID: "meeting-decision", Intents: []string{"meeting"}, Pack: TemplatePack{ID: "legacy", Source: "builtin"}},
+		{Name: "meeting.notes", Kind: "note_template", Title: "Meeting", Lifecycle: "published_executable", ScenarioID: "meeting-decision", Intents: []string{"meeting"}, Pack: TemplatePack{ID: "focused", Source: "builtin"}},
+	}
+	primary := recommendTemplate(items, "meeting")
+	if primary.Name != "meeting.notes" {
+		t.Fatalf("primary lifecycle recommendation = %#v", primary)
+	}
+	recs := workflowRecommendations(items, primary, "meeting", "/vault")
+	if len(recs) == 0 || recs[0].Template != "meeting.notes" || recs[0].CreateCommand == "" || recs[0].PreviewCommand == "" {
+		t.Fatalf("workflow recommendations = %#v", recs)
+	}
+	for _, rec := range recs {
+		if rec.Template == "meeting.draft" && rec.Executable {
+			t.Fatalf("draft recommendation marked executable: %#v", rec)
+		}
+		if rec.Template == "meeting.old" && rec.Replacement != "meeting.notes" {
+			t.Fatalf("deprecated recommendation missing replacement: %#v", rec)
+		}
+	}
+}
+
 func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()

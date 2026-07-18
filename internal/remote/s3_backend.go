@@ -45,12 +45,43 @@ func parseS3Endpoint(endpoint string) (string, string, S3BackendOptions, error) 
 	options.Profile = strings.TrimSpace(q.Get("profile"))
 	options.PathMode = strings.TrimSpace(q.Get("path"))
 	options.API = strings.TrimSpace(q.Get("api"))
-	pathStyle := strings.EqualFold(q.Get("path_style"), "true") || strings.EqualFold(q.Get("path"), "auto") || strings.EqualFold(q.Get("path"), "on")
-	if options.EndpointURL != "" {
-		pathStyle = true
-	}
+	pathStyle := s3PathStyleFromQuery(options.EndpointURL, q)
 	options.PathStyle = pathStyle
 	return u.Host, strings.TrimPrefix(u.Path, "/"), options, nil
+}
+
+func s3PathStyleFromQuery(endpointURL string, q url.Values) bool {
+	style := strings.ToLower(strings.TrimSpace(firstNonEmpty(q.Get("addressing_style"), q.Get("path"))))
+	switch style {
+	case "virtual", "virtual-hosted", "virtual_hosted", "host", "hosted":
+		return false
+	case "path", "path-style", "path_style", "on", "true":
+		return true
+	}
+	if strings.EqualFold(q.Get("path_style"), "true") {
+		return true
+	}
+	return defaultS3PathStyle(endpointURL)
+}
+
+func defaultS3PathStyle(endpointURL string) bool {
+	endpointURL = strings.ToLower(strings.TrimSpace(endpointURL))
+	if endpointURL == "" {
+		return false
+	}
+	if strings.Contains(endpointURL, ".myqcloud.com") || strings.Contains(endpointURL, ".myqcloud.com.cn") {
+		return false
+	}
+	return true
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type S3Backend struct {
@@ -80,6 +111,11 @@ func NewS3BackendWithOptions(ctx context.Context, bucket string, prefix string, 
 			o.BaseEndpoint = aws.String(options.EndpointURL)
 		}
 		o.UsePathStyle = options.PathStyle
+		// S3-compatible services (e.g. Tencent COS) rarely return x-amz-checksum-*
+		// headers, which the SDK's default WhenSupported policy turns into a WARN
+		// per object. Only validate checksums when the operation requires it.
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix = prefix + "/"

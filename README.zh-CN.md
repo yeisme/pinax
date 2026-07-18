@@ -29,6 +29,19 @@ pinax version restore apply --vault ./my-notes --plan restore-<id> --yes        
 
 Pinax **互补** Obsidian 和 Logseq，作为你 vault 的 agent-safe 维护层；**避开** Notion 的云锁定；比 Reflect **更可编程、更可验证**。它不是另一个笔记 App——它是让你的已有 Markdown vault 对 AI 安全的控制平面。
 
+## Identity-first 笔记内核
+
+每个持久 note、journal、asset、project、subproject 和 managed task 都有 canonical UUIDv7 `object_id`。path 只是可变化的当前定位，不再承担身份。SQL/Dataview、双链、project board、apply receipt、tombstone 与 manifest v2 都围绕 object ID 关联。
+
+```bash
+pinax record identity audit --vault ./my-notes --json
+pinax sync manifest audit --vault ./my-notes --json
+pinax sync manifest plan --save --vault ./my-notes --json
+pinax sync manifest promote --plan manifest-plan-<id> --remote-capability v2 --vault ./my-notes --yes --json
+```
+
+Agent plan 会绑定 object ID、observed path、expected content revision 和 record version。纯 move 可按 UUID 安全重定位；旧 path 被复用或正文漂移时返回 `plan_stale`。apply receipt 只记录 before/after revision、ledger sequence、snapshot、changed paths 和 sync readiness，不保存正文或凭据。
+
 ## 状态
 
 | 能力 | 状态 |
@@ -38,8 +51,6 @@ Pinax **互补** Obsidian 和 Logseq，作为你 vault 的 agent-safe 维护层�
 | 本地 dashboard、只读 MCP、localhost REST/RPC adapter；workspace/task/database/graph 只读 projection | 已支持 |
 | Obsidian-style vault 兼容：wikilinks/backlinks、properties、daily managed block、templates、attachments、dataview block、`.obsidian/` ignore | Preview |
 | 基于 server、file/S3-compatible object store、rclone transport 的 Cloud Sync | Preview |
-| Provider automation 和 briefing delivery | Experimental |
-| 动态插件 manifest、registry、permission 和 runner 合同 | Experimental |
 
 ## 安装
 
@@ -54,12 +65,12 @@ Pinax **互补** Obsidian 和 Logseq，作为你 vault 的 agent-safe 维护层�
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.1.2`）：
+从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.1.6`）：
 
 ```bash
 # linux x86_64（请按你的平台调整 os/arch：darwin、windows；x86_64、aarch64）
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.2/pinax_0.1.2_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.2/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.6/pinax_0.1.6_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.6/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
@@ -91,35 +102,6 @@ pinax search "First note" --vault ./my-notes --json
 中文内容模板覆盖 idea 种子、便签短文档、看剧、动漫、游戏、论文阅读、小说阅读、小说创作和视频笔记；`idea.*` 默认停放为 `kind: idea,status: parked`，`sticky.*` 默认进入 `kind: sticky,status: inbox`，不会绕过 `project item add` 变成受控 project board item。
 
 更多命令入口见 [Command Manual](./docs/commands/README.md)。详细命令文档保持英文，以保证 flag、schema key、错误码和机器输出字段稳定一致。
-
-### 静态发布
-
-从 vault 构建 Pages 或 Wiki 发布面，但不要让 GitHub 成为笔记真源：
-
-```bash
-pinax publish profile init public --target github-pages --renderer hugo --vault ./my-notes --json
-pinax publish plan --profile public --target github-pages --vault ./my-notes --json
-pinax publish build --profile public --target github-pages --out ./dist/site --vault ./my-notes --json
-pinax publish deploy --profile public --target github-pages --out ./dist/site --repo ../kb-pages --yes --vault ./my-notes --json
-
-pinax publish build --profile wiki --target github-wiki --out ./dist/wiki --vault ./my-notes --json
-```
-
-请使用独立的 Pages/Wiki 仓库，不要直接发布私有 vault 仓库。Deploy 前会校验 build receipt、output hash 和扫描结果。
-
-### Dynamic plugins
-
-通过 CLI 受控地验证和安装本地插件，不让插件成为 vault 真源：
-
-```bash
-pinax plugin validate ./plugins/project-dashboard --vault ./my-notes --json
-pinax plugin install ./plugins/project-dashboard --scope vault --vault ./my-notes --json
-pinax plugin enable project-dashboard --vault ./my-notes --yes --json
-pinax plugin permissions grant project-dashboard projection.read --capability render_dashboard --vault ./my-notes --yes --json
-pinax plugin run project-dashboard render_dashboard --vault ./my-notes --dry-run --json
-```
-
-Registry、lock、permission grants 和 audit events 都是 `.pinax/plugins/` 与 `.pinax/events/` 下的 CLI-authored 资产，不要手写。WASM 是未信任插件的优先方向；JavaScript、Python 和 process 插件通过外部 trusted runner 执行，不声明为强沙箱。详见 [Plugin Runtime](./docs/architecture/plugin-runtime.md) 和 [`pinax plugin`](./docs/commands/plugin.md)。
 
 ## 五大核心工作流
 
@@ -160,7 +142,7 @@ pinax version snapshot --vault ./my-notes --message "checkpoint"
 pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
 ```
 
-每条命令都支持 `--json`、`--agent`、`--events` 和 `--explain` 输出模式，共用一个 projection 边界：有界事实和下一步动作，永不输出原始正文、token 或 provider payload。Cloud Sync、daily briefing、provider 扩展和托管平台能力是独立的高级工作流，不属于这条本地 proof loop。
+每条命令都支持 `--json`、`--agent`、`--events` 和 `--explain` 输出模式，共用一个 projection 边界：有界事实和下一步动作，永不输出原始正文、token 或 provider payload。Cloud Sync 是传输边界，不是本地 proof loop 的前置条件。
 
 ## 核心概念
 
@@ -243,19 +225,19 @@ pinax api serve --readonly --no-auth --port 8787 --vault work
 pinax mcp serve --vault work
 ```
 
-Cloud Sync preview：
+Capsa Sync preview：
 
 ```bash
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
-pinax sync push --target cloud --vault ./device-a --yes --json
-pinax sync pull --target cloud --vault ./device-b --yes --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --encryption-secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax sync push --target capsa --vault ./device-a --yes --json
+pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
 
 本地自动同步 daemon：
 
 ```bash
-pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon run --target capsa --vault ./device-a --yes
 pinax sync daemon status --vault ./device-a --json
 pinax sync daemon logs --vault ./device-a --limit 20 --json
 pinax sync daemon stop --vault ./device-a

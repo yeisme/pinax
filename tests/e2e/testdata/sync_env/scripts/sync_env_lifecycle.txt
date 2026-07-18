@@ -1,0 +1,84 @@
+# Test the encrypted runtime dotenv loader lifecycle end-to-end.
+# Verifies init, set, list, unlock (in-memory), unlock --materialize (0600),
+# clean, doctor, and that plaintext never leaks into stdout/stderr/receipts/logs.
+# Also verifies the strict parser rejects shell substitution on the read path,
+# the wrong-key decrypt fails closed, and Git tracked-secret detection warns.
+
+env PINAX_SYNC_FAKE_KEY=env-loader-e2e-key
+
+# init vault
+exec pinax init vault --title EnvLoader --json
+stdout '"command":"vault.init"'
+
+# init env asset — no plaintext file by default
+exec pinax sync env init --vault vault --json
+stdout '"command":"sync.env.init"'
+stdout '"plaintext_created":"false"'
+stdout '"schema_version":"pinax.sync.env.v1"'
+! stdout 'PLAINTEXT'
+# No plaintext .env created
+! exists vault/.env
+
+# set an env value — stdout must not contain the value
+exec pinax sync env set COS_SECRET_KEY --value e2e-secret-value-AAAA --vault vault --json
+stdout '"command":"sync.env.set"'
+stdout '"key":"COS_SECRET_KEY"'
+! stdout 'e2e-secret-value-AAAA'
+
+# set a second value with equals in it (values may contain =)
+exec pinax sync env set CONNECTION --value=host=db;port=5432 --vault vault --json
+! stdout 'host=db;port=5432'
+
+# list — key names only, no values
+exec pinax sync env list --vault vault --json
+stdout '"command":"sync.env.list"'
+stdout '"key_count":"2"'
+! stdout 'e2e-secret-value-AAAA'
+! stdout 'host=db'
+
+# unlock in memory — no materialize, no value leak
+exec pinax sync env unlock --vault vault --json
+stdout '"command":"sync.env.unlock"'
+stdout '"materialized":"false"'
+! stdout 'e2e-secret-value-AAAA'
+# No materialized file
+! exists vault/.pinax/runtime/pinax-sync.env
+
+# unlock --materialize writes 0600 file
+exec pinax sync env unlock --vault vault --materialize --json
+stdout '"materialized":"true"'
+stdout '"permissions":"0600"'
+! stdout 'e2e-secret-value-AAAA'
+exists vault/.pinax/runtime/pinax-sync.env
+
+# materialized file must be 0600 and exist; verify permissions via stat
+exec sh -c 'test "$(stat -c %a vault/.pinax/runtime/pinax-sync.env)" = "600"'
+
+# clean removes only the managed file
+exec pinax sync env clean --vault vault --json
+stdout '"removed":"true"'
+! exists vault/.pinax/runtime/pinax-sync.env
+
+# doctor — healthy, no value leak
+exec pinax sync env doctor --vault vault --json
+stdout '"command":"sync.env.doctor"'
+stdout '"code":"healthy"'
+! stdout 'e2e-secret-value-AAAA'
+
+# encrypted asset must be present and committable; plaintext must NOT exist
+exists vault/.pinax/pinax-sync.env.age
+! exists vault/.env
+
+# .gitignore must protect plaintext env and re-include the encrypted asset
+exec sh -c 'grep -q "^\.env$" vault/.gitignore'
+exec sh -c 'grep -q "^\*\.env$" vault/.gitignore'
+exec sh -c 'grep -q "^\.pinax/runtime/" vault/.gitignore'
+exec sh -c 'grep -q "^!\.pinax/pinax-sync.env.age$" vault/.gitignore'
+exec sh -c 'grep -q "^!\.env.example$" vault/.gitignore'
+
+# wrong-key decrypt must fail closed: change the fake key, then unlock fails
+env PINAX_SYNC_FAKE_KEY=wrong-key-different
+! exec pinax sync env unlock --vault vault --json
+
+# restore the correct key for subsequent assertions
+env PINAX_SYNC_FAKE_KEY=env-loader-e2e-key

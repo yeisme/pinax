@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/identity"
 )
 
 var defaultProjectWorkspaceDirs = []string{
@@ -52,7 +53,7 @@ func (s *Service) ProjectSubprojectCreate(_ context.Context, req ProjectWorkspac
 	if err != nil {
 		return errorProjection("project.subproject.create", err), err
 	}
-	workspace, err := buildProjectWorkspace(root, project, subproject, req.Title, req.Template)
+	workspace, err := s.buildProjectWorkspace(root, project, subproject, req.Title, req.Template)
 	if err != nil {
 		return errorProjection("project.subproject.create", err), err
 	}
@@ -334,7 +335,7 @@ func (s *Service) ProjectSubprojectList(_ context.Context, req ProjectWorkspaceR
 	if err != nil {
 		return errorProjection("project.subproject.list", err), err
 	}
-	project, err := findProject(root, req.Project)
+	project, err := findProjectForSubprojectList(root, req.Project)
 	if err != nil {
 		return errorProjection("project.subproject.list", err), err
 	}
@@ -352,6 +353,21 @@ func (s *Service) ProjectSubprojectList(_ context.Context, req ProjectWorkspaceR
 	projection.Data = map[string]any{"project": project, "subprojects": workspaces}
 	projection.Actions = []domain.Action{{Name: "create", Command: fmt.Sprintf("pinax project subproject create %s <slug> --vault %s --json", shellQuote(project.Slug), shellQuote(root))}}
 	return projection, nil
+}
+
+func findProjectForSubprojectList(root, slug string) (domain.Project, error) {
+	slug = strings.TrimSpace(slug)
+	if slug != "" {
+		return findProject(root, slug)
+	}
+	registry, err := loadProjectRegistry(root)
+	if err != nil {
+		return domain.Project{}, err
+	}
+	if registry.CurrentProject == "" {
+		return domain.Project{}, &domain.CommandError{Code: "current_project_missing", Message: "Current project is not set", Hint: "Run pinax project subproject list <project> --vault <vault> or pinax project switch <project> --vault <vault>"}
+	}
+	return findProject(root, registry.CurrentProject)
 }
 
 func (s *Service) ProjectSubprojectShow(_ context.Context, req ProjectWorkspaceRequest) (domain.Projection, error) {
@@ -408,7 +424,7 @@ func validateSubprojectSlug(slug string) (string, *domain.CommandError) {
 	return value, nil
 }
 
-func buildProjectWorkspace(root string, project domain.Project, subproject, title, template string) (domain.ProjectWorkspace, error) {
+func (s *Service) buildProjectWorkspace(root string, project domain.Project, subproject, title, template string) (domain.ProjectWorkspace, error) {
 	if strings.TrimSpace(title) == "" {
 		title = subproject
 	}
@@ -420,10 +436,17 @@ func buildProjectWorkspace(root string, project domain.Project, subproject, titl
 		return domain.ProjectWorkspace{}, err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if existing, err := loadProjectWorkspace(root, project.Slug, subproject); err == nil {
-		now = existing.CreatedAt
+	objectID, err := s.allocateObjectID(identity.KindSubproject, root, project.Slug+":"+subproject)
+	if err != nil {
+		return domain.ProjectWorkspace{}, err
 	}
-	return domain.ProjectWorkspace{SchemaVersion: domain.ProjectWorkspaceSchemaVersion, Project: project.Slug, Subproject: subproject, Title: title, Template: template, WorkspacePath: workspacePath, Directories: workspaceDirectoryStatuses(root, workspacePath), Status: "active", CreatedAt: now, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}, nil
+	if existing, loadErr := loadProjectWorkspace(root, project.Slug, subproject); loadErr == nil {
+		now = existing.CreatedAt
+		if strings.TrimSpace(existing.ObjectID) != "" {
+			objectID = existing.ObjectID
+		}
+	}
+	return domain.ProjectWorkspace{ObjectID: objectID, ProjectObjectID: project.ObjectID, SchemaVersion: domain.ProjectWorkspaceSchemaVersion, Project: project.Slug, Subproject: subproject, Title: title, Template: template, WorkspacePath: workspacePath, Directories: workspaceDirectoryStatuses(root, workspacePath), Status: "active", CreatedAt: now, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}, nil
 }
 
 func workspaceDirectoryStatuses(root, workspacePath string) []domain.ProjectWorkspaceDirectory {
@@ -480,7 +503,11 @@ func listProjectWorkspaces(root, project string) ([]domain.ProjectWorkspace, err
 	if err != nil {
 		return nil, err
 	}
-	workspaces := make([]domain.ProjectWorkspace, 0, len(entries))
+	type listedWorkspace struct {
+		workspace domain.ProjectWorkspace
+		modTime   time.Time
+	}
+	listed := make([]listedWorkspace, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
@@ -490,10 +517,26 @@ func listProjectWorkspaces(root, project string) ([]domain.ProjectWorkspace, err
 		if err != nil {
 			return nil, err
 		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
 		workspace.Directories = workspaceDirectoryStatuses(root, workspace.WorkspacePath)
-		workspaces = append(workspaces, workspace)
+		listed = append(listed, listedWorkspace{workspace: workspace, modTime: info.ModTime()})
 	}
-	sort.Slice(workspaces, func(i, j int) bool { return workspaces[i].Subproject < workspaces[j].Subproject })
+	sort.SliceStable(listed, func(i, j int) bool {
+		if !listed[i].modTime.Equal(listed[j].modTime) {
+			return listed[i].modTime.Before(listed[j].modTime)
+		}
+		if listed[i].workspace.CreatedAt != listed[j].workspace.CreatedAt {
+			return listed[i].workspace.CreatedAt < listed[j].workspace.CreatedAt
+		}
+		return listed[i].workspace.Subproject < listed[j].workspace.Subproject
+	})
+	workspaces := make([]domain.ProjectWorkspace, 0, len(listed))
+	for _, item := range listed {
+		workspaces = append(workspaces, item.workspace)
+	}
 	return workspaces, nil
 }
 

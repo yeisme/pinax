@@ -15,15 +15,18 @@ type CachePolicy struct {
 
 // defaultCachePolicies defines default cache policies by route pattern.
 var defaultCachePolicies = map[string]CachePolicy{
-	"/v1/capabilities": {MaxAge: 300, Scope: "public"},
-	"/v1/folders":      {MaxAge: 60, Scope: "private"},
-	"/v1/folders/":     {MaxAge: 60, Scope: "private"},
-	"/v1/notes/":       {MaxAge: 30, Scope: "private"},
-	"/v1/inbox":        {MaxAge: 10, Scope: "private"},
-	"/v1/inbox/":       {MaxAge: 10, Scope: "private"},
-	"/v1/drafts":       {MaxAge: 10, Scope: "private"},
-	"/v1/drafts/":      {MaxAge: 10, Scope: "private"},
-	"/v1/projects/":    {MaxAge: 30, Scope: "private"},
+	"/v1/capabilities":    {MaxAge: 300, Scope: "public"},
+	"/v1/monitor/runs":    {MaxAge: 5, Scope: "private"},
+	"/v1/monitor/runs/":   {MaxAge: 30, Scope: "private"},
+	"/v1/monitor/summary": {MaxAge: 5, Scope: "private"},
+	"/v1/folders":         {MaxAge: 60, Scope: "private"},
+	"/v1/folders/":        {MaxAge: 60, Scope: "private"},
+	"/v1/notes/":          {MaxAge: 30, Scope: "private"},
+	"/v1/inbox":           {MaxAge: 10, Scope: "private"},
+	"/v1/inbox/":          {MaxAge: 10, Scope: "private"},
+	"/v1/drafts":          {MaxAge: 10, Scope: "private"},
+	"/v1/drafts/":         {MaxAge: 10, Scope: "private"},
+	"/v1/projects/":       {MaxAge: 30, Scope: "private"},
 }
 
 // cacheMiddleware adds Cache-Control and ETag support for GET requests.

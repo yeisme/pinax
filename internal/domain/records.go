@@ -16,14 +16,15 @@ const (
 type RecordEventKind string
 
 const (
-	RecordEventNoteCreated         RecordEventKind = "note.created"
-	RecordEventNoteRenamed         RecordEventKind = "note.renamed"
-	RecordEventNoteMoved           RecordEventKind = "note.moved"
-	RecordEventNoteArchived        RecordEventKind = "note.archived"
-	RecordEventNoteTrashed         RecordEventKind = "note.trashed"
-	RecordEventNoteDeleted         RecordEventKind = "note.deleted"
-	RecordEventNoteRestored        RecordEventKind = "note.restored"
-	RecordEventNoteMetadataUpdated RecordEventKind = "note.metadata_updated"
+	RecordEventNoteCreated          RecordEventKind = "note.created"
+	RecordEventNoteRenamed          RecordEventKind = "note.renamed"
+	RecordEventNoteMoved            RecordEventKind = "note.moved"
+	RecordEventNoteArchived         RecordEventKind = "note.archived"
+	RecordEventNoteTrashed          RecordEventKind = "note.trashed"
+	RecordEventNoteDeleted          RecordEventKind = "note.deleted"
+	RecordEventNoteRestored         RecordEventKind = "note.restored"
+	RecordEventNoteMetadataUpdated  RecordEventKind = "note.metadata_updated"
+	RecordEventNoteIdentityMigrated RecordEventKind = "note.identity_migrated"
 )
 
 type ContentRevision struct {
@@ -46,6 +47,10 @@ type RecordEvent struct {
 	Seq             uint64          `json:"seq"`
 	IdempotencyKey  string          `json:"idempotency_key"`
 	Kind            RecordEventKind `json:"kind"`
+	ObjectID        string          `json:"object_id,omitempty"`
+	ObjectKind      string          `json:"object_kind,omitempty"`
+	CurrentPath     string          `json:"current_path,omitempty"`
+	LegacyAliases   []string        `json:"legacy_aliases,omitempty"`
 	NoteID          string          `json:"note_id"`
 	Path            string          `json:"path,omitempty"`
 	OldPath         string          `json:"old_path,omitempty"`
@@ -53,11 +58,16 @@ type RecordEvent struct {
 	Lifecycle       NoteLifecycle   `json:"lifecycle,omitempty"`
 	ContentRevision ContentRevision `json:"content_revision,omitempty"`
 	VersionEvidence VersionEvidence `json:"version_evidence,omitempty"`
+	TrashPath       string          `json:"trash_path,omitempty"`
 	Evidence        []string        `json:"evidence,omitempty"`
 	CreatedAt       string          `json:"created_at"`
 }
 
 type NoteRecord struct {
+	ObjectID        string          `json:"object_id,omitempty"`
+	ObjectKind      string          `json:"object_kind,omitempty"`
+	CurrentPath     string          `json:"current_path,omitempty"`
+	LegacyAliases   []string        `json:"legacy_aliases,omitempty"`
 	NoteID          string          `json:"note_id"`
 	Path            string          `json:"path"`
 	Title           string          `json:"title,omitempty"`
@@ -69,14 +79,21 @@ type NoteRecord struct {
 }
 
 type Tombstone struct {
-	NoteID    string   `json:"note_id"`
-	OldPath   string   `json:"old_path"`
-	OldHash   string   `json:"old_hash,omitempty"`
-	Title     string   `json:"title,omitempty"`
-	DeletedAt string   `json:"deleted_at"`
-	Source    string   `json:"source,omitempty"`
-	Evidence  []string `json:"evidence,omitempty"`
-	ExpiresAt string   `json:"expires_at,omitempty"`
+	NoteID        string         `json:"note_id"`
+	ObjectKind    string         `json:"object_kind,omitempty"`
+	ObjectID      string         `json:"object_id,omitempty"`
+	TombstoneID   string         `json:"tombstone_id,omitempty"`
+	OldPath       string         `json:"old_path"`
+	OldHash       string         `json:"old_hash,omitempty"`
+	Title         string         `json:"title,omitempty"`
+	TrashPath     string         `json:"trash_path,omitempty"`
+	RegistryPath  string         `json:"registry_path,omitempty"`
+	RegistryFacts map[string]any `json:"registry_facts,omitempty"`
+	DeletedAt     string         `json:"deleted_at"`
+	RestoredAt    string         `json:"restored_at,omitempty"`
+	Source        string         `json:"source,omitempty"`
+	Evidence      []string       `json:"evidence,omitempty"`
+	ExpiresAt     string         `json:"expires_at,omitempty"`
 }
 
 type RecordIssue struct {

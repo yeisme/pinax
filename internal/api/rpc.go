@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yeisme/pinax/internal/agentprotocol"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
 )
@@ -18,6 +19,7 @@ type RPCDispatcher struct {
 	service    *app.Service
 	vault      string
 	allowWrite bool
+	agentMem   *app.AgentMemoryService
 }
 
 type DispatcherOptions struct {
@@ -29,7 +31,7 @@ func NewRPCDispatcher(service *app.Service, vault string) *RPCDispatcher {
 }
 
 func NewRPCDispatcherWithOptions(service *app.Service, vault string, options DispatcherOptions) *RPCDispatcher {
-	return &RPCDispatcher{service: service, vault: vault, allowWrite: options.AllowWrite}
+	return &RPCDispatcher{service: service, vault: vault, allowWrite: options.AllowWrite, agentMem: app.NewAgentMemoryService()}
 }
 
 func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projection, error) {
@@ -40,6 +42,26 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 			writeMode = "remote_allow_write"
 		}
 		projection, err := d.service.WorkbenchStatus(ctx, app.APIRequest{VaultPath: d.vault, WriteMode: writeMode})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Workbench.Activity.List":
+		projection, err := d.service.ActivityList(ctx, app.ActivityRequest{VaultPath: d.vault, Source: stringParam(req.Params, "source"), Query: stringParam(req.Params, "query"), Status: stringParam(req.Params, "status"), Object: stringParam(req.Params, "object"), Since: stringParam(req.Params, "since"), Until: stringParam(req.Params, "until"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Workbench.Activity.Show":
+		projection, err := d.service.ActivityShow(ctx, app.ActivityRequest{VaultPath: d.vault, EventID: stringParam(req.Params, "event_id")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Monitor.List":
+		projection, err := d.service.MonitorList(ctx, app.MonitorRequest{VaultPath: d.vault, Command: stringParam(req.Params, "command"), Query: stringParam(req.Params, "query"), Status: stringParam(req.Params, "status"), Since: stringParam(req.Params, "since"), Until: stringParam(req.Params, "until"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Monitor.Show":
+		projection, err := d.service.MonitorShow(ctx, app.MonitorRequest{VaultPath: d.vault, RunID: stringParam(req.Params, "run_id")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Monitor.Summary":
+		projection, err := d.service.MonitorSummary(ctx, app.MonitorRequest{VaultPath: d.vault, Command: stringParam(req.Params, "command"), Query: stringParam(req.Params, "query"), Status: stringParam(req.Params, "status"), Since: stringParam(req.Params, "since"), Until: stringParam(req.Params, "until"), Limit: intParam(req.Params, "limit")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.ProjectBoard.Show":
@@ -83,6 +105,33 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		return projection, err
 	case "Pinax.Graph.Summary":
 		projection, err := d.service.GraphSummaryProjection(ctx, d.vault)
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.List":
+		projection, err := d.service.MemoryList(ctx, app.MemoryListRequest{VaultPath: d.vault, Type: stringParam(req.Params, "type"), Entity: stringParam(req.Params, "entity"), IncludeDraft: boolParam(req.Params, "include_draft"), IncludeSuperseded: boolParam(req.Params, "include_superseded"), IncludeExpired: boolParam(req.Params, "include_expired"), IncludeRejected: boolParam(req.Params, "include_rejected"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Capture":
+		if projection, err := d.ensureWriteAllowed("memory.capture", req.Params); err != nil {
+			return projection, err
+		}
+		projection, err := d.service.MemoryCapture(ctx, app.MemoryCaptureRequest{VaultPath: d.vault, Type: stringParam(req.Params, "type"), Subject: stringParam(req.Params, "subject"), Predicate: stringParam(req.Params, "predicate"), Object: stringParam(req.Params, "object"), Body: stringParam(req.Params, "body"), Status: stringParam(req.Params, "status"), Confidence: stringParam(req.Params, "confidence"), Source: stringParam(req.Params, "source"), SourceSpan: stringParam(req.Params, "source_span"), Entities: stringSliceParam(req.Params, "entities"), DryRun: boolParam(req.Params, "dry_run")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Recall":
+		projection, err := d.service.MemoryRecall(ctx, app.MemoryRecallRequest{VaultPath: d.vault, Query: stringParam(req.Params, "query"), Entity: stringParam(req.Params, "entity"), Type: stringParam(req.Params, "type"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Context":
+		query := stringParam(req.Params, "task")
+		if query == "" {
+			query = stringParam(req.Params, "query")
+		}
+		projection, err := d.service.MemoryContext(ctx, app.MemoryRecallRequest{VaultPath: d.vault, Query: query, Entity: stringParam(req.Params, "entity"), Type: stringParam(req.Params, "type"), Limit: intParam(req.Params, "limit")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Memory.Stats":
+		projection, err := d.service.MemoryStats(ctx, app.MemoryListRequest{VaultPath: d.vault})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.ProjectItem.Plan":
@@ -225,6 +274,72 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		projection, err := d.service.SyncPull(ctx, app.SyncRequest{VaultPath: d.vault, Target: stringParam(req.Params, "target"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run"), BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision")})
 		projection.Mode = "json"
 		return projection, err
+	// Agent memory runtime — experimental RPC routes (readonly context + recall).
+	case "Pinax.Agent.Context":
+		pack, err := d.agentMem.AgentContextRuntime(ctx, app.AgentContextRequest{
+			VaultPath: d.vault,
+			Principal: agentprotocol.DefaultAdapterPrincipal("rpc-client", "rpc"),
+			Scope:     agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: stringParam(req.Params, "workspace")},
+			MaxItems:  20,
+			MaxChars:  8000,
+		})
+		projection := domain.NewProjection("agent.context", "Agent context pack compiled via RPC.")
+		projection.Mode = "json"
+		projection.Facts["schema_version"] = pack.SchemaVersion
+		projection.Facts["entry_count"] = fmt.Sprintf("%d", pack.EntryCount())
+		projection.Data = pack
+		return projection, err
+	case "Pinax.Agent.Memory.Recall":
+		results, err := d.agentMem.AgentMemoryRecallQuery(ctx, d.vault, app.RecallQuery{
+			Scope: agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: stringParam(req.Params, "workspace")},
+		})
+		projection := domain.NewProjection("agent.memory.recall", fmt.Sprintf("Recalled %d agent memories via RPC.", len(results)))
+		projection.Mode = "json"
+		projection.Facts["count"] = fmt.Sprintf("%d", len(results))
+		projection.Data = results
+		return projection, err
+	// Agent continuity experience — experimental additive RPC routes (readonly).
+	case "Pinax.Agent.Continuity":
+		pack, err := d.agentMem.AgentContinuity(ctx, app.ContinuityRequest{
+			VaultPath: d.vault,
+			Principal: agentprotocol.DefaultAdapterPrincipal("rpc-client", "rpc"),
+			Scope:     parseRPCScope(req.Params),
+			Task:      stringParam(req.Params, "task"),
+			Intent:    stringParam(req.Params, "intent"),
+			MaxItems:  intParam(req.Params, "max_items"),
+			MaxChars:  intParam(req.Params, "max_chars"),
+		})
+		projection := domain.NewProjection("agent.continuity", "Continuity pack compiled via RPC.")
+		projection.Mode = "json"
+		projection.Facts["schema_version"] = pack.SchemaVersion
+		projection.Facts["section_count"] = fmt.Sprintf("%d", pack.SectionCount())
+		projection.Facts["handoff_status"] = string(pack.HandoffStatus)
+		projection.Facts["experimental"] = "true"
+		projection.Data = pack
+		return projection, err
+	case "Pinax.Agent.Inbox":
+		inbox, err := d.agentMem.MemoryInbox(ctx, app.InboxRequest{
+			VaultPath: d.vault,
+			Scope:     parseRPCScope(req.Params),
+			Limit:     intParam(req.Params, "limit"),
+		})
+		projection := domain.NewProjection("agent.inbox", "Memory inbox aggregated via RPC.")
+		projection.Mode = "json"
+		projection.Facts["total_items"] = fmt.Sprintf("%d", inbox.TotalItems)
+		projection.Facts["high_risk"] = fmt.Sprintf("%d", inbox.HighRiskCount)
+		projection.Facts["experimental"] = "true"
+		projection.Data = inbox
+		return projection, err
+	case "Pinax.Agent.TrustCenter":
+		tc, err := d.agentMem.AgentTrustCenter(ctx, app.TrustCenterRequest{
+			VaultPath: d.vault,
+			Scope:     parseRPCScope(req.Params),
+		})
+		projection := domain.NewProjection("agent.trust_center", "Trust center projection via RPC.")
+		projection.Mode = "json"
+		projection.Facts["experimental"] = "true"
+		projection.Data = tc
+		return projection, err
 	default:
 		err := &domain.CommandError{Code: "rpc_method_not_found", Message: "RPC method not found", Hint: fmt.Sprintf("Check whether pinax api routes includes %s", req.Method)}
 		projection := domain.NewErrorProjection("api.rpc", err)
@@ -234,13 +349,16 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 }
 
 func (d *RPCDispatcher) ensureWriteAllowed(command string, params map[string]any) (domain.Projection, error) {
+	if boolParam(params, "dry_run") {
+		return domain.Projection{}, nil
+	}
 	if !d.allowWrite {
 		err := &domain.CommandError{Code: "write_disabled", Message: "RPC dispatcher is currently read-only", Hint: "Start the API server in allow-write mode and retry"}
 		projection := domain.NewErrorProjection(command, err)
 		projection.Mode = "json"
 		return projection, err
 	}
-	if !boolParam(params, "dry_run") && !boolParam(params, "yes") {
+	if !boolParam(params, "yes") {
 		err := &domain.CommandError{Code: "approval_required", Message: "Remote folder writes require yes=true", Hint: "Preview with dry_run=true first, then append yes=true to confirm"}
 		projection := domain.NewErrorProjection(command, err)
 		projection.Mode = "json"
@@ -330,4 +448,18 @@ func intParam(params map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+// parseRPCScope 解析 RPC params 中的 scope。
+// 支持 "scope" 参数格式 "kind:id"，默认为 workspace:default。
+func parseRPCScope(params map[string]any) agentprotocol.Scope {
+	s := stringParam(params, "scope")
+	if s == "" {
+		return agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "default"}
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) == 2 {
+		return agentprotocol.Scope{Kind: agentprotocol.ScopeKind(parts[0]), ID: parts[1]}
+	}
+	return agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: s}
 }

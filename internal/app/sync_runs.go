@@ -27,12 +27,13 @@ const (
 )
 
 type SyncLogsRequest struct {
-	VaultPath  string
-	RunID      string
-	Limit      int
-	Keep       int
-	MaxAgeDays int
-	Yes        bool
+	VaultPath    string
+	RunID        string
+	Limit        int
+	Keep         int
+	MaxAgeDays   int
+	Yes          bool
+	PollInterval time.Duration
 }
 
 type SyncRunReceipt struct {
@@ -77,6 +78,9 @@ type currentSyncState struct {
 	VaultID            string `json:"vault_id"`
 	DeviceID           string `json:"device_id"`
 	LastSyncedRevision string `json:"last_synced_revision,omitempty"`
+	LastManifestBlobID string `json:"last_manifest_blob_id,omitempty"`
+	LastManifestCache  string `json:"last_manifest_cache,omitempty"`
+	LastKeyID          string `json:"last_key_id,omitempty"`
 	LastSyncRunID      string `json:"last_sync_run_id"`
 	LastDirection      string `json:"last_direction"`
 	LastStatus         string `json:"last_status"`
@@ -88,15 +92,16 @@ type syncRunRecord struct {
 	Path    string         `json:"path"`
 }
 
-func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud.State, pathPolicy string) SyncRunReceipt {
+func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud.State, pathPolicy, target string) SyncRunReceipt {
 	createdAt := time.Now().UTC()
 	runID := "sync_" + createdAt.Format("20060102T150405.000000000")
 	policy := syncops.NormalizePathPolicy(pathPolicy)
+	outputTarget := syncOutputTarget(target)
 	return SyncRunReceipt{
 		SchemaVersion: syncRunSchemaVersion,
 		RunID:         runID,
 		Command:       command,
-		Target:        "cloud",
+		Target:        outputTarget,
 		Direction:     string(direction),
 		Status:        "success",
 		BackendKind:   directBackendKind(state),
@@ -108,7 +113,7 @@ func syncRunStart(command string, direction syncplan.Direction, state pinaxcloud
 		Counts:        map[string]int{},
 		TimingsMS:     map[string]int64{},
 		Actions:       []domain.Action{},
-		Redaction:     SyncRunRedaction{PathPolicy: policy, SecretPolicy: "cloud"},
+		Redaction:     SyncRunRedaction{PathPolicy: policy, SecretPolicy: outputTarget},
 		CreatedAt:     createdAt.Format(time.RFC3339),
 	}
 }
@@ -162,15 +167,29 @@ func writeCurrentSyncState(root string, state pinaxcloud.State, receipt SyncRunR
 	if strings.TrimSpace(syncedRevision) == "" {
 		syncedRevision = previous.LastSyncedRevision
 	}
+	manifestBlobID := strings.TrimSpace(receipt.ManifestBlobID)
+	if manifestBlobID == "" {
+		manifestBlobID = previous.LastManifestBlobID
+	}
+	manifestCache := previous.LastManifestCache
+	if strings.TrimSpace(syncedRevision) != "" {
+		candidate := syncManifestCacheRel(syncedRevision)
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate))); err == nil {
+			manifestCache = candidate
+		}
+	}
 	current := currentSyncState{
 		SchemaVersion:      syncStateSchemaVersion,
-		Target:             "cloud",
+		Target:             syncOutputTarget(receipt.Target),
 		BackendKind:        directBackendKind(state),
 		Endpoint:           syncops.SanitizeString(state.Config.Endpoint),
 		WorkspaceID:        syncops.SanitizeString(state.Config.WorkspaceID),
 		VaultID:            syncVaultID(state, state.Config.WorkspaceID),
 		DeviceID:           syncops.SanitizeString(state.Config.DeviceID),
 		LastSyncedRevision: syncops.SanitizeString(syncedRevision),
+		LastManifestBlobID: syncops.SanitizeString(manifestBlobID),
+		LastManifestCache:  syncops.SanitizeString(manifestCache),
+		LastKeyID:          syncops.SanitizeString(pinaxcloud.KeyID(pinaxcloud.EncryptionSecretRef(state.Config))),
 		LastSyncRunID:      receipt.RunID,
 		LastDirection:      receipt.Direction,
 		LastStatus:         receipt.Status,
@@ -191,7 +210,7 @@ func readCurrentSyncState(root string) (currentSyncState, error) {
 	return state, nil
 }
 
-func finishSyncRun(root string, state pinaxcloud.State, receipt SyncRunReceipt, plan syncplan.Plan, status string, commandErr *domain.CommandError, actions []domain.Action, pathPolicy string, started time.Time) (SyncRunReceipt, string, error) {
+func finishSyncRun(root string, receipt SyncRunReceipt, plan syncplan.Plan, status string, commandErr *domain.CommandError, actions []domain.Action, pathPolicy string, started time.Time) (SyncRunReceipt, string, error) {
 	receipt.Status = status
 	receipt.BaseRevision = syncops.SanitizeString(plan.BaseRevision)
 	receipt.RemoteRevisionBefore = syncops.SanitizeString(plan.RemoteRevision)
@@ -232,9 +251,35 @@ func syncRunCounts(plan syncplan.Plan, base map[string]int) map[string]int {
 }
 
 func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
+	for _, operation := range receipt.Operations {
+		if operation.Kind == "upload_manifest" || operation.Kind == "download_manifest" {
+			continue
+		}
+		facts := map[string]string{
+			"run_id":           receipt.RunID,
+			"command":          receipt.Command,
+			"direction":        receipt.Direction,
+			"backend_kind":     receipt.BackendKind,
+			"kind":             operation.Kind,
+			"operation_status": operation.Status,
+		}
+		for key, value := range map[string]string{
+			"path": operation.Path, "path_hash": operation.PathHash,
+			"from_path": operation.FromPath, "to_path": operation.ToPath,
+			"object_kind": operation.ObjectKind,
+		} {
+			if strings.TrimSpace(value) != "" {
+				facts[key] = value
+			}
+		}
+		if err := appendEvent(root, "sync.file", receipt.Status, facts); err != nil {
+			return err
+		}
+	}
 	facts := map[string]string{
 		"run_id":       receipt.RunID,
 		"command":      receipt.Command,
+		"direction":    receipt.Direction,
 		"backend_kind": receipt.BackendKind,
 		"remote_write": fmt.Sprint(receipt.RemoteWrite),
 		"conflicts":    fmt.Sprint(receipt.Counts["conflicts"]),
@@ -270,19 +315,21 @@ func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, 
 	}
 	started := time.Now()
 	pathPolicy := syncops.NormalizePathPolicy(req.PathPolicy)
-	receipt := syncRunStart(command, direction, state, pathPolicy)
-	plan := syncplan.Plan{SchemaVersion: syncplan.PlanSchemaVersion, Status: "approval_required", Direction: direction, Target: "cloud", DryRun: req.DryRun, RequiresApproval: true, RemoteWrite: false}
+	outputTarget := syncOutputTarget(req.Target)
+	receipt := syncRunStart(command, direction, state, pathPolicy, outputTarget)
+	plan := syncplan.Plan{SchemaVersion: syncplan.PlanSchemaVersion, Status: "approval_required", Direction: direction, Target: outputTarget, DryRun: req.DryRun, RequiresApproval: true, RemoteWrite: false}
 	if projection.Actions == nil {
-		projection.Actions = []domain.Action{{Name: "dry_run", Command: fmt.Sprintf("pinax %s --target cloud --dry-run --vault %s --json", strings.ReplaceAll(command, ".", " "), shellQuote(root))}}
+		projection.Actions = []domain.Action{{Name: "dry_run", Command: fmt.Sprintf("pinax %s --target %s --dry-run --vault %s --json", strings.ReplaceAll(command, ".", " "), outputTarget, shellQuote(root))}}
 	}
-	receipt, receiptPath, finishErr := finishSyncRun(root, state, receipt, plan, "approval_required", commandErr, projection.Actions, pathPolicy, started)
+	receipt, receiptPath, finishErr := finishSyncRun(root, receipt, plan, "approval_required", commandErr, projection.Actions, pathPolicy, started)
 	if finishErr != nil {
 		return finishErr
 	}
 	_ = writeCurrentSyncState(root, state, receipt, "")
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Facts["remote_write"] = "false"
-	projection.Facts["target"] = "cloud"
+	projection.Facts["target"] = outputTarget
+	addCapsaBridgeFacts(projection, req.Target)
 	projection.Evidence = []string{receiptPath}
 	projection.Data = map[string]any{"receipt": receipt}
 	return nil
@@ -343,7 +390,8 @@ func (s *Service) SyncLogsList(_ context.Context, req SyncLogsRequest) (domain.P
 	}
 	projection := domain.NewProjection("sync.logs.list", "Sync run logs listed.")
 	projection.Facts["runs"] = fmt.Sprint(len(records))
-	projection.Data = map[string]any{"schema_version": syncRunSchemaVersion, "runs": receiptSummaries(records)}
+	projection.Facts["limit"] = fmt.Sprint(limit)
+	projection.Data = map[string]any{"schema_version": syncRunSchemaVersion, "runs": receiptSummaries(records), "limit": limit}
 	if len(records) > 0 {
 		projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", records[0].Receipt.RunID, shellQuote(root))}}
 	}
@@ -384,12 +432,13 @@ func (s *Service) SyncLogsTail(_ context.Context, req SyncLogsRequest) (domain.P
 	}
 	projection := domain.NewProjection("sync.logs.tail", "Sync event timeline read.")
 	projection.Facts["events"] = fmt.Sprint(len(events))
+	projection.Facts["limit"] = fmt.Sprint(limit)
 	if len(events) > 0 {
 		if runID, _ := events[len(events)-1]["run_id"].(string); runID != "" {
 			projection.Facts["run_id"] = runID
 		}
 	}
-	projection.Data = map[string]any{"events": events}
+	projection.Data = map[string]any{"events": events, "limit": limit}
 	return projection, nil
 }
 
@@ -487,10 +536,10 @@ func tailSyncEvents(root string, limit int) ([]map[string]any, error) {
 			TS     string            `json:"ts"`
 			Facts  map[string]string `json:"facts"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || event.Type != "sync.run" {
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || (event.Type != "sync.run" && event.Type != "sync.file") {
 			continue
 		}
-		row := map[string]any{"type": event.Type, "status": event.Status, "ts": event.TS}
+		row := map[string]any{"type": event.Type, "status": event.Status, "ts": event.TS, "seq": len(events) + 1}
 		for key, value := range event.Facts {
 			row[key] = value
 		}
@@ -503,4 +552,57 @@ func tailSyncEvents(root string, limit int) ([]map[string]any, error) {
 		events = events[len(events)-limit:]
 	}
 	return events, nil
+}
+
+func (s *Service) SyncLogsFollow(ctx context.Context, req SyncLogsRequest, emit func(map[string]any) error) error {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return err
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	interval := req.PollInterval
+	if interval <= 0 {
+		interval = 250 * time.Millisecond
+	}
+	cursor := 0
+	emitNew := func(events []map[string]any) error {
+		for _, event := range events {
+			seq, _ := event["seq"].(int)
+			if seq <= cursor {
+				continue
+			}
+			if err := emit(event); err != nil {
+				return err
+			}
+			cursor = seq
+		}
+		return nil
+	}
+	initial, err := tailSyncEvents(root, limit)
+	if err != nil {
+		return err
+	}
+	if err := emitNew(initial); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			events, err := tailSyncEvents(root, 10000)
+			if err != nil {
+				return err
+			}
+			if err := emitNew(events); err != nil {
+				return err
+			}
+		}
+	}
 }

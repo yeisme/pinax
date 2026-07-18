@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +63,11 @@ func (s *Service) AppendEvent(ctx context.Context, event domain.RecordEvent) (do
 	if err := ctxErr(ctx); err != nil {
 		return domain.RecordEvent{}, err
 	}
+	normalized, err := normalizeRecordEvent(event)
+	if err != nil {
+		return domain.RecordEvent{}, err
+	}
+	event = normalized
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.Init(ctx); err != nil {
@@ -112,6 +118,19 @@ func (s *Service) AppendEvent(ctx context.Context, event domain.RecordEvent) (do
 	return event, nil
 }
 
+func (s *Service) ReplayReadOnly(ctx context.Context) (domain.LedgerState, error) {
+	if err := ctxErr(ctx); err != nil {
+		return domain.LedgerState{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events, err := s.readEvents()
+	if err != nil {
+		return domain.LedgerState{}, err
+	}
+	return materialize(events)
+}
+
 func (s *Service) Replay(ctx context.Context) (domain.LedgerState, error) {
 	if err := ctxErr(ctx); err != nil {
 		return domain.LedgerState{}, err
@@ -146,18 +165,35 @@ func materialize(events []domain.RecordEvent) (domain.LedgerState, error) {
 }
 
 func applyRecordEvent(state *domain.LedgerState, event domain.RecordEvent) error {
-	if strings.TrimSpace(event.NoteID) == "" {
-		return &domain.CommandError{Code: "record_note_id_required", Message: "record event 缺少 note_id"}
+	normalized, err := normalizeRecordEvent(event)
+	if err != nil {
+		return err
 	}
-	record := state.Records[event.NoteID]
+	event = normalized
+	record := state.Records[event.ObjectID]
+	if event.Kind == domain.RecordEventNoteCreated && record.ObjectID != "" {
+		return &domain.CommandError{Code: "record_object_id_duplicate", Message: "record object id 已存在"}
+	}
+	if record.ObjectKind != "" && record.ObjectKind != event.ObjectKind {
+		return &domain.CommandError{Code: "record_object_kind_mismatch", Message: "record object kind 与既有身份不一致"}
+	}
+	if event.CurrentPath != "" && event.Kind != domain.RecordEventNoteTrashed && event.Kind != domain.RecordEventNoteDeleted {
+		if owner := activeObjectAtPath(state, event.ObjectID, event.CurrentPath); owner != "" && (event.Kind != domain.RecordEventNoteIdentityMigrated || !containsRecordAlias(event.LegacyAliases, owner)) {
+			return &domain.CommandError{Code: "record_path_collision", Message: "record current path 已由其他对象占用"}
+		}
+	}
 	transition := func(lifecycle domain.NoteLifecycle) {
+		record.ObjectID = event.ObjectID
+		record.ObjectKind = event.ObjectKind
 		record.NoteID = event.NoteID
-		if event.Path != "" {
-			record.Path = event.Path
+		if event.CurrentPath != "" {
+			record.CurrentPath = event.CurrentPath
+			record.Path = event.CurrentPath
 		}
 		if event.Title != "" {
 			record.Title = event.Title
 		}
+		record.LegacyAliases = mergeRecordAliases(record.LegacyAliases, event.LegacyAliases, event.ObjectID)
 		record.Lifecycle = lifecycle
 		record.RecordVersion++
 		record.LedgerSeq = event.Seq
@@ -167,7 +203,7 @@ func applyRecordEvent(state *domain.LedgerState, event domain.RecordEvent) error
 		if event.VersionEvidence.Backend != "" {
 			record.VersionEvidence = event.VersionEvidence
 		}
-		state.Records[event.NoteID] = record
+		state.Records[event.ObjectID] = record
 		state.Version.LastSeq = event.Seq
 		state.Version.UpdatedAt = event.CreatedAt
 	}
@@ -196,30 +232,143 @@ func applyRecordEvent(state *domain.LedgerState, event domain.RecordEvent) error
 		if record.NoteID == "" || record.Lifecycle == domain.NoteLifecycleDeleted {
 			return invalidTransition(event, record.Lifecycle)
 		}
+		oldPath := record.Path
+		oldHash := record.ContentRevision.Hash
+		title := record.Title
 		transition(domain.NoteLifecycleTrashed)
+		state.Tombstones[event.ObjectID] = noteTombstone(event, oldPath, oldHash, title, event.TrashPath)
 	case domain.RecordEventNoteDeleted:
 		if record.NoteID == "" || record.Lifecycle == domain.NoteLifecycleDeleted {
 			return invalidTransition(event, record.Lifecycle)
 		}
 		oldPath := record.Path
 		oldHash := record.ContentRevision.Hash
+		title := record.Title
 		transition(domain.NoteLifecycleDeleted)
-		state.Tombstones[event.NoteID] = domain.Tombstone{NoteID: event.NoteID, OldPath: oldPath, OldHash: oldHash, Title: record.Title, DeletedAt: event.CreatedAt, Source: string(event.Kind), Evidence: event.Evidence}
+		state.Tombstones[event.ObjectID] = noteTombstone(event, oldPath, oldHash, title, "")
 	case domain.RecordEventNoteRestored:
 		if record.NoteID == "" || record.Lifecycle != domain.NoteLifecycleDeleted && record.Lifecycle != domain.NoteLifecycleTrashed {
 			return invalidTransition(event, record.Lifecycle)
 		}
 		transition(domain.NoteLifecycleActive)
-		delete(state.Tombstones, event.NoteID)
+		delete(state.Tombstones, event.ObjectID)
 	case domain.RecordEventNoteMetadataUpdated:
 		if record.NoteID == "" || record.Lifecycle == domain.NoteLifecycleDeleted {
 			return invalidTransition(event, record.Lifecycle)
 		}
 		transition(record.Lifecycle)
+	case domain.RecordEventNoteIdentityMigrated:
+		for _, alias := range event.LegacyAliases {
+			legacy := state.Records[alias]
+			if legacy.ObjectID == "" {
+				continue
+			}
+			if record.ObjectID == "" {
+				record = legacy
+			}
+			delete(state.Records, alias)
+		}
+		transition(domain.NoteLifecycleActive)
 	default:
 		return &domain.CommandError{Code: "record_event_kind_invalid", Message: "record event kind 不受支持"}
 	}
 	return nil
+}
+
+func noteTombstone(event domain.RecordEvent, oldPath, oldHash, title, trashPath string) domain.Tombstone {
+	objectID := strings.TrimSpace(event.ObjectID)
+	tombstoneID := "trash_" + sanitizeRecordToken(objectID)
+	return domain.Tombstone{NoteID: event.NoteID, ObjectKind: event.ObjectKind, ObjectID: objectID, TombstoneID: tombstoneID, OldPath: oldPath, OldHash: oldHash, Title: title, TrashPath: strings.TrimSpace(trashPath), DeletedAt: event.CreatedAt, Source: string(event.Kind), Evidence: event.Evidence}
+}
+
+func normalizeRecordEvent(event domain.RecordEvent) (domain.RecordEvent, error) {
+	objectID := strings.TrimSpace(event.ObjectID)
+	noteID := strings.TrimSpace(event.NoteID)
+	if objectID == "" {
+		objectID = noteID
+	}
+	if objectID == "" {
+		return domain.RecordEvent{}, &domain.CommandError{Code: "record_object_id_required", Message: "record event 缺少 object_id"}
+	}
+	if noteID != "" && noteID != objectID {
+		return domain.RecordEvent{}, &domain.CommandError{Code: "record_object_id_mismatch", Message: "record object_id 与 note_id 不一致"}
+	}
+	objectKind := strings.TrimSpace(event.ObjectKind)
+	if objectKind == "" {
+		objectKind = "note"
+	}
+	currentPath := strings.TrimSpace(event.CurrentPath)
+	path := strings.TrimSpace(event.Path)
+	if currentPath == "" {
+		currentPath = path
+	}
+	if currentPath != "" && path != "" && currentPath != path {
+		return domain.RecordEvent{}, &domain.CommandError{Code: "record_current_path_mismatch", Message: "record current_path 与 path 不一致"}
+	}
+	event.ObjectID = objectID
+	event.ObjectKind = objectKind
+	event.CurrentPath = currentPath
+	event.NoteID = objectID
+	event.Path = currentPath
+	event.LegacyAliases = mergeRecordAliases(nil, event.LegacyAliases, objectID)
+	return event, nil
+}
+
+func activeObjectAtPath(state *domain.LedgerState, objectID, currentPath string) string {
+	for candidateID, candidate := range state.Records {
+		if candidateID == objectID || candidate.CurrentPath != currentPath && candidate.Path != currentPath {
+			continue
+		}
+		if candidate.Lifecycle != domain.NoteLifecycleDeleted && candidate.Lifecycle != domain.NoteLifecycleTrashed {
+			return candidateID
+		}
+	}
+	return ""
+}
+
+func containsRecordAlias(aliases []string, objectID string) bool {
+	for _, alias := range aliases {
+		if strings.TrimSpace(alias) == objectID {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeRecordAliases(existing, incoming []string, objectID string) []string {
+	seen := map[string]bool{strings.TrimSpace(objectID): true}
+	merged := make([]string, 0, len(existing)+len(incoming))
+	for _, aliases := range [][]string{existing, incoming} {
+		for _, alias := range aliases {
+			alias = strings.TrimSpace(alias)
+			if alias == "" || seen[alias] {
+				continue
+			}
+			seen[alias] = true
+			merged = append(merged, alias)
+		}
+	}
+	sort.Strings(merged)
+	return merged
+}
+
+func sanitizeRecordToken(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "note"
+	}
+	var b strings.Builder
+	for _, r := range trimmed {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('_')
+	}
+	if b.Len() == 0 {
+		return "note"
+	}
+	return b.String()
 }
 
 func invalidTransition(event domain.RecordEvent, current domain.NoteLifecycle) error {

@@ -81,7 +81,7 @@ func isPublishBinaryContent(body []byte) bool {
 }
 
 func scanFinding(class redaction.SensitiveClass, path string, size int64, hash []byte, binary bool) domain.PublishScanFinding {
-	return domain.PublishScanFinding{Class: publishViolationClassForSensitive(class), Path: path, Severity: "blocking", Message: publishScanMessage(class, binary), Size: size, SHA256: hex.EncodeToString(hash), Binary: binary}
+	return domain.PublishScanFinding{Class: publishViolationClassForSensitive(class), Path: path, Severity: "blocking", Message: publishScanMessage(binary), Size: size, SHA256: hex.EncodeToString(hash), Binary: binary}
 }
 
 func appendScanFinding(findings []domain.PublishScanFinding, seen map[string]bool, finding domain.PublishScanFinding) []domain.PublishScanFinding {
@@ -114,7 +114,7 @@ func publishViolationClassForSensitive(class redaction.SensitiveClass) domain.Pu
 	}
 }
 
-func publishScanMessage(class redaction.SensitiveClass, binary bool) string {
+func publishScanMessage(binary bool) string {
 	if binary {
 		// 二进制命中只记录路径、大小和 hash，避免把不可审查的原始字节写入任何发布面。
 		return "Publish output path matched a blocked sensitive pattern; binary content was not echoed"

@@ -57,7 +57,7 @@ func (l *Loop) RunOnceWithTrigger(ctx context.Context, localDirty bool, knownRem
 			state.LastErrorCode = errorCode(err)
 			next := l.Backoff.Next(time.Now().UTC())
 			state.NextRetryAt = next.Format(time.RFC3339)
-			state.Message = err.Error()
+			state.Message = daemonErrorMessage(err, state.LastErrorCode)
 			_ = l.Repo.WriteState(state)
 			l.emit(SyncDaemonEvent{Type: "poll_failed", Status: state.Status, ErrorCode: state.LastErrorCode, Message: state.Message}, trigger, cycleID)
 			l.emit(SyncDaemonEvent{Type: "sync_failed", Status: state.Status, ErrorCode: state.LastErrorCode, Message: state.Message, DurationMS: time.Since(started).Milliseconds()}, trigger, cycleID)
@@ -75,7 +75,7 @@ func (l *Loop) RunOnceWithTrigger(ctx context.Context, localDirty bool, knownRem
 		cancel()
 		if err != nil {
 			state.LastErrorCode = errorCode(err)
-			state.Message = err.Error()
+			state.Message = daemonErrorMessage(err, state.LastErrorCode)
 			if state.LastErrorCode == "conflict_required" {
 				state.Status = StatusConflict
 			} else {
@@ -97,7 +97,7 @@ func (l *Loop) RunOnceWithTrigger(ctx context.Context, localDirty bool, knownRem
 		cancel()
 		if err != nil {
 			state.LastErrorCode = errorCode(err)
-			state.Message = err.Error()
+			state.Message = daemonErrorMessage(err, state.LastErrorCode)
 			if state.LastErrorCode == "REVISION_CONFLICT" || state.LastErrorCode == "revision_conflict" {
 				state.Status = StatusDegraded
 				state.LocalDirty = true
@@ -158,6 +158,9 @@ func errorCode(err error) string {
 		return ""
 	}
 	message := err.Error()
+	if strings.Contains(strings.ToLower(message), "key id mismatch") {
+		return "encryption_key_mismatch"
+	}
 	for _, code := range []string{"conflict_required", "REVISION_CONFLICT", "revision_conflict", "transport_unavailable", "poll_unsupported", "lock_held"} {
 		if strings.Contains(message, code) {
 			return code
@@ -168,4 +171,11 @@ func errorCode(err error) string {
 		return coded.Code()
 	}
 	return "sync_daemon_error"
+}
+
+func daemonErrorMessage(err error, code string) string {
+	if code == "encryption_key_mismatch" {
+		return "encryption key mismatch; restore the previous encryption secret or explicitly re-encrypt after verifying the remote state"
+	}
+	return err.Error()
 }

@@ -94,9 +94,20 @@ func TestKBProviderListAndDoctorContracts(t *testing.T) {
 	}
 
 	agentOut := runCLI(t, "kb", "provider", "list", "--vault", root, "--agent")
-	for _, want := range []string{"command=kb.provider.list", "fact.providers=4", "fact.default_provider=gemini"} {
+	for _, want := range []string{"command=kb.provider.list", "fact.providers=4", "fact.default_provider=gemini", "provider.4.name=fake", "provider.4.default_model=fake-hash-v1", "provider.4.configured=true"} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("provider list agent missing %q:\n%s", want, agentOut)
+		}
+	}
+	defaultListOut := runCLI(t, "kb", "provider", "list", "--vault", root)
+	for _, want := range []string{"Providers", "Provider", "Model", "Configured", "Credential", "Local only", "gemini", "openai", "ollama", "fake", "fake-hash-v1", "env:OPENAI_API_KEY"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("provider list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	for _, forbidden := range []string{"sk-", "Authorization", "Bearer"} {
+		if strings.Contains(defaultListOut, forbidden) {
+			t.Fatalf("provider list default output leaked %q:\n%s", forbidden, defaultListOut)
 		}
 	}
 

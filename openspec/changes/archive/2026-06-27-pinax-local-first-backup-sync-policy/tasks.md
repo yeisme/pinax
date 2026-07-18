@@ -1,0 +1,7 @@
+## 1. Policy Sync
+
+- [x] 1.1 Owner: `cli/pinax`; Lane: sequential; Depends on: none; Scope: 审核 Pinax sync/storage docs/spec。Acceptance: `rg -n "S3 direct|Cloud Sync|sync daemon|rclone|server-side auth|audit" docs openspec/specs/pinax-cloud-sync/spec.md`。Expected: 找到 direct transport、Cloud Sync 和 daemon 边界。Failure re-check: 如 docs 分散在 archived change，更新 active docs/spec。Result: pass，现有 docs/spec 已覆盖 direct transport、Cloud Sync server transport、rclone、server-side auth/audit 和 sync daemon 边界。
+
+- [x] 1.2 Owner: `cli/pinax`; Lane: sequential; Depends on: 1.1; Scope: 同步 local-first policy wording。Acceptance: `rg -n "backup mirror|S3 direct|Pinax Cloud|daemon|conflict|separate OpenSpec" docs openspec/specs/pinax-cloud-sync/spec.md openspec/changes/pinax-local-first-backup-sync-policy/specs/pinax-cloud-sync/spec.md`。Expected: 命中 direct/cloud/daemon 三类边界。Failure re-check: 如果触及协议字段或 daemon 行为，拆到对应 change。Result: pass，已同步 backup mirror、S3 direct、Pinax Cloud server transport、daemon、conflict 和 separate OpenSpec 边界措辞；未修改协议字段或 daemon 行为。
+
+- [x] 1.3 Owner: `cli/pinax`; Lane: sequential; Depends on: 1.2; Scope: 验证 OpenSpec。Acceptance: `openspec validate pinax-local-first-backup-sync-policy --strict && openspec validate --all --strict`。Expected: validation passed。Failure re-check: 修复 delta requirement 格式或 capability 名称后重跑。Result: pass，`openspec validate pinax-local-first-backup-sync-policy --strict` valid；`openspec validate --all --strict` 53 passed, 0 failed。

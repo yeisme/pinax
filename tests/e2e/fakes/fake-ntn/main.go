@@ -6,9 +6,15 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "status" {
-		fmt.Println(`{"status":"ok","provider":"notion"}`)
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "doctor", "preflight", "status":
+			fmt.Println(`{"status":"ok","provider":"notion"}`)
+			return
+		case "create", "update":
+			fmt.Println(`{"status":"ok","id":"fake_notion_page","url":"https://example.test/notion/fake_notion_page"}`)
+			return
+		}
 	}
 
 	hasEvents := false

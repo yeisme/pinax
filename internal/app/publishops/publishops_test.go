@@ -131,6 +131,28 @@ func TestScanPublishTreeFindsLeaksWithoutEchoingSensitiveContent(t *testing.T) {
 	}
 }
 
+func TestPublishBundleScanFindsNestedJSONAndHTMLLeaks(t *testing.T) {
+	root := t.TempDir()
+	writePublishOpsFile(t, root, "bundle/notes.json", `{"notes":[{"body":"token=RAW_JSON_TOKEN","nested":{"payload":"provider_payload RAW_PROVIDER_PAYLOAD"}}]}`)
+	writePublishOpsFile(t, root, "bundle/index.html", "<p>Authorization: Bearer RAW_HTML_TOKEN</p><p>private body RAW_PRIVATE_BODY</p>")
+	writePublishOpsFile(t, root, "bundle/.pinax/internal.json", `{"ok":true}`)
+
+	report, err := ScanPublishTree(filepath.Join(root, "bundle"))
+	if err != nil {
+		t.Fatalf("scan bundle tree: %v", err)
+	}
+	for _, class := range []domain.PublishViolationClass{domain.PublishViolationSecretPattern, domain.PublishViolationProviderPayload, domain.PublishViolationAuthorizationHeader, domain.PublishViolationPrivateBodyLeak, domain.PublishViolationPinaxInternalRef} {
+		if !hasTreeFinding(report.Findings, class) {
+			t.Fatalf("expected %s finding, got %#v", class, report.Findings)
+		}
+	}
+	for _, finding := range report.Findings {
+		if containsAny(finding.Message, []string{"RAW_JSON_TOKEN", "RAW_PROVIDER_PAYLOAD", "RAW_HTML_TOKEN", "RAW_PRIVATE_BODY"}) {
+			t.Fatalf("finding message leaked sensitive content: %#v", finding)
+		}
+	}
+}
+
 func TestWriteRedactedEvidenceCoversPublishSurfaces(t *testing.T) {
 	root := t.TempDir()
 	writePublishOpsFile(t, root, "staging/content/index.md", "token=RAW_STAGING_TOKEN\n")

@@ -60,6 +60,29 @@ func TestLedgerRejectsIllegalLifecycleTransition(t *testing.T) {
 	}
 }
 
+func TestLedgerTrashedNoteMaterializesTombstone(t *testing.T) {
+	root := t.TempDir()
+	svc := NewService(root)
+	if err := svc.Init(context.Background()); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if _, err := svc.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "create", NoteID: "note_a", Path: "notes/a.md", Title: "A", ContentRevision: domain.ContentRevision{Hash: "h1", Size: 12}}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteTrashed, IdempotencyKey: "trash", NoteID: "note_a", Path: "notes/a.md", TrashPath: ".pinax/trash/20260708/notes/a.md"}); err != nil {
+		t.Fatalf("trash: %v", err)
+	}
+	state, err := svc.Replay(context.Background())
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	record := state.Records["note_a"]
+	tombstone := state.Tombstones["note_a"]
+	if record.Lifecycle != domain.NoteLifecycleTrashed || tombstone.ObjectKind != "note" || tombstone.ObjectID != "note_a" || tombstone.OldPath != "notes/a.md" || tombstone.TrashPath == "" {
+		t.Fatalf("trashed state record=%#v tombstone=%#v", record, tombstone)
+	}
+}
+
 func TestLedgerMetadataUpdateMaterializesExistingRecord(t *testing.T) {
 	root := t.TempDir()
 	svc := NewService(root)
@@ -144,4 +167,126 @@ func countJSONLLines(t *testing.T, path string) int {
 		}
 	}
 	return count
+}
+
+func TestLedgerMaterializesObjectIdentityAcrossRename(t *testing.T) {
+	root := t.TempDir()
+	service := NewService(root)
+	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
+	_, err := service.AppendEvent(context.Background(), domain.RecordEvent{
+		Kind:           domain.RecordEventNoteCreated,
+		IdempotencyKey: "create:" + objectID,
+		ObjectID:       objectID,
+		ObjectKind:     "note",
+		CurrentPath:    "notes/original.md",
+		Title:          "Original",
+		LegacyAliases:  []string{"note_legacy"},
+		ContentRevision: domain.ContentRevision{
+			Hash: "h1",
+			Size: 12,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create object event: %v", err)
+	}
+	_, err = service.AppendEvent(context.Background(), domain.RecordEvent{
+		Kind:           domain.RecordEventNoteRenamed,
+		IdempotencyKey: "rename:" + objectID,
+		ObjectID:       objectID,
+		ObjectKind:     "note",
+		OldPath:        "notes/original.md",
+		CurrentPath:    "notes/renamed.md",
+		Title:          "Renamed",
+		ContentRevision: domain.ContentRevision{
+			Hash: "h2",
+			Size: 14,
+		},
+	})
+	if err != nil {
+		t.Fatalf("rename object event: %v", err)
+	}
+
+	state, err := service.Replay(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, ok := state.Records[objectID]
+	if !ok {
+		t.Fatalf("record missing for object %q", objectID)
+	}
+	if record.ObjectID != objectID || record.NoteID != objectID || record.ObjectKind != "note" {
+		t.Fatalf("identity fields = %#v", record)
+	}
+	if record.CurrentPath != "notes/renamed.md" || record.Path != record.CurrentPath {
+		t.Fatalf("locator fields = %#v", record)
+	}
+	if len(record.LegacyAliases) != 1 || record.LegacyAliases[0] != "note_legacy" {
+		t.Fatalf("legacy aliases = %#v", record.LegacyAliases)
+	}
+	if record.RecordVersion != 2 || record.ContentRevision.Hash != "h2" {
+		t.Fatalf("record version/revision = %#v", record)
+	}
+}
+
+func TestLedgerRejectsDuplicateObjectCreate(t *testing.T) {
+	root := t.TempDir()
+	service := NewService(root)
+	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
+	if _, err := service.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "create:first", ObjectID: objectID, ObjectKind: "note", CurrentPath: "notes/a.md"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := service.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "create:second", ObjectID: objectID, ObjectKind: "note", CurrentPath: "notes/a-copy.md"})
+	if err == nil || domain.ErrorCode(err) != "record_object_id_duplicate" {
+		t.Fatalf("duplicate create error = %v", err)
+	}
+}
+
+func TestLedgerRejectsPathCollisionBetweenObjects(t *testing.T) {
+	root := t.TempDir()
+	service := NewService(root)
+	if _, err := service.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "create:a", ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0103", ObjectKind: "note", CurrentPath: "notes/shared.md"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := service.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "create:b", ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0104", ObjectKind: "note", CurrentPath: "notes/shared.md"})
+	if err == nil || domain.ErrorCode(err) != "record_path_collision" {
+		t.Fatalf("path collision error = %v", err)
+	}
+}
+
+func TestLedgerReplayReadOnlyDoesNotInitializeOrRewriteState(t *testing.T) {
+	root := t.TempDir()
+	state, err := NewService(root).ReplayReadOnly(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Records) != 0 || state.Version.LastSeq != 0 {
+		t.Fatalf("state = %#v", state)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".pinax")); !os.IsNotExist(err) {
+		t.Fatalf("read-only replay initialized ledger: %v", err)
+	}
+}
+
+func TestLedgerIdentityMigrationRekeysLegacyRecord(t *testing.T) {
+	root := t.TempDir()
+	service := NewService(root)
+	legacyID := "note_legacy"
+	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
+	if _, err := service.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteCreated, IdempotencyKey: "legacy:create", ObjectID: legacyID, ObjectKind: "note", CurrentPath: "notes/a.md"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AppendEvent(context.Background(), domain.RecordEvent{Kind: domain.RecordEventNoteIdentityMigrated, IdempotencyKey: "legacy:migrate", ObjectID: objectID, ObjectKind: "note", CurrentPath: "notes/a.md", LegacyAliases: []string{legacyID}}); err != nil {
+		t.Fatal(err)
+	}
+	state, err := service.ReplayReadOnly(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := state.Records[legacyID]; exists {
+		t.Fatalf("legacy record still exists: %#v", state.Records)
+	}
+	record := state.Records[objectID]
+	if record.ObjectID != objectID || record.CurrentPath != "notes/a.md" || len(record.LegacyAliases) != 1 || record.LegacyAliases[0] != legacyID {
+		t.Fatalf("record = %#v", record)
+	}
 }

@@ -8,6 +8,9 @@ __pycache__/
 .env.*
 tmp/
 *.log
+/fake-lark-cli
+/pinax
+/integrationevidence
 
 # Demo vault fixture: keep minimal machine-readable config + empty events log
 # so pinax vault validate passes out of the box, but never commit runtime

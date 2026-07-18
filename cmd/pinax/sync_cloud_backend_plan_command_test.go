@@ -12,12 +12,38 @@ import (
 	"time"
 )
 
+func TestSyncSubcommandsDefaultToCapsaCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+
+	defaultDiff := runCLI(t, "sync", "diff", "--vault", root, "--json")
+	if !strings.Contains(defaultDiff, `"command":"sync.diff"`) || !strings.Contains(defaultDiff, `"target":"capsa"`) || !strings.Contains(defaultDiff, `"backend_required":"true"`) || !strings.Contains(defaultDiff, `"sync_platform":"capsa"`) {
+		t.Fatalf("sync diff default target should be capsa:\n%s", defaultDiff)
+	}
+	gitDiff := runCLI(t, "sync", "diff", "--target", "git", "--vault", root, "--json")
+	if !strings.Contains(gitDiff, `"target":"git"`) || strings.Contains(gitDiff, `"backend_required":"true"`) {
+		t.Fatalf("sync diff explicit git target should stay available:\n%s", gitDiff)
+	}
+	pushOut, pushErr := runCLIExpectError("sync", "push", "--vault", root, "--json")
+	if pushErr == nil || !strings.Contains(pushOut, `"command":"sync.push"`) || !strings.Contains(pushOut, `"code":"approval_required"`) {
+		t.Fatalf("sync push default target should require Capsa approval err=%v out=%s", pushErr, pushOut)
+	}
+	pullOut, pullErr := runCLIExpectError("sync", "pull", "--vault", root, "--json")
+	if pullErr == nil || !strings.Contains(pullOut, `"command":"sync.pull"`) || !strings.Contains(pullOut, `"code":"approval_required"`) {
+		t.Fatalf("sync pull default target should require Capsa approval err=%v out=%s", pullErr, pullOut)
+	}
+	legacyDiff := runCLI(t, "sync", "diff", "--target", "cloud", "--vault", root, "--json")
+	if !strings.Contains(legacyDiff, `"target":"cloud"`) || !strings.Contains(legacyDiff, `"legacy_target":"cloud"`) || !strings.Contains(legacyDiff, `"sync_platform":"capsa"`) {
+		t.Fatalf("sync diff legacy cloud target should bridge to Capsa:\n%s", legacyDiff)
+	}
+}
+
 func TestBackendProviderCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
 	help := runCLI(t, "backend", "--help")
-	for _, want := range []string{"list", "add", "show", "doctor", "capabilities", "diff", "push", "pull", "remove", "object"} {
+	for _, want := range []string{"list", "add", "show", "doctor", "capabilities", "remove", "object"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("backend help missing %q:\n%s", want, help)
 		}
@@ -86,6 +112,18 @@ func TestBackendProviderCLI(t *testing.T) {
 	if statusEnvelope["command"] != "backend.show" {
 		t.Fatalf("backend show envelope = %#v", statusEnvelope)
 	}
+	statusHuman := runCLI(t, "backend", "show", "work-s3", "--vault", root)
+	for _, want := range []string{"Backend details", "Name", "Kind", "Bucket", "Region", "Credential", "work-s3", "notes", "us-east-1", "aws_profile:work"} {
+		if !strings.Contains(statusHuman, want) {
+			t.Fatalf("backend show human output missing %q:\n%s", want, statusHuman)
+		}
+	}
+	statusAgent := runCLI(t, "backend", "show", "work-s3", "--vault", root, "--agent")
+	for _, want := range []string{"command=backend.show", "backend_detail.name=work-s3", "backend_detail.kind=s3", "backend_detail.bucket=notes", "backend_detail.region=us-east-1", "backend_detail.credential_source=aws_profile:work"} {
+		if !strings.Contains(statusAgent, want) {
+			t.Fatalf("backend show agent output missing %q:\n%s", want, statusAgent)
+		}
+	}
 
 	// backend doctor
 	doctorOut := runCLI(t, "backend", "doctor", "work-s3", "--vault", root, "--json")
@@ -98,33 +136,17 @@ func TestBackendProviderCLI(t *testing.T) {
 	}
 
 	// backend capabilities
+	capHuman := runCLI(t, "backend", "capabilities", "work-s3", "--vault", root)
+	for _, want := range []string{"Backend capabilities", "Capability", "Supported", "list", "dry_run", "true"} {
+		if !strings.Contains(capHuman, want) {
+			t.Fatalf("backend capabilities human output missing %q:\n%s", want, capHuman)
+		}
+	}
 	capOut := runCLI(t, "backend", "capabilities", "work-s3", "--vault", root, "--agent")
-	for _, want := range []string{"command=backend.capabilities", "status=success", "fact.name=work-s3", "fact.kind=s3"} {
+	for _, want := range []string{"command=backend.capabilities", "status=success", "fact.name=work-s3", "fact.kind=s3", "capability.1.name=list", "capability.1.supported=true"} {
 		if !strings.Contains(capOut, want) {
 			t.Fatalf("backend capabilities agent output missing %q:\n%s", want, capOut)
 		}
-	}
-
-	// backend diff
-	diffOut := runCLI(t, "backend", "diff", "work-s3", "--vault", root, "--json")
-	var diffEnvelope map[string]any
-	if err := json.Unmarshal([]byte(diffOut), &diffEnvelope); err != nil {
-		t.Fatalf("backend diff json invalid: %v\n%s", err, diffOut)
-	}
-	if diffEnvelope["command"] != "backend.diff" {
-		t.Fatalf("backend diff envelope = %#v", diffEnvelope)
-	}
-
-	// backend push dry-run
-	pushDryRun := runCLI(t, "backend", "push", "work-s3", "--dry-run", "--vault", root, "--json")
-	if !strings.Contains(pushDryRun, "backend.push") || !strings.Contains(pushDryRun, `"dry_run":true`) {
-		t.Fatalf("backend push dry-run output invalid:\n%s", pushDryRun)
-	}
-
-	// backend push without approval
-	pushFail, err := runCLIExpectError("backend", "push", "work-s3", "--vault", root, "--json")
-	if err == nil || !strings.Contains(pushFail, "approval_required") {
-		t.Fatalf("backend push without approval err=%v out=%s", err, pushFail)
 	}
 
 	// backend add rclone
@@ -172,10 +194,29 @@ func TestBackendProviderCLI(t *testing.T) {
 		t.Fatalf("backend show not found err=%v out=%s", err, notFound)
 	}
 
-	// legacy storage compatibility: storage commands still work
-	storageOut := runCLI(t, "storage", "set-s3", "--bucket", "legacy-bucket", "--region", "us-east-1", "--vault", root, "--json")
+	// storage set s3 primary command
+	storageOut := runCLI(t, "storage", "set", "s3", "--bucket", "legacy-bucket", "--region", "us-east-1", "--vault", root, "--json")
 	if !strings.Contains(storageOut, "storage.set_s3") {
-		t.Fatalf("storage set-s3 still works:\n%s", storageOut)
+		t.Fatalf("storage set s3 primary command works:\n%s", storageOut)
+	}
+}
+
+func TestBackendDoctorIssueOutputCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, ".pinax", "backends.json"), `{"schema_version":"pinax.backends.v1","default_backend":"broken-s3","backends":[{"name":"broken-s3","kind":"s3","bucket":"notes","capabilities":["doctor"]}]}`)
+
+	humanOut := runCLI(t, "backend", "doctor", "broken-s3", "--vault", root)
+	for _, want := range []string{"Backend issues", "Code", "Path", "Message", "missing_region", ".pinax/backends.json", "S3 backend is missing region"} {
+		if !strings.Contains(humanOut, want) {
+			t.Fatalf("backend doctor human output missing %q:\n%s", want, humanOut)
+		}
+	}
+	agentOut := runCLI(t, "backend", "doctor", "broken-s3", "--vault", root, "--agent")
+	for _, want := range []string{"command=backend.doctor", "status=partial", "fact.issues=1", "issue.1.code=missing_region", "issue.1.path=.pinax/backends.json", `issue.1.message="S3 backend is missing region"`} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("backend doctor agent output missing %q:\n%s", want, agentOut)
+		}
 	}
 }
 
@@ -196,6 +237,18 @@ func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
 	dryFacts := dryEnvelope["facts"].(map[string]any)
 	if dryFacts["source"] != "taskbridge" || dryFacts["captured_at"] != "2026-06-21T15:30:00Z" || dryFacts["target_note"] != "daily/2026-06-21.md" {
 		t.Fatalf("dry-run facts = %#v", dryFacts)
+	}
+	dailySummary := runCLI(t, "plan", "daily", "--taskbridge", "--dry-run", "--vault", root)
+	for _, want := range []string{"Planning selected tasks", "Task ID", "Title", "Section", "task_cli_1", "CLI task", "task_cli_2", "CLI deferred task"} {
+		if !strings.Contains(dailySummary, want) {
+			t.Fatalf("plan daily taskbridge summary missing %q:\n%s", want, dailySummary)
+		}
+	}
+	dailyAgent := runCLI(t, "plan", "daily", "--taskbridge", "--dry-run", "--vault", root, "--agent")
+	for _, want := range []string{"plan_task.1.task_id=task_cli_1", `plan_task.1.title="CLI task"`, "plan_task.1.section_id=must_do", "plan_task.2.task_id=task_cli_2", `plan_task.2.title="CLI deferred task"`, "plan_task.2.section_id=at_risk"} {
+		if !strings.Contains(dailyAgent, want) {
+			t.Fatalf("plan daily taskbridge agent output missing %q:\n%s", want, dailyAgent)
+		}
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "daily", "2026-06-21.md")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("dry-run should not create daily note, stat=%v", statErr)
@@ -225,6 +278,18 @@ func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
 	actionsFacts := actionsEnvelope["facts"].(map[string]any)
 	if actionsFacts["source"] != "taskbridge" || actionsFacts["tasks"] != "1" || actionsFacts["saved_path"] == "" {
 		t.Fatalf("taskbridge actions facts = %#v", actionsFacts)
+	}
+	actionsSummary := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--vault", root)
+	for _, want := range []string{"Action draft tasks", "Task ID", "Kind", "Reason", "task_cli_2", "defer", "selected 2 TaskBridge commitments"} {
+		if !strings.Contains(actionsSummary, want) {
+			t.Fatalf("plan actions taskbridge summary missing %q:\n%s", want, actionsSummary)
+		}
+	}
+	actionsAgent := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--vault", root, "--agent")
+	for _, want := range []string{"action_task.1.task_id=task_cli_2", "action_task.1.kind=defer", `action_task.1.reason="selected 2 TaskBridge commitments for today's plan"`, "action_task.1.requires_confirmation=true"} {
+		if !strings.Contains(actionsAgent, want) {
+			t.Fatalf("plan actions taskbridge agent output missing %q:\n%s", want, actionsAgent)
+		}
 	}
 	draft := readCLIFile(t, filepath.Join(root, actionsFacts["saved_path"].(string)))
 	if !strings.Contains(draft, `"task_id": "task_cli_2"`) || strings.Contains(draft, "--confirm") {
@@ -283,16 +348,16 @@ func TestCloudOutputContractModes(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nsecret-token body\n")
-	runCLI(t, "cloud", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "op://pinax/cloud-token", "--vault", root, "--json")
-	agentOut := runCLI(t, "cloud", "status", "--vault", root, "--agent")
-	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=cloud.status", "status=success", "fact.configured=true", "fact.session_status=active"} {
+	runCLI(t, "capsa", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "op://pinax/cloud-token", "--vault", root, "--json")
+	agentOut := runCLI(t, "capsa", "status", "--vault", root, "--agent")
+	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=capsa.status", "status=success", "fact.configured=true", "fact.session_status=active"} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("cloud status --agent missing %q:\n%s", want, agentOut)
 		}
 	}
 	assertMachineOutputClean(t, agentOut)
-	eventsOut := runCLI(t, "cloud", "doctor", "--vault", root, "--events")
-	assertNDJSONEvents(t, eventsOut, "cloud.doctor")
+	eventsOut := runCLI(t, "capsa", "doctor", "--vault", root, "--events")
+	assertNDJSONEvents(t, eventsOut, "capsa.doctor")
 	assertMachineOutputClean(t, eventsOut)
 	explainOut := runCLI(t, "sync", "push", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root, "--explain")
 	if !strings.Contains(explainOut, "Conclusion") || !strings.Contains(explainOut, "Evidence") || strings.Contains(explainOut, "secret-token") || strings.Contains(explainOut, "cloud-token") {
@@ -313,7 +378,7 @@ func TestSyncRunReceiptsLogsStatusAndRedactionCLI(t *testing.T) {
 	forbidden := []string{"PLAINTEXT_NOTE_BODY", "raw-secret-path.md", "raw-token-123", "Authorization", "Cookie", "op://pinax/secret-ref", "provider payload", "provider stderr"}
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, rawPath), "# Secret\n\nPLAINTEXT_NOTE_BODY Authorization: Bearer raw-token-123 Cookie: session=abc provider payload provider stderr\n")
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+objectRoot, "--workspace", "ws_secret", "--device", "dev_secret", "--secret-ref", "op://pinax/secret-ref", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "ws_secret", "--device", "dev_secret", "--secret-ref", "op://pinax/secret-ref", "--vault", root, "--json")
 
 	stdout, stderr, err := runCLISeparate("sync", "push", "--target", "cloud", "--yes", "--path-policy", "hash", "--vault", root, "--json")
 	if err != nil || stderr != "" {
@@ -399,7 +464,7 @@ func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nbody\n")
-	runCLI(t, "cloud", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws", "--device", "dev", "--secret-ref", "env://PINAX_SECRET", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws", "--device", "dev", "--secret-ref", "env://PINAX_SECRET", "--vault", root, "--json")
 
 	approvalOut, approvalErr := runCLIExpectError("sync", "push", "--target", "cloud", "--vault", root, "--json")
 	if approvalErr == nil || !strings.Contains(approvalOut, "approval_required") {
@@ -423,6 +488,18 @@ func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
 	preview := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--vault", root, "--json")
 	if !strings.Contains(preview, "\"dry_run\":true") || !strings.Contains(preview, "delete_candidates") {
 		t.Fatalf("prune preview invalid:\n%s", preview)
+	}
+	previewHuman := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--vault", root)
+	for _, want := range []string{"Delete candidates", "Run ID", "Command", "Status", "Created", "sync.push"} {
+		if !strings.Contains(previewHuman, want) {
+			t.Fatalf("prune preview human output missing %q:\n%s", want, previewHuman)
+		}
+	}
+	previewAgent := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--vault", root, "--agent")
+	for _, want := range []string{"command=sync.logs.prune", "fact.delete_candidates=2", "delete_candidate.1.command=sync.push", "delete_candidate.1.status="} {
+		if !strings.Contains(previewAgent, want) {
+			t.Fatalf("prune preview agent output missing %q:\n%s", want, previewAgent)
+		}
 	}
 	pruned := runCLI(t, "sync", "logs", "prune", "--keep", "1", "--yes", "--vault", root, "--json")
 	if !strings.Contains(pruned, "\"deleted\":") {
@@ -448,7 +525,7 @@ func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
 			root := t.TempDir()
 			runCLI(t, "init", root, "--title", "Vault", "--json")
 			writeCLIFixture(t, filepath.Join(root, "notes", "policy-secret.md"), "# Policy\nbody\n")
-			runCLI(t, "cloud", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws", "--device", "dev", "--secret-ref", "env://PINAX_SECRET", "--vault", root, "--json")
+			runCLI(t, "capsa", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws", "--device", "dev", "--secret-ref", "env://PINAX_SECRET", "--vault", root, "--json")
 			out := runCLI(t, "sync", "diff", "--target", "cloud", "--path-policy", tc.policy, "--vault", root, "--json")
 			state := readCLIFile(t, filepath.Join(root, ".pinax", "sync-state.json"))
 			var stateJSON map[string]any
@@ -457,7 +534,7 @@ func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
 			}
 			runID := stateJSON["last_sync_run_id"].(string)
 			receipt := readCLIFile(t, filepath.Join(root, ".pinax", "sync-runs", time.Now().UTC().Format("2006"), time.Now().UTC().Format("01"), runID+".json"))
-			combined := out + receipt
+			combined := out + receipt + readCLIFile(t, filepath.Join(root, ".pinax", "events.jsonl"))
 			if tc.wantPath && !strings.Contains(combined, "notes/policy-secret.md") {
 				t.Fatalf("default policy omitted path:\n%s", combined)
 			}
@@ -475,6 +552,7 @@ func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
 }
 
 func TestSyncCloudPlannerCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "test-sync-secret")
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nbody\n")
@@ -495,7 +573,13 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 		case r.Method == http.MethodGet && strings.HasSuffix(workspacePath, "/head"):
 			writeServerJSON(w, http.StatusOK, map[string]any{"revision_id": serverRevision, "manifest_blob_id": "manifest_initial"})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:batch-check"):
-			writeServerJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": []string{"blob_"}})
+			var req struct {
+				BlobIDs []string `json:"blob_ids"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode batch-check request: %v", err)
+			}
+			writeServerJSON(w, http.StatusOK, map[string]any{"missing_blob_ids": req.BlobIDs})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/blobs:sign-upload"):
 			var req struct {
 				BlobID   string `json:"blob_id"`
@@ -523,11 +607,26 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runCLI(t, "cloud", "login", "--endpoint", server.URL, "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "plain:cloud-token", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", server.URL, "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "plain:cloud-token", "--vault", root, "--json")
 	diffOut := runCLI(t, "sync", "diff", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root, "--json")
 	assertJSONCommandStatus(t, diffOut, "sync.diff", "success")
 	if !strings.Contains(diffOut, "\"dry_run\":\"true\"") || !strings.Contains(diffOut, "upload_blob") {
 		t.Fatalf("sync diff missing dry-run plan:\n%s", diffOut)
+	}
+	diffHuman := runCLI(t, "sync", "diff", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root)
+	for _, want := range []string{"Sync operations", "Kind", "Path", "Status", "upload_blob", "notes/alpha.md", "planned"} {
+		if !strings.Contains(diffHuman, want) {
+			t.Fatalf("sync diff human output missing %q:\n%s", want, diffHuman)
+		}
+	}
+	diffAgent := runCLI(t, "sync", "diff", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root, "--agent")
+	for _, want := range []string{"command=sync.diff", "operation.1.kind=upload_blob", "operation.1.status=planned"} {
+		if !strings.Contains(diffAgent, want) {
+			t.Fatalf("sync diff agent output missing %q:\n%s", want, diffAgent)
+		}
+	}
+	if !strings.Contains(diffAgent, "operation.3.path=notes/alpha.md") {
+		t.Fatalf("sync diff agent output missing alpha operation:\n%s", diffAgent)
 	}
 	pushDryRun := runCLI(t, "sync", "push", "--target", "cloud", "--dry-run", "--base-revision", "rev_1", "--remote-revision", "rev_1", "--vault", root, "--json")
 	assertJSONCommandStatus(t, pushDryRun, "sync.push", "success")
@@ -541,7 +640,7 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 	}
 
 	objectRoot := t.TempDir()
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+objectRoot, "--workspace", "ws_file", "--device", "dev_file", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "ws_file", "--device", "dev_file", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", root, "--json")
 	directPush := runCLI(t, "sync", "push", "--target", "cloud", "--yes", "--vault", root, "--json")
 	assertJSONCommandStatus(t, directPush, "sync.push", "success")
 	if !strings.Contains(directPush, "\"remote_write\":true") || strings.Contains(directPush, "cloud_api_unimplemented") {
@@ -590,12 +689,12 @@ func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	targetCompletion := runCLI(t, "__complete", "sync", "pull", "--target", "")
-	for _, want := range []string{"cloud\tconfigured Cloud Sync backend", "s3\tS3-compatible direct backend", "git\tGit backend"} {
+	for _, want := range []string{"capsa\tCapsa encrypted sync backend", "cloud\tlegacy alias for Capsa", "pinax-cloud\tlegacy alias for Capsa", "s3\tS3-compatible direct backend", "git\tGit backend"} {
 		if !strings.Contains(targetCompletion, want) {
 			t.Fatalf("sync target completion missing %q:\n%s", want, targetCompletion)
 		}
 	}
-	runCLI(t, "cloud", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://127.0.0.1:9000", "--workspace", "ec", "--device", "dev", "--vault", root, "--json")
+	runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://127.0.0.1:9000", "--workspace", "ec", "--device", "dev", "--vault", root, "--json")
 	initOut := runCLI(t, "sync", "init", "--vault", root, "--json")
 	assertJSONCommandStatus(t, initOut, "sync.init", "success")
 	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "s3://notes/pinax-sync", "\"workspace\":\"ec\"", "\"device\":\"dev\""} {
@@ -608,36 +707,73 @@ func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
 func TestCloudStateCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	missing, err := runCLIExpectError("cloud", "status", "--vault", root, "--json")
+	missing, err := runCLIExpectError("capsa", "status", "--vault", root, "--json")
 	if err == nil {
 		t.Fatalf("cloud status without config succeeded: %s", missing)
 	}
 	assertJSONErrorCode(t, missing, "cloud_not_configured")
-	loginOut := runCLI(t, "cloud", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "op://pinax/cloud-token", "--vault", root, "--json")
+	loginOut := runCLI(t, "capsa", "login", "--endpoint", "https://cloud.example.test", "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "op://pinax/cloud-token", "--vault", root, "--json")
 	if strings.Contains(loginOut, "cloud-token") || strings.Contains(loginOut, "Authorization") {
 		t.Fatalf("cloud login leaked secret reference/token:\n%s", loginOut)
 	}
-	assertJSONCommandStatus(t, loginOut, "cloud.login", "success")
-	statusOut := runCLI(t, "cloud", "status", "--vault", root, "--json")
-	assertJSONCommandStatus(t, statusOut, "cloud.status", "success")
+	assertJSONCommandStatus(t, loginOut, "capsa.login", "success")
+	statusOut := runCLI(t, "capsa", "status", "--vault", root, "--json")
+	assertJSONCommandStatus(t, statusOut, "capsa.status", "success")
 	if !strings.Contains(statusOut, "\"configured\":\"true\"") || !strings.Contains(statusOut, "dev_laptop") {
 		t.Fatalf("cloud status missing facts:\n%s", statusOut)
 	}
-	doctorOut := runCLI(t, "cloud", "doctor", "--vault", root, "--json")
-	assertJSONCommandStatus(t, doctorOut, "cloud.doctor", "success")
-	logoutOut := runCLI(t, "cloud", "logout", "--vault", root, "--json")
-	assertJSONCommandStatus(t, logoutOut, "cloud.logout", "success")
-	loggedOut := runCLI(t, "cloud", "status", "--vault", root, "--json")
+	doctorOut := runCLI(t, "capsa", "doctor", "--vault", root, "--json")
+	assertJSONCommandStatus(t, doctorOut, "capsa.doctor", "success")
+	logoutOut := runCLI(t, "capsa", "logout", "--vault", root, "--json")
+	assertJSONCommandStatus(t, logoutOut, "capsa.logout", "success")
+	loggedOut := runCLI(t, "capsa", "status", "--vault", root, "--json")
 	if !strings.Contains(loggedOut, "logged_out") {
 		t.Fatalf("cloud status after logout missing logged_out:\n%s", loggedOut)
 	}
 }
 
+func TestCapsaStateCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	missing, err := runCLIExpectError("capsa", "status", "--vault", root, "--json")
+	if err == nil {
+		t.Fatalf("capsa status without config succeeded: %s", missing)
+	}
+	assertJSONErrorCode(t, missing, "cloud_not_configured")
+	if !strings.Contains(missing, `"command":"capsa.status"`) || !strings.Contains(missing, "pinax capsa login") {
+		t.Fatalf("capsa status should bridge not-configured output:\n%s", missing)
+	}
+
+	loginOut := runCLI(t, "capsa", "login", "--endpoint", "https://capsa.example.test", "--workspace", "ws_123", "--device", "dev_laptop", "--secret-ref", "op://pinax/capsa-token", "--vault", root, "--json")
+	if strings.Contains(loginOut, "capsa-token") || strings.Contains(loginOut, "Authorization") {
+		t.Fatalf("capsa login leaked secret reference/token:\n%s", loginOut)
+	}
+	assertJSONCommandStatus(t, loginOut, "capsa.login", "success")
+	for _, want := range []string{`"target":"capsa"`, `"sync_platform":"capsa"`, `"state_dir":".pinax/cloud"`, "pinax capsa status"} {
+		if !strings.Contains(loginOut, want) {
+			t.Fatalf("capsa login missing %q:\n%s", want, loginOut)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".pinax", "cloud", "config.yaml")); err != nil {
+		t.Fatalf("capsa login should keep legacy cloud state dir: %v", err)
+	}
+
+	statusOut := runCLI(t, "capsa", "status", "--vault", root, "--json")
+	assertJSONCommandStatus(t, statusOut, "capsa.status", "success")
+	if !strings.Contains(statusOut, `"target":"capsa"`) || !strings.Contains(statusOut, "dev_laptop") || !strings.Contains(statusOut, "pinax capsa doctor") {
+		t.Fatalf("capsa status missing bridge facts/actions:\n%s", statusOut)
+	}
+	doctorOut := runCLI(t, "capsa", "doctor", "--vault", root, "--json")
+	assertJSONCommandStatus(t, doctorOut, "capsa.doctor", "success")
+	logoutOut := runCLI(t, "capsa", "logout", "--vault", root, "--json")
+	assertJSONCommandStatus(t, logoutOut, "capsa.logout", "success")
+}
+
 func TestCloudBackendSetS3CLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	out := runCLI(t, "cloud", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
-	assertJSONCommandStatus(t, out, "cloud.backend.set", "success")
+	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
+	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
 	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "s3://notes/pinax-sync", "\"s3\":{", "\"endpoint\":\"http://10.10.1.102:9010\"", "\"path_style\":true", "personal", "laptop"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("cloud backend set s3 missing %q:\n%s", want, out)
@@ -662,13 +798,13 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".pinax", "cloud", "config.json")); !os.IsNotExist(err) {
 		t.Fatalf("cloud backend set s3 should write config.yaml as primary config, err=%v", err)
 	}
-	status := runCLI(t, "cloud", "status", "--vault", root, "--json")
-	assertJSONCommandStatus(t, status, "cloud.status", "success")
+	status := runCLI(t, "capsa", "status", "--vault", root, "--json")
+	assertJSONCommandStatus(t, status, "capsa.status", "success")
 	if !strings.Contains(status, "\"backend_kind\":\"s3-direct\"") || !strings.Contains(status, "s3://notes/pinax-sync") {
 		t.Fatalf("cloud status missing s3 backend facts:\n%s", status)
 	}
-	doctor := runCLI(t, "cloud", "doctor", "--vault", root, "--json")
-	assertJSONCommandStatus(t, doctor, "cloud.doctor", "success")
+	doctor := runCLI(t, "capsa", "doctor", "--vault", root, "--json")
+	assertJSONCommandStatus(t, doctor, "capsa.doctor", "success")
 	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "\"auth_boundary\":\"provider_credentials\"", "\"server_audit\":false"} {
 		if !strings.Contains(doctor, want) {
 			t.Fatalf("cloud doctor missing direct boundary %q:\n%s", want, doctor)
@@ -676,11 +812,44 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 	}
 }
 
+func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "pinax-note-1322128555", "--region", "ap-guangzhou", "--prefix", "pinax-sync/", "--endpoint", "https://cos.ap-guangzhou.myqcloud.com", "--profile", "tencent-cos-pinax", "--workspace", "yeisme-notes", "--device", "windows-pc", "--vault", root, "--json")
+	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
+	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "cos.ap-guangzhou.myqcloud.com", "\"path_style\":\"false\""} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("cloud backend set s3 missing %q:\n%s", want, out)
+		}
+	}
+	configYAML := readCLIFile(t, filepath.Join(root, ".pinax", "cloud", "config.yaml"))
+	if strings.Contains(configYAML, "path_style: true") {
+		t.Fatalf("Tencent COS config should not force path-style:\n%s", configYAML)
+	}
+	if !strings.Contains(configYAML, "endpoint: https://cos.ap-guangzhou.myqcloud.com") {
+		t.Fatalf("cloud yaml config missing COS endpoint:\n%s", configYAML)
+	}
+}
+
+func TestCloudBackendSetS3ExplicitVirtualHostedStyleCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--addressing-style", "virtual-hosted", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
+	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
+	if !strings.Contains(out, "\"addressing_style\":\"virtual-hosted\"") || !strings.Contains(out, "\"path_style\":\"false\"") {
+		t.Fatalf("cloud backend set s3 did not report virtual-hosted style:\n%s", out)
+	}
+	configYAML := readCLIFile(t, filepath.Join(root, ".pinax", "cloud", "config.yaml"))
+	if !strings.Contains(configYAML, "addressing_style: virtual-hosted") || strings.Contains(configYAML, "path_style: true") {
+		t.Fatalf("cloud yaml config did not persist virtual-hosted style:\n%s", configYAML)
+	}
+}
+
 func TestCloudBackendSetRcloneCLI(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	out := runCLI(t, "cloud", "backend", "set", "rclone", "--remote", "onedrive:PinaxSync", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
-	assertJSONCommandStatus(t, out, "cloud.backend.set", "success")
+	out := runCLI(t, "capsa", "backend", "set", "rclone", "--remote", "onedrive:PinaxSync", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
+	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
 	for _, want := range []string{"\"backend_kind\":\"rclone-direct\"", "rclone://onedrive/PinaxSync", "personal", "laptop"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("cloud backend set rclone missing %q:\n%s", want, out)
@@ -691,22 +860,23 @@ func TestCloudBackendSetRcloneCLI(t *testing.T) {
 			t.Fatalf("cloud backend set rclone leaked %q:\n%s", leaked, out)
 		}
 	}
-	doctor := runCLI(t, "cloud", "doctor", "--vault", root, "--json")
-	assertJSONCommandStatus(t, doctor, "cloud.doctor", "success")
+	doctor := runCLI(t, "capsa", "doctor", "--vault", root, "--json")
+	assertJSONCommandStatus(t, doctor, "capsa.doctor", "success")
 	if !strings.Contains(doctor, "\"auth_boundary\":\"provider_credentials\"") || !strings.Contains(doctor, "\"server_audit\":false") {
 		t.Fatalf("cloud doctor missing rclone boundary:\n%s", doctor)
 	}
 }
 
 func TestDirectCloudPushPullCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "test-sync-secret")
 	objectRoot := t.TempDir()
 	deviceA := t.TempDir()
 	deviceB := t.TempDir()
 	runCLI(t, "init", deviceA, "--title", "Device A", "--json")
 	runCLI(t, "init", deviceB, "--title", "Device B", "--json")
 	writeCLIFixture(t, filepath.Join(deviceA, "notes", "alpha.md"), "# Alpha\n\nfrom device A\n")
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "laptop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceA, "--json")
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "desktop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceB, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "laptop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceA, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "desktop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceB, "--json")
 	push := runCLI(t, "sync", "push", "--target", "cloud", "--yes", "--vault", deviceA, "--json")
 	assertJSONCommandStatus(t, push, "sync.push", "success")
 	pull := runCLI(t, "sync", "pull", "--target", "cloud", "--yes", "--vault", deviceB, "--json")
@@ -804,14 +974,15 @@ func TestSyncConflictsCommandsUseProjectionOutputModesAndReceiptsCLI(t *testing.
 }
 
 func TestSyncConflictNextActionsAppearInSyncJSONAndAgentOutputsCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "test-sync-secret")
 	objectRoot := t.TempDir()
 	deviceA := t.TempDir()
 	deviceB := t.TempDir()
 	runCLI(t, "init", deviceA, "--title", "Device A", "--json")
 	runCLI(t, "init", deviceB, "--title", "Device B", "--json")
 	writeCLIFixture(t, filepath.Join(deviceA, "notes", "alpha.md"), "# Alpha\n\nfrom A\n")
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "laptop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceA, "--json")
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "desktop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceB, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "laptop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceA, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "personal", "--device", "desktop", "--secret-ref", "env://PINAX_TEST_SECRET", "--vault", deviceB, "--json")
 	runCLI(t, "sync", "push", "--target", "cloud", "--yes", "--vault", deviceA, "--json")
 	runCLI(t, "sync", "pull", "--target", "cloud", "--yes", "--vault", deviceB, "--json")
 
@@ -849,20 +1020,17 @@ func TestSyncConflictsCobraLayerDoesNotResolveFilesDirectlyCLI(t *testing.T) {
 func TestBackendLegacyStorageProjection(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	// Only set legacy storage.json, no backends.json yet.
-	runCLI(t, "storage", "set-s3", "--bucket", "notes", "--region", "us-east-1", "--vault", root, "--json")
-	// Remove any backends.json that might have been created.
-	if err := os.Remove(filepath.Join(root, ".pinax", "backends.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("remove backends.json: %v", err)
-	}
+	// Use primary storage set s3 command
+	runCLI(t, "storage", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--vault", root, "--json")
+	// Verify backend list shows the configured backend
 	listOut := runCLI(t, "backend", "list", "--vault", root, "--json")
 	var listEnvelope map[string]any
 	if err := json.Unmarshal([]byte(listOut), &listEnvelope); err != nil {
-		t.Fatalf("backend list legacy json invalid: %v\n%s", err, listOut)
+		t.Fatalf("backend list json invalid: %v\n%s", err, listOut)
 	}
 	facts := listEnvelope["facts"].(map[string]any)
 	if facts["backends"] != "1" {
-		t.Fatalf("expected 1 backend from legacy storage: %s", listOut)
+		t.Fatalf("expected 1 backend: %s", listOut)
 	}
 }
 
@@ -1003,4 +1171,141 @@ func TestBackendObjectListAndStatCommandsReadLocalBlobStore(t *testing.T) {
 	if statEnvelope["command"] != "backend.object.stat" || !strings.Contains(statOut, "revision") {
 		t.Fatalf("backend object stat did not include revision: %#v\n%s", statEnvelope, statOut)
 	}
+}
+
+func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
+	root := t.TempDir()
+	backendRoot := filepath.Join(root, "backend-store")
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	runCLI(t, "backend", "add", "local", "work-local", "--root", backendRoot, "--vault", root, "--json")
+	if err := os.MkdirAll(filepath.Join(backendRoot, "notes"), 0o700); err != nil {
+		t.Fatalf("mkdir backend fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendRoot, "notes", "cloud-sync.md"), []byte("# Cloud Sync\n"), 0o600); err != nil {
+		t.Fatalf("write note fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendRoot, "notes", "raw.txt"), []byte("raw"), 0o600); err != nil {
+		t.Fatalf("write raw fixture: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(backendRoot, "pinax"), 0o700); err != nil {
+		t.Fatalf("mkdir object fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backendRoot, "pinax", "manifest.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write object fixture: %v", err)
+	}
+
+	summaryOut := runCLI(t, "backend", "notes", "summary", "work-local", "--vault", root, "--json")
+	var summaryEnvelope map[string]any
+	if err := json.Unmarshal([]byte(summaryOut), &summaryEnvelope); err != nil {
+		t.Fatalf("backend notes summary json invalid: %v\n%s", err, summaryOut)
+	}
+	if summaryEnvelope["command"] != "backend.notes.summary" {
+		t.Fatalf("backend notes summary envelope = %#v", summaryEnvelope)
+	}
+	summaryFacts := summaryEnvelope["facts"].(map[string]any)
+	if summaryFacts["notes"] != "1" || summaryFacts["objects"] != "3" {
+		t.Fatalf("backend notes summary facts = %#v\n%s", summaryFacts, summaryOut)
+	}
+	defaultSummaryOut := runCLI(t, "backend", "notes", "summary", "--vault", root, "--json")
+	var defaultSummaryEnvelope map[string]any
+	if err := json.Unmarshal([]byte(defaultSummaryOut), &defaultSummaryEnvelope); err != nil {
+		t.Fatalf("default backend notes summary json invalid: %v\n%s", err, defaultSummaryOut)
+	}
+	defaultSummaryFacts := defaultSummaryEnvelope["facts"].(map[string]any)
+	if defaultSummaryEnvelope["command"] != "backend.notes.summary" || defaultSummaryFacts["backend"] != "work-local" || defaultSummaryFacts["notes"] != "1" {
+		t.Fatalf("default backend notes summary invalid: %#v\n%s", defaultSummaryEnvelope, defaultSummaryOut)
+	}
+
+	listOut := runCLI(t, "backend", "notes", "list", "work-local", "--vault", root, "--json")
+	var listEnvelope map[string]any
+	if err := json.Unmarshal([]byte(listOut), &listEnvelope); err != nil {
+		t.Fatalf("backend notes list json invalid: %v\n%s", err, listOut)
+	}
+	if listEnvelope["command"] != "backend.notes.list" || !strings.Contains(listOut, "notes/cloud-sync.md") || strings.Contains(listOut, "raw.txt") {
+		t.Fatalf("backend notes list did not filter note objects: %#v\n%s", listEnvelope, listOut)
+	}
+	defaultListOut := runCLI(t, "backend", "notes", "list", "--vault", root, "--json")
+	if !strings.Contains(defaultListOut, "notes/cloud-sync.md") || strings.Contains(defaultListOut, "raw.txt") {
+		t.Fatalf("default backend notes list invalid:\n%s", defaultListOut)
+	}
+
+	statOut := runCLI(t, "backend", "notes", "stat", "work-local", "notes/cloud-sync.md", "--vault", root, "--json")
+	var statEnvelope map[string]any
+	if err := json.Unmarshal([]byte(statOut), &statEnvelope); err != nil {
+		t.Fatalf("backend notes stat json invalid: %v\n%s", err, statOut)
+	}
+	if statEnvelope["command"] != "backend.notes.stat" || !strings.Contains(statOut, "notes/cloud-sync.md") {
+		t.Fatalf("backend notes stat did not include note path: %#v\n%s", statEnvelope, statOut)
+	}
+
+	agentOut := runCLI(t, "backend", "notes", "list", "work-local", "--vault", root, "--agent")
+	for _, want := range []string{"command=backend.notes.list", "status=success", "fact.notes=1", "note.1.path=notes/cloud-sync.md"} {
+		if !strings.Contains(agentOut, want) {
+			t.Fatalf("backend notes agent output missing %q:\n%s", want, agentOut)
+		}
+	}
+
+	summaryText := runCLI(t, "backend", "notes", "list", "work-local", "--vault", root)
+	if !strings.Contains(summaryText, "Path") || !strings.Contains(summaryText, "notes/cloud-sync.md") {
+		t.Fatalf("backend notes summary output missing table:\n%s", summaryText)
+	}
+
+	backendCompletion := runCLI(t, "__complete", "backend", "notes", "stat", "--vault", root, "")
+	if !strings.Contains(backendCompletion, "work-local\tlocal") || !strings.Contains(backendCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend notes stat backend completion invalid:\n%s", backendCompletion)
+	}
+	notePathCompletion := runCLI(t, "__complete", "backend", "notes", "stat", "work-local", "--vault", root, "notes/")
+	if !strings.Contains(notePathCompletion, "notes/cloud-sync.md\tnote") || strings.Contains(notePathCompletion, "raw.txt") || !strings.Contains(notePathCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend notes stat path completion invalid:\n%s", notePathCompletion)
+	}
+	notePrefixCompletion := runCLI(t, "__complete", "backend", "notes", "list", "work-local", "--vault", root, "")
+	if !strings.Contains(notePrefixCompletion, "notes/\tprefix") || !strings.Contains(notePrefixCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend notes list prefix completion invalid:\n%s", notePrefixCompletion)
+	}
+	objectKeyCompletion := runCLI(t, "__complete", "backend", "object", "stat", "work-local", "--vault", root, "pinax/")
+	if !strings.Contains(objectKeyCompletion, "pinax/manifest.json\tobject") || !strings.Contains(objectKeyCompletion, "ShellCompDirectiveNoFileComp") {
+		t.Fatalf("backend object stat key completion invalid:\n%s", objectKeyCompletion)
+	}
+}
+
+func TestSyncLogsTailFollowFlagAndJSONGuardCLI(t *testing.T) {
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	help := runCLI(t, "sync", "logs", "tail", "--help")
+	if !strings.Contains(help, "--follow") || !strings.Contains(help, "Continue streaming newly appended sync events") {
+		t.Fatalf("sync logs tail help missing follow flag:\n%s", help)
+	}
+	out, err := runCLIExpectError("sync", "logs", "tail", "--follow", "--json", "--vault", root)
+	if err == nil || !strings.Contains(out, "sync_logs_follow_mode") || !strings.Contains(out, "--events") {
+		t.Fatalf("follow json guard err=%v out=%s", err, out)
+	}
+}
+
+func TestSyncLogsTailShowsSyncedFilesInAllMachineSurfacesCLI(t *testing.T) {
+	root := t.TempDir()
+	objectRoot := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "live-sync.md"), "# Live Sync\nbody\n")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "ws_live", "--device", "dev_live", "--secret-ref", "test-live-secret", "--vault", root, "--json")
+	runCLI(t, "sync", "push", "--target", "cloud", "--yes", "--vault", root, "--json")
+
+	summary := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root)
+	for _, want := range []string{"Operation", "Path", "upload_blob", "notes/live-sync.md"} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("sync logs summary missing %q:\n%s", want, summary)
+		}
+	}
+	agent := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root, "--agent")
+	for _, want := range []string{"event.1.type=sync.file", "kind=upload_blob", "path=notes/live-sync.md"} {
+		if !strings.Contains(agent, want) {
+			t.Fatalf("sync logs agent missing %q:\n%s", want, agent)
+		}
+	}
+	events := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root, "--events")
+	for _, want := range []string{`"type":"progress"`, `"event_type":"sync.file"`, `"kind":"upload_blob"`, `"path":"notes/live-sync.md"`} {
+		if !strings.Contains(events, want) {
+			t.Fatalf("sync logs events missing %q:\n%s", want, events)
+		}
+	}
+	assertNDJSONEvents(t, events, "sync.logs.tail")
 }

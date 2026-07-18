@@ -449,3 +449,50 @@ func TestDatabaseViewRenderAddsTabProjectionContract(t *testing.T) {
 		t.Fatalf("database view/tab data missing: %#v", data)
 	}
 }
+
+func TestSQLAndDataviewExposeStableObjectIdentity(t *testing.T) {
+	root := t.TempDir()
+	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
+	writeAppFixture(t, filepath.Join(root, "notes", "renamed.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+objectID+"\ntitle: Renamed\ntags: [pinax]\nkind: reference\n---\n\n# Renamed\n")
+	svc := NewService()
+	sqlProjection, err := svc.QueryRun(context.Background(), QueryRequest{VaultPath: root, SQL: "SELECT object_id, note_id, path FROM notes", LazyIndex: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertQueryIdentityRow(t, sqlProjection, objectID, "notes/renamed.md")
+	dataviewProjection, err := svc.DataviewRun(context.Background(), DataviewRequest{VaultPath: root, Query: "TABLE object_id, note_id, path FROM #pinax", LazyIndex: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertQueryIdentityRow(t, dataviewProjection, objectID, "notes/renamed.md")
+}
+
+func TestSQLRelationsExposeSourceAndTargetObjectIDs(t *testing.T) {
+	root := t.TempDir()
+	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
+	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
+	writeAppFixture(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+sourceID+"\ntitle: Source\nkind: reference\n---\n\n# Source\n\n[[Target]]\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "target.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+targetID+"\ntitle: Target\nkind: reference\n---\n\n# Target\n")
+	projection, err := NewService().QueryRun(context.Background(), QueryRequest{VaultPath: root, SQL: "SELECT source_object_id, target_object_id, source_path, target_path FROM relations", LazyIndex: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := projection.Data.(map[string]any)
+	result := data["result"].(domain.TableResult)
+	if len(result.Rows) != 1 || result.Rows[0].Values["source_object_id"].String() != sourceID || result.Rows[0].Values["target_object_id"].String() != targetID {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func assertQueryIdentityRow(t *testing.T, projection domain.Projection, objectID, path string) {
+	t.Helper()
+	data := projection.Data.(map[string]any)
+	result := data["result"].(domain.TableResult)
+	if len(result.Rows) != 1 {
+		t.Fatalf("result = %#v", result)
+	}
+	row := result.Rows[0]
+	if row.Values["object_id"].String() != objectID || row.Values["note_id"].String() != objectID || row.Values["path"].String() != path {
+		t.Fatalf("row = %#v", row)
+	}
+}

@@ -27,6 +27,7 @@ func newFolderRecord(db *gorm.DB, opts ...gen.DOOption) folderRecord {
 
 	tableName := _folderRecord.folderRecordDo.TableName()
 	_folderRecord.ALL = field.NewAsterisk(tableName)
+	_folderRecord.ObjectID = field.NewString(tableName, "object_id")
 	_folderRecord.Path = field.NewString(tableName, "path")
 	_folderRecord.Purpose = field.NewString(tableName, "purpose")
 	_folderRecord.ManagedStatus = field.NewString(tableName, "managed_status")
@@ -47,6 +48,7 @@ type folderRecord struct {
 	folderRecordDo
 
 	ALL           field.Asterisk
+	ObjectID      field.String
 	Path          field.String
 	Purpose       field.String
 	ManagedStatus field.String
@@ -73,6 +75,7 @@ func (f folderRecord) As(alias string) *folderRecord {
 
 func (f *folderRecord) updateTableName(table string) *folderRecord {
 	f.ALL = field.NewAsterisk(table)
+	f.ObjectID = field.NewString(table, "object_id")
 	f.Path = field.NewString(table, "path")
 	f.Purpose = field.NewString(table, "purpose")
 	f.ManagedStatus = field.NewString(table, "managed_status")
@@ -99,7 +102,8 @@ func (f *folderRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (f *folderRecord) fillFieldMap() {
-	f.fieldMap = make(map[string]field.Expr, 10)
+	f.fieldMap = make(map[string]field.Expr, 11)
+	f.fieldMap["object_id"] = f.ObjectID
 	f.fieldMap["path"] = f.Path
 	f.fieldMap["purpose"] = f.Purpose
 	f.fieldMap["managed_status"] = f.ManagedStatus

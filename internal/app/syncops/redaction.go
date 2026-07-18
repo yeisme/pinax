@@ -29,6 +29,8 @@ func SanitizeOperations(ops []syncplan.Operation, policy string) []syncplan.Oper
 	out := make([]syncplan.Operation, 0, len(ops))
 	for _, op := range ops {
 		op.Path = RedactPath(op.Path, policy)
+		op.FromPath = RedactPath(op.FromPath, policy)
+		op.ToPath = RedactPath(op.ToPath, policy)
 		if policy == "hash" && op.PathHash == "" && op.Path != "" {
 			op.PathHash = op.Path
 		}

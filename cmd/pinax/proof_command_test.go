@@ -10,7 +10,7 @@ import (
 func TestProofLoopRunPreviewEmitsRunIDAndStageFacts(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
-	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), pinaxNoteFixture("note_alpha", "Alpha", "[]", "alpha body\n"))
+	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), pinaxNoteFixture("note_alpha", "Alpha", "alpha body\n"))
 	runCLI(t, "index", "sync", "--vault", root, "--json")
 
 	out := runCLI(t, "proof", "loop", "run", "--vault", root, "--json")

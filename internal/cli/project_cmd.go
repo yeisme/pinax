@@ -48,6 +48,21 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 	projectCreateCmd.Flags().StringVar(ctx.projectDescription, "description", "", "Project description")
 	projectCreateCmd.Flags().StringVar(ctx.projectNotesPrefix, "notes-prefix", "", "Project note path prefix")
 	projectCmd.AddCommand(projectCreateCmd)
+	projectDeleteCmd := &cobra.Command{
+		Use:               "delete <slug>",
+		Short:             "Move a project to trash",
+		Example:           "pinax project delete history --vault ./my-notes --yes --json",
+		ValidArgsFunction: projectSlugCompletion(func() string { return *ctx.vaultPath }),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return renderCommandError(cmd, ctx.outputMode(), "project.delete", "argument_required", "project delete requires a slug", "pinax project delete <slug> --vault <vault> --yes")
+			}
+			projection, err := ctx.svc.ProjectDelete(cmd.Context(), app.ProjectDeleteRequest{VaultPath: *ctx.vaultPath, Project: args[0], Yes: *ctx.yes})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	projectDeleteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm moving the project to trash")
+	projectCmd.AddCommand(projectDeleteCmd)
 	projectCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List vault projects",
@@ -56,6 +71,20 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	})
+	projectShowCmd := &cobra.Command{
+		Use:               "show <slug>",
+		Short:             "Show a vault project",
+		Example:           "pinax project show research --vault ./my-notes --json",
+		ValidArgsFunction: projectSlugCompletion(func() string { return *ctx.vaultPath }),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return renderCommandError(cmd, ctx.outputMode(), "project.show", "argument_required", "project show requires a slug", "pinax project show <slug> --vault <vault>")
+			}
+			projection, err := ctx.svc.ProjectShow(cmd.Context(), app.ProjectRequest{VaultPath: *ctx.vaultPath, Slug: args[0]})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	projectCmd.AddCommand(projectShowCmd)
 	subprojectCmd := &cobra.Command{Use: "subproject", Short: "Manage project subproject workspaces"}
 	subprojectCreateCmd := &cobra.Command{
 		Use:     "create <project> <slug>",
@@ -75,14 +104,18 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 	subprojectCreateCmd.ValidArgsFunction = projectSlugCompletion(func() string { return *ctx.vaultPath })
 	_ = subprojectCreateCmd.RegisterFlagCompletionFunc("template", staticCompletion("template", "scenario"))
 	subprojectListCmd := &cobra.Command{
-		Use:     "list <project>",
+		Use:     "list [project]",
 		Short:   "List project subproject workspaces",
-		Example: "pinax project subproject list research --vault ./my-notes --json",
+		Example: "pinax project subproject list research --vault ./my-notes --json\npinax project subproject list --vault ./my-notes --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 {
-				return renderCommandError(cmd, ctx.outputMode(), "project.subproject.list", "argument_required", "project subproject list requires a project", "pinax project subproject list <project> --vault <vault>")
+			if len(args) > 1 {
+				return renderCommandError(cmd, ctx.outputMode(), "project.subproject.list", "argument_required", "project subproject list accepts at most one project", "pinax project subproject list [project] --vault <vault>")
 			}
-			projection, err := ctx.svc.ProjectSubprojectList(cmd.Context(), app.ProjectWorkspaceRequest{VaultPath: *ctx.vaultPath, Project: args[0]})
+			project := ""
+			if len(args) == 1 {
+				project = args[0]
+			}
+			projection, err := ctx.svc.ProjectSubprojectList(cmd.Context(), app.ProjectWorkspaceRequest{VaultPath: *ctx.vaultPath, Project: project})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -100,7 +133,21 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 		},
 	}
 	subprojectShowCmd.ValidArgsFunction = projectThenSubprojectCompletion(func() string { return *ctx.vaultPath })
-	subprojectCmd.AddCommand(subprojectCreateCmd, subprojectListCmd, subprojectShowCmd)
+	subprojectDeleteCmd := &cobra.Command{
+		Use:               "delete <project> <slug>",
+		Short:             "Move a project subproject workspace to trash",
+		Example:           "pinax project subproject delete history-learning history-info --vault ./my-notes --yes --json",
+		ValidArgsFunction: projectThenSubprojectCompletion(func() string { return *ctx.vaultPath }),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return renderCommandError(cmd, ctx.outputMode(), "project.subproject.delete", "argument_required", "project subproject delete requires project and slug", "pinax project subproject delete <project> <slug> --vault <vault> --yes")
+			}
+			projection, err := ctx.svc.ProjectSubprojectDelete(cmd.Context(), app.ProjectSubprojectDeleteRequest{VaultPath: *ctx.vaultPath, Project: args[0], Subproject: args[1], Yes: *ctx.yes})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	subprojectDeleteCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm moving the subproject workspace to trash")
+	subprojectCmd.AddCommand(subprojectCreateCmd, subprojectListCmd, subprojectShowCmd, subprojectDeleteCmd)
 	projectCmd.AddCommand(subprojectCmd)
 	learningCmd := &cobra.Command{Use: "learning", Short: "Manage long-term learning project packs"}
 	learningInitCmd := &cobra.Command{
@@ -274,6 +321,37 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 		},
 	}
 	itemMoveCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm move to a high-risk column")
+	_ = itemMoveCmd.RegisterFlagCompletionFunc("column", staticCompletion("column", "inbox", "next", "doing", "blocked", "review", "done"))
+	itemShowCmd := &cobra.Command{
+		Use:     "show <item>",
+		Short:   "Show a local project work item",
+		Example: "pinax project item show item_abc123 --vault ./my-notes --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return renderCommandError(cmd, ctx.outputMode(), "project.item.show", "argument_required", "project item show requires an item id", "pinax project item show <item> --vault <vault>")
+			}
+			projection, err := ctx.svc.ProjectItemShow(cmd.Context(), app.ProjectItemRequest{VaultPath: *ctx.vaultPath, ItemID: args[0]})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	var itemPlanAction string
+	itemPlanCmd := &cobra.Command{
+		Use:     "plan <item>",
+		Short:   "Generate a project work item change plan",
+		Example: "pinax project item plan item_abc123 --action move --column doing --vault ./my-notes --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return renderCommandError(cmd, ctx.outputMode(), "project.item.plan", "argument_required", "project item plan requires an item id", "pinax project item plan <item> --action move --column doing --vault <vault>")
+			}
+			projection, err := ctx.svc.ProjectItemPlan(cmd.Context(), app.ProjectItemRequest{VaultPath: *ctx.vaultPath, ItemID: args[0], Action: itemPlanAction, Column: itemColumn, Yes: *ctx.yes})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	itemPlanCmd.Flags().StringVar(&itemPlanAction, "action", "archive", "Planned action: archive or move")
+	itemPlanCmd.Flags().StringVar(&itemColumn, "column", "", "Target board column for --action move")
+	itemPlanCmd.Flags().BoolVar(ctx.yes, "yes", false, "Allow high-risk plan checks to pass after a snapshot")
+	_ = itemPlanCmd.RegisterFlagCompletionFunc("action", staticCompletion("action", "archive", "move"))
+	_ = itemPlanCmd.RegisterFlagCompletionFunc("column", staticCompletion("column", "inbox", "next", "doing", "blocked", "review", "done"))
 	itemArchiveCmd := &cobra.Command{
 		Use:     "archive <item>",
 		Short:   "Archive a local project work item",
@@ -287,7 +365,7 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 		},
 	}
 	itemArchiveCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm work item archive")
-	itemCmd.AddCommand(itemAddCmd, itemMoveCmd, itemArchiveCmd)
+	itemCmd.AddCommand(itemAddCmd, itemMoveCmd, itemShowCmd, itemPlanCmd, itemArchiveCmd)
 	projectCmd.AddCommand(itemCmd)
 	root.AddCommand(projectCmd)
 

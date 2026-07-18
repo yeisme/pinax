@@ -35,6 +35,7 @@ func ExtractTaskRows(notes []domain.Note) []domain.DatabaseRow {
 			values := map[string]domain.PropertyValue{}
 			putTaskValue(values, "note_path", domain.PropertyTypeString, note.Path, note.Path)
 			putTaskValue(values, "path", domain.PropertyTypeString, note.Path, note.Path)
+			putTaskValue(values, "object_id", domain.PropertyTypeString, note.ID, note.ID)
 			putTaskValue(values, "note_id", domain.PropertyTypeString, note.ID, note.ID)
 			putTaskValue(values, "title", domain.PropertyTypeString, note.Title, note.Title)
 			putTaskValue(values, "folder", domain.PropertyTypeString, note.Folder, note.Folder)
@@ -110,6 +111,7 @@ func ExtractProperties(note domain.Note) map[string]domain.PropertyValue {
 	}
 	put("title", domain.PropertyTypeString, note.Title, note.Title, "system")
 	put("path", domain.PropertyTypeString, note.Path, note.Path, "system")
+	put("object_id", domain.PropertyTypeString, note.ID, note.ID, "system")
 	put("note_id", domain.PropertyTypeString, note.ID, note.ID, "system")
 	put("status", domain.PropertyTypeSelect, note.Status, note.Status, "frontmatter")
 	put("kind", domain.PropertyTypeSelect, note.Kind, note.Kind, "frontmatter")

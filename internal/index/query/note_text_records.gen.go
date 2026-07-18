@@ -27,6 +27,7 @@ func newNoteTextRecord(db *gorm.DB, opts ...gen.DOOption) noteTextRecord {
 
 	tableName := _noteTextRecord.noteTextRecordDo.TableName()
 	_noteTextRecord.ALL = field.NewAsterisk(tableName)
+	_noteTextRecord.ObjectID = field.NewString(tableName, "object_id")
 	_noteTextRecord.NotePath = field.NewString(tableName, "note_path")
 	_noteTextRecord.TitleText = field.NewString(tableName, "title_text")
 	_noteTextRecord.BodyText = field.NewString(tableName, "body_text")
@@ -42,6 +43,7 @@ type noteTextRecord struct {
 	noteTextRecordDo
 
 	ALL       field.Asterisk
+	ObjectID  field.String
 	NotePath  field.String
 	TitleText field.String
 	BodyText  field.String
@@ -63,6 +65,7 @@ func (n noteTextRecord) As(alias string) *noteTextRecord {
 
 func (n *noteTextRecord) updateTableName(table string) *noteTextRecord {
 	n.ALL = field.NewAsterisk(table)
+	n.ObjectID = field.NewString(table, "object_id")
 	n.NotePath = field.NewString(table, "note_path")
 	n.TitleText = field.NewString(table, "title_text")
 	n.BodyText = field.NewString(table, "body_text")
@@ -84,7 +87,8 @@ func (n *noteTextRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool
 }
 
 func (n *noteTextRecord) fillFieldMap() {
-	n.fieldMap = make(map[string]field.Expr, 5)
+	n.fieldMap = make(map[string]field.Expr, 6)
+	n.fieldMap["object_id"] = n.ObjectID
 	n.fieldMap["note_path"] = n.NotePath
 	n.fieldMap["title_text"] = n.TitleText
 	n.fieldMap["body_text"] = n.BodyText

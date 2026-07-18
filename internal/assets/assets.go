@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/identity"
 )
 
 const ManifestSchemaVersion = "pinax.assets.v1"
@@ -38,7 +39,8 @@ const (
 )
 
 type AddOptions struct {
-	Mode AddMode
+	Mode     AddMode
+	ObjectID string
 }
 
 func Add(root, source string) (Asset, error) {
@@ -100,7 +102,33 @@ func AddWithOptions(root, source string, opts AddOptions) (Asset, error) {
 		return Asset{}, err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	asset := Asset{ID: "asset_" + sha[:12], Path: rel, Filename: filepath.Base(rel), Stem: strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), Extension: strings.TrimPrefix(strings.ToLower(filepath.Ext(rel)), "."), MediaType: mediaType(rel), Size: size, ModifiedUnix: info.ModTime().Unix(), Width: width, Height: height, SHA256: sha, ManagedStatus: "managed", CreatedAt: now, UpdatedAt: now}
+	objectID := strings.TrimSpace(opts.ObjectID)
+	var existing Asset
+	for _, candidate := range manifest.Assets {
+		if candidate.Path == rel {
+			existing = candidate
+			break
+		}
+	}
+	if objectID == "" {
+		if mode == AddModeRegister && strings.TrimSpace(existing.ObjectID) != "" {
+			objectID = existing.ObjectID
+		} else {
+			allocated, allocateErr := identity.NewObjectID()
+			if allocateErr != nil {
+				return Asset{}, allocateErr
+			}
+			objectID = allocated.String()
+		}
+	}
+	if _, parseErr := identity.ParseObjectID(objectID); parseErr != nil {
+		return Asset{}, fmt.Errorf("invalid asset object id: %w", parseErr)
+	}
+	createdAt := now
+	if strings.TrimSpace(existing.CreatedAt) != "" {
+		createdAt = existing.CreatedAt
+	}
+	asset := Asset{ObjectID: objectID, ID: "asset_" + sha[:12], Path: rel, Filename: filepath.Base(rel), Stem: strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), Extension: strings.TrimPrefix(strings.ToLower(filepath.Ext(rel)), "."), MediaType: mediaType(rel), Size: size, ModifiedUnix: info.ModTime().Unix(), Width: width, Height: height, SHA256: sha, ManagedStatus: "managed", CreatedAt: createdAt, UpdatedAt: now}
 	manifest.Assets = upsertAsset(manifest.Assets, asset)
 	if err := Save(root, manifest); err != nil {
 		return Asset{}, err

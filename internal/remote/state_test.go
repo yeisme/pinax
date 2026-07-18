@@ -98,6 +98,42 @@ func TestCloudStateWritesStructuredYAMLS3Config(t *testing.T) {
 	}
 }
 
+func TestCloudStateWritesVirtualHostedS3Config(t *testing.T) {
+	root := t.TempDir()
+	state, err := Login(root, LoginRequest{
+		WorkspaceID: "yeisme-notes",
+		DeviceID:    "windows-pc",
+		SecretRef:   "profile://tencent-cos-pinax",
+		BackendKind: "s3-direct",
+		S3: &S3Config{
+			Bucket:          "pinax-note-1322128555",
+			Prefix:          "pinax-sync/",
+			Endpoint:        "https://cos.ap-guangzhou.myqcloud.com",
+			Region:          "ap-guangzhou",
+			Profile:         "tencent-cos-pinax",
+			AddressingStyle: "virtual-hosted",
+		},
+	})
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	if state.Config.S3 == nil || state.Config.S3.PathStyle || state.Config.S3.AddressingStyle != "virtual-hosted" {
+		t.Fatalf("s3 config = %#v", state.Config.S3)
+	}
+	if strings.Contains(state.Config.Endpoint, "path_style=true") || !strings.Contains(state.Config.Endpoint, "addressing_style=virtual-hosted") {
+		t.Fatalf("endpoint did not preserve virtual-hosted style: %s", state.Config.Endpoint)
+	}
+	asset := readYAMLCloudAsset(t, filepath.Join(root, ".pinax", "cloud", "config.yaml"))
+	for _, want := range []string{"endpoint: https://cos.ap-guangzhou.myqcloud.com", "addressing_style: virtual-hosted", "profile: tencent-cos-pinax"} {
+		if !strings.Contains(asset, want) {
+			t.Fatalf("yaml config missing %q:\n%s", want, asset)
+		}
+	}
+	if strings.Contains(asset, "path_style: true") {
+		t.Fatalf("virtual-hosted config should not force path_style:\n%s", asset)
+	}
+}
+
 func TestCloudStateLoadsLegacyJSONConfig(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".pinax", "cloud"), 0o700); err != nil {

@@ -31,6 +31,17 @@ func TestVaultRegistryDefaultAndCompletionCLI(t *testing.T) {
 	if !strings.Contains(listOut, `"default":"work"`) || !strings.Contains(listOut, work) || !strings.Contains(listOut, personal) {
 		t.Fatalf("vault list missing registry data: %s", listOut)
 	}
+	defaultListOut := runCLI(t, "vault", "list")
+	for _, want := range []string{"Local vaults", "Alias", "Name", "Path", "Default", "work", "personal", "work-notes", "personal-notes"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("vault list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	for _, unwanted := range []string{"locals.work", "remote_cache"} {
+		if strings.Contains(defaultListOut, unwanted) {
+			t.Fatalf("vault list default output should render selector tables, found %q:\n%s", unwanted, defaultListOut)
+		}
+	}
 
 	defaultNotes := runCLI(t, "note", "list", "--json")
 	if !strings.Contains(defaultNotes, "Work Alpha") || strings.Contains(defaultNotes, "Personal Beta") {
@@ -92,6 +103,21 @@ func TestVaultRemoteRefreshCacheCompletionCLI(t *testing.T) {
 	assertJSONCommandStatus(t, remoteList, "vault.remote.list", "success")
 	if !strings.Contains(remoteList, "cloud:team") || !strings.Contains(remoteList, "Team Knowledge") || strings.Contains(remoteList, "remote-secret") {
 		t.Fatalf("remote list cache output invalid: %s", remoteList)
+	}
+	remoteDefault := runCLI(t, "vault", "remote", "list", "--profile", "cloud-work")
+	for _, want := range []string{"Remote vaults", "Profile", "Selector", "Label", "Workspace", "Revision", "cloud-work", "cloud:team", "Team Knowledge", "ws_team", "rev_1"} {
+		if !strings.Contains(remoteDefault, want) {
+			t.Fatalf("remote list default output missing %q:\n%s", want, remoteDefault)
+		}
+	}
+	remoteAgent := runCLI(t, "vault", "remote", "list", "--profile", "cloud-work", "--agent")
+	for _, want := range []string{"command=vault.remote.list", "fact.profiles=1", "fact.remote_vaults=1", "remote_vault.1.profile=cloud-work", "remote_vault.1.selector=cloud:team", "remote_vault.1.label=\"Team Knowledge\"", "remote_vault.1.workspace=ws_team", "remote_vault.1.revision=rev_1"} {
+		if !strings.Contains(remoteAgent, want) {
+			t.Fatalf("remote list agent missing %q:\n%s", want, remoteAgent)
+		}
+	}
+	if strings.Contains(remoteDefault, "remote-secret") || strings.Contains(remoteAgent, "remote-secret") {
+		t.Fatalf("remote list leaked secret:\n%s\n%s", remoteDefault, remoteAgent)
 	}
 
 	completion := runCLI(t, "__complete", "note", "list", "--vault", "cloud:")
@@ -167,15 +193,40 @@ func TestProjectAndStorageCLIJSON(t *testing.T) {
 	if projectEnvelope["command"] != "project.create" || projectEnvelope["status"] != "success" {
 		t.Fatalf("project envelope = %#v", projectEnvelope)
 	}
+	runCLI(t, "project", "create", "archive", "--name", "Archive", "--description", "Cold notes", "--notes-prefix", "notes/archive", "--vault", root, "--json")
+
+	defaultListOut := runCLI(t, "project", "list", "--vault", root)
+	for _, want := range []string{"Projects", "Slug", "Name", "Notes prefix", "Description", "research", "研究", "notes/research", "长期研究", "archive", "Archive", "notes/archive", "Cold notes", "Current project", "Recommended next step"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("project default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	for _, unwanted := range []string{"Project 1 slug", "Project 1 notes path prefix", "project.1.slug"} {
+		if strings.Contains(defaultListOut, unwanted) {
+			t.Fatalf("project default output should render a project table, found %q:\n%s", unwanted, defaultListOut)
+		}
+	}
+	defaultShowOut := runCLI(t, "project", "show", "research", "--vault", root)
+	for _, want := range []string{"Project details", "Field", "Value", "Slug", "Name", "Description", "Notes prefix", "Created", "research", "研究", "长期研究", "notes/research"} {
+		if !strings.Contains(defaultShowOut, want) {
+			t.Fatalf("project show default output missing %q:\n%s", want, defaultShowOut)
+		}
+	}
+	showAgentOut := runCLI(t, "project", "show", "research", "--vault", root, "--agent")
+	for _, want := range []string{"command=project.show", "fact.project=research", "fact.name=研究", "fact.notes_prefix=notes/research", "fact.description=长期研究"} {
+		if !strings.Contains(showAgentOut, want) {
+			t.Fatalf("project show agent missing %q:\n%s", want, showAgentOut)
+		}
+	}
 
 	listOut := runCLI(t, "project", "list", "--vault", root, "--agent")
-	for _, want := range []string{"command=project.list", "fact.projects=1", "fact.current_project=research"} {
+	for _, want := range []string{"command=project.list", "fact.projects=2", "fact.current_project=research", "fact.project.1.slug=archive", "fact.project.1.name=Archive", "fact.project.1.notes_prefix=notes/archive", "fact.project.2.slug=research", "fact.project.2.name=研究", "fact.project.2.notes_prefix=notes/research"} {
 		if !strings.Contains(listOut, want) {
 			t.Fatalf("project agent output missing %q:\n%s", want, listOut)
 		}
 	}
 
-	storageOut := runCLI(t, "storage", "set-s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax/", "--profile", "work", "--vault", root, "--json")
+	storageOut := runCLI(t, "storage", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax/", "--profile", "work", "--vault", root, "--json")
 	if strings.Contains(strings.ToLower(storageOut), "secret") || strings.Contains(strings.ToLower(storageOut), "access_key") {
 		t.Fatalf("storage output leaked secret-like material:\n%s", storageOut)
 	}
@@ -254,6 +305,30 @@ func TestProjectBoardAndNoteDisplayCLI(t *testing.T) {
 		t.Fatalf("item json invalid: %v\n%s", err, itemOut)
 	}
 	itemID := itemEnvelope["facts"].(map[string]any)["item_id"].(string)
+	itemShowHuman := runCLI(t, "project", "item", "show", itemID, "--vault", root)
+	for _, want := range []string{"Project item", "Item ID", "Title", "Column", "Path", itemID, "实现 item flow", "next", "research/实现-item-flow.md"} {
+		if !strings.Contains(itemShowHuman, want) {
+			t.Fatalf("project item show human output missing %q:\n%s", want, itemShowHuman)
+		}
+	}
+	itemShowAgent := runCLI(t, "project", "item", "show", itemID, "--vault", root, "--agent")
+	for _, want := range []string{"project_item.item_id=" + itemID, `project_item.title="实现 item flow"`, "project_item.column=next", "project_item.path=research/实现-item-flow.md", "project_item.writable=true"} {
+		if !strings.Contains(itemShowAgent, want) {
+			t.Fatalf("project item show agent output missing %q:\n%s", want, itemShowAgent)
+		}
+	}
+	itemPlanHuman := runCLI(t, "project", "item", "plan", itemID, "--action", "move", "--column", "doing", "--vault", root)
+	for _, want := range []string{"Project item", "Item ID", "Title", "Column", "Path", itemID, "实现 item flow", "doing", "research/实现-item-flow.md"} {
+		if !strings.Contains(itemPlanHuman, want) {
+			t.Fatalf("project item plan human output missing %q:\n%s", want, itemPlanHuman)
+		}
+	}
+	itemPlanAgent := runCLI(t, "project", "item", "plan", itemID, "--action", "move", "--column", "doing", "--vault", root, "--agent")
+	for _, want := range []string{"project_item.item_id=" + itemID, `project_item.title="实现 item flow"`, "project_item.column=doing", "project_item.path=research/实现-item-flow.md", "project_item.writable=true"} {
+		if !strings.Contains(itemPlanAgent, want) {
+			t.Fatalf("project item plan agent output missing %q:\n%s", want, itemPlanAgent)
+		}
+	}
 	moveOut := runCLI(t, "project", "item", "move", itemID, "doing", "--vault", root, "--json")
 	if !strings.Contains(moveOut, `"command":"project.item.move"`) || !strings.Contains(moveOut, `"column":"doing"`) {
 		t.Fatalf("item move output = %s", moveOut)
@@ -332,6 +407,17 @@ func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
 			t.Fatalf("subproject list agent missing %q:\n%s", want, listOut)
 		}
 	}
+	defaultListOut := runCLI(t, "project", "subproject", "list", "research", "--vault", root)
+	for _, want := range []string{"Subprojects", "Project", "Subproject", "Title", "Workspace path", "research", "stock-learning", "Stock Learning", "notes/projects/research/stock-learning", "Recommended next step"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("subproject default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	for _, unwanted := range []string{"Subproject 1", "Workspace 1", "subproject.1"} {
+		if strings.Contains(defaultListOut, unwanted) {
+			t.Fatalf("subproject default output should render a workspace table, found %q:\n%s", unwanted, defaultListOut)
+		}
+	}
 
 	showOut := runCLI(t, "project", "subproject", "show", "research", "stock-learning", "--vault", root, "--json")
 	if !strings.Contains(showOut, `"command":"project.subproject.show"`) || !strings.Contains(showOut, `"directories"`) || !strings.Contains(showOut, `"charter"`) || strings.Contains(showOut, `"00-charter"`) || !strings.Contains(showOut, `"vault_root":"`+root+`"`) || !strings.Contains(showOut, `"workspace.full_path":"`+fullPath+`"`) {
@@ -374,6 +460,15 @@ func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
 		if !strings.Contains(boardJSON, want) {
 			t.Fatalf("subproject board json missing %q:\n%s", want, boardJSON)
 		}
+	}
+	boardAgent := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--agent")
+	for _, want := range []string{"mode=agent", "command=project.board.show", "fact.project=research", "fact.subproject=stock-learning", "fact.workspace_path=notes/projects/research/stock-learning", `item.1.title="Run first research"`, "item.1.column=next", "item.1.path=notes/projects/research/stock-learning/inbox/run-first-research.md", "item.1.subproject=stock-learning", "item.1.labels=research,learning", "action.board_plan="} {
+		if !strings.Contains(boardAgent, want) {
+			t.Fatalf("subproject board agent missing %q:\n%s", want, boardAgent)
+		}
+	}
+	if strings.Contains(boardAgent, root) || strings.Contains(boardAgent, "受控工作项") || strings.Contains(boardAgent, "状态:") {
+		t.Fatalf("subproject board agent leaked local path, body, or prose:\n%s", boardAgent)
 	}
 	human := runCLI(t, "project", "board", "show", "research", "--subproject", "stock-learning", "--vault", root, "--color", "never")
 	for _, want := range []string{"Project: research / stock-learning", "Path: notes/projects/research/stock-learning", "Structure:", "Board:", "Next", "Run first research", "Recommended next step"} {
@@ -484,6 +579,15 @@ func TestProjectLearningInitCLI(t *testing.T) {
 			t.Fatalf("learning starter note missing: %s", rel)
 		}
 	}
+	createdAgent := runCLI(t, "project", "learning", "init", "history-learning", "history-info", "--title", "历史信息学习资料库", "--project-name", "历史信息学习", "--notes-prefix", "notes/history-learning", "--preset", "learning", "--vault", root, "--agent")
+	for _, want := range []string{"mode=agent", "command=project.learning.init", "fact.project=history-learning", "fact.subproject=history-info", "fact.workspace_path=notes/projects/history-learning/history-info", "learning.project=history-learning", "learning.subproject=history-info", "learning.workspace_path=notes/projects/history-learning/history-info", "learning.column.1=inbox", "learning.starter_note.1=notes/projects/history-learning/history-info/charter/learning-charter.md", "learning.starter_item.1=notes/projects/history-learning/history-info/inbox/建立术语表.md", "action.board_show="} {
+		if !strings.Contains(createdAgent, want) {
+			t.Fatalf("learning init agent missing %q:\n%s", want, createdAgent)
+		}
+	}
+	if strings.Contains(createdAgent, root) || strings.Contains(createdAgent, "状态:") || strings.Contains(createdAgent, "Learning project initialized") {
+		t.Fatalf("learning init agent leaked local path or prose:\n%s", createdAgent)
+	}
 
 	board := runCLI(t, "project", "board", "show", "investing", "--subproject", "stock-learning", "--vault", root, "--json")
 	for _, want := range []string{`"command":"project.board.show"`, `"column.learning":"1"`, `"column.planned":"1"`, `"column.retrospective":"1"`, `"建立交易术语表"`, `"整理 K 线与成交量基础"`} {
@@ -503,9 +607,9 @@ func TestProjectLearningInitCLI(t *testing.T) {
 func TestStorageSetS3RequiresBucketAndRegion(t *testing.T) {
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault")
-	out, err := runCLIExpectError("storage", "set-s3", "--bucket", "notes", "--vault", root, "--json")
+	out, err := runCLIExpectError("storage", "set", "s3", "--bucket", "notes", "--vault", root, "--json")
 	if err == nil {
-		t.Fatalf("storage set-s3 without region succeeded: %s", out)
+		t.Fatalf("storage set s3 without region succeeded: %s", out)
 	}
 	var envelope map[string]any
 	if err := json.Unmarshal([]byte(out), &envelope); err != nil {
@@ -513,6 +617,20 @@ func TestStorageSetS3RequiresBucketAndRegion(t *testing.T) {
 	}
 	if envelope["status"] != "failed" || envelope["command"] != "storage.set_s3" {
 		t.Fatalf("storage error envelope = %#v", envelope)
+	}
+
+	writeCLIFixture(t, filepath.Join(root, ".pinax", "storage.json"), `{"schema_version":"pinax.storage.v1","backend":"s3","s3":{"bucket":"notes"}}`)
+	doctorHuman := runCLI(t, "storage", "doctor", "--vault", root)
+	for _, want := range []string{"Storage issues", "Code", "Path", "Message", "missing_region", ".pinax/storage.json", "Missing S3 region"} {
+		if !strings.Contains(doctorHuman, want) {
+			t.Fatalf("storage doctor human output missing %q:\n%s", want, doctorHuman)
+		}
+	}
+	doctorAgent := runCLI(t, "storage", "doctor", "--vault", root, "--agent")
+	for _, want := range []string{"command=storage.doctor", "status=partial", "fact.issues=1", "issue.1.code=missing_region", "issue.1.path=.pinax/storage.json", `issue.1.message="Missing S3 region"`} {
+		if !strings.Contains(doctorAgent, want) {
+			t.Fatalf("storage doctor agent output missing %q:\n%s", want, doctorAgent)
+		}
 	}
 }
 
@@ -536,7 +654,7 @@ func TestVaultStatsDoctorAndDashboardCLI(t *testing.T) {
 	}
 
 	statsHuman := runCLI(t, "stats", "--vault", root)
-	for _, want := range []string{"━━━━━━━━", "────────", "Highlights", "Vault statistics generated.", "Metric", "Value", "Notes", "1"} {
+	for _, want := range []string{"────────", "Highlights", "Vault statistics generated.", "Metric", "Value", "Notes", "1"} {
 		if !strings.Contains(statsHuman, want) {
 			t.Fatalf("stats human output missing %q:\n%s", want, statsHuman)
 		}
@@ -559,8 +677,18 @@ func TestVaultStatsDoctorAndDashboardCLI(t *testing.T) {
 		t.Fatalf("doctor envelope = %#v", doctorEnvelope)
 	}
 
+	doctorHuman := runCLI(t, "doctor", "--vault", root)
+	for _, want := range []string{"Vault issues", "Severity", "Code", "Message", "warning", "index_stale", "Local index is missing or stale"} {
+		if !strings.Contains(doctorHuman, want) {
+			t.Fatalf("doctor human output missing %q:\n%s", want, doctorHuman)
+		}
+	}
+	if strings.Contains(doctorHuman, "状态:") || strings.Contains(doctorHuman, "重点:") {
+		t.Fatalf("doctor human output contains legacy prose:\n%s", doctorHuman)
+	}
+
 	doctorAgent := runCLI(t, "doctor", "--vault", root, "--agent")
-	for _, want := range []string{"command=vault.doctor", "status=partial", "fact.issues.total=", "issue.1.code="} {
+	for _, want := range []string{"command=vault.doctor", "status=partial", "fact.issues.total=", "issue.1.code=index_stale", "issue.1.severity=warning", `issue.1.message="Local index is missing or stale"`} {
 		if !strings.Contains(doctorAgent, want) {
 			t.Fatalf("doctor agent output missing %q:\n%s", want, doctorAgent)
 		}

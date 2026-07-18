@@ -27,6 +27,7 @@ func newVaultFileRecord(db *gorm.DB, opts ...gen.DOOption) vaultFileRecord {
 
 	tableName := _vaultFileRecord.vaultFileRecordDo.TableName()
 	_vaultFileRecord.ALL = field.NewAsterisk(tableName)
+	_vaultFileRecord.ObjectID = field.NewString(tableName, "object_id")
 	_vaultFileRecord.Path = field.NewString(tableName, "path")
 	_vaultFileRecord.Filename = field.NewString(tableName, "filename")
 	_vaultFileRecord.Stem = field.NewString(tableName, "stem")
@@ -46,6 +47,7 @@ type vaultFileRecord struct {
 	vaultFileRecordDo
 
 	ALL           field.Asterisk
+	ObjectID      field.String
 	Path          field.String
 	Filename      field.String
 	Stem          field.String
@@ -71,6 +73,7 @@ func (v vaultFileRecord) As(alias string) *vaultFileRecord {
 
 func (v *vaultFileRecord) updateTableName(table string) *vaultFileRecord {
 	v.ALL = field.NewAsterisk(table)
+	v.ObjectID = field.NewString(table, "object_id")
 	v.Path = field.NewString(table, "path")
 	v.Filename = field.NewString(table, "filename")
 	v.Stem = field.NewString(table, "stem")
@@ -96,7 +99,8 @@ func (v *vaultFileRecord) GetFieldByName(fieldName string) (field.OrderExpr, boo
 }
 
 func (v *vaultFileRecord) fillFieldMap() {
-	v.fieldMap = make(map[string]field.Expr, 9)
+	v.fieldMap = make(map[string]field.Expr, 10)
+	v.fieldMap["object_id"] = v.ObjectID
 	v.fieldMap["path"] = v.Path
 	v.fieldMap["filename"] = v.Filename
 	v.fieldMap["stem"] = v.Stem

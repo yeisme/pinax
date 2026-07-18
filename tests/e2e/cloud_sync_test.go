@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -14,7 +15,7 @@ func TestCloud(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/cloud/scripts",
 		Setup: func(env *testscript.Env) error {
-			env.Vars = append(env.Vars, "PATH="+sharedBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), "PINAX_FAKE_CLOUD_URL="+fake.Endpoint(), "PINAX_CLOUD_TOKEN=fake-token")
+			env.Vars = append(env.Vars, "PATH="+sharedBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), "PINAX_FAKE_CLOUD_URL="+fake.Endpoint(), "PINAX_CLOUD_TOKEN=fake-token", "PINAX_SYNC_SECRET=fake-sync-secret", "XDG_CONFIG_HOME="+filepath.Join(env.WorkDir, "xdg"))
 			return nil
 		},
 	})
@@ -26,7 +27,7 @@ func TestSyncDaemon(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/sync_daemon/scripts",
 		Setup: func(env *testscript.Env) error {
-			env.Vars = append(env.Vars, "PATH="+sharedBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), "PINAX_FAKE_CLOUD_URL="+fake.Endpoint(), "PINAX_CLOUD_TOKEN=fake-token")
+			env.Vars = append(env.Vars, "PATH="+sharedBinDir+string(os.PathListSeparator)+os.Getenv("PATH"), "PINAX_FAKE_CLOUD_URL="+fake.Endpoint(), "PINAX_CLOUD_TOKEN=fake-token", "XDG_CONFIG_HOME="+filepath.Join(env.WorkDir, "xdg"))
 			return nil
 		},
 	})

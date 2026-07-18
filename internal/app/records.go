@@ -7,6 +7,7 @@ import (
 
 	"github.com/yeisme/pinax/internal/domain"
 	gitstore "github.com/yeisme/pinax/internal/git"
+	"github.com/yeisme/pinax/internal/identity"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	"github.com/yeisme/pinax/internal/records"
 )
@@ -99,7 +100,14 @@ func (s *Service) RecordAdopt(ctx context.Context, req RecordRequest) (domain.Pr
 	for _, note := range notes {
 		noteID := strings.TrimSpace(note.ID)
 		if noteID == "" {
-			noteID = stableNoteID(note.Path)
+			if existingID := recordIDByPath(state, note.Path); existingID != "" {
+				continue
+			}
+			allocated, allocateErr := s.allocateObjectID(identity.KindNote, root, note.Path)
+			if allocateErr != nil {
+				return errorProjection("record.adopt", allocateErr), allocateErr
+			}
+			noteID = allocated
 		}
 		if _, exists := state.Records[noteID]; exists {
 			continue
@@ -209,12 +217,15 @@ func (s *Service) RecordHistory(ctx context.Context, req RecordRequest) (domain.
 	return projection, nil
 }
 
-func appendNoteRecordEvent(ctx context.Context, root string, kind domain.RecordEventKind, idempotency string, note domain.Note, oldPath string) (domain.RecordEvent, error) {
+func appendNoteRecordEvent(ctx context.Context, root string, kind domain.RecordEventKind, idempotency string, note domain.Note, oldPath string, options ...func(*domain.RecordEvent)) (domain.RecordEvent, error) {
 	noteID := strings.TrimSpace(note.ID)
 	if noteID == "" {
-		noteID = stableNoteID(note.Path)
+		noteID = legacyNoteIDForPath(note.Path)
 	}
 	event := domain.RecordEvent{Kind: kind, IdempotencyKey: idempotency, NoteID: noteID, Path: note.Path, OldPath: oldPath, Title: note.Title, ContentRevision: domain.ContentRevision{Hash: hashString(note.Title + "\x00" + note.Body), Size: int64(len(note.Body))}, VersionEvidence: gitstore.Evidence(ctx, root, note.Path), Evidence: []string{"source=" + string(kind)}}
+	for _, option := range options {
+		option(&event)
+	}
 	svc := records.NewService(root)
 	created, err := svc.AppendEvent(ctx, event)
 	if err == nil || kind == domain.RecordEventNoteCreated || domain.ErrorCode(err) != "record_lifecycle_invalid" {
@@ -260,4 +271,13 @@ func recordDefaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func recordIDByPath(state domain.LedgerState, path string) string {
+	for objectID, record := range state.Records {
+		if record.Path == path {
+			return objectID
+		}
+	}
+	return ""
 }

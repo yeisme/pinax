@@ -87,6 +87,54 @@ func TestRebuildProjectsEnhancedWikiLinkMetadata(t *testing.T) {
 	}
 }
 
+func TestSearchUsesTokenIndexForBodyMatches(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{
+		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Body: "searchable token lives in the body", Tags: []string{"work"}},
+		{ID: "note_beta", Title: "Beta", Path: "notes/beta.md", Body: "other content", Tags: []string{"work"}},
+	}
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	db, err := open(root)
+	if err != nil {
+		t.Fatalf("open index: %v", err)
+	}
+	if err := db.Model(&NoteTextRecord{}).Where("note_path = ?", "notes/alpha.md").Update("body_text", "").Error; err != nil {
+		t.Fatalf("clear body text projection: %v", err)
+	}
+
+	result, err := Search(root, SearchRequest{Query: "searchable"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if result.Total != 1 || result.Results[0].Note.Path != "notes/alpha.md" {
+		t.Fatalf("search should use token index candidates, got %#v", result)
+	}
+	if !containsString(result.Results[0].MatchedFields, "body") {
+		t.Fatalf("body token match should be reported, got %#v", result.Results[0].MatchedFields)
+	}
+}
+
+func TestSearchUsesTokenIndexForUnicodeSubstringMatches(t *testing.T) {
+	root := t.TempDir()
+	notes := []domain.Note{
+		{ID: "note_title", Title: "认证方案", Path: "notes/title.md", Body: "OAuth login", Tags: []string{"auth"}},
+		{ID: "note_body", Title: "Auth A", Path: "notes/body.md", Body: "认证 checklist", Tags: []string{"auth"}},
+	}
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	result, err := Search(root, SearchRequest{Query: "认证"})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if got, want := resultPaths(result), []string{"notes/body.md", "notes/title.md"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("unicode substring search paths got=%v want=%v result=%#v", got, want, result)
+	}
+}
+
 func TestExtractLinkRowsUsesEnhancedWikiParser(t *testing.T) {
 	notes := []domain.Note{
 		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alias Target]] [[Alpha|Short]]\n"},
@@ -108,7 +156,7 @@ func TestExtractLinkRowsUsesEnhancedWikiParser(t *testing.T) {
 }
 
 func BenchmarkIndexRebuild(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	for i := 0; i < b.N; i++ {
 		root := b.TempDir()
 		if _, err := Rebuild(root, notes); err != nil {
@@ -118,7 +166,7 @@ func BenchmarkIndexRebuild(b *testing.B) {
 }
 
 func BenchmarkIncrementalNoteUpdate(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -134,7 +182,7 @@ func BenchmarkIncrementalNoteUpdate(b *testing.B) {
 }
 
 func BenchmarkBacklinks(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -146,7 +194,7 @@ func BenchmarkBacklinks(b *testing.B) {
 }
 
 func BenchmarkSearchLinkTarget(b *testing.B) {
-	notes := syntheticNotes(1000)
+	notes := syntheticNotes()
 	root := b.TempDir()
 	if _, err := Rebuild(root, notes); err != nil {
 		b.Fatalf("rebuild: %v", err)
@@ -155,6 +203,20 @@ func BenchmarkSearchLinkTarget(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, err := Search(root, SearchRequest{LinkTarget: fmt.Sprintf("Note %04d", i%len(notes)), Limit: 20}); err != nil {
 			b.Fatalf("search link target: %v", err)
+		}
+	}
+}
+
+func BenchmarkIndexSearchTokenCandidates(b *testing.B) {
+	notes := syntheticNotes()
+	root := b.TempDir()
+	if _, err := Rebuild(root, notes); err != nil {
+		b.Fatalf("rebuild: %v", err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Search(root, SearchRequest{Query: fmt.Sprintf("body %d", i%len(notes)), Limit: 20}); err != nil {
+			b.Fatalf("search token candidates: %v", err)
 		}
 	}
 }
@@ -203,7 +265,26 @@ func searchPaths(t *testing.T, root, query string) []string {
 	return paths
 }
 
-func syntheticNotes(count int) []domain.Note {
+func resultPaths(result SearchResult) []string {
+	paths := make([]string, 0, len(result.Results))
+	for _, item := range result.Results {
+		paths = append(paths, item.Note.Path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func syntheticNotes() []domain.Note {
+	const count = 1000
 	notes := make([]domain.Note, 0, count)
 	for i := 0; i < count; i++ {
 		target := (i + 1) % count

@@ -12,6 +12,8 @@ const (
 	PinaxIgnoreName = ".pinaxignore"
 	beginGitBlock   = "# BEGIN PINAX METADATA-ONLY"
 	endGitBlock     = "# END PINAX METADATA-ONLY"
+	beginEnvBlock   = "# BEGIN PINAX RUNTIME ENV SECRETS"
+	endEnvBlock     = "# END PINAX RUNTIME ENV SECRETS"
 )
 
 type Matcher struct {
@@ -87,7 +89,33 @@ func (m Matcher) Ignored(rel string, isDir bool) bool {
 
 func hardDenied(rel string) bool {
 	rel = cleanRel(rel)
-	return rel == ".git" || strings.HasPrefix(rel, ".git/") || rel == ".pinax" || strings.HasPrefix(rel, ".pinax/")
+	if rel == ".git" || strings.HasPrefix(rel, ".git/") || rel == ".pinax" || strings.HasPrefix(rel, ".pinax/") {
+		return true
+	}
+	// Plaintext env files are hard-denied so a user .pinaxignore re-include can
+	// never upload secrets as ordinary vault content. Encrypted env assets live
+	// under .pinax/ (already denied). Non-sensitive .env.example templates are
+	// exempt so teams can share a redacted template.
+	return isPlaintextEnvPath(rel)
+}
+
+// isPlaintextEnvPath reports whether rel is a plaintext env file that must never
+// be uploaded as ordinary content, regardless of user .pinaxignore re-includes.
+func isPlaintextEnvPath(rel string) bool {
+	base := path.Base(rel)
+	if base == ".env.example" || strings.HasSuffix(base, ".env.example") {
+		return false
+	}
+	if base == ".env" {
+		return true
+	}
+	if strings.HasPrefix(base, ".env.") {
+		return true
+	}
+	if strings.HasSuffix(base, ".env") {
+		return true
+	}
+	return false
 }
 
 func (r rule) matches(rel string, isDir bool) bool {
@@ -181,17 +209,52 @@ func MetadataOnlyGitignoreBlock() string {
 }
 
 func ApplyMetadataOnlyGitignore(existing string) string {
-	block := MetadataOnlyGitignoreBlock()
-	start := strings.Index(existing, beginGitBlock)
-	end := strings.Index(existing, endGitBlock)
-	if start >= 0 && end >= start {
-		end += len(endGitBlock)
+	return applyManagedBlock(existing, beginGitBlock, endGitBlock, MetadataOnlyGitignoreBlock())
+}
+
+func splitLines(body string) []string {
+	return strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+}
+
+// EnvSecretGitignoreBlock is the managed .gitignore block that protects plaintext
+// env files and runtime materializations while keeping the encrypted asset and
+// non-sensitive .env.example templates committable. It is updated by marker so
+// unrelated user-authored rules are preserved.
+func EnvSecretGitignoreBlock() string {
+	return strings.Join([]string{
+		beginEnvBlock,
+		"# Pinax runtime env secrets (managed) — plaintext env is never committed.",
+		".env",
+		".env.*",
+		"*.env",
+		".pinax/runtime/",
+		"!.env.example",
+		"!**/.env.example",
+		"!.pinax/pinax-sync.env.age",
+		endEnvBlock,
+		"",
+	}, "\n")
+}
+
+// ApplyEnvSecretGitignore inserts or refreshes the managed env-secrets block in
+// a .gitignore body. User rules outside the block are preserved untouched.
+func ApplyEnvSecretGitignore(existing string) string {
+	return applyManagedBlock(existing, beginEnvBlock, endEnvBlock, EnvSecretGitignoreBlock())
+}
+
+// applyManagedBlock inserts or refreshes a marker-delimited managed block in an
+// existing gitignore body, preserving all content outside the markers.
+func applyManagedBlock(existing, begin, end, block string) string {
+	start := strings.Index(existing, begin)
+	endIdx := strings.Index(existing, end)
+	if start >= 0 && endIdx >= start {
+		endIdx += len(end)
 		updated := strings.TrimRight(existing[:start], "\n")
 		if updated != "" {
 			updated += "\n\n"
 		}
 		updated += strings.TrimRight(block, "\n")
-		rest := strings.TrimLeft(existing[end:], "\n")
+		rest := strings.TrimLeft(existing[endIdx:], "\n")
 		if rest != "" {
 			updated += "\n\n" + rest
 		} else {
@@ -204,8 +267,4 @@ func ApplyMetadataOnlyGitignore(existing string) string {
 		return block
 	}
 	return trimmed + "\n\n" + block
-}
-
-func splitLines(body string) []string {
-	return strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
 }

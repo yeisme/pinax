@@ -528,3 +528,82 @@ Pinax SHALL keep link projection behavior consistent with the note graph query b
 - **THEN** their output SHALL come from projection data compatible with the shared link graph rules
 - **AND** scan fallback SHALL only be used when the index is missing, stale, or unavailable.
 
+### Requirement: Search engine selection is explicit and internal by default
+Pinax SHALL support explicit search engine selection without requiring external search binaries.
+
+#### Scenario: Native search does not require ripgrep
+- **WHEN** a user runs `pinax search "design" --engine native --vault ./my-notes --json`
+- **THEN** Pinax SHALL search registered Markdown notes using its built-in native engine
+- **AND** stdout facts SHALL include `engine_requested=native` and `engine=native`
+- **AND** Pinax SHALL NOT require `rg`, `fzf`, or `bat` to be installed.
+
+#### Scenario: Index search uses SQLite token candidates
+- **WHEN** a user runs `pinax search "design" --engine index --vault ./my-notes --json`
+- **AND** the SQLite index is fresh
+- **THEN** Pinax SHALL use the indexed `search_token_records` projection to select candidate notes
+- **AND** it SHALL load note text only for candidate result projection and snippets
+- **AND** it SHALL NOT perform a full Markdown body scan or require external search binaries.
+
+#### Scenario: Index-only search fails without fallback writes
+- **WHEN** a user runs `pinax search "design" --engine index --vault ./my-notes --json`
+- **AND** the index is missing or stale without `--allow-stale`
+- **THEN** Pinax SHALL fail or return partial output with a stable index maintenance action
+- **AND** it SHALL NOT perform a native fallback silently.
+
+### Requirement: Search lazy-index policy is bounded
+Pinax SHALL make search-time index loading explicit and bounded.
+
+#### Scenario: Lazy index off never writes the index
+- **WHEN** a user runs `pinax search "design" --lazy-index off --vault ./my-notes --json`
+- **AND** the index is missing or stale
+- **THEN** Pinax SHALL return native search results or an index-only error according to `--engine`
+- **AND** it SHALL NOT create or modify `.pinax/index.sqlite`.
+
+#### Scenario: Auto lazy index defers over-budget refresh
+- **WHEN** search detects more changed notes than the lazy refresh budget
+- **THEN** Pinax SHALL defer index maintenance, return bounded search output, and include an action for `pinax index refresh --vault <vault> --json`
+- **AND** stdout facts SHALL include `lazy_index.deferred=true`.
+
+### Requirement: Index maintenance respects trash lifecycle
+Pinax index refresh and rebuild SHALL use ledger lifecycle and trash tombstones to remove or hide deleted object projections without treating the index as the source of truth.
+
+#### Scenario: Project delete removes board/search projection references
+- **GIVEN** project `history` exists in the project registry and index projections
+- **WHEN** the user runs `pinax project delete history --vault ./my-notes --yes --json`
+- **AND** Pinax refreshes the index
+- **THEN** project board, search, graph, and recent projections SHALL NOT return `history` as an active project
+- **AND** trash-aware commands MAY still expose the tombstone.
+
+#### Scenario: Rebuild excludes trash backups from ordinary notes
+- **GIVEN** `.pinax/trash/20260627/projects/history/` contains Markdown backups
+- **WHEN** the user runs `pinax index rebuild --vault ./my-notes --json`
+- **THEN** Pinax SHALL NOT index trash backup Markdown as ordinary active notes
+- **AND** it SHALL preserve restore metadata for `pinax trash list` or `pinax trash show`.
+
+#### Scenario: Deleted lifecycle filter is explicit
+- **WHEN** a user runs `pinax search "历史" --vault ./my-notes --json`
+- **THEN** search SHALL exclude trashed and deleted lifecycle states by default
+- **AND** future trash/deleted filters SHALL be explicit rather than silently mixed into ordinary search results.
+
+### Requirement: Local index relations are object-first
+The local SQLite/GORM projection SHALL use canonical object IDs as logical relation keys for notes, Tags, links, tasks, assets and properties. Current paths SHALL remain indexed and unique for active objects but SHALL be mutable locators rather than logical primary identity.
+
+#### Scenario: Rebuild preserves object identity
+- **WHEN** a user rebuilds the local index after notes were renamed or moved
+- **THEN** Pinax SHALL read canonical IDs from ledger/frontmatter reconciliation, rebuild relations under those IDs and SHALL NOT generate replacement IDs from current paths.
+
+#### Scenario: Tag and classification queries use object relations
+- **WHEN** a user filters notes by project, group, folder, kind, status or Tag
+- **THEN** the query SHALL return the stable object ID and current path for each note and SHALL join multi-value relations by object ID.
+
+### Requirement: Search resolves ID, path and human references consistently
+Search and shared object resolution SHALL support canonical object ID, legacy ID during migration, current path, title and alias while returning which field matched and whether the result is unique.
+
+#### Scenario: Resolve a moved note by canonical ID
+- **WHEN** a user or Agent queries a note by canonical object ID after its path changed
+- **THEN** Pinax SHALL return the same note at its current path without a fallback full-vault identity guess.
+
+#### Scenario: Resolve a legacy ID during migration
+- **WHEN** a caller supplies a legacy note ID with an active compatibility mapping
+- **THEN** Pinax SHALL resolve the canonical object, disclose that a compatibility mapping was used and return a migration next action where appropriate.
+

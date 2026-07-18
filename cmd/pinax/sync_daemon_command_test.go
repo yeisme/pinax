@@ -65,7 +65,7 @@ func TestSyncDaemonRunLiveOutputModes(t *testing.T) {
 	store := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "live.md"), "# Live\n\ndaemon live output\n")
-	runCLI(t, "cloud", "login", "--endpoint", "file://"+store, "--workspace", "ws", "--device", "dev", "--secret-ref", "test-secret", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+store, "--workspace", "ws", "--device", "dev", "--secret-ref", "test-secret", "--vault", root, "--json")
 
 	humanOut := runCLI(t, "sync", "daemon", "run", "--once", "--target", "cloud", "--vault", root, "--yes")
 	for _, want := range []string{"sync_started", "push_completed"} {

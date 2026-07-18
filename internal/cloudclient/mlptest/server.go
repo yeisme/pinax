@@ -229,7 +229,7 @@ func (s *Server) handleVault(w http.ResponseWriter, r *http.Request, vaultID, re
 	case strings.HasPrefix(rest, "blobs/") && r.Method == http.MethodGet:
 		s.handleGetBlob(w, vault, strings.TrimPrefix(rest, "blobs/"))
 	case rest == "revisions" && r.Method == http.MethodPost:
-		s.handleCommit(w, r, vault, r.Header.Get("Idempotency-Key"))
+		s.handleCommit(w, r, vault)
 	default:
 		writeError(w, http.StatusNotFound, "VALIDATION_FAILED", "unknown vault route")
 	}
@@ -374,7 +374,7 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, vault *vaultState, blobID 
 	writeError(w, http.StatusNotFound, "BLOB_MISSING", "blob not found")
 }
 
-func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vaultState, idempotencyKey string) {
+func (s *Server) handleCommit(w http.ResponseWriter, r *http.Request, vault *vaultState) {
 	var req struct {
 		BaseRevision   string `json:"base_revision"`
 		RevisionID     string `json:"revision_id"`

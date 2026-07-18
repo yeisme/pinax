@@ -14,7 +14,8 @@ type IndexMetaRecord struct {
 
 // NoteRecord 是 vault note 在本地索引中的核心投影行。
 type NoteRecord struct {
-	Path            string `gorm:"primaryKey"`
+	ObjectID        string `gorm:"primaryKey"`
+	Path            string `gorm:"uniqueIndex"`
 	NoteID          string `gorm:"index"`
 	Title           string
 	Filename        string `gorm:"index"`
@@ -37,7 +38,8 @@ type NoteRecord struct {
 
 // NoteTextRecord 保存 note 的正文文本投影，用于搜索摘要。
 type NoteTextRecord struct {
-	NotePath  string `gorm:"primaryKey"`
+	ObjectID  string `gorm:"primaryKey"`
+	NotePath  string `gorm:"uniqueIndex"`
 	TitleText string
 	BodyText  string
 	Excerpt   string
@@ -46,44 +48,49 @@ type NoteTextRecord struct {
 
 // TagRecord 记录 note 与 tag 的多值关系。
 type TagRecord struct {
-	ID       uint `gorm:"primaryKey"`
-	NotePath string
-	Tag      string `gorm:"index"`
+	ID       uint   `gorm:"primaryKey"`
+	ObjectID string `gorm:"index;uniqueIndex:idx_tag_object,priority:2"`
+	NotePath string `gorm:"index;index:idx_tag_note,priority:2"`
+	Tag      string `gorm:"index;index:idx_tag_note,priority:1;uniqueIndex:idx_tag_object,priority:1"`
 }
 
 // LinkRecord 记录 note 之间的 wiki/markdown 链接及其解析状态。
 type LinkRecord struct {
-	ID            uint `gorm:"primaryKey"`
-	NotePath      string
-	Target        string `gorm:"index"`
-	TargetPath    string `gorm:"index"`
-	Kind          string
-	Broken        bool `gorm:"index"`
-	SourceNoteID  string
-	TargetNoteID  string
-	TargetTitle   string
-	TargetRaw     string
-	TargetAlias   string
-	TargetHeading string
-	Status        string `gorm:"index"` // resolved|broken|ambiguous|external|ignored
-	Line          int
-	Evidence      string
+	ID             uint   `gorm:"primaryKey"`
+	SourceObjectID string `gorm:"index"`
+	TargetObjectID string `gorm:"index"`
+	NotePath       string `gorm:"index"`
+	Target         string `gorm:"index"`
+	TargetPath     string `gorm:"index"`
+	Kind           string
+	Broken         bool `gorm:"index"`
+	SourceNoteID   string
+	TargetNoteID   string
+	TargetTitle    string
+	TargetRaw      string
+	TargetAlias    string
+	TargetHeading  string
+	Status         string `gorm:"index"`
+	Line           int
+	Evidence       string
 }
 
 // SearchTokenRecord 保存 note 的分词倒排索引。
 type SearchTokenRecord struct {
 	ID       uint   `gorm:"primaryKey"`
-	Token    string `gorm:"index"`
-	NotePath string `gorm:"index"`
-	Field    string
+	ObjectID string `gorm:"index"`
+	Token    string `gorm:"index;index:idx_search_token_note,priority:1;index:idx_search_token_field_note,priority:1"`
+	NotePath string `gorm:"index;index:idx_search_token_note,priority:2;index:idx_search_token_field_note,priority:3"`
+	Field    string `gorm:"index:idx_search_token_field_note,priority:2"`
 	Count    int
 	Weight   int
 }
 
 // AttachmentRecord 记录 note 引用的附件及其存在性。
 type AttachmentRecord struct {
-	ID            uint `gorm:"primaryKey"`
-	NotePath      string
+	ID            uint   `gorm:"primaryKey"`
+	ObjectID      string `gorm:"index"`
+	NotePath      string `gorm:"index"`
 	ReferenceText string
 	TargetPath    string `gorm:"index"`
 	MediaType     string
@@ -92,6 +99,7 @@ type AttachmentRecord struct {
 
 // AssetRecord 是 vault 资产文件在索引中的投影行。
 type AssetRecord struct {
+	ObjectID      string `gorm:"index"`
 	Path          string `gorm:"primaryKey"`
 	AssetID       string `gorm:"index"`
 	Filename      string `gorm:"index"`
@@ -110,20 +118,23 @@ type AssetRecord struct {
 
 // AssetLinkRecord 记录 note 到资产的引用边及其状态。
 type AssetLinkRecord struct {
-	ID           uint   `gorm:"primaryKey"`
-	AssetPath    string `gorm:"index"`
-	SourceNoteID string `gorm:"index"`
-	SourcePath   string `gorm:"index"`
-	RawReference string
-	LinkStyle    string `gorm:"index"`
-	LinkKind     string `gorm:"index"`
-	Line         int
-	Status       string `gorm:"index"`
-	MediaType    string `gorm:"index"`
+	ID             uint   `gorm:"primaryKey"`
+	SourceObjectID string `gorm:"index"`
+	AssetObjectID  string `gorm:"index"`
+	AssetPath      string `gorm:"index"`
+	SourceNoteID   string `gorm:"index"`
+	SourcePath     string `gorm:"index"`
+	RawReference   string
+	LinkStyle      string `gorm:"index"`
+	LinkKind       string `gorm:"index"`
+	Line           int
+	Status         string `gorm:"index"`
+	MediaType      string `gorm:"index"`
 }
 
 // VaultFileRecord 是 vault 中全部文件（note 与 asset）的统一投影。
 type VaultFileRecord struct {
+	ObjectID      string `gorm:"index"`
 	Path          string `gorm:"primaryKey"`
 	Filename      string `gorm:"index"`
 	Stem          string `gorm:"index"`
@@ -137,6 +148,7 @@ type VaultFileRecord struct {
 
 // FolderRecord 记录 vault 文件夹结构与用途。
 type FolderRecord struct {
+	ObjectID      string `gorm:"index"`
 	Path          string `gorm:"primaryKey"`
 	Purpose       string `gorm:"index"`
 	ManagedStatus string `gorm:"index"`
@@ -169,6 +181,7 @@ type PropertyDefinitionRecord struct {
 // PropertyValueRecord 记录每个 note 的属性取值。
 type PropertyValueRecord struct {
 	ID       uint   `gorm:"primaryKey"`
+	ObjectID string `gorm:"index"`
 	NotePath string `gorm:"index"`
 	Name     string `gorm:"index"`
 	Type     string `gorm:"index"`
@@ -180,6 +193,7 @@ type PropertyValueRecord struct {
 // TaskRecord 记录 Markdown task list item 的可重建查询投影。
 type TaskRecord struct {
 	ID        uint   `gorm:"primaryKey"`
+	ObjectID  string `gorm:"index"`
 	NotePath  string `gorm:"index"`
 	NoteID    string `gorm:"index"`
 	Title     string

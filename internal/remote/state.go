@@ -48,12 +48,13 @@ type Config struct {
 }
 
 type S3Config struct {
-	Bucket    string `json:"bucket" yaml:"bucket"`
-	Prefix    string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
-	Endpoint  string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	Region    string `json:"region,omitempty" yaml:"region,omitempty"`
-	Profile   string `json:"profile,omitempty" yaml:"profile,omitempty"`
-	PathStyle bool   `json:"path_style,omitempty" yaml:"path_style,omitempty"`
+	Bucket          string `json:"bucket" yaml:"bucket"`
+	Prefix          string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Endpoint        string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	Region          string `json:"region,omitempty" yaml:"region,omitempty"`
+	Profile         string `json:"profile,omitempty" yaml:"profile,omitempty"`
+	AddressingStyle string `json:"addressing_style,omitempty" yaml:"addressing_style,omitempty"`
+	PathStyle       bool   `json:"path_style,omitempty" yaml:"path_style,omitempty"`
 }
 
 type DeviceSession struct {
@@ -126,16 +127,31 @@ func Login(root string, req LoginRequest) (State, error) {
 	config := Config{SchemaVersion: ConfigSchemaVersion, BackendKind: backendKind, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: deviceID, SecretRef: secretRef, EncryptionSecretRef: encryptionSecretRef, S3: s3Config, CreatedAt: createdAt, UpdatedAt: now.Format(time.RFC3339)}
 	config = normalizeConfig(config)
 	session := DeviceSession{SchemaVersion: SessionSchemaVersion, SessionID: sessionID(root, workspaceID, deviceID, now), DeviceID: deviceID, Status: "active", IssuedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}
-	if err := writeYAML(configPath(root), configForDisk(config), 0o600); err != nil {
-		return State{}, err
-	}
-	if err := os.Remove(legacyConfigPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := WriteConfig(root, config); err != nil {
 		return State{}, err
 	}
 	if err := writeJSON(sessionPath(root), session, 0o600); err != nil {
 		return State{}, err
 	}
 	return State{Config: config, Session: session}, nil
+}
+
+// WriteConfig persists the Capsa runtime config through the application-layer
+// authoring boundary: atomic directory creation, restrictive permissions, and
+// removal of the legacy JSON path. The declaration→runtime compiler reuses this
+// writer so generated config never bypasses the canonical write path.
+func WriteConfig(root string, config Config) error {
+	root, err := cleanRoot(root)
+	if err != nil {
+		return err
+	}
+	if err := writeYAML(configPath(root), configForDisk(config), 0o600); err != nil {
+		return err
+	}
+	if err := os.Remove(legacyConfigPath(root)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func Load(root string) (State, error) {
@@ -337,13 +353,32 @@ func normalizeS3Config(config *S3Config) *S3Config {
 	normalized.Endpoint = strings.TrimRight(strings.TrimSpace(normalized.Endpoint), "/")
 	normalized.Region = strings.TrimSpace(normalized.Region)
 	normalized.Profile = strings.TrimSpace(normalized.Profile)
+	normalized.AddressingStyle = normalizeS3AddressingStyle(normalized.AddressingStyle)
 	if normalized.Bucket == "" {
 		return nil
 	}
-	if normalized.Endpoint != "" {
+	switch normalized.AddressingStyle {
+	case "path":
 		normalized.PathStyle = true
+	case "virtual-hosted":
+		normalized.PathStyle = false
+	default:
+		normalized.PathStyle = normalized.PathStyle || defaultS3PathStyle(normalized.Endpoint)
 	}
 	return &normalized
+}
+
+func normalizeS3AddressingStyle(style string) string {
+	switch strings.ToLower(strings.TrimSpace(style)) {
+	case "path", "path-style", "path_style", "on", "true":
+		return "path"
+	case "virtual", "virtual-hosted", "virtual_hosted", "host", "hosted":
+		return "virtual-hosted"
+	case "auto", "":
+		return ""
+	default:
+		return strings.ToLower(strings.TrimSpace(style))
+	}
 }
 
 func endpointFromS3Config(config S3Config) string {
@@ -354,8 +389,11 @@ func endpointFromS3Config(config S3Config) string {
 	values := url.Values{}
 	if endpointURL := strings.TrimRight(strings.TrimSpace(config.Endpoint), "/"); endpointURL != "" {
 		values.Set("endpoint", endpointURL)
-		values.Set("path_style", "true")
-	} else if config.PathStyle {
+	}
+	if style := normalizeS3AddressingStyle(config.AddressingStyle); style != "" {
+		values.Set("addressing_style", style)
+	}
+	if config.PathStyle {
 		values.Set("path_style", "true")
 	}
 	if region := strings.TrimSpace(config.Region); region != "" {
@@ -377,12 +415,13 @@ func s3ConfigFromEndpoint(endpoint string) *S3Config {
 	}
 	q := u.Query()
 	return normalizeS3Config(&S3Config{
-		Bucket:    u.Host,
-		Prefix:    strings.TrimPrefix(u.Path, "/"),
-		Endpoint:  strings.TrimSpace(q.Get("endpoint")),
-		Region:    strings.TrimSpace(q.Get("region")),
-		Profile:   strings.TrimSpace(q.Get("profile")),
-		PathStyle: strings.EqualFold(q.Get("path_style"), "true") || strings.EqualFold(q.Get("path"), "auto") || strings.EqualFold(q.Get("path"), "on"),
+		Bucket:          u.Host,
+		Prefix:          strings.TrimPrefix(u.Path, "/"),
+		Endpoint:        strings.TrimSpace(q.Get("endpoint")),
+		Region:          strings.TrimSpace(q.Get("region")),
+		Profile:         strings.TrimSpace(q.Get("profile")),
+		AddressingStyle: normalizeS3AddressingStyle(firstNonEmpty(q.Get("addressing_style"), q.Get("path"))),
+		PathStyle:       strings.EqualFold(q.Get("path_style"), "true"),
 	})
 }
 

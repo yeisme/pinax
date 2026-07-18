@@ -9,7 +9,7 @@ MVP 分四个阶段推进：
 | Agent/MCP Read and Plan | project board workspace、共享 `NoteDisplay`、`pinax mcp serve` 的只读 resources/tools、localhost REST/RPC projection adapter、handoff、triage dry-run | MCP frame、REST/RPC component 和 output contract tests |
 | Controlled Apply | action file apply、本地写入审批、event evidence、handoff | dry-run/yes gate 和 redaction tests |
 
-参考 GBrain 的 “agent brain layer” 方向后，Pinax 的 MVP 应增加一个明确的 **Agent Brain MLP** 视角：先把现有 local vault、memory ledger、KB context、link graph、query/database views 和 MCP 只读 surface 组合成 agent 可消费的长期记忆入口，而不是先做托管知识库或通用聊天 UI。
+Pinax 的 MVP 应增加一个明确的 **Agent Brain MLP** 视角：先把现有 local vault、memory ledger、KB context、link graph、query/database views 和 MCP 只读 surface 组合成 agent 可消费的长期记忆入口，而不是扩展成通用平台、发布工具或聊天 UI。
 
 Agent Brain MLP 的最小闭环：
 
@@ -25,8 +25,11 @@ Agent Brain MLP 的最小闭环：
 
 这个 MLP 的验收标准不是“搜索命中很多”，而是 agent 能回答带引用的问题：对象是谁、最近发生了什么、有哪些未完成事项、证据来自哪里、哪些信息可能过期、下一步应该运行什么命令。答案综合本身仍属于 preview/experimental 能力；在没有正式 synthesis contract 之前，CLI/API 应优先返回 memory/kb/graph/search 的 bounded context，让上层 agent 自行合成并引用 evidence。
 
-Daily briefing workflow 是后续 agent workflow 切片。它必须建立在 local vault、research evidence ledger、review queue 和 delivery receipt 之上，不应变成独立 news bot。类似 GBrain 的 dream cycle 可以作为更晚的 maintenance loop：实体合并、引用修复、记忆去重、过期检测、矛盾提示和摘要压缩都必须先产出 reviewable plan，不得夜间静默改写 note body。
+`pinax brain answer` 当前只提供 read-only extractive preview，复用 bounded search evidence，不调用 provider、不写 vault。`pinax brain maintain` 当前只提供 plan-only preview；`--save-plan` 只写 CLI-authored plan evidence。Planned `pinax brain context` 和 `pinax brain sources` 只围绕本地 bounded context 和 evidence sources 递进；当前 MVP 文档不能把未实现命令写成已可运行。
+
+发布版能力矩阵和 maturity 标签真源见 [product-positioning.md 发布版能力矩阵](../overview/product-positioning.md#发布版能力矩阵)；该矩阵与 `pinax api routes --json` 的 `release_core=true` 能力一一对应。
+
+Agent Brain maintenance 只保留 proof-loop 内的 plan-first 能力：实体合并、引用修复、记忆去重、过期检测、矛盾提示和摘要压缩都必须先产出 reviewable plan，不得静默改写 note body。
 
 当前 MVP 的第一轮外部评估优先服务真实 Markdown vault：先让用户安全连接、capture daily/inbox，建立 SQLite/GORM local index，按 tag/group/folder/kind/status 搜索和浏览，保存常用视图，检查 resolved/broken/ambiguous links、orphan notes 和 attachments，按 `--link-target` 搜索，导入和导出 Markdown bundle，补充 metadata，生成 repair/organize plan 和 project board plan，然后在显式 version snapshot 保护后执行本地变更。Project board 是本地 project workbench，不是 remote Todo provider；`project board plan --save` 写 review snapshot，weekly planning 可以读取 board counts，但不会自动把全部 item 写入外部 task system。
 
-未来 Web/Open Design 工作只是同一套 local projection 上的客户端合同，不是真源替代，也不表示当前 CLI 已实现 Web UI。Kanban、知识图谱、搜索和无限画布方向见 [Pinax Web 开放设计](./web-open-design.md)，Pinax 侧合同由 OpenSpec `pinax-web-open-design-client-contracts` 跟踪；真正客户端源码必须由未来独立客户端子项目拥有。

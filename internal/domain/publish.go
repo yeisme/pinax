@@ -7,7 +7,10 @@ const PublishProfileSchemaVersion = "pinax.publish_profile.v1"
 type PublishTarget string
 
 const (
+	PublishTargetLocal       PublishTarget = "local"
 	PublishTargetGitHubPages PublishTarget = "github-pages"
+	PublishTargetVercel      PublishTarget = "vercel"
+	PublishTargetCloudflare  PublishTarget = "cloudflare-pages"
 	PublishTargetGitHubWiki  PublishTarget = "github-wiki"
 	PublishTargetGitHubGist  PublishTarget = "github-gist"
 	PublishTargetHTTP        PublishTarget = "http"
@@ -16,9 +19,18 @@ const (
 type PublishRenderer string
 
 const (
-	PublishRendererHugo PublishRenderer = "hugo"
-	PublishRendererNone PublishRenderer = "none"
+	PublishRendererPinaxWeb PublishRenderer = "pinax-web"
+	PublishRendererHugo     PublishRenderer = "hugo"
+	PublishRendererNone     PublishRenderer = "none"
 )
+
+type PublishProfileMigrationPlan struct {
+	Recommended  bool            `json:"recommended"`
+	FromRenderer PublishRenderer `json:"from_renderer,omitempty"`
+	ToRenderer   PublishRenderer `json:"to_renderer,omitempty"`
+	Reason       string          `json:"reason,omitempty"`
+	Command      string          `json:"command,omitempty"`
+}
 
 type PublishBodyPolicy string
 
@@ -27,10 +39,12 @@ const PublishBodyPolicyPublishedNotesOnly PublishBodyPolicy = "published-notes-o
 type PublishDeployMode string
 
 const (
-	PublishDeployModeNone PublishDeployMode = "none"
-	PublishDeployModeGit  PublishDeployMode = "git"
-	PublishDeployModeGist PublishDeployMode = "gist"
-	PublishDeployModeHTTP PublishDeployMode = "http"
+	PublishDeployModeNone            PublishDeployMode = "none"
+	PublishDeployModeGit             PublishDeployMode = "git"
+	PublishDeployModeGist            PublishDeployMode = "gist"
+	PublishDeployModeHTTP            PublishDeployMode = "http"
+	PublishDeployModeVercel          PublishDeployMode = "vercel"
+	PublishDeployModeCloudflarePages PublishDeployMode = "cloudflare-pages"
 )
 
 type PublishThemeSource struct {
@@ -114,6 +128,7 @@ type PublishDeploy struct {
 	SecretRef  string            `json:"secret_ref,omitempty" yaml:"secret_ref,omitempty"`
 	GistID     string            `json:"gist_id,omitempty" yaml:"gist_id,omitempty"`
 	Visibility string            `json:"visibility,omitempty" yaml:"visibility,omitempty"`
+	Project    string            `json:"project,omitempty" yaml:"project,omitempty"`
 }
 
 type PublishValidationIssue struct {

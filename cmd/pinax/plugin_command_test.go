@@ -99,7 +99,7 @@ budgets:
 
 func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 
 	installOut := runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 	assertJSONCommandStatus(t, installOut, "plugin.install", "success")
@@ -125,6 +125,12 @@ func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
 	assertJSONCommandStatus(t, listOut, "plugin.list", "success")
 	if facts := jsonParseFacts(t, listOut); facts["plugins"] != "1" || facts["enabled"] != "0" {
 		t.Fatalf("list facts = %#v", facts)
+	}
+	defaultListOut := runCLI(t, "plugin", "list", "--vault", root)
+	for _, want := range []string{"Plugins", "Plugin ID", "Name", "Version", "Runtime", "Enabled", "project-dashboard", "Project Dashboard", "0.1.0", "wasm", "false"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("plugin list default output missing %q:\n%s", want, defaultListOut)
+		}
 	}
 
 	inspectOut := runCLI(t, "plugin", "inspect", "project-dashboard", "--vault", root, "--json")
@@ -154,7 +160,7 @@ func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
 
 func TestPluginCommandFamilyOutputContract(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 
 	helpOut := runCLI(t, "plugin", "--help")
@@ -165,7 +171,7 @@ func TestPluginCommandFamilyOutputContract(t *testing.T) {
 	}
 
 	agentOut := runCLI(t, "plugin", "list", "--vault", root, "--agent")
-	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=plugin.list", "status=success", "fact.plugins=1", "fact.enabled=0"} {
+	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=plugin.list", "status=success", "fact.plugins=1", "fact.enabled=0", "plugin.1.id=project-dashboard", "plugin.1.name=\"Project Dashboard\"", "plugin.1.version=0.1.0", "plugin.1.runtime=wasm", "plugin.1.enabled=false"} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("plugin list agent missing %q:\n%s", want, agentOut)
 		}
@@ -225,7 +231,7 @@ func TestPluginCommandFamilyOutputContract(t *testing.T) {
 
 func TestPluginRunUnavailableContract(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 	runCLI(t, "plugin", "enable", "project-dashboard", "--yes", "--vault", root, "--json")
 	runCLI(t, "plugin", "permissions", "grant", "project-dashboard", "projection.read", "--capability", "render_dashboard", "--yes", "--vault", root, "--json")
@@ -277,7 +283,7 @@ func TestPluginRunPythonExternalRunnerContract(t *testing.T) {
 
 func TestPluginPermissionsGrantRevokeAndRunDenyByDefault(t *testing.T) {
 	root := t.TempDir()
-	pluginDir := writePluginFixture(t, root, "project-dashboard")
+	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
 	runCLI(t, "plugin", "enable", "project-dashboard", "--yes", "--vault", root, "--json")
 
@@ -299,6 +305,18 @@ func TestPluginPermissionsGrantRevokeAndRunDenyByDefault(t *testing.T) {
 	if facts := jsonParseFacts(t, listOut); facts["grants"] != "1" || !strings.Contains(listOut, "projection.read") {
 		t.Fatalf("permissions list after grant invalid facts=%#v out=%s", facts, listOut)
 	}
+	defaultListOut := runCLI(t, "plugin", "permissions", "list", "project-dashboard", "--vault", root)
+	for _, want := range []string{"Permission grants", "Permission", "Capability", "Granted", "projection.read", "render_dashboard"} {
+		if !strings.Contains(defaultListOut, want) {
+			t.Fatalf("permissions list default output missing %q:\n%s", want, defaultListOut)
+		}
+	}
+	agentListOut := runCLI(t, "plugin", "permissions", "list", "project-dashboard", "--vault", root, "--agent")
+	for _, want := range []string{"command=plugin.permissions.list", "fact.grants=1", "permission_grant.1.permission=projection.read", "permission_grant.1.capability=render_dashboard", "permission_grant.1.granted_at="} {
+		if !strings.Contains(agentListOut, want) {
+			t.Fatalf("permissions list agent missing %q:\n%s", want, agentListOut)
+		}
+	}
 
 	revokeOut := runCLI(t, "plugin", "permissions", "revoke", "project-dashboard", "projection.read", "--capability", "render_dashboard", "--yes", "--vault", root, "--json")
 	assertJSONCommandStatus(t, revokeOut, "plugin.permissions.revoke", "success")
@@ -307,8 +325,9 @@ func TestPluginPermissionsGrantRevokeAndRunDenyByDefault(t *testing.T) {
 	}
 }
 
-func writePluginFixture(t *testing.T, root, id string) string {
+func writePluginFixture(t *testing.T, root string) string {
 	t.Helper()
+	const id = "project-dashboard"
 	pluginDir := filepath.Join(root, "plugins", id)
 	writeCLIFixture(t, filepath.Join(pluginDir, "dist", "plugin.wasm"), "fake wasm bytes")
 	writeCLIFixture(t, filepath.Join(pluginDir, "pinax-plugin.yaml"), `schema_version: pinax.plugin.v1

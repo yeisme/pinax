@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/identity"
 )
 
 func TestJournalTemplateCreatesDailyAndDoesNotRewriteExisting(t *testing.T) {
@@ -181,5 +183,21 @@ func TestDailyCaptureLegacyMissingBlock(t *testing.T) {
 	}
 	if got := readFile(t, dailyPath); got != dailyBody {
 		t.Fatalf("daily missing block should not be rewritten:\n%s", got)
+	}
+}
+
+func TestEnsureJournalNoteAllocatesCanonicalObjectID(t *testing.T) {
+	root := t.TempDir()
+	_, rel, _, err := ensureJournalNote(root, DailyRequest{Date: "2026-07-10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := parseNote(rel, string(payload))
+	if identity.Classify(note.ID) != identity.IDClassCanonical {
+		t.Fatalf("journal object id = %q", note.ID)
 	}
 }

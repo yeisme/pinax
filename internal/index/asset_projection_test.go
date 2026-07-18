@@ -10,7 +10,7 @@ import (
 
 func TestAssetProjectionListAndFind(t *testing.T) {
 	root := t.TempDir()
-	asset := domain.Asset{ID: "asset_index", Path: "assets/from-index.png", Filename: "from-index.png", Stem: "from-index", Extension: "png", MediaType: "image/png", Size: 12, SHA256: "abc123", ManagedStatus: domain.ManagedStatusManaged, Width: 3, Height: 2}
+	asset := domain.Asset{ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0103", ID: "asset_index", Path: "assets/from-index.png", Filename: "from-index.png", Stem: "from-index", Extension: "png", MediaType: "image/png", Size: 12, SHA256: "abc123", ManagedStatus: domain.ManagedStatusManaged, Width: 3, Height: 2}
 	if err := ReplaceAssetProjection(root, []domain.Asset{asset}); err != nil {
 		t.Fatalf("replace asset projection: %v", err)
 	}
@@ -18,7 +18,7 @@ func TestAssetProjectionListAndFind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list assets: %v", err)
 	}
-	if status.Status != "fresh" || len(assets) != 1 || assets[0].Path != asset.Path || assets[0].Width != 3 || assets[0].Height != 2 {
+	if status.Status != "fresh" || len(assets) != 1 || assets[0].ObjectID != asset.ObjectID || assets[0].Path != asset.Path || assets[0].Width != 3 || assets[0].Height != 2 {
 		t.Fatalf("assets=%#v status=%#v", assets, status)
 	}
 	found, status, err := FindAsset(root, "from-index")
@@ -27,6 +27,9 @@ func TestAssetProjectionListAndFind(t *testing.T) {
 	}
 	if status.Status != "fresh" || found.ID != asset.ID {
 		t.Fatalf("found=%#v status=%#v", found, status)
+	}
+	if found.ObjectID != asset.ObjectID {
+		t.Fatalf("found object id = %q, want %q", found.ObjectID, asset.ObjectID)
 	}
 }
 

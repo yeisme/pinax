@@ -27,12 +27,13 @@ func TestPublishProfileDefaultsAreSafe(t *testing.T) {
 
 func TestPublishStableEnumValues(t *testing.T) {
 	cases := map[string]string{
-		"target pages":  string(PublishTargetGitHubPages),
-		"target wiki":   string(PublishTargetGitHubWiki),
-		"renderer":      string(PublishRendererHugo),
-		"renderer none": string(PublishRendererNone),
-		"body policy":   string(PublishBodyPolicyPublishedNotesOnly),
-		"violation":     string(PublishViolationAuthorizationHeader),
+		"target pages":         string(PublishTargetGitHubPages),
+		"target wiki":          string(PublishTargetGitHubWiki),
+		"renderer pinax-web":   string(PublishRendererPinaxWeb),
+		"renderer hugo legacy": string(PublishRendererHugo),
+		"renderer none":        string(PublishRendererNone),
+		"body policy":          string(PublishBodyPolicyPublishedNotesOnly),
+		"violation":            string(PublishViolationAuthorizationHeader),
 	}
 	for name, got := range cases {
 		if got == "" {

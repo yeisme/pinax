@@ -69,6 +69,20 @@ func (s *Service) ResolveVaultObjectForWrite(ctx context.Context, req ResolverRe
 	return result, nil
 }
 
+func (s *Service) ResolveManagedObjectForMutation(ctx context.Context, req ResolverRequest) (ResolverResult, error) {
+	result, err := s.ResolveVaultObjectForWrite(ctx, req)
+	if err != nil {
+		return result, err
+	}
+	if len(result.Candidates) == 1 {
+		candidate := result.Candidates[0]
+		if candidate.ObjectKind == domain.VaultObjectKindNote && strings.TrimSpace(candidate.NoteID) == "" {
+			return result, &domain.CommandError{Code: "identity_migration_required", Message: "managed note mutation requires an object ID", Hint: "Run pinax record identity audit, save a migration plan, and apply it before mutating the note"}
+		}
+	}
+	return result, nil
+}
+
 func resolverWriteGuardErrorProjection(command string, result ResolverResult, err error) domain.Projection {
 	projection := errorProjection(command, err)
 	projection.Facts["query"] = result.Facts.Query

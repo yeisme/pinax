@@ -355,3 +355,72 @@ func (e *fakeExecutor) Push(ctx context.Context) (string, error) {
 	}
 	return e.pushRevision, e.pushErr
 }
+
+func TestSyncDaemonStatusConvergesStaleDegradedDaemon(t *testing.T) {
+	root := t.TempDir()
+	repo := syncdaemon.NewRepository(root)
+	state := syncdaemon.NewState("capsa", os.Getpid()+1000000, syncdaemon.DetectionWatch, syncdaemon.StatusDegraded)
+	state.LastErrorCode = "encryption_key_mismatch"
+	state.Message = "encryption key mismatch"
+	if err := repo.WriteState(state); err != nil {
+		t.Fatalf("WriteState: %v", err)
+	}
+	if err := repo.RequestStop(); err != nil {
+		t.Fatalf("RequestStop: %v", err)
+	}
+
+	if _, err := NewService().SyncDaemonStatus(context.Background(), SyncDaemonRequest{VaultPath: root, Target: "capsa"}); err != nil {
+		t.Fatalf("SyncDaemonStatus: %v", err)
+	}
+	loaded, err := repo.ReadState()
+	if err != nil {
+		t.Fatalf("ReadState: %v", err)
+	}
+	if loaded.Status != syncdaemon.StatusStopped || loaded.PID != 0 {
+		t.Fatalf("stale daemon state = %#v", loaded)
+	}
+	if loaded.LastErrorCode != "encryption_key_mismatch" || loaded.Message == "" {
+		t.Fatalf("diagnostic state was lost = %#v", loaded)
+	}
+	if repo.StopRequested() {
+		t.Fatal("stale stop request was not cleared")
+	}
+}
+
+func TestSyncDaemonStopIsIdempotentForInactiveProcess(t *testing.T) {
+	root := t.TempDir()
+	repo := syncdaemon.NewRepository(root)
+	state := syncdaemon.NewState("capsa", os.Getpid()+1000000, syncdaemon.DetectionWatch, syncdaemon.StatusDegraded)
+	state.LastErrorCode = "encryption_key_mismatch"
+	state.Message = "encryption key mismatch"
+	if err := repo.WriteState(state); err != nil {
+		t.Fatalf("WriteState: %v", err)
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		projection, err := NewService().SyncDaemonStop(context.Background(), SyncDaemonRequest{VaultPath: root, Target: "capsa"})
+		if err != nil {
+			t.Fatalf("SyncDaemonStop attempt %d: %v", attempt+1, err)
+		}
+		if projection.Facts["daemon_status"] != syncdaemon.StatusStopped {
+			t.Fatalf("stop attempt %d status = %#v", attempt+1, projection.Facts["daemon_status"])
+		}
+	}
+	loaded, err := repo.ReadState()
+	if err != nil {
+		t.Fatalf("ReadState: %v", err)
+	}
+	if loaded.Status != syncdaemon.StatusStopped || loaded.PID != 0 || repo.StopRequested() {
+		t.Fatalf("stop did not converge = %#v stop_requested=%v", loaded, repo.StopRequested())
+	}
+}
+
+func TestCommandErrorClassifiesKeyIDMismatch(t *testing.T) {
+	commandErr := commandErrorFromError(errors.New("key ID mismatch: envelope=key_old, key=key_new"))
+	if commandErr.Code != "encryption_key_mismatch" {
+		t.Fatalf("command error code = %q", commandErr.Code)
+	}
+	if !strings.Contains(commandErr.Hint, "Restore the previous encryption secret") {
+		t.Fatalf("command error hint = %q", commandErr.Hint)
+	}
+}

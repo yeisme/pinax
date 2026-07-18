@@ -31,7 +31,9 @@ func (s *Service) SyncInit(ctx context.Context, req SyncInitRequest) (domain.Pro
 	if strings.TrimSpace(req.Endpoint) == "" {
 		state, loadErr := remote.Load(root)
 		if loadErr == nil {
-			projection := domain.NewProjection("sync.init", "Existing Cloud Sync configuration reused.")
+			projection := domain.NewProjection("sync.init", "Existing Capsa sync configuration reused.")
+			projection.Facts["target"] = syncTargetCapsa
+			addCapsaBridgeFacts(&projection, syncTargetCapsa)
 			projection.Facts["backend_kind"] = state.Config.BackendKind
 			projection.Facts["endpoint"] = state.Config.Endpoint
 			projection.Facts["workspace"] = state.Config.WorkspaceID
@@ -40,7 +42,7 @@ func (s *Service) SyncInit(ctx context.Context, req SyncInitRequest) (domain.Pro
 			return projection, nil
 		}
 		if remote.IsNotConfigured(loadErr) {
-			err := &domain.CommandError{Code: "cloud_not_configured", Message: "Cloud Sync is not configured", Hint: "Run pinax cloud backend set s3 or pinax cloud login first"}
+			err := &domain.CommandError{Code: "cloud_not_configured", Message: "Capsa sync is not configured", Hint: "Run pinax capsa backend set s3 or pinax capsa login first"}
 			return domain.NewErrorProjection("sync.init", err), err
 		}
 		return errorProjection("sync.init", loadErr), loadErr
@@ -53,8 +55,10 @@ func (s *Service) SyncInit(ctx context.Context, req SyncInitRequest) (domain.Pro
 	}); err != nil {
 		return errorProjection("sync.init", err), err
 	}
-	projection := domain.NewProjection("sync.init", "Cloud sync configuration initialized.")
-	projection.Data = map[string]any{"endpoint": req.Endpoint, "workspace": req.WorkspaceID, "device": req.DeviceID}
+	projection := domain.NewProjection("sync.init", "Capsa sync configuration initialized.")
+	projection.Facts["target"] = syncTargetCapsa
+	addCapsaBridgeFacts(&projection, syncTargetCapsa)
+	projection.Data = map[string]any{"target": syncTargetCapsa, "endpoint": req.Endpoint, "workspace": req.WorkspaceID, "device": req.DeviceID}
 	return projection, nil
 }
 
@@ -97,7 +101,9 @@ func (s *Service) SyncStatus(ctx context.Context, req SyncStatusRequest) (domain
 			}
 		}
 	}
-	projection := domain.NewProjection("sync.status", "Cloud sync status read.")
+	projection := domain.NewProjection("sync.status", "Capsa sync status read.")
+	projection.Facts["target"] = syncTargetCapsa
+	addCapsaBridgeFacts(&projection, syncTargetCapsa)
 	projection.Facts["configured"] = "true"
 	projection.Facts["sync_status"] = status
 	projection.Facts["backend_kind"] = directBackendKind(state)
@@ -118,9 +124,9 @@ func (s *Service) SyncStatus(ctx context.Context, req SyncStatusRequest) (domain
 	case "conflicted":
 		projection.Actions = append(projection.Actions, domain.Action{Name: "conflicts", Command: fmt.Sprintf("pinax sync conflicts list --vault %s --json", shellQuote(root))})
 	case "stale":
-		projection.Actions = append(projection.Actions, domain.Action{Name: "diff", Command: fmt.Sprintf("pinax sync diff --target cloud --vault %s --json", shellQuote(root))})
+		projection.Actions = append(projection.Actions, domain.Action{Name: "diff", Command: fmt.Sprintf("pinax sync diff --target capsa --vault %s --json", shellQuote(root))})
 	case "transport_unavailable":
-		projection.Actions = append(projection.Actions, domain.Action{Name: "doctor", Command: fmt.Sprintf("pinax cloud doctor --vault %s --json", shellQuote(root))})
+		projection.Actions = append(projection.Actions, domain.Action{Name: "doctor", Command: fmt.Sprintf("pinax capsa doctor --vault %s --json", shellQuote(root))})
 	}
 	projection.Data = map[string]any{"state": current, "latest_run": latest, "remote_revision": remoteRevision, "status": status}
 	return projection, nil
@@ -131,8 +137,8 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 	if err != nil {
 		return errorProjection("sync.all", err), err
 	}
-	if target != "cloud" {
-		return errorProjection("sync.all", fmt.Errorf("sync all currently only supports target=cloud")), nil
+	if !isCapsaSyncTarget(target) {
+		return errorProjection("sync.all", fmt.Errorf("sync all currently only supports target=capsa")), nil
 	}
 
 	// Pull
@@ -158,7 +164,7 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 	projection := domain.NewProjection("sync.all", "Bidirectional sync completed.")
 	state, stateErr := cloudStateForSync(root, req)
 	if stateErr == nil {
-		receipt := syncRunStart("sync.all", syncplan.Direction("all"), state, req.PathPolicy)
+		receipt := syncRunStart("sync.all", syncplan.Direction("all"), state, req.PathPolicy, target)
 		receipt.Status = combinedSyncStatus(pullProj.Status, pushProj.Status)
 		receipt.RemoteWrite = pushProj.Facts["remote_write"] == "true"
 		receipt.LocalWrite = pullProj.Facts["files_applied"] != "" && pullProj.Facts["files_applied"] != "0"
@@ -168,7 +174,7 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 			receipt.RevisionID = rev
 		}
 		receipt.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))}}
-		receipt, receiptPath, receiptErr := finishSyncRun(root, state, receipt, syncplan.Plan{Direction: syncplan.Direction("all"), Target: "cloud", RemoteWrite: receipt.RemoteWrite}, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
+		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, syncplan.Plan{Direction: syncplan.Direction("all"), Target: syncOutputTarget(target), RemoteWrite: receipt.RemoteWrite}, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
 		if receiptErr == nil {
 			_ = writeCurrentSyncState(root, state, receipt, receipt.RevisionID)
 			projection.Facts["run_id"] = receipt.RunID
@@ -176,6 +182,8 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 			projection.Evidence = []string{receiptPath}
 		}
 	}
+	projection.Facts["target"] = syncOutputTarget(target)
+	addCapsaBridgeFacts(&projection, target)
 	projection.Data = map[string]any{"pull": pullProj.Data, "push": pushProj.Data}
 	return projection, nil
 }

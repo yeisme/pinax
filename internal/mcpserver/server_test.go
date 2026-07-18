@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -105,6 +106,61 @@ func TestReadonlyMCPNoteReadUsesBoundedDisplay(t *testing.T) {
 	note := data["note"].(domain.NoteDisplay)
 	if resp.Result["status"] != "success" || note.Display != domain.NoteDisplayCard || note.Body != "" || note.Excerpt == "" {
 		t.Fatalf("note read result leaked body or missed bounded display: %#v", resp.Result)
+	}
+}
+
+func TestReadonlyMCPBrainToolsAreBoundedAndReadonly(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeMCPFixture(t, root, "notes/alice.md", "# Alice Meeting\n\nAlice needs roadmap and budget updates.\n\nSECRET_BODY_SENTINEL Authorization: Bearer raw_provider_payload should not leak.\n")
+	server := NewServer(svc, root)
+
+	tools, err := server.Handle(ctx, Request{ID: 30, Method: "tools/list"})
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	for _, name := range []string{"pinax.brain.context", "pinax.brain.answer", "pinax.brain.sources", "pinax.brain.maintenance_plan"} {
+		tool, ok := toolByName(tools.Tools, name)
+		if !ok {
+			t.Fatalf("missing %s in tools: %#v", name, tools.Tools)
+		}
+		if !tool.Readonly || tool.BodyExposure != "bounded_projection" || tool.Scope != "local_vault" {
+			t.Fatalf("brain tool metadata for %s = %#v", name, tool)
+		}
+	}
+
+	answer, err := server.Handle(ctx, Request{ID: 31, Method: "tools/call", Params: map[string]any{"name": "pinax.brain.answer", "arguments": map[string]any{"question": "Alice roadmap budget", "body_exposure": "full"}}})
+	if err != nil {
+		t.Fatalf("brain answer tool: %v", err)
+	}
+	text := fmt.Sprint(answer.Result)
+	for _, forbidden := range []string{"SECRET_BODY_SENTINEL", "Authorization", "Bearer", "raw_provider_payload"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("brain answer MCP leaked %q: %s", forbidden, text)
+		}
+	}
+	if answer.Result["command"] != "brain.answer" || !strings.Contains(text, "pinax.agent_brain.answer.v1") || !strings.Contains(text, "bounded_projection") {
+		t.Fatalf("brain answer result = %#v", answer.Result)
+	}
+
+	sources, err := server.Handle(ctx, Request{ID: 32, Method: "tools/call", Params: map[string]any{"name": "pinax.brain.sources", "arguments": map[string]any{"question": "Alice roadmap budget"}}})
+	if err != nil {
+		t.Fatalf("brain sources tool: %v", err)
+	}
+	if sources.Result["status"] != "success" || !strings.Contains(fmt.Sprint(sources.Result), "sources") {
+		t.Fatalf("brain sources result = %#v", sources.Result)
+	}
+
+	maintenance, err := server.Handle(ctx, Request{ID: 33, Method: "tools/call", Params: map[string]any{"name": "pinax.brain.maintenance_plan", "arguments": map[string]any{}}})
+	if err != nil {
+		t.Fatalf("brain maintenance plan tool: %v", err)
+	}
+	if maintenance.Result["status"] != "success" || !strings.Contains(fmt.Sprint(maintenance.Result), "pinax proof loop run") {
+		t.Fatalf("brain maintenance plan result = %#v", maintenance.Result)
 	}
 }
 
@@ -216,6 +272,15 @@ func containsTool(tools []Tool, name string) bool {
 	return false
 }
 
+func toolByName(tools []Tool, name string) (Tool, bool) {
+	for _, tool := range tools {
+		if tool.Name == name {
+			return tool, true
+		}
+	}
+	return Tool{}, false
+}
+
 func containsResource(resources []Resource, uri string) bool {
 	for _, resource := range resources {
 		if resource.URI == uri {
@@ -273,4 +338,114 @@ func TestReadonlyMCPQueryAndDatabaseView(t *testing.T) {
 	if rendered.Result["status"] != "success" || !strings.Contains(fmt.Sprint(rendered.Result), "database_tab") || !strings.Contains(fmt.Sprint(rendered.Result), "database.display:list") {
 		t.Fatalf("database view render result = %#v", rendered.Result)
 	}
+}
+
+// TestMCPReleaseCoreFrame drives the stdio JSON-RPC frame protocol end to end
+// (initialize -> tools/list -> bounded read -> write rejection) so the release
+// MCP experience has automated evidence that does not depend on a real MCP
+// client, network, token, or user vault.
+func TestMCPReleaseCoreFrame(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Release Frame"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeMCPFixture(t, root, "notes/release.md", "# Release\n\nbounded read frame.\n")
+	if _, err := svc.RebuildIndex(ctx, app.VaultRequest{VaultPath: root}); err != nil {
+		t.Fatalf("rebuild index: %v", err)
+	}
+
+	// Build a newline-delimited JSON-RPC frame input and drive Serve().
+	frames := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"pinax.search","arguments":{"query":"bounded"}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"pinax.repair.apply"}}`,
+	}
+	var in strings.Builder
+	for _, f := range frames {
+		in.WriteString(f + "\n")
+	}
+	var out strings.Builder
+	if err := Serve(ctx, svc, root, strings.NewReader(in.String()), &out); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	responses := parseMCPFrameResponses(t, out.String())
+	if len(responses) != len(frames) {
+		t.Fatalf("expected %d frame responses, got %d: %#v", len(frames), len(responses), out.String())
+	}
+
+	// Frame 1: initialize declares read_only release posture.
+	if responses[0].Result["read_only"] != true {
+		t.Fatalf("initialize must declare read_only: %#v", responses[0])
+	}
+
+	// Frame 2: tools/list only advertises readonly + plan-preview tools.
+	for _, tool := range responses[1].Tools {
+		if strings.Contains(tool.Name, "apply") || strings.Contains(tool.Name, ".write") || strings.Contains(tool.Name, "delete") {
+			t.Fatalf("release MCP must not advertise write tool %s", tool.Name)
+		}
+	}
+	if !containsTool(responses[1].Tools, "pinax.search") {
+		t.Fatalf("tools/list missing bounded read tool: %#v", responses[1].Tools)
+	}
+
+	// Frame 3: bounded read tool succeeds.
+	if responses[2].Result["status"] != "success" {
+		t.Fatalf("bounded read tool should succeed: %#v", responses[2].Result)
+	}
+
+	// Frame 4: write attempt is rejected (approval_required), vault untouched.
+	if responses[3].Error == nil || responses[3].Error.Code != "approval_required" {
+		t.Fatalf("write tool must be rejected with approval_required: %#v", responses[3])
+	}
+}
+
+// TestMCPReleaseCoreExposesNoDirectWriteTools is the canonical release gate
+// that tools/list and resources/list never advertise a direct vault mutation
+// surface (Markdown, .pinax/**, Git, provider, Cloud Sync, or remote write).
+func TestMCPReleaseCoreExposesNoDirectWriteTools(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	server := NewServer(svc, root)
+
+	toolsResp, err := server.Handle(ctx, Request{ID: 1, Method: "tools/list"})
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	forbiddenFragments := []string{"apply", ".write", "delete", "capture", "promote", "discard", "sync.push", "sync.pull", "snapshot.create"}
+	for _, tool := range toolsResp.Tools {
+		for _, fragment := range forbiddenFragments {
+			if strings.Contains(tool.Name, fragment) {
+				t.Fatalf("release MCP tool %s matches forbidden write fragment %q", tool.Name, fragment)
+			}
+		}
+	}
+	// pinax.git.snapshot_plan is allowed because it only returns a next command.
+	if !containsTool(toolsResp.Tools, "pinax.git.snapshot_plan") {
+		t.Fatalf("plan-preview tool should be advertised: %#v", toolsResp.Tools)
+	}
+}
+
+func parseMCPFrameResponses(t *testing.T, out string) []Response {
+	t.Helper()
+	var responses []Response
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var resp Response
+		if err := json.Unmarshal([]byte(line), &resp); err != nil {
+			t.Fatalf("failed to parse frame response %q: %v", line, err)
+		}
+		responses = append(responses, resp)
+	}
+	return responses
 }

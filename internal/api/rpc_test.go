@@ -77,6 +77,26 @@ func TestLocalRPCProjectBoardNoteAndProjectItemPlan(t *testing.T) {
 	}
 }
 
+func TestLocalRPCWorkbenchActivity(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	rpc := NewRPCDispatcher(svc, root)
+
+	list, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Workbench.Activity.List", Params: map[string]any{"limit": 1, "query": "vault"}})
+	if err != nil || list.Command != "activity.list" || list.Facts["entries"] != "1" {
+		t.Fatalf("activity list rpc projection=%#v err=%v", list, err)
+	}
+	entries := list.Data.(map[string]any)["entries"].([]app.ActivityEntry)
+	show, err := rpc.Call(ctx, RPCRequest{Method: "Pinax.Workbench.Activity.Show", Params: map[string]any{"event_id": entries[0].EventID}})
+	if err != nil || show.Command != "activity.show" || show.Facts["event_id"] != entries[0].EventID {
+		t.Fatalf("activity show rpc projection=%#v err=%v", show, err)
+	}
+}
+
 func TestLocalRPCNoteListSupportsCLIQueryFilters(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -198,6 +218,55 @@ func TestLocalRPCCreateDryRunDoesNotWriteNotes(t *testing.T) {
 	}
 }
 
+func TestLocalRPCMemoryRoutesAndWriteGate(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	readonly := NewRPCDispatcher(svc, root)
+
+	dryRun, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "predicate": "memory_capture_usage", "object": "Use --body or --subject and --object", "source": "rpc-test", "dry_run": true}})
+	if err != nil || dryRun.Command != "memory.capture" || dryRun.Facts["dry_run"] != "true" {
+		t.Fatalf("memory capture dry-run rpc projection=%#v err=%v", dryRun, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".pinax", "memory", "ledger.sqlite")); !os.IsNotExist(statErr) {
+		t.Fatalf("memory capture dry-run wrote ledger: stat err=%v", statErr)
+	}
+
+	blocked, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision", "yes": true}})
+	if err == nil || blocked.Error == nil || blocked.Error.Code != "write_disabled" {
+		t.Fatalf("readonly memory capture should fail with write_disabled: projection=%#v err=%v", blocked, err)
+	}
+
+	writer := NewRPCDispatcherWithOptions(svc, root, DispatcherOptions{AllowWrite: true})
+	approval, err := writer.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision"}})
+	if err == nil || approval.Error == nil || approval.Error.Code != "approval_required" {
+		t.Fatalf("memory capture without approval should fail: projection=%#v err=%v", approval, err)
+	}
+	captured, err := writer.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision", "source": "rpc-test", "entities": []any{"pinax"}, "yes": true}})
+	if err != nil || captured.Command != "memory.capture" || captured.Facts["dry_run"] != "false" {
+		t.Fatalf("memory capture rpc projection=%#v err=%v", captured, err)
+	}
+	list, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.List", Params: map[string]any{"entity": "pinax"}})
+	if err != nil || list.Command != "memory.list" || list.Facts["records"] != "1" {
+		t.Fatalf("memory list rpc projection=%#v err=%v", list, err)
+	}
+	recall, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Recall", Params: map[string]any{"query": "decision", "entity": "pinax"}})
+	if err != nil || recall.Command != "memory.recall" || recall.Facts["memory.matches"] != "1" {
+		t.Fatalf("memory recall rpc projection=%#v err=%v", recall, err)
+	}
+	contextProjection, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Context", Params: map[string]any{"task": "next decision", "entity": "pinax"}})
+	if err != nil || contextProjection.Command != "memory.context" || contextProjection.Facts["memory.matches"] != "1" {
+		t.Fatalf("memory context rpc projection=%#v err=%v", contextProjection, err)
+	}
+	stats, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Stats"})
+	if err != nil || stats.Command != "memory.stats" || stats.Facts["memory.records"] != "1" {
+		t.Fatalf("memory stats rpc projection=%#v err=%v", stats, err)
+	}
+}
+
 func TestLocalRPCProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -225,6 +294,7 @@ func TestLocalRPCProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
 }
 
 func TestLocalRPCSyncPushPullUsesWriteGateAndService(t *testing.T) {
+	t.Setenv("PINAX_TEST_SECRET", "rpc-sync-secret")
 	ctx := context.Background()
 	objectRoot := t.TempDir()
 	root := t.TempDir()
@@ -273,9 +343,30 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
 	taskID := addAPITaskAdoptFixture(t, ctx, root, svc)
 	rpc := NewRPCDispatcher(svc, root)
+	activity, err := svc.ActivityList(ctx, app.ActivityRequest{VaultPath: root, Limit: 1})
+	if err != nil {
+		t.Fatalf("activity list: %v", err)
+	}
+	activityEntries := activity.Data.(map[string]any)["entries"].([]app.ActivityEntry)
+	if len(activityEntries) == 0 {
+		t.Fatalf("expected init activity entry")
+	}
+	monitor, err := svc.MonitorList(ctx, app.MonitorRequest{VaultPath: root, Limit: 1})
+	if err != nil {
+		t.Fatalf("monitor list: %v", err)
+	}
+	monitorRuns := monitor.Data.(map[string]any)["runs"].([]app.MonitorRun)
+	if len(monitorRuns) == 0 {
+		t.Fatalf("expected monitor run")
+	}
 
 	fixtures := map[string]RPCRequest{
 		"rpc.workbench.status":          {Method: "Pinax.Workbench.Status", Params: map[string]any{}},
+		"rpc.workbench.activity.list":   {Method: "Pinax.Workbench.Activity.List", Params: map[string]any{"limit": 1}},
+		"rpc.workbench.activity.show":   {Method: "Pinax.Workbench.Activity.Show", Params: map[string]any{"event_id": activityEntries[0].EventID}},
+		"rpc.monitor.list":              {Method: "Pinax.Monitor.List", Params: map[string]any{"limit": 1}},
+		"rpc.monitor.show":              {Method: "Pinax.Monitor.Show", Params: map[string]any{"run_id": monitorRuns[0].RunID}},
+		"rpc.monitor.summary":           {Method: "Pinax.Monitor.Summary", Params: map[string]any{}},
 		"rpc.project.board.show":        {Method: "Pinax.ProjectBoard.Show", Params: map[string]any{"project": "research", "note_display": "card"}},
 		"rpc.project.subproject.list":   {Method: "Pinax.Project.Subproject.List", Params: map[string]any{"project": "research"}},
 		"rpc.project.subproject.show":   {Method: "Pinax.Project.Subproject.Show", Params: map[string]any{"project": "research", "subproject": "stock-learning"}},
@@ -285,6 +376,11 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 		"rpc.database.view.render":      {Method: "Pinax.DatabaseView.Render", Params: map[string]any{"name": viewName}},
 		"rpc.task.adopt.plan":           {Method: "Pinax.Task.AdoptPlan", Params: map[string]any{"item_id": taskID}},
 		"rpc.graph.summary":             {Method: "Pinax.Graph.Summary", Params: map[string]any{}},
+		"rpc.memory.list":               {Method: "Pinax.Memory.List", Params: map[string]any{}},
+		"rpc.memory.capture":            {Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "object": "rpc memory", "yes": true}},
+		"rpc.memory.recall":             {Method: "Pinax.Memory.Recall", Params: map[string]any{"query": "memory"}},
+		"rpc.memory.context":            {Method: "Pinax.Memory.Context", Params: map[string]any{"task": "memory"}},
+		"rpc.memory.stats":              {Method: "Pinax.Memory.Stats", Params: map[string]any{}},
 		"rpc.project.item.plan":         {Method: "Pinax.ProjectItem.Plan", Params: map[string]any{"item_id": itemID, "action": "archive"}},
 		"rpc.folder.list":               {Method: "Pinax.Folder.List", Params: map[string]any{}},
 		"rpc.folder.show":               {Method: "Pinax.Folder.Show", Params: map[string]any{"path": "research"}},
@@ -406,4 +502,23 @@ func containsSurface(surfaces []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestRPCNoteReadReturnsCanonicalObjectFacts(t *testing.T) {
+	root := t.TempDir()
+	objectID := "01982d84-2b48-7000-8000-000000000061"
+	notePath := filepath.Join(root, "notes", "object.md")
+	if err := os.MkdirAll(filepath.Dir(notePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(notePath, []byte("---\nschema_version: pinax.note.v1\nnote_id: "+objectID+"\ntitle: Object\n---\n\n# Object\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := NewRPCDispatcher(app.NewService(), root).Call(context.Background(), RPCRequest{Method: "Pinax.Note.Read", Params: map[string]any{"ref": "notes/object.md", "display": "card"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Facts["object_id"] != objectID || projection.Facts["object_kind"] != "note" {
+		t.Fatalf("facts = %#v", projection.Facts)
+	}
 }

@@ -101,6 +101,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var s3Prefix string
 	var s3Endpoint string
 	var s3Profile string
+	var s3AddressingStyle string
 	var noteProject string
 	var noteGroup string
 	var noteFolder string
@@ -176,6 +177,8 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var searchCreatedAfter string
 	var searchUpdatedAfter string
 	var searchAllowStale bool
+	var searchEngine string
+	var searchLazyIndex string
 	var searchAt string
 	var searchChangedSince string
 	var searchRevision string
@@ -186,7 +189,6 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var backendName string
 	var backendRoot string
 	var backendRemote string
-	var backendDryRun bool
 	var planFromPeriod string
 	var planWithTaskBridge bool
 	var planTaskReview bool
@@ -202,7 +204,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var feishuText string
 	var deliveryDryRun bool
 
-	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseViewLanguage: &databaseViewLanguage, databaseViewDisplay: &databaseViewDisplay, databaseViewGroupBy: &databaseViewGroupBy, databaseViewCalendar: &databaseViewCalendar, databaseViewBoardColumn: &databaseViewBoardColumn, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, backendDryRun: &backendDryRun, planFromPeriod: &planFromPeriod, planWithTaskBridge: &planWithTaskBridge, planTaskReview: &planTaskReview, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
+	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, s3AddressingStyle: &s3AddressingStyle, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseViewLanguage: &databaseViewLanguage, databaseViewDisplay: &databaseViewDisplay, databaseViewGroupBy: &databaseViewGroupBy, databaseViewCalendar: &databaseViewCalendar, databaseViewBoardColumn: &databaseViewBoardColumn, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchEngine: &searchEngine, searchLazyIndex: &searchLazyIndex, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, planFromPeriod: &planFromPeriod, planWithTaskBridge: &planWithTaskBridge, planTaskReview: &planTaskReview, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
 
 	cmd := &cobra.Command{
 		Use:           "pinax",
@@ -214,6 +216,10 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 			if cmd.Name() == "help" || cmd.CommandPath() == "pinax completion" {
 				return nil
 			}
+			// Attach the credentialctl shared credential resolver so the
+			// OpenAI embedding provider can fall back to the shared credential
+			// when OPENAI_API_KEY is unset. No-op when no backend is available.
+			enableSharedCredentials()
 			if err := validateOutputMode(cmd, jsonMode, agentMode, eventsMode, explainMode); err != nil {
 				return err
 			}
@@ -252,10 +258,13 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addCollectionCommands(cmd, ctx)
 	addGraphCommands(cmd, ctx)
 	addPublishCommands(cmd, ctx)
+	addShareCommands(cmd, ctx)
 	addPluginCommands(cmd, ctx)
 
 	addVaultCommands(cmd, ctx)
 	addRecordCommands(cmd, ctx)
+	addActivityCommands(cmd, ctx)
+	addMonitorCommands(cmd, ctx)
 
 	addJournalCommands(cmd, ctx)
 
@@ -270,12 +279,17 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addSearchCommand(cmd, ctx)
 	addKBCommands(cmd, ctx)
 	addMemoryCommands(cmd, ctx)
+	addBrainCommands(cmd, ctx)
+	addAgentCommands(cmd, ctx)
+	addContinueCommands(cmd, ctx)
+	addReviewCommands(cmd, ctx)
 	addQueryCommands(cmd, ctx)
 	addDataviewCommands(cmd, ctx)
 	addDatabaseCommands(cmd, ctx)
 	addImportExportCommands(cmd, ctx)
 
 	addProjectCommands(cmd, ctx)
+	addTrashCommands(cmd, ctx)
 	addTaskCommands(cmd, ctx)
 
 	addStorageCommands(cmd, ctx)
@@ -287,13 +301,11 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addIndexCommands(cmd, ctx)
 
 	addBriefingCommands(cmd, ctx)
-	addCloudCommands(cmd, ctx)
+	addCapsaCommands(cmd, ctx)
 
 	addSyncCommands(cmd, ctx)
 
 	addMetadataRepairOrganizeCommands(cmd, ctx)
-
-	addGitCommands(cmd, ctx)
 
 	addProofCommands(cmd, ctx)
 
@@ -314,17 +326,27 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"init":       "Local vault",
 		"vault":      "Local vault",
 		"project":    "Local vault",
+		"trash":      "Local vault",
 		"task":       "Local vault",
 		"record":     "Local vault",
+		"activity":   "Configuration and maintenance",
 		"note":       "Note workflows",
 		"journal":    "Note workflows",
 		"inbox":      "Note workflows",
+		"draft":      "Note workflows",
 		"template":   "Note workflows",
 		"import":     "Note workflows",
 		"export":     "Note workflows",
 		"search":     "Organization and search",
 		"kb":         "Organization and search",
 		"memory":     "Organization and search",
+		"brain":      "Organization and search",
+		"agent":      "Organization and search",
+		"continue":   "Organization and search",
+		"review":     "Organization and search",
+		"graph":      "Organization and search",
+		"dataview":   "Organization and search",
+		"proof":      "Organization and search",
 		"view":       "Organization and search",
 		"folder":     "Organization and search",
 		"query":      "Organization and search",
@@ -333,15 +355,23 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"metadata":   "Organization and search",
 		"repair":     "Organization and search",
 		"plan":       "Automation and integrations",
+		"prompt":     "Automation and integrations",
+		"collection": "Automation and integrations",
 		"briefing":   "Automation and integrations",
+		"capsa":      "Automation and integrations",
 		"sync":       "Automation and integrations",
 		"backend":    "Automation and integrations",
 		"cloud":      "Automation and integrations",
 		"publish":    "Automation and integrations",
+		"share":      "Automation and integrations",
 		"plugin":     "Automation and integrations",
+		"api":        "Automation and integrations",
+		"token":      "Automation and integrations",
+		"profile":    "Automation and integrations",
 		"mcp":        "Automation and integrations",
 		"git":        "Automation and integrations",
 		"config":     "Configuration and maintenance",
+		"monitor":    "Configuration and maintenance",
 		"storage":    "Configuration and maintenance",
 		"index":      "Configuration and maintenance",
 		"asset":      "Configuration and maintenance",
@@ -631,7 +661,7 @@ func remoteModeLocalCommand(cmd *cobra.Command, source string) bool {
 		return true
 	}
 	root, _, _ := strings.Cut(path, " ")
-	if root == "cloud" || root == "sync" {
+	if root == "capsa" || root == "sync" {
 		return true
 	}
 	if source != "config" {
@@ -689,6 +719,16 @@ func classifyRemoteCommand(commandPath string) RemoteCommandCoverageEntry {
 
 func remoteSupportedRPCMethods() map[string]string {
 	return map[string]string{
+		"activity list":             "Pinax.Workbench.Activity.List",
+		"activity show":             "Pinax.Workbench.Activity.Show",
+		"monitor runs":              "Pinax.Monitor.List",
+		"monitor show":              "Pinax.Monitor.Show",
+		"monitor summary":           "Pinax.Monitor.Summary",
+		"memory list":               "Pinax.Memory.List",
+		"memory capture":            "Pinax.Memory.Capture",
+		"memory recall":             "Pinax.Memory.Recall",
+		"memory context":            "Pinax.Memory.Context",
+		"memory stats":              "Pinax.Memory.Stats",
 		"folder list":               "Pinax.Folder.List",
 		"folder show":               "Pinax.Folder.Show",
 		"folder create":             "Pinax.Folder.Create",
@@ -768,6 +808,85 @@ func readRemoteAPITokenFile(path string) (string, error) {
 func remoteRPCRequestForCommand(cmd *cobra.Command, args []string) (remoteapi.RPCRequest, bool) {
 	params := map[string]any{}
 	switch strings.TrimPrefix(cmd.CommandPath(), "pinax ") {
+	case "activity list":
+		params["source"] = stringFlag(cmd, "source")
+		params["query"] = stringFlag(cmd, "query")
+		params["status"] = stringFlag(cmd, "status")
+		params["object"] = stringFlag(cmd, "object")
+		params["since"] = stringFlag(cmd, "since")
+		params["until"] = stringFlag(cmd, "until")
+		params["limit"] = intFlag(cmd, "limit")
+		return remoteapi.RPCRequest{Method: "Pinax.Workbench.Activity.List", Params: params}, true
+	case "activity show":
+		if len(args) != 1 {
+			return remoteapi.RPCRequest{}, false
+		}
+		params["event_id"] = args[0]
+		return remoteapi.RPCRequest{Method: "Pinax.Workbench.Activity.Show", Params: params}, true
+	case "monitor runs":
+		params["command"] = stringFlag(cmd, "command")
+		params["query"] = stringFlag(cmd, "query")
+		params["status"] = stringFlag(cmd, "status")
+		params["since"] = stringFlag(cmd, "since")
+		params["until"] = stringFlag(cmd, "until")
+		params["limit"] = intFlag(cmd, "limit")
+		return remoteapi.RPCRequest{Method: "Pinax.Monitor.List", Params: params}, true
+	case "monitor show":
+		if len(args) != 1 {
+			return remoteapi.RPCRequest{}, false
+		}
+		params["run_id"] = args[0]
+		return remoteapi.RPCRequest{Method: "Pinax.Monitor.Show", Params: params}, true
+	case "monitor summary":
+		params["command"] = stringFlag(cmd, "command")
+		params["query"] = stringFlag(cmd, "query")
+		params["status"] = stringFlag(cmd, "status")
+		params["since"] = stringFlag(cmd, "since")
+		params["until"] = stringFlag(cmd, "until")
+		params["limit"] = intFlag(cmd, "limit")
+		return remoteapi.RPCRequest{Method: "Pinax.Monitor.Summary", Params: params}, true
+	case "memory list":
+		params["type"] = stringFlag(cmd, "type")
+		params["entity"] = stringFlag(cmd, "entity")
+		params["include_draft"] = boolFlag(cmd, "include-draft")
+		params["include_superseded"] = boolFlag(cmd, "include-superseded")
+		params["include_expired"] = boolFlag(cmd, "include-expired")
+		params["include_rejected"] = boolFlag(cmd, "include-rejected")
+		params["limit"] = intFlag(cmd, "limit")
+		return remoteapi.RPCRequest{Method: "Pinax.Memory.List", Params: params}, true
+	case "memory capture":
+		params["type"] = stringFlag(cmd, "type")
+		params["subject"] = stringFlag(cmd, "subject")
+		params["predicate"] = stringFlag(cmd, "predicate")
+		params["object"] = stringFlag(cmd, "object")
+		params["body"] = stringFlag(cmd, "body")
+		params["status"] = stringFlag(cmd, "status")
+		params["confidence"] = stringFlag(cmd, "confidence")
+		params["source"] = stringFlag(cmd, "source")
+		params["source_span"] = stringFlag(cmd, "source-span")
+		params["entities"] = stringArrayFlag(cmd, "entity")
+		params["dry_run"] = boolFlag(cmd, "dry-run")
+		return remoteapi.RPCRequest{Method: "Pinax.Memory.Capture", Params: params}, true
+	case "memory recall":
+		if len(args) != 1 {
+			return remoteapi.RPCRequest{}, false
+		}
+		params["query"] = args[0]
+		params["type"] = stringFlag(cmd, "type")
+		params["entity"] = stringFlag(cmd, "entity")
+		params["limit"] = intFlag(cmd, "limit")
+		return remoteapi.RPCRequest{Method: "Pinax.Memory.Recall", Params: params}, true
+	case "memory context":
+		if len(args) != 1 {
+			return remoteapi.RPCRequest{}, false
+		}
+		params["task"] = args[0]
+		params["type"] = stringFlag(cmd, "type")
+		params["entity"] = stringFlag(cmd, "entity")
+		params["limit"] = intFlag(cmd, "limit")
+		return remoteapi.RPCRequest{Method: "Pinax.Memory.Context", Params: params}, true
+	case "memory stats":
+		return remoteapi.RPCRequest{Method: "Pinax.Memory.Stats", Params: params}, true
 	case "folder list":
 		params["purpose"] = stringFlag(cmd, "purpose")
 		params["under"] = stringFlag(cmd, "under")
@@ -1172,11 +1291,11 @@ func completionNotePath(root, ref string) (string, error) {
 	return matched, nil
 }
 
-func templateNameCompletion(vaultPathValue func() string, kind string, includeBuiltins, includeLocal bool) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+func templateNameCompletion(vaultPathValue func() string, kind string, includeBuiltins bool) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		// Template completion reads metadata only: it does not render templates, execute SQL, or write the vault; it only returns names and source descriptions.
 		root := completionVaultRoot(vaultPathValue())
-		items := app.TemplateCompletionItems(root, kind, includeBuiltins, includeLocal)
+		items := app.TemplateCompletionItems(root, kind, includeBuiltins, true)
 		return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
@@ -1225,6 +1344,15 @@ func noteRefCompletion(vaultPathValue func() string) func(*cobra.Command, []stri
 	}
 }
 
+func firstNoteRefCompletion(vaultPathValue func() string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		return noteRefCompletion(vaultPathValue)(cmd, args, toComplete)
+	}
+}
+
 func projectSubprojectCompletion(vaultPathValue func() string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
@@ -1245,15 +1373,12 @@ func assetRefCompletion(vaultPathValue func() string) func(*cobra.Command, []str
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		root := completionVaultRoot(vaultPathValue())
-		items, err := assetCompletionItems(root)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
+		items := assetCompletionItems(root)
 		return filterCompletionItems(items, toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 
-func assetCompletionItems(root string) ([]string, error) {
+func assetCompletionItems(root string) []string {
 	assets, _, err := noteindex.ListAssets(root)
 	if err != nil || len(assets) == 0 {
 		manifest, manifestErr := pinaxassets.Load(root)
@@ -1304,7 +1429,7 @@ func assetCompletionItems(root string) ([]string, error) {
 		}
 	}
 	sort.Strings(items)
-	return items, nil
+	return items
 }
 
 func projectSubprojectCompletionItems(root, project string) ([]string, error) {

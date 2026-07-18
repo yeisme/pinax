@@ -4,7 +4,7 @@
 
 Pinax is the **agent-safe knowledge control plane for your Markdown vault** — it lets AI safely read, diagnose, repair, and sync a real local knowledge base, while keeping every agent write auditable, previewable, and reversible. Your Markdown vault stays the source of truth; the agent never sees plaintext it should not, and the cloud never stores plaintext notes.
 
-> Three ideas to remember: **Local Vault is the source of truth / the Proof Loop protects every agent write / Cloud Sync only coordinates ciphertext.**
+> Three ideas to remember: **Local Vault is the source of truth / the Proof Loop protects every agent write / Capsa Sync only coordinates ciphertext.**
 
 ## The aha moment
 
@@ -25,9 +25,22 @@ pinax version restore apply --vault ./my-notes --plan restore-<id> --yes        
 | --- | --- |
 | **Proof loop safe writes** | Every agent-driven change is plan → snapshot → apply → receipt → restore. No direct file surgery, no silent writes, every apply is reversible. |
 | **Plaintext boundary** | Read commands default to `--display card`, not the full body. Agents, MCP, dashboard, and project boards share one bounded projection; only explicit `--display body` puts the body in a local JSON projection. |
-| **Self-hosted encrypted sync** | Pinax Cloud only coordinates encrypted revisions — AES-256-GCM client-side encryption, the server never sees plaintext notes and never executes local tools. |
+| **Self-hosted encrypted sync** | Capsa only coordinates encrypted revisions — AES-256-GCM client-side encryption, the server never sees plaintext notes and never executes local tools. |
 
 Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer for your vault, **avoids** Notion's cloud lock-in, and is **more programmable and verifiable** than Reflect. It is not another notes app — it is the control plane that makes your existing Markdown vault safe for AI.
+
+## Identity-first kernel
+
+Every durable note, journal, asset, project, subproject, and managed task has a canonical UUIDv7 `object_id`. Paths are mutable locators, not identity. SQL/Dataview projections, backlinks, project boards, apply receipts, tombstones, and manifest v2 all join on object IDs.
+
+```bash
+pinax record identity audit --vault ./my-notes --json
+pinax sync manifest audit --vault ./my-notes --json
+pinax sync manifest plan --save --vault ./my-notes --json
+pinax sync manifest promote --plan manifest-plan-<id> --remote-capability v2 --vault ./my-notes --yes --json
+```
+
+Agent plans bind the object ID plus the observed path and expected content/record revision. A pure move can safely rebase by UUID; path reuse or content drift returns `plan_stale`. Every apply writes a body-free receipt with before/after revisions, ledger sequence, snapshot evidence, changed paths, and sync readiness.
 
 ## Status
 
@@ -37,9 +50,7 @@ Pinax **complements** Obsidian and Logseq as the agent-safe maintenance layer fo
 | CLI output modes: default summary, `--agent`, `--json`, `--events`, `--explain` | Supported |
 | Local dashboard, read-only MCP, localhost REST/RPC adapter, and workspace/task/database/graph read projections | Supported |
 | Obsidian-style vault compatibility: wikilinks/backlinks, properties, daily managed blocks, templates, attachments, dataview blocks, `.obsidian/` ignore | Preview |
-| Cloud Sync over server, file/S3-compatible object store, and rclone transports | Preview |
-| Provider automation and briefing delivery | Experimental |
-| Dynamic plugin manifest, registry, permission, and runner contracts | Experimental |
+| Capsa Sync over server, file/S3-compatible object store, and rclone transports | Preview |
 
 ## Installation
 
@@ -54,12 +65,12 @@ Install from source:
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.2`):
+Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.6`):
 
 ```bash
 # linux x86_64 (adjust os/arch for your platform: darwin, windows; x86_64, aarch64)
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.2/pinax_0.1.2_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.2/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.6/pinax_0.1.6_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.6/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
@@ -113,43 +124,6 @@ pinax search "First note" --vault ./my-notes --json
 
 See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
 
-### Static publishing
-
-Build Pages or Wiki output from the vault without making GitHub the source of truth:
-
-```bash
-pinax publish profile init public --target github-pages --renderer hugo --vault ./my-notes --json
-pinax publish plan --profile public --target github-pages --vault ./my-notes --json
-pinax publish build --profile public --target github-pages --out ./dist/site --vault ./my-notes --json
-pinax publish deploy --profile public --target github-pages --out ./dist/site --repo ../kb-pages --yes --vault ./my-notes --json
-
-pinax publish profile init wiki --target github-wiki --renderer none --vault ./my-notes --json
-pinax publish build --profile wiki --target github-wiki --out ./dist/wiki --vault ./my-notes --json
-pinax publish profile init gist --target github-gist --renderer none --vault ./my-notes --json
-pinax publish build --profile gist --target github-gist --out ./dist/gist --vault ./my-notes --json
-pinax publish deploy --profile gist --target github-gist --out ./dist/gist --yes --vault ./my-notes --json
-pinax publish profile init share --target http --renderer none --vault ./my-notes --json
-pinax publish build --profile share --target http --out ./dist/share --vault ./my-notes --json
-pinax publish deploy --profile share --target http --out ./dist/share --endpoint https://share.example.test/publish --yes --vault ./my-notes --json
-pinax publish serve --profile wiki --out ./dist/wiki --host 127.0.0.1 --port 4173 --vault ./my-notes
-```
-
-Use a separate Pages/Wiki repository, Gist, HTTP endpoint, or loopback preview, not the private vault repository. Deploy validates the build receipt, output hash and scan result before writing.
-
-### Dynamic plugins
-
-Validate and install local plugins without making them the source of truth:
-
-```bash
-pinax plugin validate ./plugins/project-dashboard --vault ./my-notes --json
-pinax plugin install ./plugins/project-dashboard --scope vault --vault ./my-notes --json
-pinax plugin enable project-dashboard --vault ./my-notes --yes --json
-pinax plugin permissions grant project-dashboard projection.read --capability render_dashboard --vault ./my-notes --yes --json
-pinax plugin run project-dashboard render_dashboard --vault ./my-notes --dry-run --json
-```
-
-Registry, lock, permission grants, and audit events are CLI-authored under `.pinax/plugins/` and `.pinax/events/`; do not hand-edit them. WASM is the preferred untrusted runtime direction. JavaScript, Python, and process plugins use external trusted runners and are not claimed to be a strong sandbox. See [Plugin Runtime](./docs/architecture/plugin-runtime.md) and [`pinax plugin`](./docs/commands/plugin.md).
-
 ## Five core workflows
 
 Pinax is built around one agent-safe proof loop. A user or agent drives a real Markdown vault through five stages, and every stage stays bounded — projections never dump full note bodies, and writes only happen through plan, snapshot, receipt and explicit apply.
@@ -176,6 +150,15 @@ pinax version restore notes/example.md --revision HEAD --plan --vault ./my-notes
 pinax version restore apply --vault ./my-notes --plan restore-<id> --yes   # local_write=true, remote_write=false
 ```
 
+Remove obsolete projects through the recoverable trash path, not by editing `.pinax/projects.json`:
+
+```bash
+pinax project delete history --vault ./my-notes --yes --json
+pinax trash list --vault ./my-notes --json
+pinax trash restore project/history --vault ./my-notes --json
+pinax trash purge project/history --dry-run --vault ./my-notes --json
+```
+
 ```bash
 pinax init ./my-notes --title "My Knowledge Base"
 pinax inbox capture "an idea" --vault ./my-notes
@@ -188,7 +171,7 @@ pinax version snapshot --vault ./my-notes --message "checkpoint"
 pinax repair apply --vault ./my-notes --plan repair-abc123 --yes
 ```
 
-Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Cloud Sync, daily briefing, provider expansion and hosted platform capabilities are separate advanced workflows, not part of this local proof loop.
+Every command supports `--json`, `--agent`, `--events` and `--explain` output modes that share one projection boundary: bounded facts and next actions, never raw note bodies, tokens, or provider payloads. Capsa Sync remains a transport boundary and is not required for the local proof loop.
 
 ## Workspace And Database Views
 
@@ -481,9 +464,9 @@ curl -s http://127.0.0.1:8787/v1/capabilities
 
 REST `GET /v1/projects/{slug}/board`, RPC `Pinax.ProjectBoard.Show`, and the MCP board tool return the same class of bounded board projection; write-like remote calls only return dry-run/plan, `approval_required`, or `snapshot_required` by default. Real Markdown changes still go through explicit CLI commands.
 
-## Cloud Sync preview
+## Capsa Sync preview
 
-Pinax Cloud Sync is separate from `pinax api serve`. The Local API exposes one centralized vault through REST/RPC; Cloud Sync is a distributed protocol where each device keeps its own local vault and exchanges encrypted revisions, manifests, and blobs through a selected transport.
+Pinax Capsa Sync is separate from `pinax api serve`. The Local API exposes one centralized vault through REST/RPC; Capsa Sync is a distributed protocol where each device keeps its own local vault and exchanges encrypted revisions, manifests, and blobs through a selected transport.
 
 Configure a direct object-store transport and sync two local devices:
 
@@ -492,35 +475,35 @@ pinax init ./device-a --title "Device A"
 pinax init ./device-b --title "Device B"
 mkdir -p ./device-a/notes
 printf '# Alpha\n\nfrom device A\n' > ./device-a/notes/alpha.md
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
-pinax cloud login --endpoint "file://$PWD/.pinax-cloud-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
-pinax sync push --target cloud --vault ./device-a --yes --json
-pinax sync pull --target cloud --vault ./device-b --yes --json
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device laptop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-a
+pinax capsa login --endpoint "file://$PWD/.capsa-sync-store" --workspace personal --device desktop --secret-ref env://PINAX_SYNC_SECRET --vault ./device-b
+pinax sync push --target capsa --vault ./device-a --yes --json
+pinax sync pull --target capsa --vault ./device-b --yes --json
 ```
 
 Run local automatic sync on a configured device:
 
 ```bash
-pinax sync daemon run --target cloud --vault ./device-a --yes
+pinax sync daemon run --target capsa --vault ./device-a --yes
 pinax sync daemon status --vault ./device-a --json
 pinax sync daemon logs --vault ./device-a --limit 20 --json
 pinax sync daemon stop --vault ./device-a
 ```
 
-The daemon is a local process. On startup it immediately runs one pull-before-push sync cycle, then watches local vault changes and polls the remote Cloud Sync head. Default human output shows live progress lines; `--events` emits an NDJSON stream; redacted daemon state and events are persisted under `.pinax/sync-daemon/`.
+The daemon is a local process. On startup it immediately runs one pull-before-push sync cycle, then watches local vault changes and polls the remote Capsa Sync head. Default human output shows live progress lines; `--events` emits an NDJSON stream; redacted daemon state and events are persisted under `.pinax/sync-daemon/`.
 
-S3-compatible storage uses the same Cloud Sync protocol without a Pinax Cloud Server:
+S3-compatible storage uses the same Capsa Sync protocol without a Capsa Server:
 
 ```bash
-pinax cloud backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes
-pinax cloud doctor --vault ./my-notes --json
+pinax capsa backend set s3 --bucket notes --region us-east-1 --prefix pinax-sync/ --profile work --workspace personal --device laptop --vault ./my-notes
+pinax capsa doctor --vault ./my-notes --json
 ```
 
-Server and rclone backends are explicit transports, not aliases for Local API. Server transport uses `internal/cloudclient.Transport` so Pinax Cloud can own auth/audit/policy, while rclone direct transport uses the shared object-store sync path for providers such as OneDrive. Native Microsoft Graph is a separate future transport.
+Server and rclone backends are explicit transports, not aliases for Local API. Server transport uses `internal/cloudclient.Transport` so Capsa can own auth/audit/policy, while rclone direct transport uses the shared object-store sync path for providers such as OneDrive. Native Microsoft Graph is a separate future transport.
 
 `remote_write=true` is valid only after the selected transport durably commits a revision and Pinax writes local sync-state evidence. Dry-runs, plans, blob uploads, failed or unsupported transport operations, and pull operations keep `remote_write=false`.
 
-See [cloud command docs](./docs/commands/cloud.md), [sync command docs](./docs/commands/sync.md), and [Cloud Sync architecture](./docs/architecture/cloud-sync-design.md).
+See [Capsa command docs](./docs/commands/capsa.md), [sync command docs](./docs/commands/sync.md), and [Capsa Sync architecture](./docs/architecture/cloud-sync-design.md).
 
 MCP tools and resources are read-only, including `pinax.note.links`, `pinax.note.backlinks`, `pinax.note.context`, and `pinax.vault.graph_summary`. They reuse the CLI relationship projection and return bounded facts, candidate summaries, and next-step commands. They do not return full note bodies and do not write Markdown, `.pinax/`, Git, providers, or remote state.
 

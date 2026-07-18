@@ -2,26 +2,26 @@
 exec pinax init vault --title Vault --json
 stdout '"command":"vault.init"'
 
-! exec pinax cloud status --vault vault --json
+! exec pinax capsa status --vault vault --json
 stdout '"code":"cloud_not_configured"'
 
-exec pinax cloud login --endpoint $PINAX_FAKE_CLOUD_URL --workspace ws_123 --device dev_laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault vault --json
-stdout '"command":"cloud.login"'
+exec pinax capsa login --endpoint $PINAX_FAKE_CLOUD_URL --workspace ws_123 --device dev_laptop --secret-ref env://PINAX_CLOUD_TOKEN --vault vault --json
+stdout '"command":"capsa.login"'
 stdout '"status":"success"'
 ! stdout 'PINAX_CLOUD_TOKEN'
 ! stdout 'Authorization'
 
-exec pinax cloud status --vault vault --agent
-stdout 'command=cloud.status'
+exec pinax capsa status --vault vault --agent
+stdout 'command=capsa.status'
 stdout 'status=success'
 stdout 'fact.configured=true'
 stdout 'fact.session_status=active'
 ! stdout 'PINAX_CLOUD_TOKEN'
 
-exec pinax cloud doctor --vault vault --events
+exec pinax capsa doctor --vault vault --events
 stdout '"type":"start"'
 stdout '"type":"end"'
-stdout '"command":"cloud.doctor"'
+stdout '"command":"capsa.doctor"'
 ! stdout 'PINAX_CLOUD_TOKEN'
 
 exec pinax sync diff --target cloud --dry-run --base-revision rev_1 --remote-revision rev_1 --vault vault --json
@@ -52,13 +52,13 @@ stdout 'manual_review'
 
 
 # Rclone/OneDrive is configurable but not allowed to silently claim a remote write until the adapter and lock-object commit path are wired.
-exec pinax cloud backend set rclone --remote onedrive:PinaxSync --workspace ws_123 --device dev_laptop --vault vault --json
-stdout '"command":"cloud.backend.set"'
+exec pinax capsa backend set rclone --remote onedrive:PinaxSync --workspace ws_123 --device dev_laptop --vault vault --json
+stdout '"command":"capsa.backend.set"'
 stdout '"backend_kind":"rclone-direct"'
 ! stdout 'refresh_token'
 ! stdout 'Authorization'
 
-exec pinax cloud doctor --vault vault --json
+exec pinax capsa doctor --vault vault --json
 stdout '"auth_boundary":"provider_credentials"'
 stdout '"server_audit":false'
 

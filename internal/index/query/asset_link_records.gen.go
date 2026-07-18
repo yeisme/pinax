@@ -28,6 +28,8 @@ func newAssetLinkRecord(db *gorm.DB, opts ...gen.DOOption) assetLinkRecord {
 	tableName := _assetLinkRecord.assetLinkRecordDo.TableName()
 	_assetLinkRecord.ALL = field.NewAsterisk(tableName)
 	_assetLinkRecord.ID = field.NewUint(tableName, "id")
+	_assetLinkRecord.SourceObjectID = field.NewString(tableName, "source_object_id")
+	_assetLinkRecord.AssetObjectID = field.NewString(tableName, "asset_object_id")
 	_assetLinkRecord.AssetPath = field.NewString(tableName, "asset_path")
 	_assetLinkRecord.SourceNoteID = field.NewString(tableName, "source_note_id")
 	_assetLinkRecord.SourcePath = field.NewString(tableName, "source_path")
@@ -46,17 +48,19 @@ func newAssetLinkRecord(db *gorm.DB, opts ...gen.DOOption) assetLinkRecord {
 type assetLinkRecord struct {
 	assetLinkRecordDo
 
-	ALL          field.Asterisk
-	ID           field.Uint
-	AssetPath    field.String
-	SourceNoteID field.String
-	SourcePath   field.String
-	RawReference field.String
-	LinkStyle    field.String
-	LinkKind     field.String
-	Line         field.Int
-	Status       field.String
-	MediaType    field.String
+	ALL            field.Asterisk
+	ID             field.Uint
+	SourceObjectID field.String
+	AssetObjectID  field.String
+	AssetPath      field.String
+	SourceNoteID   field.String
+	SourcePath     field.String
+	RawReference   field.String
+	LinkStyle      field.String
+	LinkKind       field.String
+	Line           field.Int
+	Status         field.String
+	MediaType      field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -74,6 +78,8 @@ func (a assetLinkRecord) As(alias string) *assetLinkRecord {
 func (a *assetLinkRecord) updateTableName(table string) *assetLinkRecord {
 	a.ALL = field.NewAsterisk(table)
 	a.ID = field.NewUint(table, "id")
+	a.SourceObjectID = field.NewString(table, "source_object_id")
+	a.AssetObjectID = field.NewString(table, "asset_object_id")
 	a.AssetPath = field.NewString(table, "asset_path")
 	a.SourceNoteID = field.NewString(table, "source_note_id")
 	a.SourcePath = field.NewString(table, "source_path")
@@ -99,8 +105,10 @@ func (a *assetLinkRecord) GetFieldByName(fieldName string) (field.OrderExpr, boo
 }
 
 func (a *assetLinkRecord) fillFieldMap() {
-	a.fieldMap = make(map[string]field.Expr, 10)
+	a.fieldMap = make(map[string]field.Expr, 12)
 	a.fieldMap["id"] = a.ID
+	a.fieldMap["source_object_id"] = a.SourceObjectID
+	a.fieldMap["asset_object_id"] = a.AssetObjectID
 	a.fieldMap["asset_path"] = a.AssetPath
 	a.fieldMap["source_note_id"] = a.SourceNoteID
 	a.fieldMap["source_path"] = a.SourcePath
