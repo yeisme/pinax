@@ -3,8 +3,8 @@ package cli
 import (
 	"sync"
 
-	"github.com/yeisme/credentialctl/pkg/localstore"
 	"github.com/yeisme/pinax/internal/semantic"
+	"github.com/yeisme/pinax/internal/sharedcredentials"
 )
 
 // enableSharedOnce ensures the credentialctl shared resolver is constructed at
@@ -18,7 +18,7 @@ var enableSharedOnce sync.Once
 // shared credential when OPENAI_API_KEY is unset. Safe to call repeatedly.
 func enableSharedCredentials() {
 	enableSharedOnce.Do(func() {
-		if r, err := localstore.NewResolver(); err == nil {
+		if r, err := sharedcredentials.NewResolver(); err == nil {
 			semantic.EnableSharedResolver(r)
 		}
 	})

@@ -3,8 +3,6 @@ package semantic
 import (
 	"context"
 	"testing"
-
-	"github.com/yeisme/lance"
 )
 
 func TestKBDomain_Name(t *testing.T) {
@@ -69,12 +67,12 @@ func TestKBDomain_Redact(t *testing.T) {
 
 func TestKBDomain_ResolvePermission_StatusFilter(t *testing.T) {
 	d := KBDomain{}
-	records := []lance.Record{
+	records := []Record{
 		{ID: "r1", Metadata: map[string]any{"status": "active", "kind": "note"}},
 		{ID: "r2", Metadata: map[string]any{"status": "archived", "kind": "note"}},
 		{ID: "r3", Metadata: map[string]any{"status": "active", "kind": "journal"}},
 	}
-	got := d.ResolvePermission(context.Background(), records, lance.PermissionFilter{
+	got := d.ResolvePermission(context.Background(), records, PermissionFilter{
 		"note_status": []string{"active"},
 	})
 	want := map[string]bool{"r1": true, "r3": true}
@@ -90,11 +88,11 @@ func TestKBDomain_ResolvePermission_StatusFilter(t *testing.T) {
 
 func TestKBDomain_ResolvePermission_KindFilter(t *testing.T) {
 	d := KBDomain{}
-	records := []lance.Record{
+	records := []Record{
 		{ID: "r1", Metadata: map[string]any{"status": "active", "kind": "note"}},
 		{ID: "r2", Metadata: map[string]any{"status": "active", "kind": "journal"}},
 	}
-	got := d.ResolvePermission(context.Background(), records, lance.PermissionFilter{
+	got := d.ResolvePermission(context.Background(), records, PermissionFilter{
 		"note_kind": []any{"journal"},
 	})
 	if len(got) != 1 || got[0] != "r2" {
@@ -104,7 +102,7 @@ func TestKBDomain_ResolvePermission_KindFilter(t *testing.T) {
 
 func TestKBDomain_ResolvePermission_NoFilter_AllAll(t *testing.T) {
 	d := KBDomain{}
-	records := []lance.Record{
+	records := []Record{
 		{ID: "r1", Metadata: map[string]any{"status": "active"}},
 		{ID: "r2", Metadata: map[string]any{"status": "archived"}},
 		{ID: "r3"},
