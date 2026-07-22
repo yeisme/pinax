@@ -55,6 +55,25 @@ type S3Config struct {
 	Profile         string `json:"profile,omitempty" yaml:"profile,omitempty"`
 	AddressingStyle string `json:"addressing_style,omitempty" yaml:"addressing_style,omitempty"`
 	PathStyle       bool   `json:"path_style,omitempty" yaml:"path_style,omitempty"`
+	// CredentialMode controls how S3 credentials resolve. "device-profile"
+	// (default) keeps the existing behavior: endpoint/profile or the AWS default
+	// credential chain. "repository-encrypted" requires resolving a typed
+	// credential bundle from the repository envelope; it must NOT silently fall
+	// back to a device-local AWS profile.
+	CredentialMode string `json:"credential_mode,omitempty" yaml:"credential_mode,omitempty"`
+}
+
+// Credential mode constants for S3Config.
+const (
+	CredentialModeDeviceProfile       = "device-profile"
+	CredentialModeRepositoryEncrypted = "repository-encrypted"
+)
+
+// ValidCredentialModes is the closed set of accepted credential_mode values.
+var ValidCredentialModes = map[string]bool{
+	"":                                true, // default → device-profile
+	CredentialModeDeviceProfile:       true,
+	CredentialModeRepositoryEncrypted: true,
 }
 
 type DeviceSession struct {
@@ -354,6 +373,10 @@ func normalizeS3Config(config *S3Config) *S3Config {
 	normalized.Region = strings.TrimSpace(normalized.Region)
 	normalized.Profile = strings.TrimSpace(normalized.Profile)
 	normalized.AddressingStyle = normalizeS3AddressingStyle(normalized.AddressingStyle)
+	normalized.CredentialMode = strings.TrimSpace(normalized.CredentialMode)
+	if normalized.CredentialMode == "" {
+		normalized.CredentialMode = CredentialModeDeviceProfile
+	}
 	if normalized.Bucket == "" {
 		return nil
 	}

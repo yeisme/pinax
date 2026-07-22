@@ -192,6 +192,9 @@ func (c SyncConfig) Validate() error {
 	if !ValidRemoteDeletePolicies[c.Policy.RemoteDeletePolicy] {
 		return &SyncConfigError{Code: "invalid_remote_delete_policy", Field: "policy.remote_delete_policy", Message: fmt.Sprintf("invalid remote_delete_policy: %q", c.Policy.RemoteDeletePolicy)}
 	}
+	if c.Backend.S3 != nil && !ValidCredentialModes[c.Backend.S3.CredentialMode] {
+		return &SyncConfigError{Code: "invalid_credential_mode", Field: "backend.s3.credential_mode", Message: fmt.Sprintf("invalid credential_mode: %q (expected device-profile or repository-encrypted)", c.Backend.S3.CredentialMode)}
+	}
 	if field, hit := scanForPlaintextSensitive(c); hit {
 		return &SyncConfigError{Code: "plaintext_sensitive_field", Field: field, Message: fmt.Sprintf("declaration field %s contains a plaintext-sensitive value; use `pinax sync repo secret set` or an external credential reference", field)}
 	}

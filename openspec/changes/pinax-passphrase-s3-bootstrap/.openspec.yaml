@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-20
+goal: 让新 Mac 在 clone 私有 vault 后仅凭独立 vault 解锁口令安全生成本机 Capsa 运行配置并拉取加密笔记，无需手工编辑
+  ~/.aws/credentials。

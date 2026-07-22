@@ -31,6 +31,11 @@ type S3BackendOptions struct {
 	PathStyle   bool
 	PathMode    string
 	API         string
+	// CredentialsProvider, when non-nil, is the explicit AWS SDK credentials
+	// provider used to authenticate S3 requests (for example, a StaticCredentialsProvider
+	// built from a repository-encrypted bundle). When nil, the SDK shared
+	// profile / default credential chain is used (existing device-profile behavior).
+	CredentialsProvider aws.CredentialsProvider
 }
 
 func parseS3Endpoint(endpoint string) (string, string, S3BackendOptions, error) {
@@ -95,12 +100,18 @@ func NewS3Backend(ctx context.Context, bucket string, prefix string) (*S3Backend
 }
 
 func NewS3BackendWithOptions(ctx context.Context, bucket string, prefix string, options S3BackendOptions) (*S3Backend, error) {
-	loadOptions := make([]func(*config.LoadOptions) error, 0, 2)
+	loadOptions := make([]func(*config.LoadOptions) error, 0, 3)
 	if options.Region != "" {
 		loadOptions = append(loadOptions, config.WithRegion(options.Region))
 	}
 	if options.Profile != "" {
 		loadOptions = append(loadOptions, config.WithSharedConfigProfile(options.Profile))
+	}
+	// When an explicit credentials provider is supplied (repository-encrypted
+	// mode), inject it directly so the SDK does not consult the shared profile
+	// chain or device-local env — preventing accidental cross-account access.
+	if options.CredentialsProvider != nil {
+		loadOptions = append(loadOptions, config.WithCredentialsProvider(options.CredentialsProvider))
 	}
 	cfg, err := config.LoadDefaultConfig(ctx, loadOptions...)
 	if err != nil {

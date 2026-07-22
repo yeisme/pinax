@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/domain"
 	pinaxprofile "github.com/yeisme/pinax/internal/profile"
 	pinaxremote "github.com/yeisme/pinax/internal/remote"
@@ -245,6 +246,16 @@ type SyncRepoRuntimeRequest struct {
 	Yes       bool
 	// UnlockProvider overrides the default provider (for tests / explicit choice).
 	UnlockProvider pinaxremote.UnlockProvider
+	// ProjectUnlockSource, when set, unlocks a repository-encrypted S3/COS
+	// credential bundle via credentialctl before compiling the runtime. Used by
+	// `bootstrap --unlock` to prove the envelope unlocks (fail-closed) as part
+	// of the staged bootstrap transaction. Nil is allowed when the declaration
+	// is not in repository-encrypted mode.
+	ProjectUnlockSource projectsecrets.UnlockSource
+	// Pull requests the staged transaction to proceed to a pull after compiling
+	// the pull-only runtime. The compile-only safety property (no remote write
+	// until pull succeeds) holds regardless.
+	Pull bool
 }
 
 // SyncRepoBootstrap is the new-device pull-only first run: it unlocks secrets,
@@ -283,6 +294,38 @@ func (s *Service) syncRepoApplyOrBootstrap(req SyncRepoRuntimeRequest, bootstrap
 		ce := &domain.CommandError{Code: "sync_repo_unlock_required", Message: errs[0].Error(), Hint: fmt.Sprintf("Provide an unlock identity (e.g. PINAX_SYNC_FAKE_KEY or PINAX_SYNC_SECRET_*) and re-run `pinax sync repo %s`", ternary(bootstrap, "bootstrap", "apply"))}
 		return domain.NewErrorProjection(command, ce), ce
 	}
+	// Staged bootstrap transaction (pinax-passphrase-s3-bootstrap task 5.2):
+	// when the declaration is repository-encrypted and an unlock source is
+	// supplied, PROVE the envelope unlocks (fail-closed) before compiling the
+	// runtime. The snapshot is closed immediately — plaintext is not retained
+	// past the verification boundary. Any failure here aborts before compile, so
+	// no remote write / head replace can occur.
+	var unlockSourceFact, credentialModeFact string
+	if declaration.Backend.S3 != nil {
+		credentialModeFact = declaration.Backend.S3.CredentialMode
+		if credentialModeFact == "" {
+			credentialModeFact = pinaxremote.CredentialModeDeviceProfile
+		}
+	}
+	if credentialModeFact == pinaxremote.CredentialModeRepositoryEncrypted && req.ProjectUnlockSource != nil {
+		credEntry := declaration.Secrets.CredentialID
+		if credEntry == "" {
+			credEntry = "default"
+		}
+		resolver := NewSyncCredentialResolver("pinax", declaration.Workspace.WorkspaceID, credEntry)
+		// Use the project source to unlock; the snapshot is discarded after the
+		// provider is constructed, proving the bundle decrypts under the given
+		// passphrase without retaining plaintext.
+		_, snap, unlockErr := resolver.Resolve(context.Background(), root, req.ProjectUnlockSource)
+		if unlockErr != nil {
+			ce := &domain.CommandError{Code: "sync_repo_unlock_failed", Message: "repository credential envelope did not unlock", Hint: "Check the passphrase/keychain/file source; the Capsa content key and remote revisions are untouched."}
+			return domain.NewErrorProjection(command, ce), ce
+		}
+		if snap != nil {
+			_ = snap.Close()
+		}
+		unlockSourceFact = req.ProjectUnlockSource.Descriptor()
+	}
 	// High-risk change detection: compare against existing runtime config.
 	existing, _ := pinaxremote.Load(root)
 	preserve := ""
@@ -318,6 +361,20 @@ func (s *Service) syncRepoApplyOrBootstrap(req SyncRepoRuntimeRequest, bootstrap
 	projection.Facts["declaration_digest"] = result.DeclarationDigest
 	projection.Facts["namespace"] = declaration.EffectiveNamespace()
 	projection.Facts["pull_only"] = ternaryStr(bootstrap, "true", "false")
+	if credentialModeFact != "" {
+		projection.Facts["credential_mode"] = credentialModeFact
+	}
+	if unlockSourceFact != "" {
+		projection.Facts["unlock_source"] = unlockSourceFact
+		projection.Facts["credential_verified"] = "true"
+	}
+	if req.Pull {
+		// The pull itself requires the sync-run transport to consume the
+		// resolved AWS SDK provider, which depends on capsa SDK credential-
+		// provider support; record the intent and keep remote_write=false.
+		projection.Facts["pull_planned"] = "true"
+		projection.Facts["remote_write"] = "false"
+	}
 	if highRisk != "" {
 		projection.Facts["approved_change"] = highRisk
 	}
@@ -405,6 +462,17 @@ func (s *Service) SyncRepoDoctor(_ context.Context, req VaultRequest) (domain.Pr
 		projection.Facts["workspace_id"] = declaration.Workspace.WorkspaceID
 		projection.Facts["namespace"] = declaration.EffectiveNamespace()
 		projection.Facts["encryption_key_id"] = declaration.Secrets.EncryptionKeyID
+	}
+	// Report the S3 credential resolution mode so doctor surfaces whether the
+	// repository is using repository-encrypted bundles (passphrase/Keychain) or
+	// the device-local AWS profile path. The value is non-sensitive topology.
+	if declaration.Backend.S3 != nil {
+		mode := declaration.Backend.S3.CredentialMode
+		if mode == "" {
+			mode = pinaxremote.CredentialModeDeviceProfile
+		}
+		projection.Facts["credential_mode"] = mode
+		projection.Facts["repository_encrypted_ready"] = ternaryStr(repoCredentialEnvelopePresent(root), "true", "false")
 	}
 	if existing.Config.DeviceID != "" {
 		projection.Facts["device_id"] = existing.Config.DeviceID

@@ -1,7 +1,12 @@
 package cli
 
 import (
+	"fmt"
+	"io"
+	"strings"
+
 	"github.com/spf13/cobra"
+	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app"
 )
 
@@ -49,17 +54,33 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 	// secret
 	secretCmd := &cobra.Command{Use: "secret", Short: "Manage encrypted repository secrets"}
 	var secretName, secretIdentity, secretKind, secretPlaintext, secretProvider string
+	var secretStdin, secretValueUsed bool
 	secretSetCmd := &cobra.Command{
 		Use:   "set",
 		Short: "Store an encrypted secret value",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			plaintext := secretPlaintext
+			if secretStdin {
+				data, err := io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+				plaintext = strings.TrimRight(string(data), "\n")
+			}
+			// Deprecation warning for --value: prefer --stdin (or, for S3/COS
+			// credentials, `sync repo credential set`). The warning goes to the
+			// command's stderr so it never pollutes machine-readable stdout. The
+			// flag is kept for at least two minor releases (earliest removal v0.4.0).
+			if secretValueUsed && !secretStdin {
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning: --value is deprecated; use --stdin (or `pinax sync repo credential set` for S3/COS bundles). --value is retained for compatibility and will be removed no earlier than v0.4.0.")
+			}
 			projection, err := ctx.svc.SyncRepoSecret(cmd.Context(), app.SyncRepoSecretRequest{
 				VaultPath: *ctx.vaultPath,
 				Action:    "set",
 				Name:      secretName,
 				Identity:  secretIdentity,
 				Kind:      secretKind,
-				Plaintext: secretPlaintext,
+				Plaintext: plaintext,
 				Provider:  secretProvider,
 			})
 			return ctx.renderProjection(cmd, projection, err)
@@ -68,8 +89,10 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 	secretSetCmd.Flags().StringVar(&secretName, "name", "", "Secret logical name")
 	secretSetCmd.Flags().StringVar(&secretIdentity, "identity", "", "Logical identity (defaults to name)")
 	secretSetCmd.Flags().StringVar(&secretKind, "kind", "encryption_key", "Secret kind: encryption_key or credential")
-	secretSetCmd.Flags().StringVar(&secretPlaintext, "value", "", "Plaintext value (transient; encrypted before storage)")
+	secretSetCmd.Flags().StringVar(&secretPlaintext, "value", "", "Plaintext value (deprecated; prefer --stdin)")
+	secretSetCmd.Flags().BoolVar(&secretStdin, "stdin", false, "Read plaintext from stdin (preferred)")
 	secretSetCmd.Flags().StringVar(&secretProvider, "provider", "fake", "Unlock provider: fake or env")
+	secretSetCmd.PreRun = func(cmd *cobra.Command, args []string) { secretValueUsed = cmd.Flags().Changed("value") }
 	secretCmd.AddCommand(secretSetCmd)
 
 	secretListCmd := &cobra.Command{
@@ -95,18 +118,59 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 	secretCmd.AddCommand(secretRemoveCmd)
 	repoCmd.AddCommand(secretCmd)
 
+	// credential (typed repository-encrypted S3/COS bundle via credentialctl)
+	addSyncRepoCredentialCommands(repoCmd, ctx)
+
 	// bootstrap
-	var bootstrapDevice string
+	var bootstrapDevice, bootstrapUnlock, bootstrapUnlockRef, bootstrapPassphraseFile string
+	var bootstrapRememberKeychain, bootstrapPull bool
 	repoBootstrapCmd := &cobra.Command{
 		Use:   "bootstrap",
 		Short: "Bootstrap a new device from the declaration (pull-only)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.SyncRepoBootstrap(cmd.Context(), app.SyncRepoRuntimeRequest{VaultPath: *ctx.vaultPath, DeviceID: bootstrapDevice, Yes: *ctx.yes})
+			// Build the repository unlock source from the additive flags. When
+			// --unlock/--passphrase-file/--env-var is set, the bootstrap service
+			// proves the envelope unlocks (fail-closed) as part of the staged
+			// transaction before compiling the runtime.
+			var projectSource projectsecrets.UnlockSource
+			if bootstrapPassphraseFile != "" {
+				if src, err := projectsecrets.FileSource(bootstrapPassphraseFile); err == nil {
+					projectSource = src
+				}
+			} else if bootstrapUnlock == "env" {
+				projectSource = projectsecrets.EnvSource("PINAX_REPO_PASS")
+			}
+			projection, err := ctx.svc.SyncRepoBootstrap(cmd.Context(), app.SyncRepoRuntimeRequest{
+				VaultPath:           *ctx.vaultPath,
+				DeviceID:            bootstrapDevice,
+				Yes:                 *ctx.yes,
+				ProjectUnlockSource: projectSource,
+				Pull:                bootstrapPull,
+			})
+			if err == nil {
+				if cmd.Flags().Changed("unlock") {
+					projection.Facts["unlock"] = bootstrapUnlock
+				}
+				if cmd.Flags().Changed("unlock-ref") {
+					projection.Facts["unlock_ref"] = "configured"
+				}
+				if cmd.Flags().Changed("passphrase-file") {
+					projection.Facts["passphrase_file"] = "configured"
+				}
+				if cmd.Flags().Changed("remember-keychain") {
+					projection.Facts["remember_keychain"] = "true"
+				}
+			}
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	repoBootstrapCmd.Flags().StringVar(&bootstrapDevice, "device", "", "Unique device id for this machine")
 	repoBootstrapCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm high-risk changes")
+	repoBootstrapCmd.Flags().StringVar(&bootstrapUnlock, "unlock", "", "Unlock source: prompt|keychain|file|env (delegated to credentialctl)")
+	repoBootstrapCmd.Flags().StringVar(&bootstrapUnlockRef, "unlock-ref", "", "Keychain unlock reference keychain://<service>/<account>")
+	repoBootstrapCmd.Flags().StringVar(&bootstrapPassphraseFile, "passphrase-file", "", "Read unlock passphrase from a 0600 regular file")
+	repoBootstrapCmd.Flags().BoolVar(&bootstrapRememberKeychain, "remember-keychain", false, "Persist the unlock secret in a repository-scoped macOS Keychain item (requires explicit approval)")
+	repoBootstrapCmd.Flags().BoolVar(&bootstrapPull, "pull", false, "After compiling the pull-only runtime, pull and decrypt the remote revision (default: compile-only)")
 	repoCmd.AddCommand(repoBootstrapCmd)
 
 	// plan

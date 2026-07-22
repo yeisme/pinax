@@ -336,7 +336,7 @@ task integration:sync-real
 | Layer | File | Committed? | Contents |
 | --- | --- | --- | --- |
 | Repository declaration | `.pinax/pinax-sync.yaml` | Yes | Backend topology, workspace/namespace, logical credential & encryption-key identities, sync policy. No plaintext credentials. |
-| Encrypted secrets | `.pinax/pinax-sync.secrets.yaml` | Yes | Ciphertext only; plaintext exists only during an authenticated runtime unlock. |
+| Encrypted secrets | `.pinax/project-secrets.yaml` | Yes | Ciphertext only; plaintext exists only during an authenticated runtime unlock. |
 | Device runtime state | `.pinax/cloud/` | No (gitignored) | Generated `config.yaml`, source marker, session, blob cache, receipts. |
 
 Logical identities (`credential_id`, `encryption_key_id`) are resolved per-device to local profiles, keychain or a secret manager. The actual credential value is never written to the repository. All assets under `.pinax/` are protected from content-manifest upload by default `.pinaxignore` rules.
@@ -346,7 +346,7 @@ Logical identities (`credential_id`, `encryption_key_id`) are resolved per-devic
 | Command | Purpose | Writes/External effects |
 | --- | --- | --- |
 | `pinax sync repo init` | Creates/updates the repository declaration. | Writes `.pinax/pinax-sync.yaml` and updates `.gitignore` device-state protection. Idempotent: re-running preserves the encryption key identity. |
-| `pinax sync repo secret set` | Stores an encrypted secret value under a logical identity. | Writes `.pinax/pinax-sync.secrets.yaml` (ciphertext only). Plaintext is transient. |
+| `pinax sync repo secret set` | Stores an encrypted secret value under a logical identity. | Writes `.pinax/project-secrets.yaml` (ciphertext only). Plaintext is transient. |
 | `pinax sync repo secret list` | Lists secret metadata (name, identity, provider). | Read-only; never shows plaintext. |
 | `pinax sync repo secret remove` | Removes an encrypted secret. | Mutates the encrypted asset. |
 | `pinax sync repo bootstrap` | First device run: unlocks secrets, compiles + writes the runtime config, writes the source marker. New devices default to **pull-only**. | Writes `.pinax/cloud/config.yaml`; does not upload local deletions on a fresh device. |
@@ -372,7 +372,7 @@ The first version ships a deterministic `fake` AES-GCM provider (keyed by `PINAX
 
 ## Encrypted runtime dotenv loader (experimental)
 
-`pinax sync env` is an **experimental** runtime env layer that lets a repository carry an encrypted dotenv asset, so a clone-and-unlock can self-describe the provider/environment variables a sync run needs — without requiring the calling shell to pre-set them and without committing plaintext. It is additive and coexists with `.pinax/pinax-sync.secrets.yaml` (use dotenv for groups of provider/environment keys; use the logical secret API for single values).
+`pinax sync env` is an **experimental** runtime env layer that lets a repository carry an encrypted dotenv asset, so a clone-and-unlock can self-describe the provider/environment variables a sync run needs — without requiring the calling shell to pre-set them and without committing plaintext. It is additive and coexists with `.pinax/project-secrets.yaml` (use dotenv for groups of provider/environment keys; use the logical secret API for single values).
 
 ### Asset model
 
@@ -405,3 +405,45 @@ The encrypted asset path is **fixed** (not user-selectable) to prevent path-esca
 ### First-version unlock providers
 
 The env loader reuses the same unlock providers as `pinax sync repo secret`. The deterministic `fake` AES-GCM provider (keyed by `PINAX_SYNC_FAKE_KEY`) makes the layer testable end-to-end; the `env` provider resolves values from `PINAX_SYNC_SECRET_*`. Production deployments should register a reviewed provider (age/keychain).
+
+## Repository-encrypted S3/COS credentials (experimental)
+
+`pinax sync repo credential` manages a **typed** repository-encrypted S3/COS credential bundle (`s3_credentials.v1`) through the shared `credentialctl` project-secrets library. The ciphertext lives in `.pinax/project-secrets.yaml` (a `yeisme.project_secrets.v0.1` envelope) and can be committed; the passphrase unlocks from a file or env var (TTY prompt and macOS Keychain are owned by credentialctl). This is the recommended path for new Mac bootstrap; the legacy AWS shared profile remains a fully supported fallback.
+
+### Commands
+
+| Command | Purpose | Writes/External effects |
+| --- | --- | --- |
+| `pinax sync repo credential init` | Creates the repository-encrypted credential envelope. | Writes `.pinax/project-secrets.yaml` (ciphertext + identity only, `0600`). Never writes plaintext. |
+| `pinax sync repo credential set --stdin` | Encrypts one `s3_credentials.v1` bundle (payload via `--stdin`). | Re-writes the envelope atomically. Field-level validation runs before encryption; errors never echo values. |
+| `pinax sync repo credential list` | Lists credential bundle metadata (name/identity/kind/format/version). | Read-only; no plaintext. |
+| `pinax sync repo credential remove` | Removes one credential bundle. | Requires the unlock passphrase. |
+
+Passphrase source: `--passphrase-file <0600 file>` or `--env-var <name>`. All structured output (`--json`/`--agent`/`--events`/`--explain`) carries metadata only — never the access key, secret key, session token, passphrase, or ciphertext value.
+
+### Declaration: `credential_mode`
+
+The sync declaration gains an optional `backend.s3.credential_mode`:
+
+- `device-profile` (default): existing behavior — endpoint/profile or the AWS default credential chain.
+- `repository-encrypted`: the S3 transport resolves the typed bundle from the repository envelope via `credentialctl` and injects it as an explicit AWS SDK credentials provider. It must NOT silently fall back to a device-local AWS profile.
+
+```yaml
+backend:
+  kind: s3-direct
+  s3:
+    bucket: yeisme-notes
+    endpoint: https://cos.ap-shanghai.myqcloud.com
+    region: ap-shanghai
+    credential_mode: repository-encrypted
+```
+
+### Deprecation: `sync repo secret set --value`
+
+`pinax sync repo secret set --value <plaintext>` is deprecated; prefer `--stdin`, or `sync repo credential set` for S3/COS bundles. The `--value` flag is retained for at least two minor releases (earliest removal `v0.4.0`); it emits a one-line redacted warning to stderr and never pollutes machine-readable stdout.
+
+### Scope and rollback
+
+- Pinax does NOT own KDF/AEAD/Keychain — those live in `credentialctl` (`pkg/projectsecrets`). Pinax owns only the `s3_credentials.v1` payload type and the projection.
+- Rollback: set `credential_mode: device-profile` and regenerate the runtime config; the Capsa content encryption key and remote revisions are untouched.
+- First-version validation is on Linux CI (credentialctl Keychain adapter is verified via a fake `/usr/bin/security` executable); real macOS Keychain smoke and the second-device COS restore are tracked as dogfood gates.
