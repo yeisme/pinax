@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app/syncops"
 	"github.com/yeisme/pinax/internal/cloudclient"
 	"github.com/yeisme/pinax/internal/cloudsync"
@@ -367,6 +368,44 @@ func cloudTransportForState(ctx context.Context, state pinaxcloud.State) (clouds
 		return nil, err
 	}
 	return cloudsync.NewObjectStoreTransport(store, cloudsync.Layout{WorkspaceID: state.Config.WorkspaceID, VaultID: state.Config.WorkspaceID}), nil
+}
+
+// cloudTransportForStateWithCredential extends cloudTransportForState for the
+// repository-encrypted credential mode. When the runtime S3 config declares
+// repository-encrypted mode and an unlock source is supplied, the typed S3/COS
+// bundle is resolved via SyncCredentialResolver and injected as an explicit AWS
+// SDK credentials provider into the object store — the sync run never consults
+// the device-local shared profile chain. On any other mode, or when no source
+// is supplied, it falls back to cloudTransportForState. The returned snapshot
+// (if any) MUST be closed by the caller after the sync run so plaintext is
+// wiped; when no resolution happens, the returned snapshot is nil.
+func cloudTransportForStateWithCredential(ctx context.Context, state pinaxcloud.State, repoRoot string, source projectsecrets.UnlockSource) (cloudsync.Transport, *projectsecrets.Snapshot, error) {
+	mode := ""
+	if state.Config.S3 != nil {
+		mode = state.Config.S3.CredentialMode
+	}
+	if mode != pinaxcloud.CredentialModeRepositoryEncrypted || source == nil {
+		t, err := cloudTransportForState(ctx, state)
+		return t, nil, err
+	}
+	credEntry := state.Config.SecretRef
+	if credEntry == "" {
+		credEntry = "default"
+	}
+	resolver := NewSyncCredentialResolver("pinax", state.Config.WorkspaceID, credEntry)
+	provider, snap, err := resolver.Resolve(ctx, repoRoot, source)
+	if err != nil {
+		return nil, nil, err
+	}
+	store, err := state.GetStoreWithCredentialProvider(ctx, provider)
+	if err != nil {
+		if snap != nil {
+			_ = snap.Close()
+		}
+		return nil, nil, err
+	}
+	transport := cloudsync.NewObjectStoreTransport(store, cloudsync.Layout{WorkspaceID: state.Config.WorkspaceID, VaultID: state.Config.WorkspaceID})
+	return transport, snap, nil
 }
 
 type directPullResult struct {

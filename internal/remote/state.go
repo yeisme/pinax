@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"gopkg.in/yaml.v3"
 )
 
@@ -218,6 +219,30 @@ func Logout(root string) error {
 
 func (s State) GetStore(ctx context.Context) (BlobStore, error) {
 	return NewStore(ctx, s.Config.Endpoint)
+}
+
+// GetStoreWithCredentialProvider returns the object store for the state's
+// backend, injecting an explicit AWS SDK credentials provider when supplied.
+// This is the repository-encrypted path: the S3 backend is constructed from
+// the runtime S3 config (not the endpoint query string) so a resolved bundle
+// can be injected without going through the device-local profile chain. When
+// provider is nil or the backend is not S3-direct, it falls back to GetStore.
+func (s State) GetStoreWithCredentialProvider(ctx context.Context, provider aws.CredentialsProvider) (BlobStore, error) {
+	if provider == nil {
+		return s.GetStore(ctx)
+	}
+	if s.Config.S3 == nil || strings.TrimSpace(s.Config.S3.Bucket) == "" {
+		// No S3 config to build from; fall back to the endpoint-based store.
+		return s.GetStore(ctx)
+	}
+	s3 := s.Config.S3
+	return NewS3BackendWithOptions(ctx, s3.Bucket, s3.Prefix, S3BackendOptions{
+		EndpointURL:         s3.Endpoint,
+		Region:              s3.Region,
+		Profile:             s3.Profile,
+		PathStyle:           s3.PathStyle,
+		CredentialsProvider: provider,
+	})
 }
 
 func Doctor(root string) DoctorResult {
