@@ -3,6 +3,7 @@ package app
 import (
 	"time"
 
+	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app/searchops"
 	"github.com/yeisme/pinax/internal/domain"
 )
@@ -419,6 +420,11 @@ type SyncRequest struct {
 	DeviceID       string
 	SecretRef      string
 	PathPolicy     string
+	// ProjectUnlockSource, when set and the runtime config is in repository-
+	// encrypted S3 credential mode, unlocks the typed bundle and injects it as
+	// the AWS SDK credentials provider for the sync run. Nil keeps the existing
+	// device-profile credential resolution.
+	ProjectUnlockSource projectsecrets.UnlockSource
 }
 
 type CloudLoginRequest struct {

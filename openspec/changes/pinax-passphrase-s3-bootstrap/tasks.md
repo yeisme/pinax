@@ -49,9 +49,9 @@
 
 本 change 已完成核心工程闭环（24/26 task）：typed s3_credentials.v1、credential_mode 声明、AWS SDK credentials provider 注入、sync-run boundary 解锁 adapter、`pinax sync repo credential init|set|list|remove` CLI、`--value` deprecation + `--stdin`、bootstrap additive flags、doctor credential_mode 报告、profile rollback smoke、docs + migration runbook、完整质量门禁（race/lint/vet/CGO-free/openspec strict 全绿）。上游依赖 `credentialctl-project-secrets-envelope` 已完整实现（23/23 task）。
 
-剩余工程（capsa SDK 依赖）：
+剩余工程：无（pull 执行已打通）。
 
-- **pull 执行**：bootstrap `--pull` 的真实 transport 执行（resolved AWS provider 注入 sync-run S3 client）依赖 capsa SDK `S3BackendOptions` 增加 `CredentialsProvider` 字段（跨子项目 change）；当前 staged 事务安全核心（validate→unlock-verify→compile + redacted receipt + remote_write=false 保证）已实现并测试，pull_planned fact 已 surface。
+- **pull/push 执行**：`loadCloudRemoteSnapshotWithCredential` + `executeCloudPushWithCredential` 把 resolved AWS provider 穿过整个 sync 执行路径（manifest 读 + blob apply 复用 snapshot.Transport + push commit）；`SyncRequest.ProjectUnlockSource` + `pinax sync pull --passphrase-file/--env-var` CLI flag 接通；apply 路径自动复用 snapshot.Transport 拿 credential（cloudRemoteSnapshot 只载 manifest，blob 在 apply 阶段经同 transport GetBlob）。StaticCredentialsProvider 自包含，projectsecrets.Snapshot 可在 transport 构造后立即 Close。3 个 routing 测试覆盖。
 
 剩余 2 个 task 为外部 dogfood gate（root/operator），本会话不执行、不伪造 evidence：
 

@@ -125,6 +125,8 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	var daemonPollInterval time.Duration
 	var daemonSyncTimeout time.Duration
 	var daemonOnce bool
+	var syncPullPassphraseFile string
+	var syncPullEnvVar string
 	addPathPolicyFlag := func(c *cobra.Command) {
 		c.Flags().StringVar(&syncPathPolicy, "path-policy", "default", "Path redaction policy for sync receipts: default, hash, or omitted")
 		_ = c.RegisterFlagCompletionFunc("path-policy", staticCompletion("path-policy", "default", "hash", "omitted"))
@@ -203,7 +205,9 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		Use:   "pull",
 		Short: "Record sync pull state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.SyncPull(cmd.Context(), resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy}))
+			req := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy})
+			req.ProjectUnlockSource = resolveProjectUnlockSource(syncPullPassphraseFile, syncPullEnvVar)
+			projection, err := ctx.svc.SyncPull(cmd.Context(), req)
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -212,6 +216,8 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	syncPullCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
 	syncPullCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPullCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
+	syncPullCmd.Flags().StringVar(&syncPullPassphraseFile, "passphrase-file", "", "Read repository-encrypted unlock passphrase from a 0600 regular file")
+	syncPullCmd.Flags().StringVar(&syncPullEnvVar, "env-var", "", "Read repository-encrypted unlock passphrase from a named environment variable")
 	addPathPolicyFlag(syncPullCmd)
 	_ = syncPullCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.AddCommand(syncPullCmd)

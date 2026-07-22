@@ -4,11 +4,28 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app"
 )
+
+// resolveProjectUnlockSource builds a credentialctl unlock source from the
+// sync pull credential flags. It prefers an explicit passphrase file, then an
+// env var; when neither is set it returns nil so the sync run falls back to
+// the device-profile credential path.
+func resolveProjectUnlockSource(passphraseFile, envVar string) projectsecrets.UnlockSource {
+	if strings.TrimSpace(passphraseFile) != "" {
+		if src, err := projectsecrets.FileSource(passphraseFile); err == nil {
+			return src
+		}
+	}
+	if strings.TrimSpace(envVar) != "" {
+		return projectsecrets.EnvSource(envVar)
+	}
+	return nil
+}
 
 // addSyncRepoCredentialCommands wires `pinax sync repo credential
 // init|set|list|remove`. These manage the typed repository-encrypted S3/COS

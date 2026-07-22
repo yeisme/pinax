@@ -69,7 +69,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 	}
 	remoteSnapshot := cloudRemoteSnapshot{}
 	if isExecutableCloudState(state) && direction == syncplan.DirectionPull && req.Yes && !req.DryRun {
-		snapshot, snapshotErr := loadCloudRemoteSnapshot(ctx, state)
+		snapshot, snapshotErr := loadCloudRemoteSnapshotWithCredential(ctx, state, root, req.ProjectUnlockSource)
 		if snapshotErr != nil {
 			if direction == syncplan.DirectionPull && req.Yes && !req.DryRun {
 				projection := errorProjection(command, snapshotErr)
@@ -130,9 +130,11 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		}
 		rebaseResult, execErr := runCloudPushRebase(cloudRebasePlan{
 			commit: func(base string) (cloudsync.CommitResult, error) {
-				return executeCloudPush(ctx, root, state, localManifest, base)
+				return executeCloudPushWithCredential(ctx, root, state, localManifest, base, req.ProjectUnlockSource)
 			},
-			pull:          func() (cloudRemoteSnapshot, error) { return loadCloudRemoteSnapshot(ctx, state) },
+			pull: func() (cloudRemoteSnapshot, error) {
+				return loadCloudRemoteSnapshotWithCredential(ctx, state, root, req.ProjectUnlockSource)
+			},
 			localManifest: localManifest,
 			baseManifest:  baseManifest,
 			baseRevision:  baseRevision,
@@ -430,6 +432,33 @@ func loadCloudRemoteSnapshot(ctx context.Context, state pinaxcloud.State) (cloud
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
 	}
+	return loadCloudRemoteSnapshotViaTransport(ctx, state, transport)
+}
+
+// loadCloudRemoteSnapshotWithCredential loads the remote snapshot using a
+// credential-injecting transport when a project unlock source is supplied
+// (repository-encrypted mode). The resolved AWS SDK StaticCredentialsProvider
+// is self-contained, so the projectsecrets.Snapshot can be closed as soon as
+// the transport is built — the apply path reuses snapshot.Transport for blob
+// fetches, so the credential flows through the whole pull. When source is nil
+// or the mode is not repository-encrypted, it falls back to loadCloudRemoteSnapshot.
+func loadCloudRemoteSnapshotWithCredential(ctx context.Context, state pinaxcloud.State, repoRoot string, source projectsecrets.UnlockSource) (cloudRemoteSnapshot, error) {
+	if source == nil {
+		return loadCloudRemoteSnapshot(ctx, state)
+	}
+	transport, snap, err := cloudTransportForStateWithCredential(ctx, state, repoRoot, source)
+	if err != nil {
+		return cloudRemoteSnapshot{}, err
+	}
+	if snap != nil {
+		// The provider holds its own credential copies; the projectsecrets
+		// snapshot's plaintext buffers can be wiped now.
+		_ = snap.Close()
+	}
+	return loadCloudRemoteSnapshotViaTransport(ctx, state, transport)
+}
+
+func loadCloudRemoteSnapshotViaTransport(ctx context.Context, state pinaxcloud.State, transport cloudsync.Transport) (cloudRemoteSnapshot, error) {
 	head, err := transport.CurrentHead(ctx, state.Config.WorkspaceID)
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
@@ -886,10 +915,27 @@ func safeSyncManifestCachePath(root, rel string) (string, error) {
 	return path, nil
 }
 
-func executeCloudPush(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string) (cloudsync.CommitResult, error) {
-	transport, err := cloudTransportForState(ctx, state)
-	if err != nil {
-		return cloudsync.CommitResult{}, err
+// executeCloudPushWithCredential commits a push, optionally injecting the
+// unlock source: in repository-encrypted mode it injects the resolved AWS SDK
+// credentials provider into the push transport. The snapshot is closed after
+// the transport is built (StaticCredentialsProvider is self-contained).
+func executeCloudPushWithCredential(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string, source projectsecrets.UnlockSource) (cloudsync.CommitResult, error) {
+	var transport cloudsync.Transport
+	if source != nil {
+		t, snap, err := cloudTransportForStateWithCredential(ctx, state, root, source)
+		if err != nil {
+			return cloudsync.CommitResult{}, err
+		}
+		if snap != nil {
+			_ = snap.Close()
+		}
+		transport = t
+	} else {
+		t, err := cloudTransportForState(ctx, state)
+		if err != nil {
+			return cloudsync.CommitResult{}, err
+		}
+		transport = t
 	}
 	if strings.TrimSpace(baseRevision) == "" {
 		baseRevision = localCloudBaseRevision(root, state)
