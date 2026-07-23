@@ -27,13 +27,16 @@ require (
 	gorm.io/plugin/dbresolver v1.6.2
 )
 
-require golang.org/x/crypto v0.54.0
+require (
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.23
+	github.com/yeisme/credentialctl v0.0.0
+	golang.org/x/crypto v0.54.0
+)
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
 	github.com/alecthomas/chroma/v2 v2.14.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.13 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.23 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29 // indirect
@@ -84,7 +87,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/yeisme/credentialctl v0.0.0 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
