@@ -5,16 +5,12 @@ version: 2
 
 project_name: pinax
 
-before:
-  hooks:
-    - go mod download
-    - go mod verify
-
 builds:
   - id: pinax
     main: ./cmd/pinax
     binary: pinax
     flags:
+      - -mod=vendor
       - -trimpath
     ldflags:
       - -s -w -X main.version={{ .Version }}
