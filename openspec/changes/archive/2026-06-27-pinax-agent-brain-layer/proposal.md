@@ -6,7 +6,7 @@ GBrain 的定位说明了一个清晰缺口：普通搜索只返回原始页面�
 
 如果不先定义合同，后续实现容易走偏：把 answer synthesis 做成无引用聊天、让 MCP 暴露 raw note body、让 Web/Agent 直接读 `.pinax/**` 或 SQLite/LanceDB、把团队知识库做成 hosted 明文平台、让 night maintenance 静默改写用户笔记，或在没有 provider/cost 提示时触发 embedding/reranker/LLM 调用。
 
-本变更把 Pinax 的长期记忆/知识大脑方向正式化：Pinax 是给 Claude Code、Codex、Cursor、OpenClaw、Hermes 和其他 MCP/Local API client 使用的 agent-safe brain layer。它必须优先复用本地 vault 和现有 projection，所有写入继续走 proof loop，所有答案综合必须可引用、可审计、可回滚。
+本变更把 Pinax 的长期记忆/知识大脑方向正式化：Pinax 是给 Claude Code、Codex、Cursor、OpenClaw、legacy connector runtime 和其他 MCP/Local API client 使用的 agent-safe brain layer。它必须优先复用本地 vault 和现有 projection，所有写入继续走 proof loop，所有答案综合必须可引用、可审计、可回滚。
 
 ## What Changes
 

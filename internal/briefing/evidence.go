@@ -97,7 +97,7 @@ func SourceTrust(sourceID string, hint float64) float64 {
 	switch {
 	case strings.HasPrefix(sourceID, "user:"):
 		return 1
-	case strings.HasPrefix(sourceID, "hermes:"):
+	case strings.HasPrefix(sourceID, "connectors:"):
 		return 0.8
 	case strings.HasPrefix(sourceID, "fake:"):
 		return 0.6

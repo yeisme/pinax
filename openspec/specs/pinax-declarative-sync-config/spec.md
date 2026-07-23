@@ -88,3 +88,13 @@ Pinax SHALL provide stable declarative namespace fields while treating full mult
 - **WHEN** a direct S3 backend is used for multiple tenants
 - **THEN** Pinax SHALL expose tenant/app/workspace facts in doctor and plan output
 - **AND** SHALL state that direct transport does not provide server-side RBAC, quota, audit or tenant authorization
+
+### Requirement: 加密配置支持 env 资产
+
+Declarative sync configuration SHALL allow a logical env asset identity while keeping the encrypted dotenv path fixed and the plaintext runtime path local-only.
+
+#### Scenario: 声明 env identity
+
+- **WHEN** `pinax-sync.yaml` references an env identity
+- **THEN** bootstrap SHALL resolve `.pinax/pinax-sync.env.age` through the same unlock provider
+- **AND** SHALL not copy plaintext values into `pinax-sync.yaml` or generated repository metadata

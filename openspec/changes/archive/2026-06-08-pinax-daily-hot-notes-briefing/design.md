@@ -18,10 +18,10 @@ flowchart TD
     Feedback --> Scorer
 
     subgraph External
-        Hermes[Hermes/OpenWebUI]
+        legacy connector runtime[legacy connector runtime/OpenWebUI]
     end
 
-    Research -.->|adapter| Hermes
+    Research -.->|adapter| legacy connector runtime
     Delivery -.->|webhook| Feishu[飞书]
 ```
 
@@ -31,22 +31,22 @@ flowchart TD
 
 - Phase 1: Local Briefing Dry Run（fake evidence ledger → scorer → `--json` top candidates）。
 - Phase 2: Candidate Notes Review Queue（`--yes` 写 review candidate notes、events）。
-- Phase 3: Hermes Research Integration（外部服务配置 + fake harness）。
+- Phase 3: legacy connector runtime Research Integration（外部服务配置 + fake harness）。
 - Phase 4: Feishu Delivery and Feedback（webhook MVP + fake sender）。
-- Hermes 作为外部服务配置，本地开发使用 fake fixture。
+- legacy connector runtime 作为外部服务配置，本地开发使用 fake fixture。
 - 飞书 MVP 使用 webhook adapter，不引入原生 SDK。
 
 **Non-Goals:**
 
-- 不实现 Hermes research harness 本体。
+- 不实现 legacy connector runtime research harness 本体。
 - 不在 MVP 使用原生飞书 SDK。
 - 不改变 Pinax 核心笔记和索引功能。
 
 ## Decisions
 
-### 1. Hermes 作为外部服务
+### 1. legacy connector runtime 作为外部服务
 
-`backend-server/openwebui-hermes` 当前无独立 owner。Pinax 通过 research adapter 接口与 Hermes 交互，本地开发和测试使用 fake harness fixture。Hermes endpoint/capability 在 Pinax 配置中登记。
+`backend-server/connectors` 当前无独立 owner。Pinax 通过 research adapter 接口与 legacy connector runtime 交互，本地开发和测试使用 fake harness fixture。legacy connector runtime endpoint/capability 在 Pinax 配置中登记。
 
 ### 2. 飞书 delivery MVP 使用 webhook
 
@@ -58,6 +58,6 @@ Briefing recipe、evidence ledger、candidate note、delivery receipt、feedback
 
 ## Risks
 
-- Hermes 不可用 -> fake fixture 覆盖本地开发和测试。
+- legacy connector runtime 不可用 -> fake fixture 覆盖本地开发和测试。
 - 飞书 webhook secret 管理 -> 通过 secret_ref 和脱敏 gate 控制。
 - 评分算法调优 -> MVP 先使用简单加权，后续迭代优化。

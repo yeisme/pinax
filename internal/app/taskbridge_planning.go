@@ -27,6 +27,18 @@ type dailyTaskReviewSummary struct {
 	Review  []domain.BoardItem `json:"review"`
 }
 
+func taskRuntimeCommand(action string) (string, []string, string, error) {
+	if _, err := exec.LookPath("connectors"); err == nil {
+		args := []string{"task", "agent", action}
+		return "connectors", args, strings.Join(append([]string{"connectors"}, args...), " "), nil
+	}
+	if _, err := exec.LookPath("taskbridge"); err == nil {
+		args := []string{"agent", action}
+		return "taskbridge", args, strings.Join(append([]string{"taskbridge"}, args...), " "), nil
+	}
+	return "", nil, "", exec.ErrNotFound
+}
+
 type taskBridgeAgentToday struct {
 	Schema string                `json:"schema"`
 	Status string                `json:"status"`
@@ -67,17 +79,21 @@ type taskBridgeSuggestedAction struct {
 }
 
 func loadTaskBridgeDaily(ctx context.Context, capturedAt time.Time) (*domain.TaskBridgePlan, error) {
-	cmd := exec.CommandContext(ctx, "taskbridge", "agent", "today")
+	executable, args, verifyCommand, err := taskRuntimeCommand("today")
+	if err != nil {
+		return nil, &domain.CommandError{Code: "TASKBRIDGE_UNAVAILABLE", Message: "Task planning facts are unavailable", Hint: "Install Connectors and run connectors task agent today"}
+	}
+	cmd := exec.CommandContext(ctx, executable, args...)
 	stdout, err := cmd.Output()
 	if err != nil {
-		return nil, &domain.CommandError{Code: "TASKBRIDGE_UNAVAILABLE", Message: "TaskBridge daily facts are unavailable", Hint: "Run taskbridge agent today to verify TaskBridge is installed and configured"}
+		return nil, &domain.CommandError{Code: "TASKBRIDGE_UNAVAILABLE", Message: "Task planning facts are unavailable", Hint: "Run " + verifyCommand + " to verify the task runtime is configured"}
 	}
 	var envelope taskBridgeAgentToday
 	if err := json.Unmarshal(stdout, &envelope); err != nil {
-		return nil, &domain.CommandError{Code: "TASKBRIDGE_UNAVAILABLE", Message: "TaskBridge returned invalid JSON", Hint: "Run taskbridge agent today and inspect stdout"}
+		return nil, &domain.CommandError{Code: "TASKBRIDGE_UNAVAILABLE", Message: "The task runtime returned invalid JSON", Hint: "Run " + verifyCommand + " and inspect stdout"}
 	}
 	if envelope.Schema != "taskbridge.agent-result.v1" || envelope.Status != "ok" || envelope.Result.Schema != "taskbridge.today.v1" || envelope.Result.Status != "ok" {
-		return nil, &domain.CommandError{Code: "TASKBRIDGE_CONTRACT_UNSUPPORTED", Message: "TaskBridge today schema is unsupported", Hint: "Upgrade TaskBridge or run taskbridge agent schemas"}
+		return nil, &domain.CommandError{Code: "TASKBRIDGE_CONTRACT_UNSUPPORTED", Message: "The task planning schema is unsupported", Hint: "Upgrade Connectors or run connectors task agent schemas"}
 	}
 	plan := &domain.TaskBridgePlan{
 		SchemaVersion: "taskbridge.today.v1",

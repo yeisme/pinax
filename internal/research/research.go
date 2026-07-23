@@ -38,13 +38,13 @@ type FakeAdapter struct {
 	fixture []Evidence
 }
 
-type HermesConfig struct {
+type ConnectorsConfig struct {
 	Endpoint   string
 	Capability string
 }
 
-type HermesAdapter struct {
-	config   HermesConfig
+type ConnectorsAdapter struct {
+	config   ConnectorsConfig
 	fallback Adapter
 }
 
@@ -71,21 +71,21 @@ func (a *FakeAdapter) Search(req ResearchRequest) (ResearchResponse, error) {
 	return ResearchResponse{SchemaVersion: ResearchResponseSchemaVersion, Provider: "fake", Topic: req.Topic, GeneratedAt: time.Now().UTC().Format(time.RFC3339), Evidence: fixture}, nil
 }
 
-func NewHermesAdapter(config HermesConfig, fallback Adapter) *HermesAdapter {
+func NewConnectorsAdapter(config ConnectorsConfig, fallback Adapter) *ConnectorsAdapter {
 	if fallback == nil {
 		fallback = NewFakeAdapter(nil)
 	}
-	return &HermesAdapter{config: config, fallback: fallback}
+	return &ConnectorsAdapter{config: config, fallback: fallback}
 }
 
-func (a *HermesAdapter) Search(req ResearchRequest) (ResearchResponse, error) {
+func (a *ConnectorsAdapter) Search(req ResearchRequest) (ResearchResponse, error) {
 	if err := validateRequest(req); err != nil {
 		return ResearchResponse{}, err
 	}
 	if strings.TrimSpace(a.config.Endpoint) == "" {
 		return a.fallback.Search(req)
 	}
-	// MVP adapter contract only; real Hermes HTTP integration is owned outside this package.
+	// MVP adapter contract only; real connector integration is owned outside this package.
 	return a.fallback.Search(req)
 }
 
@@ -101,7 +101,7 @@ func validateRequest(req ResearchRequest) error {
 
 func defaultFakeEvidence(topic string) []Evidence {
 	return []Evidence{
-		{URL: "https://fake.pinax.local/research/agent-workflow", Title: topic + " agent workflow", Summary: "Fake Hermes fixture for local briefing development.", SourceID: "fake:research", TrustHint: 0.6},
+		{URL: "https://fake.pinax.local/research/agent-workflow", Title: topic + " agent workflow", Summary: "Fake connector fixture for local briefing development.", SourceID: "fake:research", TrustHint: 0.6},
 		{URL: "https://fake.pinax.local/research/vault", Title: topic + " vault review", Summary: "Local-first note review and evidence workflow.", SourceID: "fake:research", TrustHint: 0.6},
 	}
 }

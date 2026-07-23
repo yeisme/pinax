@@ -2,7 +2,7 @@
 
 Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它让 AI 可以安全地读取、诊断、修复和同步真实本地知识库，同时保证每一次 agent 写入都可审计、可预览、可回滚。
 
-参考 GBrain 这类 “agent brain layer” 项目后，Pinax 的长期定位可以更明确：Pinax 不只是笔记 CLI，而是给 Claude Code、Codex、Cursor、OpenClaw、Hermes 和本地 MCP client 使用的 **私有知识大脑控制层**。它把 notes、meeting notes、emails/imported markdown、project board、memory ledger、KB projection、link graph、database views 和 proof receipts 组织成 agent 可查询、可引用、可维护的长期上下文。
+参考 GBrain 这类 “agent brain layer” 项目后，Pinax 的长期定位可以更明确：Pinax 不只是笔记 CLI，而是给 Claude Code、Codex、Cursor、OpenClaw、Connectors 和本地 MCP client 使用的 **私有知识大脑控制层**。它把 notes、meeting notes、emails/imported markdown、project board、memory ledger、KB projection、link graph、database views 和 proof receipts 组织成 agent 可查询、可引用、可维护的长期上下文。
 
 一句话定位：**Pinax 让 AI 安全操作你的私有知识库，并把它变成可审计的 agent brain；它不是另一个笔记应用，也不是另一个云端 silo。**
 
@@ -31,7 +31,7 @@ pinax mcp serve --vault ./my-notes
 ## 目标用户
 
 - **AI-heavy developers**：用 agent 操作真实 Markdown knowledge base，需要每次写入都经过 plan gate、snapshot 保护和可回滚链路。
-- **Agent builders / MCP integrators**：需要把 Claude Code、Codex、Cursor、Hermes、OpenClaw 等 agent 接到同一个长期记忆层，同时保持本地权限、引用证据和 write gate。
+- **Agent builders / MCP integrators**：需要把 Claude Code、Codex、Cursor、Connectors、OpenClaw 等 agent 接到同一个长期记忆层，同时保持本地权限、引用证据和 write gate。
 - **隐私敏感的技术工作者**：不愿把明文笔记交给外部平台，希望保留本地优先和端侧加密边界。
 - **Obsidian engineering power users**：希望在既有 vault 上叠加可编程、agent-safe 的维护和修复层，而不是换一个 note editor。
 

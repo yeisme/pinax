@@ -13,11 +13,11 @@ func TestFakeResearchAdapter(t *testing.T) {
 	}
 }
 
-func TestHermesAdapterFallsBackToFakeFixture(t *testing.T) {
-	adapter := NewHermesAdapter(HermesConfig{}, NewFakeAdapter(nil))
+func TestConnectorsAdapterFallsBackToFakeFixture(t *testing.T) {
+	adapter := NewConnectorsAdapter(ConnectorsConfig{}, NewFakeAdapter(nil))
 	resp, err := adapter.Search(ResearchRequest{Topic: "AI tooling", Limit: 2})
 	if err != nil {
-		t.Fatalf("hermes fallback: %v", err)
+		t.Fatalf("connectors fallback: %v", err)
 	}
 	if resp.Provider != "fake" || len(resp.Evidence) == 0 {
 		t.Fatalf("fallback response = %#v", resp)

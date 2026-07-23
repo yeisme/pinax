@@ -1972,7 +1972,7 @@ func TestActionDraftSaveWritesAssetAndReceipt(t *testing.T) {
 	if !strings.Contains(readFile(t, filepath.Join(root, ".pinax", "events.jsonl")), "plan.actions") {
 		t.Fatalf("plan action save did not append receipt event")
 	}
-	if len(projection.Actions) != 1 || !strings.Contains(projection.Actions[0].Command, "taskbridge agent execute --action-file") || !strings.Contains(projection.Actions[0].Command, "--dry-run") {
+	if len(projection.Actions) != 1 || !strings.Contains(projection.Actions[0].Command, "connectors task agent execute --action-file") || !strings.Contains(projection.Actions[0].Command, "--dry-run") {
 		t.Fatalf("next actions = %#v", projection.Actions)
 	}
 }

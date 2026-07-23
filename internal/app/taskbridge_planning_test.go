@@ -6,13 +6,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
 )
 
 func TestTaskBridgePlanDailyDryRunDoesNotWrite(t *testing.T) {
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
-	installFakeTaskBridge(t, fakeTaskBridgeTodayPayload())
+	installFakeConnectors(t, fakeTaskBridgeTodayPayload())
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -46,7 +47,7 @@ func TestTaskBridgePlanDailyDryRunDoesNotWrite(t *testing.T) {
 
 func TestTaskBridgePlanDailyYesWritesPlanningDailyBlock(t *testing.T) {
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
-	installFakeTaskBridge(t, fakeTaskBridgeTodayPayload())
+	installFakeConnectors(t, fakeTaskBridgeTodayPayload())
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -75,7 +76,7 @@ func TestTaskBridgePlanDailyYesWritesPlanningDailyBlock(t *testing.T) {
 
 func TestTaskBridgePlanDailyAppendsBlockToExistingDailyNote(t *testing.T) {
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
-	installFakeTaskBridge(t, fakeTaskBridgeTodayPayload())
+	installFakeConnectors(t, fakeTaskBridgeTodayPayload())
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -96,7 +97,7 @@ func TestTaskBridgePlanDailyAppendsBlockToExistingDailyNote(t *testing.T) {
 
 func TestTaskBridgePlanDailyDuplicatePlanningBlockFailsClosed(t *testing.T) {
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
-	installFakeTaskBridge(t, fakeTaskBridgeTodayPayload())
+	installFakeConnectors(t, fakeTaskBridgeTodayPayload())
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -224,7 +225,7 @@ func TestPlanDailyTaskReviewRequiresManagedBlockAndYes(t *testing.T) {
 
 func TestTaskBridgePlanActionsSaveUsesDeferredCandidates(t *testing.T) {
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
-	installFakeTaskBridge(t, fakeTaskBridgeTodayPayload())
+	installFakeConnectors(t, fakeTaskBridgeTodayPayload())
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -248,20 +249,42 @@ func TestTaskBridgePlanActionsSaveUsesDeferredCandidates(t *testing.T) {
 	if len(projection.Actions) != 1 || !strings.Contains(projection.Actions[0].Command, "--dry-run") || strings.Contains(projection.Actions[0].Command, "--confirm") {
 		t.Fatalf("action next step must be dry-run only: %#v", projection.Actions)
 	}
+	if !strings.HasPrefix(projection.Actions[0].Command, "connectors task agent execute ") {
+		t.Fatalf("action next step must use connectors: %#v", projection.Actions)
+	}
 	if !strings.Contains(readFile(t, filepath.Join(root, projection.Facts["saved_path"])), `"task_id": "task_4"`) {
 		t.Fatalf("saved action draft missing task_4")
 	}
 }
 
-func installFakeTaskBridge(t *testing.T, payload string) {
+func installFakeConnectors(t *testing.T, payload string) {
 	t.Helper()
 	binDir := t.TempDir()
-	path := filepath.Join(binDir, "taskbridge")
-	script := "#!/bin/sh\nif [ \"$1 $2\" != \"agent today\" ]; then echo unexpected args: \"$@\" >&2; exit 2; fi\ncat <<'JSON'\n" + payload + "\nJSON\n"
+	path := filepath.Join(binDir, "connectors")
+	script := "#!/bin/sh\nif [ \"$1 $2 $3\" != \"task agent today\" ]; then echo unexpected args: \"$@\" >&2; exit 2; fi\ncat <<'JSON'\n" + payload + "\nJSON\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake taskbridge: %v", err)
+		t.Fatalf("write fake connectors: %v", err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestTaskBridgePlanDailyFallsBackToCompatibilityBinary(t *testing.T) {
+	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
+	binDir := t.TempDir()
+	path := filepath.Join(binDir, "taskbridge")
+	script := "#!/bin/sh\nif [ \"$1 $2\" != \"agent today\" ]; then exit 2; fi\n/bin/cat <<'JSON'\n" + fakeTaskBridgeTodayPayload() + "\nJSON\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write compatibility taskbridge: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+
+	plan, err := loadTaskBridgeDaily(context.Background(), time.Date(2026, 6, 21, 15, 30, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("load compatibility taskbridge: %v", err)
+	}
+	if plan.SchemaVersion != "taskbridge.today.v1" || len(plan.Tasks) != 4 {
+		t.Fatalf("compatibility plan = %#v", plan)
+	}
 }
 
 func fakeTaskBridgeTodayPayload() string {

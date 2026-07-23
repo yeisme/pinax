@@ -238,7 +238,7 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 	projection.Evidence = []string{rel}
 	projection.Data = map[string]any{"draft": draft}
 	projection.Actions = []domain.Action{
-		{Name: "execute", Command: fmt.Sprintf("taskbridge agent execute --action-file %s --dry-run", rel)},
+		{Name: "execute", Command: fmt.Sprintf("connectors task agent execute --action-file %s --dry-run", rel)},
 	}
 	return projection, nil
 }

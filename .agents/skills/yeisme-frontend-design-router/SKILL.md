@@ -84,12 +84,31 @@ Do not use Impeccable as the only taste source. Use it primarily after implement
 
 ## Open Design First-Use Check
 
-When Open Design is available, route through it first for discovery and handoff:
+Prefer the official Open Design `od` CLI. Do not treat an HTTP compatibility
+wrapper or GNU coreutils `od` as the native CLI merely because `command -v od`
+returns a path or `od status` returns data.
+
+Inspect the resolved command before discovery:
+
+```bash
+command -v od
+od --help | sed -n '1,40p'
+```
+
+The command is not the official Open Design CLI when help identifies `Open
+Design CLI wrapper`, GNU coreutils, or another compatibility launcher. In that
+case, report native CLI unavailability and use an explicit HTTP/API fallback
+only for the operations it supports. Never silently present fallback output as
+native CLI evidence.
+
+When the official Open Design CLI is available, route through it first for
+discovery and handoff:
 
 ```bash
 od status --json
 od skills list
 od design-systems list
+od projects list
 ```
 
 Use Open Design for:
@@ -102,6 +121,11 @@ Use Open Design for:
 - routing to coding agents
 
 Open Design output is input, not final acceptance. Final frontend acceptance still belongs to the owning project through implementation tests, screenshots, accessibility checks, and quality gates.
+
+Use `od mcp` only where the official daemon CLI files are installed or mounted.
+MCP launchers must receive an explicit native executable and arguments; they
+must not default to a generic `od mcp` lookup that could resolve to a wrapper or
+GNU coreutils.
 
 ## Quality Gate Selection
 

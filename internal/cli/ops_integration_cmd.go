@@ -130,7 +130,7 @@ func addPlanningCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.PlanDaily(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, WithTaskBridge: *ctx.planWithTaskBridge, TaskReview: *ctx.planTaskReview, DryRun: *ctx.planDryRun, Yes: *ctx.yes, Save: *ctx.planSave})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
-	planDailyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
+	planDailyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts through the Connectors TaskBridge contract")
 	planDailyCmd.Flags().BoolVar(ctx.planTaskReview, "task-review", false, "Update the daily task review managed block")
 	planDailyCmd.Flags().BoolVar(ctx.planDryRun, "dry-run", false, "Preview the plan only; do not write")
 	planDailyCmd.Flags().BoolVar(ctx.planSave, "save", false, "Save a plan snapshot")
@@ -140,7 +140,7 @@ func addPlanningCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.PlanWeekly(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, WithTaskBridge: *ctx.planWithTaskBridge, DryRun: *ctx.planDryRun, Yes: *ctx.yes, Save: *ctx.planSave})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
-	planWeeklyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
+	planWeeklyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts through the Connectors TaskBridge contract")
 	planWeeklyCmd.Flags().BoolVar(ctx.planDryRun, "dry-run", false, "Preview the plan only; do not write")
 	planWeeklyCmd.Flags().BoolVar(ctx.planSave, "save", false, "Save a plan snapshot")
 	planWeeklyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm plan writes")
@@ -149,7 +149,7 @@ func addPlanningCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.PlanMonthly(cmd.Context(), app.PlanningRequest{VaultPath: *ctx.vaultPath, WithTaskBridge: *ctx.planWithTaskBridge, DryRun: *ctx.planDryRun, Yes: *ctx.yes, Save: *ctx.planSave})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
-	planMonthlyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
+	planMonthlyCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts through the Connectors TaskBridge contract")
 	planMonthlyCmd.Flags().BoolVar(ctx.planDryRun, "dry-run", false, "Preview the plan only; do not write")
 	planMonthlyCmd.Flags().BoolVar(ctx.planSave, "save", false, "Save a plan snapshot")
 	planMonthlyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm plan writes")
@@ -159,7 +159,7 @@ func addPlanningCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	planActionsCmd.Flags().StringVar(ctx.planFromPeriod, "from", "daily", "Source planning period: daily or weekly")
-	planActionsCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts from TaskBridge")
+	planActionsCmd.Flags().BoolVar(ctx.planWithTaskBridge, "taskbridge", false, "Read task facts through the Connectors TaskBridge contract")
 	planActionsCmd.Flags().BoolVar(ctx.planSave, "save", false, "Save action drafts")
 	planCmd.AddCommand(planActionsCmd)
 	planSnapshotCmd := &cobra.Command{Use: "snapshot", Short: "Generate a plan snapshot", RunE: func(cmd *cobra.Command, args []string) error {

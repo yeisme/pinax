@@ -2,7 +2,7 @@
 
 ## 1. 决策摘要
 
-Pinax 后续定位为 **本地优先、供应商无关、可审计的通用 Agent 记忆系统**。它不隶属于 Codex、Claude Code、Cohors、Hermes 或任何单一 Agent runtime；这些系统都通过 adapter 使用同一套记忆、上下文、handoff、反馈和审批合同。
+Pinax 后续定位为 **本地优先、供应商无关、可审计的通用 Agent 记忆系统**。它不隶属于 Codex、Claude Code、Cohors、Connectors 或任何单一 Agent runtime；这些系统都通过 adapter 使用同一套记忆、上下文、handoff、反馈和审批合同。
 
 一句话目标：
 
@@ -20,7 +20,7 @@ Codex 可以是第一个参考 adapter 和 dogfooding 客户端，但不能进�
 
 - 编码 Agent，例如 Codex、Claude Code；
 - 多 Agent runtime，例如 Cohors；
-- 通信与协作 Agent，例如 Hermes；
+- 通信与协作 Agent，例如 Connectors；
 - 研究、创作、运营等领域 Agent；
 - 任何能调用 CLI、MCP、HTTP/RPC 或 SDK 的自定义 Agent。
 
@@ -83,7 +83,7 @@ SQLite/GORM memory ledger 可以持有结构化 memory state，但不能复制�
 flowchart TD
   A1[Codex Adapter]
   A2[Cohors Adapter]
-  A3[Hermes Adapter]
+  A3[Connectors Adapter]
   A4[Generic MCP/HTTP/CLI Adapter]
   A1 --> P[Agent Memory Protocol]
   A2 --> P
@@ -101,7 +101,7 @@ flowchart TD
   L --> X[Encrypted Sync]
 ```
 
-核心依赖方向必须是 adapter → protocol → application service → domain/store。核心包不得 import Codex、Claude、Hermes、Cohors 或其他 runtime-specific 类型。
+核心依赖方向必须是 adapter → protocol → application service → domain/store。核心包不得 import Codex、Claude、Connectors、Cohors 或其他 runtime-specific 类型。
 
 ## 5. 通用 Agent Memory Protocol
 
@@ -336,7 +336,7 @@ MVP 优先提供通用 MCP tools：
 
 - **Codex adapter**：映射 `AGENTS.md`、skill、MCP、hooks 和 local memories 边界。
 - **Cohors adapter**：映射 team run、agent role、trace、handoff 和 shared task state。
-- **Hermes adapter**：把 provider-neutral conversation event、message reference 和 delivery receipt 转为 source/handoff，不嵌入聊天 provider SDK。
+- **Connectors adapter**：把 provider-neutral conversation event、message reference 和 delivery receipt 转为 source/handoff，不嵌入聊天 provider SDK。
 - **Generic CLI adapter**：任何 Agent 通过 stdin/stdout JSON 调用。
 - **HTTP adapter**：未来远程 Agent 通过 scoped token 使用，不属于本地 MVP 必需项。
 
@@ -442,7 +442,7 @@ Runtime-specific installer 属于 adapter 子命令或独立 adapter package，�
 | --- | --- | --- | --- |
 | 编码任务继续 | Codex | Codex | 跨 session 召回 decision/task/failure |
 | 多 Agent 实现交接 | Cohors worker | Codex reviewer | handoff 可继续且 evidence 可定位 |
-| 用户偏好共享 | Hermes | Codex/Cohors | owner scope 正确，不泄漏原消息 |
+| 用户偏好共享 | Connectors | Codex/Cohors | owner scope 正确，不泄漏原消息 |
 | 冲突事实 | 任意 Agent | 任意 Agent | 返回 conflict，不静默覆盖 |
 | 过期来源 | Source connector | Context compiler | freshness 降级并建议重新验证 |
 | Adapter 故障 | Codex adapter | Cohors | Cohors 仍可正常读写 proposal |
@@ -478,9 +478,9 @@ Integration、component、system 和 e2e 证据写入 `temp/integration-test-run
 
 ### Phase 4：真实 Dogfooding，四周
 
-- 在 Pinax、Cohors、Hermes 和至少一个 Agent 子项目持续使用。
+- 在 Pinax、Cohors、Connectors 和至少一个 Agent 子项目持续使用。
 - 每周审查 recall、precision、conflict、proposal 和 adapter failures。
-- 指标达到目标后再决定 Hermes adapter、source connectors 和 plugin 分发。
+- 指标达到目标后再决定 Connectors adapter、source connectors 和 plugin 分发。
 
 ## 13. 风险与开放决策
 
@@ -518,4 +518,4 @@ openspec new change general-agent-memory-platform
 openspec new change pinax-agent-memory-runtime
 ```
 
-根 change 定义 provider-neutral protocol、owner 边界和 adapter handoff；Pinax change 实现 memory domain、context compiler、CLI/MCP/SDK、proposal lifecycle、evidence 和 dogfooding。Codex、Cohors、Hermes adapter 的具体实现分别进入对应 owner，不把所有 runtime 代码塞进 `cli/pinax`。
+根 change 定义 provider-neutral protocol、owner 边界和 adapter handoff；Pinax change 实现 memory domain、context compiler、CLI/MCP/SDK、proposal lifecycle、evidence 和 dogfooding。Codex、Cohors、Connectors adapter 的具体实现分别进入对应 owner，不把所有 runtime 代码塞进 `cli/pinax`。

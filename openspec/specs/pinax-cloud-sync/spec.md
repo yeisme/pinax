@@ -607,3 +607,13 @@ Cloud Sync SHALL require explicit first-device or new-device bootstrap semantics
 - **THEN** sync SHALL fail with `encryption_key_mismatch`
 - **AND** SHALL provide a recovery action without generating a replacement key automatically
 
+### Requirement: env secrets 不进入内容 manifest
+
+Cloud Sync SHALL treat encrypted and plaintext env assets, materialized runtime files and their caches as protected paths.
+
+#### Scenario: manifest 排除 env secrets
+
+- **WHEN** a vault contains `.env`, `.env.local`, `.pinax/pinax-sync.env.age` and `.pinax/runtime/pinax-sync.env`
+- **THEN** none of these files SHALL be uploaded as ordinary plaintext content entries
+- **AND** sync receipts SHALL report counts and redacted paths only
+

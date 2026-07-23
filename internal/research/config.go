@@ -1,22 +1,28 @@
 package research
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
 
-const ExternalServiceConfigSchemaVersion = "pinax.research.config.v1"
+const ExternalServiceConfigSchemaVersion = "pinax.research.config.v2"
+
+var ErrUnsupportedExternalServiceConfigSchema = errors.New("unsupported research config schema")
 
 type ExternalServiceConfig struct {
-	SchemaVersion string       `json:"schema_version"`
-	Hermes        HermesConfig `json:"hermes"`
+	SchemaVersion string           `json:"schema_version"`
+	Connectors    ConnectorsConfig `json:"connectors"`
 }
 
 func SaveExternalServiceConfig(root string, config ExternalServiceConfig) error {
 	if config.SchemaVersion == "" {
 		config.SchemaVersion = ExternalServiceConfigSchemaVersion
+	} else if config.SchemaVersion != ExternalServiceConfigSchemaVersion {
+		return fmt.Errorf("%w: got %q, expected %q", ErrUnsupportedExternalServiceConfigSchema, config.SchemaVersion, ExternalServiceConfigSchemaVersion)
 	}
 	path := researchConfigPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -38,11 +44,15 @@ func LoadExternalServiceConfig(root string) (ExternalServiceConfig, error) {
 		return ExternalServiceConfig{}, err
 	}
 	var config ExternalServiceConfig
-	if err := json.Unmarshal(b, &config); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
 		return ExternalServiceConfig{}, err
 	}
 	if config.SchemaVersion == "" {
 		config.SchemaVersion = ExternalServiceConfigSchemaVersion
+	} else if config.SchemaVersion != ExternalServiceConfigSchemaVersion {
+		return ExternalServiceConfig{}, fmt.Errorf("%w: got %q, expected %q", ErrUnsupportedExternalServiceConfigSchema, config.SchemaVersion, ExternalServiceConfigSchemaVersion)
 	}
 	return config, nil
 }
@@ -52,7 +62,7 @@ func ResolveAdapter(root string) (Adapter, ExternalServiceConfig, error) {
 	if err != nil {
 		return nil, ExternalServiceConfig{}, err
 	}
-	return NewHermesAdapter(config.Hermes, NewFakeAdapter(nil)), config, nil
+	return NewConnectorsAdapter(config.Connectors, NewFakeAdapter(nil)), config, nil
 }
 
 func researchConfigPath(root string) string {

@@ -18,13 +18,13 @@ Briefing recipe SHALL 由 CLI service 创建和修改；agent 不直接手写 re
 - **WHEN** 用户运行 `pinax briefing recipe show`
 - **THEN** CLI SHALL 输出当前 recipe 配置摘要
 
-### Requirement: Hermes 作为外部服务配置
+### Requirement: Connectors 作为外部服务配置
 
-Research adapter SHALL 通过外部服务配置与 Hermes 交互；本地开发使用 fake harness fixture。
+Research adapter SHALL 通过外部服务配置与 Connectors 交互；本地开发使用 fake harness fixture。
 
-#### Scenario: Hermes 不可用
+#### Scenario: Connectors 不可用
 
-- **WHEN** Hermes endpoint 不可达或未配置
+- **WHEN** Connectors endpoint 不可达或未配置
 - **THEN** research adapter SHALL 使用 fake harness fixture 进行本地开发
 - **AND** 不阻塞 briefing 流程其它阶段
 
@@ -53,4 +53,3 @@ Feedback action SHALL 回写 Pinax event 和 feedback 结构化资产。
 - **WHEN** 用户执行 accept/archive/dismiss/follow_up/less_like_this 操作
 - **THEN** feedback SHALL 回写 Pinax event 和 feedback 结构化资产
 - **AND** feedback 权重 SHALL 影响后续评分
-
