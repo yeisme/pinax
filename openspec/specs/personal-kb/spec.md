@@ -5,24 +5,24 @@ TBD - created by archiving change pinax-lancedb-personal-kb. Update Purpose afte
 ## Requirements
 ### Requirement: Pinax SHALL manage a local semantic KB projection
 
-Pinax SHALL provide a `pinax kb` command group that keeps Markdown vault content as the source of truth while maintaining a rebuildable local semantic projection with `backend=lancedb`.
+Pinax SHALL provide a `pinax kb` command group that keeps Markdown vault content as the source of truth while maintaining a rebuildable local semantic projection with `backend=lancedb` through Inferrum.
 
 #### Scenario: Rebuild local semantic projection
 - **WHEN** the user runs `pinax kb rebuild --backend lancedb --provider fake --vault ./my-notes --json`
 - **THEN** Pinax SHALL scan registered Markdown notes through app-owned vault behavior
-- **AND** it SHALL write a local projection under `.pinax/kb/lancedb/`
+- **AND** it SHALL write a local projection under `.pinax/kb/` through `github.com/yeisme/inferrum`
 - **AND** JSON facts SHALL include backend, provider, model, document count, chunk count, and `sync_vectors=false`.
 
 #### Scenario: Missing LanceDB sidecar is actionable
-- **WHEN** the user runs `pinax kb rebuild --backend lancedb --vault ./my-notes --json` without an available sidecar
+- **WHEN** the user runs `pinax kb rebuild --backend lancedb --vault ./my-notes --json` without an available `inferrum-lancedb-sidecar`
 - **THEN** Pinax SHALL return `error.code=kb_sidecar_unavailable`
-- **AND** it SHALL include an install or configuration next step.
+- **AND** it SHALL include an Inferrum install or configuration next step.
 
 #### Scenario: Sidecar receives bounded projection data
-- **WHEN** Pinax calls `pinax-lancedb-sidecar rebuild`
-- **THEN** the request SHALL use `schema_version=pinax.kb.sidecar.v1`
-- **AND** it SHALL include vectors, metadata, and bounded previews
-- **AND** it SHALL NOT include `chunk_text`, full note bodies, raw provider payloads, Authorization headers, cookies, or credentials.
+- **WHEN** Pinax calls `inferrum-lancedb-sidecar rebuild`
+- **THEN** the request SHALL use `schema_version=inferrum.sidecar.v1`, `domain=kb`, the Pinax KB table, and canonical `records`
+- **AND** it SHALL include vectors, opaque safe metadata, and bounded previews
+- **AND** it SHALL NOT include `chunk_text`, full note bodies, raw provider payloads, Authorization headers, cookies, credentials, absolute private paths, or unknown metadata fields.
 
 ### Requirement: Pinax SHALL import Markdown and text into the vault before indexing
 
@@ -101,20 +101,4 @@ Pinax SHALL support cloud and local embedding providers through the semantic pro
 - **THEN** Pinax SHALL use the configured local Ollama endpoint for embeddings
 - **AND** failure to reach the endpoint SHALL return a stable diagnostic instead of requiring cloud credentials
 - **AND** tests SHALL use a fake local HTTP server rather than a real user Ollama instance.
-
-### Requirement: LanceDB sidecar protocol SHALL remain backward-compatible
-
-Pinax SHALL keep the LanceDB sidecar protocol compatible while allowing optional provider metadata for diagnostics and future index tuning.
-
-#### Scenario: Sidecar accepts old and new rebuild requests
-
-- **WHEN** `pinax-lancedb-sidecar rebuild` receives a `pinax.kb.sidecar.v1` request without provider metadata
-- **THEN** it SHALL continue to rebuild the local store successfully
-- **AND** when the request includes optional provider, model, embedding dimension, distance metric, or collection metadata, the sidecar SHALL accept those fields without requiring existing clients to send them.
-
-#### Scenario: Search remains bounded and provider-aware
-
-- **WHEN** the user runs `pinax kb search "release workflow" --vault ./my-notes --agent`
-- **THEN** stdout SHALL include stable key=value facts for command, status, backend, provider, model, matches, and total
-- **AND** stdout SHALL NOT include full note bodies, raw provider payloads, credentials, Authorization headers, cookies, or hidden prompts.
 

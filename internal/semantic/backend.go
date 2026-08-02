@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	DefaultBackend = "lancedb"
-	FakeBackend    = "fake"
-	SidecarSchema  = "pinax.kb.sidecar.v1"
+	DefaultBackend      = "lancedb"
+	FakeBackend         = "fake"
+	SidecarSchema       = "inferrum.sidecar.v1"
+	LegacySidecarSchema = "pinax.kb.sidecar.v1"
 )
 
 type BackendInfo struct {
@@ -46,11 +47,12 @@ func Save(ctx context.Context, root string, chunks []Chunk, backend string, side
 		_ = writeStoreMetadata(root, backend, chunks)
 		return store.Path(), nil
 	case DefaultBackend:
-		if err := runSidecarRebuild(ctx, root, chunks, backend, sidecar, documents); err != nil {
+		if err := runInferrumSidecarRebuild(ctx, root, chunks, sidecar, documents); err != nil {
 			return "", err
 		}
-		_ = writeStoreMetadata(root, backend, chunks)
-		return sidecarStorePath(root, backend), nil
+		storeURI := sidecarStoreURI(root, backend, sidecar)
+		_ = writeStoreMetadataAt(storeURI, backend, chunks)
+		return storeURI, nil
 	default:
 		return "", invalidBackendError()
 	}
@@ -64,7 +66,7 @@ func Doctor(ctx context.Context, root, backend string, sidecar SidecarConfig) (m
 	if backend != DefaultBackend {
 		return nil, invalidBackendError()
 	}
-	return runSidecarDoctor(ctx, root, backend, sidecar)
+	return runInferrumSidecarDoctor(ctx, root, sidecar)
 }
 
 func normalizedBackend(backend string) string {

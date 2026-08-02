@@ -2,21 +2,24 @@ package semantic
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
+
+	inferrum "github.com/yeisme/inferrum"
 )
 
 type PermissionFilter = map[string]any
 
-type Record struct {
-	ID       string
-	Metadata map[string]any
-}
+type Record = inferrum.Record
 
-// KBDomain is the pinax knowledge-base adapter for the shared lance vector +
+var _ inferrum.Domain = KBDomain{}
+
+// KBDomain is the Pinax knowledge-base adapter for the shared Inferrum vector +
 // RAG platform. It knows the table name, the redaction policy for note
 // metadata, and the permission rules (filter by note status and kind).
 //
-// The metadata field names mirror pinax's existing sidecarChunk schema
-// (chunk_id, note_id, vault_path, heading_path, status, kind, ...).
+// The metadata field names are Pinax-owned safe citation fields. The Inferrum
+// sidecar treats them as opaque JSON and never interprets them.
 type KBDomain struct{}
 
 // Name returns the domain identifier "kb".
@@ -25,35 +28,55 @@ func (KBDomain) Name() string { return "kb" }
 // TableName returns the LanceDB table name for knowledge-base chunks.
 func (KBDomain) TableName() string { return "note_chunks" }
 
-// redactedFields are metadata keys that must never leave the domain boundary:
-// full note bodies, raw prompts, provider payloads, OCR text, and secrets.
-var redactedFields = []string{
-	"note_body",
-	"full_text",
-	"raw_prompt",
-	"provider_payload",
-	"authorization",
-	"token",
-	"secret",
-	"ocr_text",
+var safeMetadataFields = map[string]struct{}{
+	"chunk_id": {}, "note_id": {}, "source_ref": {}, "title": {}, "heading_path": {},
+	"page": {}, "span": {}, "preview": {}, "content_hash": {}, "chunk_hash": {},
+	"token_count": {}, "tags": {}, "kind": {}, "status": {}, "source_type": {},
+	"source_version": {}, "source_digest": {}, "provider": {}, "model": {},
 }
 
-// Redact strips sensitive fields from a record's metadata before it leaves the
-// knowledge-base domain. The safe-to-surface keys (chunk_id, note_id,
-// vault_path, heading_path, title, preview, kind, status, tags, content_hash,
-// chunk_hash, token_count) pass through untouched.
+// Redact projects only the known safe citation metadata. A legacy vault_path
+// input is converted to a vault-relative source_ref; unknown fields are
+// dropped instead of relying on a denylist that would allow future fields.
 func (KBDomain) Redact(record map[string]any) map[string]any {
 	if record == nil {
 		return nil
 	}
 	out := make(map[string]any, len(record))
-	for k, v := range record {
-		out[k] = v
-	}
-	for _, field := range redactedFields {
-		delete(out, field)
+	for key, value := range record {
+		if key == "vault_path" {
+			if sourceRef := safeSourceRef(value); sourceRef != "" {
+				out["source_ref"] = sourceRef
+			}
+			continue
+		}
+		if key == "source_ref" {
+			if sourceRef := safeSourceRef(value); sourceRef != "" {
+				out[key] = sourceRef
+			}
+			continue
+		}
+		if _, ok := safeMetadataFields[key]; ok {
+			out[key] = value
+		}
 	}
 	return out
+}
+
+func safeSourceRef(value any) string {
+	raw, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || filepath.IsAbs(raw) {
+		return ""
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(raw))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, ":") {
+		return ""
+	}
+	return cleaned
 }
 
 // ResolvePermission computes the set of allowed record IDs given an opaque

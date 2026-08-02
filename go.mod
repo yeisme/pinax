@@ -18,6 +18,7 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.1
+	github.com/yeisme/inferrum v0.0.0
 	github.com/yuin/goldmark v1.7.8
 	go.uber.org/zap v1.27.0
 	golang.org/x/term v0.45.0
@@ -106,3 +107,5 @@ require (
 )
 
 replace github.com/yeisme/credentialctl => ../credentialctl
+
+replace github.com/yeisme/inferrum => ../inferrum

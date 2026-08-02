@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -27,6 +28,9 @@ type Chunk struct {
 	Tags           []string  `json:"tags,omitempty"`
 	Kind           string    `json:"kind,omitempty"`
 	Status         string    `json:"status,omitempty"`
+	SourceType     string    `json:"source_type,omitempty"`
+	SourceVersion  string    `json:"source_version,omitempty"`
+	SourceDigest   string    `json:"source_digest,omitempty"`
 	EmbeddingModel string    `json:"embedding_model"`
 	EmbeddingDim   int       `json:"embedding_dim"`
 	Provider       string    `json:"provider"`
@@ -62,8 +66,8 @@ func BuildChunks(ctx context.Context, notes []domain.Note, provider Provider, ba
 	indexedAt := time.Now().UTC().Format(time.RFC3339)
 	items := make([]chunkInput, 0, len(notes))
 	for _, note := range notes {
-		for _, piece := range splitNote(note) {
-			items = append(items, chunkInput{note: note, piece: piece})
+		for ordinal, piece := range splitNote(note) {
+			items = append(items, chunkInput{note: note, piece: piece, ordinal: ordinal})
 		}
 	}
 	vectors, err := embedInputs(ctx, provider, items)
@@ -74,14 +78,34 @@ func BuildChunks(ctx context.Context, notes []domain.Note, provider Provider, ba
 	for i, item := range items {
 		vector := vectors[i]
 		chunkHash := sha(item.piece.text)
-		chunks = append(chunks, Chunk{ChunkID: "chunk_" + chunkHash[:16], NoteID: item.note.ID, VaultPath: item.note.Path, Title: item.note.Title, HeadingPath: item.piece.heading, ChunkText: item.piece.text, Preview: boundedPreview(item.piece.text), ContentHash: sha(item.note.Body), ChunkHash: chunkHash, TokenCount: tokenCount(item.piece.text), Tags: item.note.Tags, Kind: item.note.Kind, Status: item.note.Status, EmbeddingModel: provider.Model(), EmbeddingDim: len(vector), Provider: provider.Name(), Backend: backend, Vector: vector, IndexedAt: indexedAt})
+		chunks = append(chunks, Chunk{ChunkID: stableChunkID(item.note, item.piece, item.ordinal), NoteID: item.note.ID, VaultPath: item.note.Path, Title: item.note.Title, HeadingPath: item.piece.heading, ChunkText: item.piece.text, Preview: boundedPreview(item.piece.text), ContentHash: sha(item.note.Body), ChunkHash: chunkHash, TokenCount: tokenCount(item.piece.text), Tags: item.note.Tags, Kind: item.note.Kind, Status: item.note.Status, SourceType: strings.TrimSpace(item.note.Frontmatter["source_type"]), SourceVersion: strings.TrimSpace(item.note.Frontmatter["source_version"]), SourceDigest: strings.TrimSpace(item.note.Frontmatter["source_digest"]), EmbeddingModel: provider.Model(), EmbeddingDim: len(vector), Provider: provider.Name(), Backend: backend, Vector: vector, IndexedAt: indexedAt})
 	}
 	return chunks, nil
 }
 
+// ChunkIDsForNotes derives the same stable IDs used by BuildChunks without
+// embedding note text. Pinax uses this to resolve the P0 personal-vault
+// permission set before invoking Inferrum search.
+func ChunkIDsForNotes(notes []domain.Note) []string {
+	ids := make([]string, 0, len(notes))
+	for _, note := range notes {
+		for ordinal, piece := range splitNote(note) {
+			ids = append(ids, stableChunkID(note, piece, ordinal))
+		}
+	}
+	return ids
+}
+
+func stableChunkID(note domain.Note, piece piece, ordinal int) string {
+	chunkIdentity := note.ID + "\x00" + note.Path + "\x00" + piece.heading + "\x00" + strconv.Itoa(ordinal) + "\x00" + piece.text
+	chunkIDHash := sha(chunkIdentity)
+	return "chunk_" + chunkIDHash[:16]
+}
+
 type chunkInput struct {
-	note  domain.Note
-	piece piece
+	note    domain.Note
+	piece   piece
+	ordinal int
 }
 
 func embedInputs(ctx context.Context, provider Provider, items []chunkInput) ([][]float64, error) {
@@ -97,6 +121,9 @@ func embedInputs(ctx context.Context, provider Provider, items []chunkInput) ([]
 		if len(vectors) != len(items) {
 			return nil, providerEmptyEmbedding(provider.Name())
 		}
+		if err := validateEmbeddingDimensions(vectors); err != nil {
+			return nil, err
+		}
 		return vectors, nil
 	}
 	vectors := make([][]float64, 0, len(items))
@@ -107,15 +134,48 @@ func embedInputs(ctx context.Context, provider Provider, items []chunkInput) ([]
 		}
 		vectors = append(vectors, vector)
 	}
+	if err := validateEmbeddingDimensions(vectors); err != nil {
+		return nil, err
+	}
 	return vectors, nil
 }
 
+func validateEmbeddingDimensions(vectors [][]float64) error {
+	if len(vectors) == 0 {
+		return nil
+	}
+	if len(vectors[0]) == 0 {
+		return &domain.CommandError{Code: "embedding_dimension_invalid", Message: "Embedding provider returned an empty vector", Hint: "Use a provider/model that returns non-empty fixed-dimension embeddings"}
+	}
+	dimension := len(vectors[0])
+	for _, vector := range vectors[1:] {
+		if len(vector) == 0 {
+			return &domain.CommandError{Code: "embedding_dimension_invalid", Message: "Embedding provider returned an empty vector", Hint: "Use a provider/model that returns non-empty fixed-dimension embeddings"}
+		}
+		if len(vector) != dimension {
+			return &domain.CommandError{Code: "embedding_dimension_mismatch", Message: "Embedding provider returned mixed vector dimensions", Hint: "Use one exact embedding model for the entire KB generation"}
+		}
+	}
+	return nil
+}
+
 func Search(ctx context.Context, root, query string, provider Provider, backend string, limit int, sidecar SidecarConfig) ([]SearchHit, int, error) {
+	return SearchWithAllowedIDs(ctx, root, query, provider, backend, limit, nil, sidecar)
+}
+
+// SearchWithAllowedIDs is the permission-aware search entry point. A nil
+// allowedIDs slice preserves the legacy unrestricted behavior for callers that
+// have not resolved a policy yet; a non-nil empty slice is an explicit
+// permission-empty result and must not invoke the sidecar.
+func SearchWithAllowedIDs(ctx context.Context, root, query string, provider Provider, backend string, limit int, allowedIDs []string, sidecar SidecarConfig) ([]SearchHit, int, error) {
 	backend = normalizedBackend(backend)
+	if allowedIDs != nil && len(allowedIDs) == 0 {
+		return []SearchHit{}, 0, nil
+	}
 	if backend == DefaultBackend {
 		if provider == nil {
 			var err error
-			metaProvider, metaModel := readStoreProvider(root, backend)
+			metaProvider, metaModel := readStoreProviderAt(sidecarStoreURI(root, backend, sidecar), backend)
 			provider, err = NewProvider(metaProvider, metaModel)
 			if err != nil {
 				return nil, 0, err
@@ -125,7 +185,7 @@ func Search(ctx context.Context, root, query string, provider Provider, backend 
 		if err != nil {
 			return nil, 0, err
 		}
-		return runSidecarSearch(ctx, root, query, vector, backend, limit, sidecar)
+		return runInferrumSidecarSearch(ctx, root, vector, allowedIDs, limit, sidecar)
 	}
 	if backend != FakeBackend {
 		return nil, 0, invalidBackendError()
@@ -146,7 +206,16 @@ func Search(ctx context.Context, root, query string, provider Provider, backend 
 		return nil, 0, err
 	}
 	hits := make([]SearchHit, 0, len(chunks))
+	allowed := make(map[string]struct{}, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowed[id] = struct{}{}
+	}
 	for _, chunk := range chunks {
+		if allowedIDs != nil {
+			if _, ok := allowed[chunk.ChunkID]; !ok {
+				continue
+			}
+		}
 		score := cosine(vector, chunk.Vector)
 		if strings.Contains(strings.ToLower(chunk.ChunkText), strings.ToLower(query)) {
 			score += 0.2

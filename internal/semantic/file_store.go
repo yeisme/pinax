@@ -21,6 +21,10 @@ type storeMetadata struct {
 }
 
 func writeStoreMetadata(root, backend string, chunks []Chunk) error {
+	return writeStoreMetadataAt(sidecarStorePath(root, backend), backend, chunks)
+}
+
+func writeStoreMetadataAt(storeURI, backend string, chunks []Chunk) error {
 	meta := storeMetadata{SchemaVersion: SidecarSchema, Backend: normalizedBackend(backend), Provider: DefaultProvider, Model: DefaultModel, IndexedAt: time.Now().UTC().Format(time.RFC3339)}
 	if len(chunks) > 0 {
 		meta.Provider = chunks[0].Provider
@@ -28,7 +32,7 @@ func writeStoreMetadata(root, backend string, chunks []Chunk) error {
 		meta.EmbeddingDim = chunks[0].EmbeddingDim
 		meta.IndexedAt = chunks[0].IndexedAt
 	}
-	path := filepath.Join(sidecarStorePath(root, backend), "metadata.json")
+	path := filepath.Join(storeURI, "metadata.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -39,14 +43,14 @@ func writeStoreMetadata(root, backend string, chunks []Chunk) error {
 	return os.WriteFile(path, append(payload, '\n'), 0o644)
 }
 
-func readStoreProvider(root, backend string) (string, string) {
-	meta := readStoreMetadata(root, backend)
+func readStoreProviderAt(storeURI, backend string) (string, string) {
+	meta := readStoreMetadataAt(storeURI, backend)
 	return meta.Provider, meta.Model
 }
 
-func readStoreMetadata(root, backend string) storeMetadata {
+func readStoreMetadataAt(storeURI, backend string) storeMetadata {
 	fallback := storeMetadata{SchemaVersion: SidecarSchema, Backend: normalizedBackend(backend), Provider: DefaultProvider, Model: DefaultModel}
-	payload, err := os.ReadFile(filepath.Join(sidecarStorePath(root, backend), "metadata.json"))
+	payload, err := os.ReadFile(filepath.Join(storeURI, "metadata.json"))
 	if err != nil {
 		return fallback
 	}

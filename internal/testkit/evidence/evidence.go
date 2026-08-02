@@ -90,6 +90,12 @@ type Config struct {
 	PassThroughStderr io.Writer
 	// ExtraChecks 是写入 summary.json checks 字段的额外键。
 	ExtraChecks map[string]any
+	// PassStatus lets a newer evidence profile use the standard "passed"
+	// spelling without changing existing Pinax profiles that historically emit
+	// "success".
+	PassStatus string
+	// Layer overrides the legacy default for component/system canaries.
+	Layer string
 }
 
 // Result 描述一次证据运行的结果。
@@ -211,7 +217,10 @@ func Run(cfg Config) (Result, error) {
 		return Result{ExitCode: exitCode, RunDir: runDir}, fmt.Errorf("write stderr.log: %w", err)
 	}
 
-	status := "success"
+	status := cfg.PassStatus
+	if status == "" {
+		status = "success"
+	}
 	if exitCode != 0 {
 		status = "failed"
 	}
@@ -233,7 +242,7 @@ func Run(cfg Config) (Result, error) {
 	s := summary{
 		SchemaVersion: SchemaVersion,
 		Project:       Project,
-		Layer:         Layer,
+		Layer:         firstNonEmpty(cfg.Layer, Layer),
 		RunID:         cfg.RunID,
 		Status:        status,
 		Command:       splitRedacted(cfg.Command),
@@ -310,4 +319,13 @@ func writeJSON(path string, value any) error {
 		return err
 	}
 	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

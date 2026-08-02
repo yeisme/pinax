@@ -22,26 +22,27 @@ func TestKBDomain_TableName(t *testing.T) {
 func TestKBDomain_Redact(t *testing.T) {
 	d := KBDomain{}
 	in := map[string]any{
-		"chunk_id":         "c1",
-		"note_id":          "n1",
-		"vault_path":       "vault/note.md",
-		"heading_path":     "Section > Sub",
-		"title":            "My Note",
-		"preview":          "short preview...",
-		"kind":             "note",
-		"status":           "active",
-		"tags":             []string{"x", "y"},
-		"content_hash":     "abc",
-		"chunk_hash":       "def",
-		"token_count":      42,
-		"note_body":        "full body that must be stripped",
-		"full_text":        "full text that must be stripped",
-		"raw_prompt":       "secret prompt",
-		"provider_payload": map[string]any{"x": 1},
-		"authorization":    "Bearer token",
-		"token":            "tok",
-		"secret":           "shh",
-		"ocr_text":         "extracted text",
+		"chunk_id":             "c1",
+		"note_id":              "n1",
+		"vault_path":           "vault/note.md",
+		"heading_path":         "Section > Sub",
+		"title":                "My Note",
+		"preview":              "short preview...",
+		"kind":                 "note",
+		"status":               "active",
+		"tags":                 []string{"x", "y"},
+		"content_hash":         "abc",
+		"chunk_hash":           "def",
+		"token_count":          42,
+		"note_body":            "full body that must be stripped",
+		"full_text":            "full text that must be stripped",
+		"raw_prompt":           "secret prompt",
+		"provider_payload":     map[string]any{"x": 1},
+		"authorization":        "Bearer token",
+		"token":                "tok",
+		"secret":               "shh",
+		"ocr_text":             "extracted text",
+		"unknown_future_field": "must not cross the domain boundary",
 	}
 	out := d.Redact(in)
 
@@ -50,10 +51,13 @@ func TestKBDomain_Redact(t *testing.T) {
 			t.Errorf("Redact() left sensitive field %q in output", field)
 		}
 	}
-	for _, field := range []string{"chunk_id", "note_id", "vault_path", "heading_path", "title", "preview", "kind", "status", "tags", "content_hash", "chunk_hash", "token_count"} {
+	for _, field := range []string{"chunk_id", "note_id", "source_ref", "heading_path", "title", "preview", "kind", "status", "tags", "content_hash", "chunk_hash", "token_count"} {
 		if _, ok := out[field]; !ok {
 			t.Errorf("Redact() dropped safe field %q", field)
 		}
+	}
+	if _, ok := out["unknown_future_field"]; ok {
+		t.Errorf("Redact() allowed unknown metadata field")
 	}
 	// Redact must not mutate the input map.
 	if _, ok := in["note_body"]; !ok {
@@ -62,6 +66,16 @@ func TestKBDomain_Redact(t *testing.T) {
 	// Nil input is safe.
 	if got := d.Redact(nil); got != nil {
 		t.Errorf("Redact(nil) = %v, want nil", got)
+	}
+}
+
+func TestKBDomain_RedactRejectsUnsafeSourceRef(t *testing.T) {
+	out := (KBDomain{}).Redact(map[string]any{
+		"source_ref": "/private/vault/notes/secret.md",
+		"title":      "safe title",
+	})
+	if _, ok := out["source_ref"]; ok {
+		t.Fatalf("Redact() kept absolute source_ref: %#v", out)
 	}
 }
 

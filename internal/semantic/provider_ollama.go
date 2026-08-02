@@ -42,7 +42,11 @@ func (p OllamaProvider) EmbedBatch(ctx context.Context, texts []string) ([][]flo
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	body := map[string]any{"model": p.Model(), "input": texts}
+	// The local MVP is intentionally single-model and unloads the embedding
+	// model after each request. This keeps the shared server from retaining a
+	// large model between on-demand rebuild/search operations; callers can tune
+	// broader daemon policy later without changing the provider identity.
+	body := map[string]any{"model": p.Model(), "input": texts, "keep_alive": 0}
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, err

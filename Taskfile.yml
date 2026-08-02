@@ -60,22 +60,21 @@ tasks:
     cmds:
       - go run ./internal/testkit/syncrealevidence
 
+  integration:kb-local:
+    desc: Run the synthetic real Ollama to Inferrum v1 local-KB canary with redacted evidence.
+    cmds:
+      - go run ./internal/testkit/kblocalevidence
+
   kb:sidecar:test:
-    desc: Run Python LanceDB KB sidecar tests.
+    desc: Run Pinax Inferrum adapter and sidecar contract tests.
     deps: [kb:sidecar:protocol]
     cmds:
-      - |
-        venv_dir="$(mktemp -d)"
-        trap 'rm -rf "$venv_dir"' EXIT
-        python3 -m venv "$venv_dir/venv"
-        "$venv_dir/venv/bin/python" -m pip install -e tools/pinax-lancedb-sidecar
-        PYTHONPATH=tools/pinax-lancedb-sidecar/src "$venv_dir/venv/bin/python" -m unittest discover tools/pinax-lancedb-sidecar/tests
+      - go test ./internal/semantic ./internal/app -run 'Test.*(Inferrum|Sidecar|LegacyV1)' -count=1
 
   kb:sidecar:protocol:
-    desc: Run offline Python sidecar protocol tests without installing LanceDB.
+    desc: Run the offline Inferrum protocol adapter contract tests.
     cmds:
-      - python3 -m compileall tools/pinax-lancedb-sidecar
-      - PYTHONPATH=tools/pinax-lancedb-sidecar/src python3 -m unittest tools/pinax-lancedb-sidecar/tests/test_protocol_offline.py
+      - go test ./internal/semantic -run 'Test.*(Inferrum|Sidecar|Permission)' -count=1
 
   publish:renderer:test:
     desc: Run the Pinax web renderer Vitest suite.

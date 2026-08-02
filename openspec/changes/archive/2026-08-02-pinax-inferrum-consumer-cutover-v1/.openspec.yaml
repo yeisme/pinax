@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-02
+goal: Pinax 只依赖 github.com/yeisme/inferrum 与 inferrum.sidecar.v1，并保持 KB
+  generation、权限、评测和 LanceDB 数据布局行为不变。

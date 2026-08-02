@@ -185,7 +185,7 @@ func DefaultConfig() Config {
 		Output:  OutputConfig{Color: "auto", Theme: "pinax", Width: 100, Markdown: MarkdownConfig{Enabled: true, Style: "auto"}},
 		Editor:  EditorConfig{},
 		Note:    NoteConfig{Status: "active"},
-		KB:      KBConfig{Sidecar: KBSidecarConfig{Executable: "pinax-lancedb-sidecar", TimeoutSeconds: 30}},
+		KB:      KBConfig{Sidecar: KBSidecarConfig{Executable: "inferrum-lancedb-sidecar", TimeoutSeconds: 30}},
 		Search:  SearchConfig{Limit: 20},
 		Storage: StorageConfig{Backend: "local"},
 		Themes:  ThemeSet{Custom: map[string]string{}},

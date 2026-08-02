@@ -516,7 +516,7 @@ task check
 task kb:sidecar:test
 ```
 
-`task check` uses the offline LanceDB sidecar protocol test so local validation does not depend on PyPI availability. Run `task kb:sidecar:test` when you need the real Python `lancedb` package install and rebuild/search smoke.
+`task check` runs the offline Pinax-to-Inferrum adapter contracts and does not depend on PyPI. The real Python LanceDB sidecar distribution and rebuild/search smoke are owned and released by the Inferrum repository.
 
 When `task` is not installed, use the equivalent commands:
 

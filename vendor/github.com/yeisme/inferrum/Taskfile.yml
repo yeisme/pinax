@@ -1,0 +1,7 @@
+version: '3'
+
+tasks:
+  test:integration:
+    desc: Run daemon component/integration proof with a deterministic fake sidecar
+    cmds:
+      - go run ./cmd/inferrum-integration

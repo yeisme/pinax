@@ -28,11 +28,11 @@ func TestBackendRegistryAndInvalidBackend(t *testing.T) {
 	}
 }
 
-func TestSidecarRequestMetadataIsAdditive(t *testing.T) {
+func TestInferrumSidecarRequestUsesV1Protocol(t *testing.T) {
 	root := t.TempDir()
 	bin := filepath.Join(t.TempDir(), "sidecar")
 	logPath := filepath.Join(t.TempDir(), "request.json")
-	script := "#!/bin/sh\ncat > " + logPath + "\nprintf '%s\n' '{\"schema_version\":\"pinax.kb.sidecar.v1\",\"status\":\"success\",\"backend\":\"lancedb\"}'\n"
+	script := "#!/bin/sh\ncat > " + logPath + "\nprintf '%s\n' '{\"schema_version\":\"inferrum.sidecar.v1\",\"status\":\"success\",\"backend\":\"lancedb\",\"rows\":1}'\n"
 	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatalf("write sidecar: %v", err)
 	}
@@ -45,9 +45,14 @@ func TestSidecarRequestMetadataIsAdditive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read request: %v", err)
 	}
-	for _, want := range []string{`"provider":"openai"`, `"model":"text-embedding-3-small"`, `"embedding_dim":2`, `"distance_metric":"cosine"`, `"collection":"chunks"`} {
+	for _, want := range []string{`"schema_version":"inferrum.sidecar.v1"`, `"domain":"kb"`, `"table":"note_chunks"`, `"embedding_dim":2`, `"distance_metric":"cosine"`, `"records"`} {
 		if !strings.Contains(string(payload), want) {
 			t.Fatalf("sidecar request missing %s:\n%s", want, payload)
+		}
+	}
+	for _, forbidden := range []string{`"chunks"`, `"collection"`, `"chunk_text"`, `"vault_path"`} {
+		if strings.Contains(string(payload), forbidden) {
+			t.Fatalf("sidecar request contains legacy or unsafe field %s:\n%s", forbidden, payload)
 		}
 	}
 }

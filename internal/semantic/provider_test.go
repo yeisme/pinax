@@ -51,6 +51,26 @@ func TestProviderRegistryDefaultsAndInvalidProvider(t *testing.T) {
 	}
 }
 
+func TestNewInferrumProviderUsesSharedRegistry(t *testing.T) {
+	provider, err := NewInferrumProvider("fake", "fake-hash-v1")
+	if err != nil {
+		t.Fatalf("NewInferrumProvider(fake) error: %v", err)
+	}
+	if provider.Name() != "fake" || provider.Model() != "fake-hash-v1" {
+		t.Fatalf("shared provider identity = %s/%s", provider.Name(), provider.Model())
+	}
+	vector, err := provider.Embed(context.Background(), "shared provider test")
+	if err != nil {
+		t.Fatalf("shared provider embed error: %v", err)
+	}
+	if len(vector) != 32 {
+		t.Fatalf("shared fake provider dimension = %d, want 32", len(vector))
+	}
+	if _, ok := provider.(BatchProvider); !ok {
+		t.Fatalf("shared fake provider should preserve batch embedding")
+	}
+}
+
 func TestOpenAIProviderEmbedsBatchAndRedactsErrors(t *testing.T) {
 	var authHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -103,13 +123,14 @@ func TestOllamaProviderEmbedsBatch(t *testing.T) {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		var req struct {
-			Model string   `json:"model"`
-			Input []string `json:"input"`
+			Model     string   `json:"model"`
+			Input     []string `json:"input"`
+			KeepAlive int      `json:"keep_alive"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		if req.Model != "nomic-embed-text" || len(req.Input) != 2 {
+		if req.Model != "nomic-embed-text" || len(req.Input) != 2 || req.KeepAlive != 0 {
 			t.Fatalf("request = %#v", req)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"embeddings": [][]float64{{1, 1}, {2, 2}}})
@@ -147,6 +168,71 @@ func TestBuildChunksUsesBatchProviderFallback(t *testing.T) {
 	}
 }
 
+func TestBuildChunksCarriesImportedSourceLineage(t *testing.T) {
+	notes := []domain.Note{{
+		ID:    "note_imported",
+		Path:  "notes/kb/imports/source.md",
+		Title: "Imported source",
+		Body:  "canonical body",
+		Frontmatter: map[string]string{
+			"source_type":    "markdown",
+			"source_version": "sha256:source-version",
+			"source_digest":  "sha256:source-digest",
+		},
+	}}
+
+	chunks, err := BuildChunks(context.Background(), notes, FakeProvider{ModelName: FakeProviderModel}, FakeBackend)
+	if err != nil {
+		t.Fatalf("BuildChunks failed: %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want one chunk", chunks)
+	}
+	if chunks[0].SourceType != "markdown" || chunks[0].SourceVersion != "sha256:source-version" || chunks[0].SourceDigest != "sha256:source-digest" {
+		t.Fatalf("source lineage = %#v, want imported frontmatter lineage", chunks[0])
+	}
+}
+
+func TestBuildChunksRejectsMixedEmbeddingDimensions(t *testing.T) {
+	notes := []domain.Note{{ID: "note_a", Path: "notes/a.md", Title: "A", Body: "alpha\n\nbeta"}}
+	_, err := BuildChunks(context.Background(), notes, mixedDimensionProvider{}, FakeBackend)
+	if err == nil || !strings.Contains(err.Error(), "embedding_dimension_mismatch") {
+		t.Fatalf("mixed dimensions error = %v, want embedding_dimension_mismatch", err)
+	}
+}
+
+func TestBuildChunksUsesUniqueStableIDsForRepeatedText(t *testing.T) {
+	notes := []domain.Note{{ID: "note_repeat", Path: "notes/repeat.md", Title: "Repeat", Body: "alpha\n\nalpha"}}
+	provider := FakeProvider{ModelName: FakeProviderModel}
+	chunks, err := BuildChunks(context.Background(), notes, provider, FakeBackend)
+	if err != nil {
+		t.Fatalf("BuildChunks repeated text failed: %v", err)
+	}
+	if len(chunks) != 2 || chunks[0].ChunkID == chunks[1].ChunkID {
+		t.Fatalf("repeated text chunk IDs = %#v, want two unique IDs", []string{chunks[0].ChunkID, chunks[1].ChunkID})
+	}
+	if chunks[0].ChunkHash != chunks[1].ChunkHash {
+		t.Fatalf("repeated text chunk hashes = %q/%q, want content hashes to remain equal", chunks[0].ChunkHash, chunks[1].ChunkHash)
+	}
+}
+
+func TestChunkIDsForNotesMatchesBuildChunks(t *testing.T) {
+	notes := []domain.Note{{ID: "note_ids", Path: "notes/ids.md", Title: "IDs", Body: "alpha\n\nbeta"}}
+	chunks, err := BuildChunks(context.Background(), notes, FakeProvider{ModelName: FakeProviderModel}, FakeBackend)
+	if err != nil {
+		t.Fatalf("BuildChunks failed: %v", err)
+	}
+	ids := ChunkIDsForNotes(notes)
+	if len(ids) != len(chunks) {
+		t.Fatalf("derived IDs = %#v, chunks = %#v", ids, chunks)
+	}
+	for i := range ids {
+		if ids[i] != chunks[i].ChunkID {
+			t.Fatalf("derived ID[%d] = %q, BuildChunks ID = %q", i, ids[i], chunks[i].ChunkID)
+		}
+	}
+}
+
 type countingBatchProvider struct{ batchCalls, singleCalls int }
 
 func (p *countingBatchProvider) Name() string  { return "batch" }
@@ -171,4 +257,18 @@ func (p *countingSingleProvider) Model() string { return "single-v1" }
 func (p *countingSingleProvider) Embed(context.Context, string) ([]float64, error) {
 	p.calls++
 	return []float64{1}, nil
+}
+
+type mixedDimensionProvider struct{}
+
+func (mixedDimensionProvider) Name() string  { return "mixed" }
+func (mixedDimensionProvider) Model() string { return "mixed-v1" }
+func (mixedDimensionProvider) Embed(context.Context, string) ([]float64, error) {
+	return []float64{1, 0}, nil
+}
+func (mixedDimensionProvider) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+	if len(texts) < 2 {
+		return [][]float64{{1, 0}}, nil
+	}
+	return [][]float64{{1, 0}, {1}}, nil
 }

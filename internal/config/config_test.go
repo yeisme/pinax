@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func TestDefaultConfigUsesInferrumSidecar(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.KB.Sidecar.Executable != "inferrum-lancedb-sidecar" {
+		t.Fatalf("KB sidecar executable = %q, want inferrum-lancedb-sidecar", cfg.KB.Sidecar.Executable)
+	}
+}
+
 func TestLoadMergesDefaultsUserProjectEnvAndExplicitFlags(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "user.yaml")

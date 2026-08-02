@@ -12,7 +12,7 @@ task kb:sidecar:test
 
 Before changing behavior, read [Module Review And TDD](./module-review-tdd.md). It records the current cross-module review queue and the RED -> GREEN commands expected for profile/vault/config boundaries, remote cache safety, publish approval, provider adapter isolation, and integration evidence redaction.
 
-`task check` runs the offline LanceDB sidecar protocol gate. It validates the sidecar JSON protocol and redaction boundary without installing Python packages from PyPI. Use `task kb:sidecar:test` before release or when changing `tools/pinax-lancedb-sidecar`; that command installs the real `lancedb` dependency in a temporary venv and runs the real rebuild/search sidecar tests.
+`task check` runs the offline Pinax-to-Inferrum adapter gate. It validates the JSON protocol, permission, and redaction boundaries without installing Python packages from PyPI. Use `task kb:sidecar:test` before release when changing the Pinax adapter; the real Python LanceDB sidecar distribution and rebuild/search smoke are verified in the Inferrum repository.
 
 If `task` is not installed, use Go and OpenSpec commands directly:
 
