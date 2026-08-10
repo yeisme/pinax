@@ -28,3 +28,17 @@ Pinax SHALL extend repository bootstrap with an explicit pull option while prese
 - **THEN** Pinax SHALL execute pull only after declaration、secrets、runtime and protected-path validation succeeds
 - **AND** new-device policy SHALL remain pull-only regardless of local directory contents
 
+### Requirement: Repository sync capability gate
+
+Pinax SHALL allow a repository declaration to require additive sync capabilities before compiling or executing repository-encrypted S3 configuration.
+
+#### Scenario: 当前二进制满足声明能力
+- **WHEN** declaration requires `repository-encrypted-s3-v1`、`capsa-remote-commit-v1` and `pull-only-bootstrap-v1`
+- **THEN** doctor、apply、bootstrap、diff、pull、push and daemon SHALL validate all required capabilities before remote access
+- **AND** output SHALL expose only capability names and support status
+
+#### Scenario: 当前二进制缺少能力
+- **WHEN** any declared capability is unsupported
+- **THEN** Pinax SHALL fail closed with `sync_capability_unsupported`
+- **AND** SHALL report `remote_write=false`
+- **AND** SHALL provide a real upgrade or device-profile rollback command

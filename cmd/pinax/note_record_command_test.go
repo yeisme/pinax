@@ -1738,9 +1738,15 @@ func TestNotebookCoreOutputContractAndHelp(t *testing.T) {
 	runCLI(t, "note", "new", "Contract Note", "--body", "body", "--tags", "contract", "--vault", root, "--json")
 
 	rootHelp := runCLI(t, "--help")
-	for _, want := range []string{"journal", "inbox", "view", "import", "export", "index", "organize"} {
+	for _, want := range []string{"journal", "inbox", "note", "search", "project", "version", "commands"} {
 		if !strings.Contains(rootHelp, want) {
 			t.Fatalf("root help missing %q:\n%s", want, rootHelp)
+		}
+	}
+	catalog := runCLI(t, "commands")
+	for _, want := range []string{"view", "import", "export", "index", "organize"} {
+		if !strings.Contains(catalog, want) {
+			t.Fatalf("command catalog missing %q:\n%s", want, catalog)
 		}
 	}
 	for _, hidden := range []string{"\n  daily ", "\n  weekly ", "\n  monthly "} {

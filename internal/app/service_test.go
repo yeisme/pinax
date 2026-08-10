@@ -1879,7 +1879,7 @@ func TestTemplateAuthoringRejectsUnsafeInput(t *testing.T) {
 	}
 }
 
-func TestPlanningActionDraftBuildsTaskBridgeActionsSchema(t *testing.T) {
+func TestPlanningActionDraftBuildsLocalActionsSchema(t *testing.T) {
 	now := time.Date(2026, 6, 7, 8, 30, 0, 0, time.UTC)
 	snapshot := domain.PlanningSnapshot{SnapshotID: "plan_snap_test"}
 	decision := domain.PlanningDecision{
@@ -1893,7 +1893,7 @@ func TestPlanningActionDraftBuildsTaskBridgeActionsSchema(t *testing.T) {
 
 	draft := planningops.BuildActionDraft("daily", snapshot, decision, now)
 
-	if draft.SchemaVersion != "taskbridge.actions.v1" {
+	if draft.SchemaVersion != "pinax.planning.actions.v1" {
 		t.Fatalf("schema = %q", draft.SchemaVersion)
 	}
 	if draft.SourceDecision != "plan_dec_test" || draft.SourceSnapshot != "plan_snap_test" {
@@ -1937,7 +1937,7 @@ func TestActionDraftDryRunDoesNotWrite(t *testing.T) {
 	if !ok {
 		t.Fatalf("draft data = %#v", data["draft"])
 	}
-	if draft.SchemaVersion != "taskbridge.actions.v1" || draft.SourceDecision == "" || draft.SourceSnapshot == "" {
+	if draft.SchemaVersion != "pinax.planning.actions.v1" || draft.SourceDecision == "" || draft.SourceSnapshot == "" {
 		t.Fatalf("draft refs = %#v", draft)
 	}
 	if fileExistsApp(filepath.Join(root, ".pinax", "planning", "actions")) {
@@ -1966,13 +1966,13 @@ func TestActionDraftSaveWritesAssetAndReceipt(t *testing.T) {
 	if err := json.Unmarshal([]byte(asset), &draft); err != nil {
 		t.Fatalf("draft json invalid: %v\n%s", err, asset)
 	}
-	if draft.SchemaVersion != "taskbridge.actions.v1" || draft.SourcePeriod != "weekly" || draft.SourceDecision == "" || draft.SourceSnapshot == "" {
+	if draft.SchemaVersion != "pinax.planning.actions.v1" || draft.SourcePeriod != "weekly" || draft.SourceDecision == "" || draft.SourceSnapshot == "" {
 		t.Fatalf("draft asset = %#v", draft)
 	}
 	if !strings.Contains(readFile(t, filepath.Join(root, ".pinax", "events.jsonl")), "plan.actions") {
 		t.Fatalf("plan action save did not append receipt event")
 	}
-	if len(projection.Actions) != 1 || !strings.Contains(projection.Actions[0].Command, "connectors task agent execute --action-file") || !strings.Contains(projection.Actions[0].Command, "--dry-run") {
+	if len(projection.Actions) != 0 {
 		t.Fatalf("next actions = %#v", projection.Actions)
 	}
 }

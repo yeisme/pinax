@@ -2,21 +2,22 @@
 
 [中文说明](./README.zh-CN.md)
 
-Pinax is the **agent-safe knowledge control plane for your Markdown vault** — it lets AI safely read, diagnose, repair, and sync a real local knowledge base, while keeping every agent write auditable, previewable, and reversible. Your Markdown vault stays the source of truth; the agent never sees plaintext it should not, and the cloud never stores plaintext notes.
+Pinax is a **personal local knowledge tool for Markdown**. It gives one person a short path to capture notes, clear an inbox, keep a journal, search a vault, manage projects, and create local version evidence. Your Markdown files stay the source of truth.
 
-> Three ideas to remember: **Local Vault is the source of truth / the Proof Loop protects every agent write / Capsa Sync only coordinates ciphertext.**
+The default CLI intentionally shows only the everyday local commands. Existing sync, Capsa, API, Agent, publish, and plugin surfaces remain available for compatibility through `pinax commands`.
 
-## The aha moment
+## The everyday loop
 
-Run the whole agent-safe loop in one command — preview first, then plan, snapshot, apply, and restore if needed. Every step is bounded: the agent reads projections, never raw note bodies, and writes only happen through an explicit plan → snapshot → apply chain.
+Start locally without configuring a daemon, cloud account, remote backend, or multi-device topology:
 
 ```bash
-pinax proof loop run --vault ./my-notes --json            # preview: one projection with proof_loop_run_id
-pinax repair plan --vault ./my-notes --save                # turn vault health issues into a reviewable plan
-pinax version snapshot --vault ./my-notes --message "before repair"   # protective snapshot before any write
-pinax repair apply --vault ./my-notes --plan repair-abc123 --yes      # apply approved low-risk fixes only
-pinax version restore notes/example.md --revision HEAD --plan --vault ./my-notes          # something went wrong?
-pinax version restore apply --vault ./my-notes --plan restore-<id> --yes                 # revert through a CLI-authored path
+pinax init ./my-notes --title "My Knowledge Base"
+pinax inbox capture "Read the local-first paper" --vault ./my-notes
+pinax note add "Research Log" --body "First note" --vault ./my-notes
+pinax journal daily append --body "Reviewed local-first tools" --vault ./my-notes
+pinax search "local-first" --vault ./my-notes
+pinax backup create --vault ./my-notes --message "daily checkpoint"
+pinax commands
 ```
 
 ## Why Pinax
@@ -120,6 +121,7 @@ pinax vault validate --vault ./my-notes --json
 pinax note add "Research Log" --body "First note" --tags research --vault ./my-notes
 pinax index refresh --vault ./my-notes --json
 pinax search "First note" --vault ./my-notes --json
+pinax backup create --message "first checkpoint" --vault ./my-notes
 ```
 
 See the [command map](./docs/commands/README.md) for the recommended entry point for each workflow.
@@ -257,7 +259,7 @@ pinax project subproject create research stock-learning --title "Stock Learning"
 pinax project subproject show research stock-learning --vault ./my-notes --json
 ```
 
-View and maintain the local project board workspace. The board comes from local Markdown, project metadata, SQLite/GORM projections, and saved planning snapshots; it is not a remote Todo provider, and it does not treat TaskBridge as the source of truth:
+View and maintain the local project board workspace. The board comes from local Markdown, project metadata, SQLite/GORM projections, and saved planning snapshots; it is not a remote Todo provider:
 
 ```bash
 pinax project board show research --vault ./my-notes --json
@@ -273,7 +275,7 @@ pinax version snapshot --vault ./my-notes --message "snapshot before project ite
 pinax project item archive research/Implement local board.md --yes --vault ./my-notes --json
 ```
 
-`project board show` and `export` are read-only by default and do not write `.pinax/`, Markdown, Git, TaskBridge, or remote providers. `project board plan --save` only writes `.pinax/planning/project-boards/<snapshot_id>.json` as review evidence; `plan weekly --taskbridge --dry-run` reads the next/doing/blocked counts from the latest board snapshot, but does not automatically write board items into TaskBridge. `project item archive` requires `--yes` and an explicit version snapshot.
+`project board show` and `export` are read-only by default and do not write `.pinax/`, Markdown, Git, or remote providers. `project board plan --save` only writes `.pinax/planning/project-boards/<snapshot_id>.json` as review evidence. `project item archive` requires `--yes` and an explicit version snapshot.
 
 Manage daily Markdown notes:
 

@@ -7,6 +7,11 @@ exec sh -c 'pinax init vault --title AgentMemory --json > init.json'
 validate-json-envelope init.json
 grep '"status":"success"' init.json
 
+# Create a real source note so source coverage validates against the vault resolver.
+exec sh -c 'pinax note add "GORM Gen decision" --vault vault --dir index --body "Use GORM Gen for typed DAO." --json > source-note.json'
+validate-json-envelope source-note.json
+exec sh -c 'grep -o "\"note_id\":\"[^\"]*\"" source-note.json | head -1 | cut -d\" -f4 > source_note_id.txt'
+
 # Agent status on empty vault must succeed.
 exec sh -c 'pinax agent status --vault vault --json > status_empty.json'
 validate-json-envelope status_empty.json
@@ -14,7 +19,7 @@ grep '"command":"agent.status"' status_empty.json
 grep '"status":"success"' status_empty.json
 
 # Propose a memory (adapter can only propose; must return approval_required).
-exec sh -c 'pinax agent memory propose --vault vault --kind fact --subject "GORMGen" --summary "Gen replaces raw SQL" --sources "note:ref_gorm" --json > propose.json'
+exec sh -c 'pinax agent memory propose --vault vault --kind fact --subject "GORMGen" --summary "Gen replaces raw SQL" --sources "note:$(cat source_note_id.txt)" --json > propose.json'
 validate-json-envelope propose.json
 grep '"command":"agent.memory.propose"' propose.json
 grep '"status":"approval_required"' propose.json
@@ -45,11 +50,30 @@ validate-json-envelope context.json
 grep '"command":"agent.context"' context.json
 grep 'agent_context_pack' context.json
 
-# Handoff create must produce a handoff_id.
-exec sh -c 'pinax agent handoff create --vault vault --objective "ReviewGORMGen" --json > handoff.json'
+# Handoff create must accept the complete bounded working state and source refs.
+exec sh -c 'pinax agent handoff create --vault vault --scope project:pinax --objective "ReviewGORMGen" --current-state "Implementation ready for Agent B" --decisions "Use GORM Gen" --completed-work "DAO contract tests" --blockers "Awaiting migration review" --verification "go test ./internal/index" --follow-ups "Run migration smoke" --sources "note:$(cat source_note_id.txt)" --requested-next-capability "review" --json > handoff.json'
 validate-json-envelope handoff.json
 grep '"command":"agent.handoff.create"' handoff.json
 grep '"handoff_id"' handoff.json
+exec sh -c 'pinax agent handoff list --vault vault --scope project:pinax --json > handoff-list.json'
+validate-json-envelope handoff-list.json
+grep 'Implementation ready for Agent B' handoff-list.json
+grep 'Awaiting migration review' handoff-list.json
+exec sh -c 'grep "$(cat source_note_id.txt)" handoff-list.json'
+exec sh -c 'grep -o "\"handoff_id\":\"[^\"]*\"" handoff.json | head -1 | cut -d\" -f4 > handoff_id.txt'
+exec sh -c 'pinax agent handoff show $(cat handoff_id.txt) --vault vault --json > handoff-show.json'
+validate-json-envelope handoff-show.json
+grep '"command":"agent.handoff.show"' handoff-show.json
+grep 'Implementation ready for Agent B' handoff-show.json
+exec sh -c 'grep "$(cat source_note_id.txt)" handoff-show.json'
+
+# Agent B continuation must consume the handoff and expose bounded state/source facts.
+exec sh -c 'pinax continue --vault vault --scope project:pinax --handoff $(cat handoff_id.txt) --task "Review migration" --json > continue.json'
+validate-json-envelope continue.json
+grep '"handoff_status":"explicit"' continue.json
+grep 'Awaiting migration review' continue.json
+exec sh -c 'grep "$(cat source_note_id.txt)" continue.json'
+grep '"source_coverage":{"total":1,"resolved":1' continue.json
 
 # Feedback add must produce a feedback_id.
 exec sh -c 'pinax agent feedback add --vault vault --kind useful --memory-id testmem --comment "good" --json > feedback.json'

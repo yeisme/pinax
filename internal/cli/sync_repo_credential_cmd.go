@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app"
+	pinaxremote "github.com/yeisme/pinax/internal/remote"
 )
 
 // resolveProjectUnlockSource builds a credentialctl unlock source from the
@@ -25,6 +28,100 @@ func resolveProjectUnlockSource(passphraseFile, envVar string) projectsecrets.Un
 		return projectsecrets.EnvSource(envVar)
 	}
 	return nil
+}
+
+func resolveBootstrapUnlockSource(unlock, unlockRef, passphraseFile, defaultKeychainRef string) (projectsecrets.UnlockSource, *projectsecrets.KeychainSource, error) {
+	mode := strings.TrimSpace(unlock)
+	if mode == "" && strings.TrimSpace(passphraseFile) != "" {
+		mode = "file"
+	}
+	switch mode {
+	case "":
+		return nil, nil, nil
+	case "prompt":
+		return projectsecrets.NewPromptSource(projectsecrets.WithPromptText("Repository passphrase: ")), nil, nil
+	case "env":
+		return projectsecrets.EnvSource("PINAX_REPO_PASS"), nil, nil
+	case "file":
+		if strings.TrimSpace(passphraseFile) == "" {
+			return nil, nil, fmt.Errorf("--unlock file requires --passphrase-file")
+		}
+		source, err := projectsecrets.FileSource(passphraseFile)
+		return source, nil, err
+	case "keychain":
+		ref := strings.TrimSpace(unlockRef)
+		if ref == "" {
+			ref = strings.TrimSpace(defaultKeychainRef)
+		}
+		service, account, err := parseKeychainRef(ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		source, err := projectsecrets.NewKeychainSource(service, account)
+		return source, source, err
+	default:
+		return nil, nil, fmt.Errorf("unsupported unlock source %q", mode)
+	}
+}
+
+// resolveSyncUnlockSource is the shared repository unlock resolver for the
+// remote-aware sync commands (diff/pull/push). It implements the task 6.7
+// precedence: an explicit --unlock source (prompt/keychain/file/env) wins; when
+// only --passphrase-file/--env-var is given it resolves the shortcut source;
+// otherwise it returns nil so device-profile mode keeps its legacy path and
+// repository-encrypted mode fails closed in the transport rather than falling
+// back to a device-local AWS profile.
+func resolveSyncUnlockSource(vaultPath, unlock, unlockRef, passphraseFile, envVar string) (projectsecrets.UnlockSource, error) {
+	if strings.TrimSpace(unlock) != "" {
+		defaultKeychainRef := ""
+		if strings.TrimSpace(unlock) == "keychain" {
+			ref, err := defaultRepositoryKeychainRef(vaultPath)
+			if err != nil {
+				return nil, err
+			}
+			defaultKeychainRef = ref
+		}
+		source, _, err := resolveBootstrapUnlockSource(unlock, unlockRef, passphraseFile, defaultKeychainRef)
+		if err != nil {
+			return nil, err
+		}
+		return source, nil
+	}
+	return resolveProjectUnlockSource(passphraseFile, envVar), nil
+}
+
+func parseKeychainRef(ref string) (string, string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(ref))
+	if err != nil || parsed.Scheme != "keychain" || parsed.Host == "" {
+		return "", "", fmt.Errorf("invalid keychain reference; expected keychain://<service>/<account>")
+	}
+	account, err := url.PathUnescape(strings.TrimPrefix(parsed.EscapedPath(), "/"))
+	if err != nil || strings.TrimSpace(account) == "" {
+		return "", "", fmt.Errorf("invalid keychain reference; expected keychain://<service>/<account>")
+	}
+	return parsed.Host, account, nil
+}
+
+func defaultRepositoryKeychainRef(vaultPath string) (string, error) {
+	root, err := filepath.Abs(vaultPath)
+	if err != nil {
+		return "", err
+	}
+	resolver, err := projectsecrets.NewResolver(filepath.Join(root, ".pinax", "project-secrets.yaml"), projectsecrets.StaticSource([]byte("metadata-only")), projectsecrets.DenyAllPolicy{})
+	if err != nil {
+		return "", err
+	}
+	info, err := resolver.EnvelopeInfo()
+	if err != nil {
+		state, stateErr := pinaxremote.Load(root)
+		if stateErr != nil || strings.TrimSpace(state.Config.WorkspaceID) == "" {
+			return "", err
+		}
+		account := url.PathEscape("pinax:" + state.Config.WorkspaceID)
+		return "keychain://pinax/" + account, nil
+	}
+	account := url.PathEscape(info.Project + ":" + info.Repository)
+	return "keychain://pinax/" + account, nil
 }
 
 // addSyncRepoCredentialCommands wires `pinax sync repo credential

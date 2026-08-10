@@ -11,7 +11,7 @@ func TestEvidenceLedgerDedupeAndTrust(t *testing.T) {
 	items := []EvidenceItem{
 		{SourceID: "fake:default", URL: "https://example.test/a?utm_source=x", Title: "Alpha", Summary: "One", TrustHint: 0.7},
 		{SourceID: "fake:default", URL: "https://example.test/a", Title: "Alpha duplicate", Summary: "Duplicate", TrustHint: 0.5},
-		{SourceID: "connectors:hot", URL: "https://example.test/b", Title: "Beta", Summary: "Two"},
+		{SourceID: "research:hot", URL: "https://example.test/b", Title: "Beta", Summary: "Two"},
 	}
 	ledger, err := WriteEvidence(root, items)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestEvidenceLedgerDedupeAndTrust(t *testing.T) {
 }
 
 func TestEvidenceSourceTrust(t *testing.T) {
-	cases := map[string]float64{"user:curated": 1, "connectors:hot": 0.8, "fake:default": 0.6, "unknown": 0.4}
+	cases := map[string]float64{"user:curated": 1, "research:hot": 0.8, "fake:default": 0.6, "unknown": 0.4}
 	for source, want := range cases {
 		if got := SourceTrust(source, 0); got != want {
 			t.Fatalf("SourceTrust(%q) = %v want %v", source, got, want)

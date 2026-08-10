@@ -32,7 +32,7 @@ func TestBuiltInTemplateLegacyAndRecommendedInspect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect journal daily: %v", err)
 	}
-	if journal.Facts["kind"] != "journal_template" || journal.Facts["path_pattern"] != "daily/{{ .Date }}.md" || journal.Facts["managed_blocks"] != "3" {
+	if journal.Facts["kind"] != "journal_template" || journal.Facts["path_pattern"] != "daily/{{ .Date }}.md" || journal.Facts["managed_blocks"] != "2" {
 		t.Fatalf("journal daily inspect facts = %#v", journal.Facts)
 	}
 
@@ -57,7 +57,6 @@ func TestBuiltInDailyTemplateObsidianCompatibilityBlocks(t *testing.T) {
 	body := builtInTemplates()["journal.daily"]
 	for _, want := range []string{
 		"output:\n  path_pattern: daily/{{ .Date }}.md",
-		"<!-- pinax:managed name=planning-daily -->",
 		"<!-- pinax:managed name=daily-task-review -->",
 		"<!-- pinax:managed name=daily-captures -->",
 	} {
@@ -516,7 +515,7 @@ func TestTemplatePreviewJournal(t *testing.T) {
 		t.Fatalf("preview journal: %v", err)
 	}
 	data := fmt.Sprint(projection.Data)
-	if projection.Facts["template"] != "journal.daily" || projection.Facts["query_count"] != "0" || !strings.Contains(data, "planning-daily") || !strings.Contains(data, "daily-captures") {
+	if projection.Facts["template"] != "journal.daily" || projection.Facts["query_count"] != "0" || !strings.Contains(data, "daily-task-review") || !strings.Contains(data, "daily-captures") {
 		t.Fatalf("journal preview projection = %#v", projection)
 	}
 }

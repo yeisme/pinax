@@ -46,7 +46,6 @@
 | `internal/redaction` | 测试、证据、文档、输出 | `go test ./internal/redaction -count=1` |
 | `internal/remote` | Vault、index、sync、remote | `go test ./internal/remote -count=1` |
 | `internal/remoteapi` | Provider、publish、plugin、API | `go test ./internal/remoteapi -count=1` |
-| `internal/research` | Provider、publish、plugin、API | `go test ./internal/research -count=1` |
 | `internal/search` | Vault、index、sync、remote | `go test ./internal/search ./internal/index -run 'Search' -count=1` |
 | `internal/semantic` | Vault、index、sync、remote | `go test ./internal/semantic ./cmd/pinax -run 'KB|Semantic' -count=1` |
 | `internal/sync` | Vault、index、sync、remote | `go test ./internal/sync -count=1` |

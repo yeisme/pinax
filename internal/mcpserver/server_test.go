@@ -83,7 +83,11 @@ func TestReadonlyMCPProjectBoardTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("project board tool: %v", err)
 	}
-	if resp.Result["status"] == "failed" || !strings.Contains(fmt.Sprint(resp.Result), "research") || strings.Contains(fmt.Sprint(resp.Result), `body`) {
+	encoded, err := json.Marshal(resp.Result)
+	if err != nil {
+		t.Fatalf("encode project board result: %v", err)
+	}
+	if resp.Result["status"] == "failed" || !strings.Contains(string(encoded), "research") || strings.Contains(string(encoded), `"body":`) {
 		t.Fatalf("project board result = %#v", resp.Result)
 	}
 }
@@ -398,7 +402,7 @@ func TestMCPReleaseCoreFrame(t *testing.T) {
 	}
 
 	// Frame 4: write attempt is rejected (approval_required), vault untouched.
-	if responses[3].Error == nil || responses[3].Error.Code != "approval_required" {
+	if responses[3].Error == nil || responses[3].Error.Code != -32001 || responses[3].Error.Data["legacy_code"] != "approval_required" {
 		t.Fatalf("write tool must be rejected with approval_required: %#v", responses[3])
 	}
 }
@@ -430,6 +434,90 @@ func TestMCPReleaseCoreExposesNoDirectWriteTools(t *testing.T) {
 	// pinax.git.snapshot_plan is allowed because it only returns a next command.
 	if !containsTool(toolsResp.Tools, "pinax.git.snapshot_plan") {
 		t.Fatalf("plan-preview tool should be advertised: %#v", toolsResp.Tools)
+	}
+}
+
+func TestMCPStdioStandardHandshakeKeepsLegacyProjection(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Standard MCP"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	writeMCPFixture(t, root, "notes/action.md", "# Action\n\nsource-backed task context.\n")
+	if _, err := svc.RebuildIndex(ctx, app.VaultRequest{VaultPath: root}); err != nil {
+		t.Fatalf("rebuild index: %v", err)
+	}
+
+	frames := []string{
+		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"standard-client","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"pinax.agent.context","arguments":{}}}`,
+	}
+	var in strings.Builder
+	for _, frame := range frames {
+		in.WriteString(frame + "\n")
+	}
+	var out strings.Builder
+	if err := Serve(ctx, svc, root, strings.NewReader(in.String()), &out); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+
+	responses := parseMCPFrameResponses(t, out.String())
+	if len(responses) != 3 {
+		t.Fatalf("notification must not produce a response; got %d frames: %s", len(responses), out.String())
+	}
+	initialize := responses[0].Result
+	if initialize["protocolVersion"] != "2025-03-26" || initialize["read_only"] != true {
+		t.Fatalf("initialize result = %#v", initialize)
+	}
+	if _, ok := initialize["capabilities"].(map[string]any); !ok {
+		t.Fatalf("initialize capabilities = %#v", initialize["capabilities"])
+	}
+	if _, ok := initialize["serverInfo"].(map[string]any); !ok {
+		t.Fatalf("initialize serverInfo = %#v", initialize["serverInfo"])
+	}
+
+	// Legacy consumers keep the existing top-level list while standard MCP
+	// clients consume result.tools and camelCase inputSchema.
+	if !containsTool(responses[1].Tools, "pinax.agent.context") {
+		t.Fatalf("legacy tool projection missing: %#v", responses[1].Tools)
+	}
+	standardTools, ok := responses[1].Result["tools"].([]any)
+	if !ok || len(standardTools) == 0 {
+		t.Fatalf("standard result.tools = %#v", responses[1].Result["tools"])
+	}
+	var agentContext map[string]any
+	for _, raw := range standardTools {
+		tool, _ := raw.(map[string]any)
+		if tool["name"] == "pinax.agent.context" {
+			agentContext = tool
+			break
+		}
+	}
+	if agentContext == nil {
+		t.Fatalf("standard tools missing pinax.agent.context")
+	}
+	inputSchema, ok := agentContext["inputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("agent context inputSchema = %#v", agentContext["inputSchema"])
+	}
+	properties, _ := inputSchema["properties"].(map[string]any)
+	workspace, _ := properties["workspace"].(map[string]any)
+	if workspace["default"] != "default" {
+		t.Fatalf("agent context workspace default = %#v", workspace["default"])
+	}
+
+	callResult := responses[2].Result
+	if callResult["status"] != "success" {
+		t.Fatalf("legacy call result = %#v", callResult)
+	}
+	if content, ok := callResult["content"].([]any); !ok || len(content) == 0 {
+		t.Fatalf("standard call content = %#v", callResult["content"])
+	}
+	if _, ok := callResult["structuredContent"].(map[string]any); !ok {
+		t.Fatalf("standard structuredContent = %#v", callResult["structuredContent"])
 	}
 }
 

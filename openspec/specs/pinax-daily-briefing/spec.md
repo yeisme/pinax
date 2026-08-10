@@ -18,13 +18,13 @@ Briefing recipe SHALL 由 CLI service 创建和修改；agent 不直接手写 re
 - **WHEN** 用户运行 `pinax briefing recipe show`
 - **THEN** CLI SHALL 输出当前 recipe 配置摘要
 
-### Requirement: Connectors 作为外部服务配置
+### Requirement: Research uses an external source adapter
 
-Research adapter SHALL 通过外部服务配置与 Connectors 交互；本地开发使用 fake harness fixture。
+Research adapter SHALL use an explicitly configured external research source; local development SHALL use a fake harness fixture.
 
-#### Scenario: Connectors 不可用
+#### Scenario: External research source unavailable
 
-- **WHEN** Connectors endpoint 不可达或未配置
+- **WHEN** the configured research source is unreachable or not configured
 - **THEN** research adapter SHALL 使用 fake harness fixture 进行本地开发
 - **AND** 不阻塞 briefing 流程其它阶段
 

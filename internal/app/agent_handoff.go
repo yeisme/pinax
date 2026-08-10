@@ -71,3 +71,13 @@ func (s *AgentMemoryService) AgentHandoffList(ctx context.Context, vaultPath str
 	}
 	return st.ListHandoffs(ctx, scope)
 }
+
+// AgentHandoffGet 读取一条 bounded handoff，不返回完整 transcript 或模型推理。
+func (s *AgentMemoryService) AgentHandoffGet(ctx context.Context, vaultPath, handoffID string) (agentmemory.AgentHandoffRow, error) {
+	ctx = ensureCtx(ctx)
+	st, err := s.storeFor(vaultPath)
+	if err != nil {
+		return agentmemory.AgentHandoffRow{}, err
+	}
+	return st.GetHandoff(ctx, handoffID)
+}

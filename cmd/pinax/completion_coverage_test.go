@@ -125,9 +125,15 @@ func TestRootHelpGroupsCurrentTopLevelCommandsCLI(t *testing.T) {
 	if strings.Contains(help, "Other\n") {
 		t.Fatalf("root help should not leave current product commands in Other:\n%s", help)
 	}
-	for _, want := range []string{"  draft", "  graph", "  monitor", "  prompt", "  proof", "  api", "  token", "  profile"} {
+	for _, want := range []string{"Start here", "Capture and write", "Find and organize", "Local safety", "More commands"} {
 		if !strings.Contains(help, want) {
-			t.Fatalf("root help missing grouped command %q:\n%s", want, help)
+			t.Fatalf("root help missing core group %q:\n%s", want, help)
+		}
+	}
+	catalog := runCLI(t, "commands")
+	for _, want := range []string{"draft", "graph", "monitor", "prompt", "proof", "api", "token", "profile"} {
+		if !strings.Contains(catalog, want) {
+			t.Fatalf("command catalog missing advanced command %q:\n%s", want, catalog)
 		}
 	}
 }

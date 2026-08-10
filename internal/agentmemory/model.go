@@ -141,23 +141,37 @@ func (AgentProposalRow) TableName() string { return "agent_proposals" }
 
 // AgentHandoffRow 持久化 cross-agent handoff。
 type AgentHandoffRow struct {
-	HandoffID               string    `gorm:"primaryKey;column:handoff_id" json:"handoff_id"`
-	FromPrincipal           string    `gorm:"index;column:from_principal" json:"from_principal"`
-	ToPrincipal             string    `gorm:"index;column:to_principal" json:"to_principal"`
-	ScopeKind               string    `gorm:"column:scope_kind" json:"scope_kind"`
-	ScopeID                 string    `gorm:"column:scope_id" json:"scope_id"`
-	Objective               string    `gorm:"column:objective" json:"objective"`
-	CurrentState            string    `gorm:"column:current_state" json:"current_state,omitempty"`
-	Decisions               string    `gorm:"column:decisions" json:"decisions,omitempty"`           // newline-separated
-	CompletedWork           string    `gorm:"column:completed_work" json:"completed_work,omitempty"` // newline-separated
-	Blockers                string    `gorm:"column:blockers" json:"blockers,omitempty"`
-	Verification            string    `gorm:"column:verification" json:"verification,omitempty"`
-	FollowUps               string    `gorm:"column:follow_ups" json:"follow_ups,omitempty"`
-	RequestedNextCapability string    `gorm:"column:requested_next_capability" json:"requested_next_capability,omitempty"`
-	CreatedAt               time.Time `gorm:"column:created_at" json:"created_at"`
+	HandoffID               string                      `gorm:"primaryKey;column:handoff_id" json:"handoff_id"`
+	FromPrincipal           string                      `gorm:"index;column:from_principal" json:"from_principal"`
+	ToPrincipal             string                      `gorm:"index;column:to_principal" json:"to_principal"`
+	ScopeKind               string                      `gorm:"column:scope_kind" json:"scope_kind"`
+	ScopeID                 string                      `gorm:"column:scope_id" json:"scope_id"`
+	Objective               string                      `gorm:"column:objective" json:"objective"`
+	CurrentState            string                      `gorm:"column:current_state" json:"current_state,omitempty"`
+	Decisions               string                      `gorm:"column:decisions" json:"decisions,omitempty"`           // newline-separated
+	CompletedWork           string                      `gorm:"column:completed_work" json:"completed_work,omitempty"` // newline-separated
+	Blockers                string                      `gorm:"column:blockers" json:"blockers,omitempty"`
+	Verification            string                      `gorm:"column:verification" json:"verification,omitempty"`
+	FollowUps               string                      `gorm:"column:follow_ups" json:"follow_ups,omitempty"`
+	RequestedNextCapability string                      `gorm:"column:requested_next_capability" json:"requested_next_capability,omitempty"`
+	CreatedAt               time.Time                   `gorm:"column:created_at" json:"created_at"`
+	Sources                 agentprotocol.SourceRefList `gorm:"-" json:"sources,omitempty"`
 }
 
 func (AgentHandoffRow) TableName() string { return "agent_handoffs" }
+
+// AgentHandoffSourceRow 是 handoff 的 source 引用。
+type AgentHandoffSourceRow struct {
+	ID        string    `gorm:"primaryKey;column:id" json:"id"`
+	HandoffID string    `gorm:"index;column:handoff_id" json:"handoff_id"`
+	Kind      string    `gorm:"index;column:kind" json:"kind"`
+	Ref       string    `gorm:"index;column:ref" json:"ref"`
+	Label     string    `gorm:"column:label" json:"label,omitempty"`
+	Span      string    `gorm:"column:span" json:"span,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
+}
+
+func (AgentHandoffSourceRow) TableName() string { return "agent_handoff_sources" }
 
 // AgentFeedbackRow 持久化 recall feedback。
 type AgentFeedbackRow struct {

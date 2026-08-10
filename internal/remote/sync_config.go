@@ -39,6 +39,20 @@ type SyncConfig struct {
 	Workspace     SyncWorkspace  `json:"workspace" yaml:"workspace"`
 	Secrets       SyncSecretRefs `json:"secrets" yaml:"secrets"`
 	Policy        SyncPolicy     `json:"policy,omitempty" yaml:"policy,omitempty"`
+	// Requires declares additive capabilities a binary MUST support before
+	// touching the remote (pinax-passphrase-s3-bootstrap task 6.8). A binary
+	// missing a declared capability fails closed with sync_capability_unsupported
+	// rather than silently producing a partial backup. The set is validated by
+	// the capability gate, not by Validate (unknown capabilities are rejected at
+	// gate time so an upgraded declaration does not break older validation).
+	Requires SyncRequires `json:"requires,omitempty" yaml:"requires,omitempty"`
+}
+
+// SyncRequires carries additive capability requirements. Capability names are
+// stable identifiers (e.g. repository-encrypted-s3-v1); they never carry
+// secrets.
+type SyncRequires struct {
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 }
 
 // SyncBackend describes the portable transport topology. Endpoint and S3 are
@@ -233,6 +247,13 @@ func (c SyncConfig) Normalized() SyncConfig {
 	if out.Policy.NewDeviceMode == "" {
 		out.Policy.NewDeviceMode = "pull-only"
 	}
+	caps := make([]string, 0, len(out.Requires.Capabilities))
+	for _, cap := range out.Requires.Capabilities {
+		if v := strings.TrimSpace(cap); v != "" {
+			caps = append(caps, v)
+		}
+	}
+	out.Requires.Capabilities = caps
 	out.Backend.S3 = normalizeS3Config(out.Backend.S3)
 	return out
 }

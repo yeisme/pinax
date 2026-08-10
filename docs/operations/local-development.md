@@ -92,7 +92,7 @@ rm -rf /tmp/pinax-notes
 ./dist/pinax project board show research --note-display card --vault /tmp/pinax-notes --json
 ./dist/pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault /tmp/pinax-notes --json
 ./dist/pinax project board plan research --save --vault /tmp/pinax-notes --json
-./dist/pinax plan weekly --taskbridge --dry-run --vault /tmp/pinax-notes --json
+./dist/pinax plan weekly --dry-run --vault /tmp/pinax-notes --json
 ./dist/pinax project board export research --format markdown --vault /tmp/pinax-notes --json
 ./dist/pinax project item add research "local board task" --column next --body "controlled work item" --vault /tmp/pinax-notes --json
 ./dist/pinax storage set s3 --bucket notes --region us-east-1 --prefix pinax/ --profile work --vault /tmp/pinax-notes --json

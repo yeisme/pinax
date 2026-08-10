@@ -5,7 +5,7 @@ import "testing"
 func TestScoreEvidenceRanksRelevantNovelTrustedCandidates(t *testing.T) {
 	recipe := DefaultRecipe()
 	ledger := BuildEvidenceLedger([]EvidenceItem{
-		{SourceID: "connectors:hot", URL: "https://example.test/ai", Title: "AI tooling for agents", Summary: "Local agent workflow and markdown notes"},
+		{SourceID: "research:hot", URL: "https://example.test/ai", Title: "AI tooling for agents", Summary: "Local agent workflow and markdown notes"},
 		{SourceID: "user:curated", URL: "https://example.test/garden", Title: "Garden tools", Summary: "Soil and watering"},
 		{SourceID: "fake:default", URL: "https://example.test/existing", Title: "Existing Note", Summary: "Already in vault"},
 	})

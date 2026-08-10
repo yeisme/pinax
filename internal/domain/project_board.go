@@ -8,7 +8,6 @@ const (
 	BoardItemSourceNote         BoardItemSourceKind = "note"
 	BoardItemSourceManagedTask  BoardItemSourceKind = "managed_task"
 	BoardItemSourceInlineTask   BoardItemSourceKind = "inline_task"
-	BoardItemSourceTaskBridge   BoardItemSourceKind = "taskbridge"
 	BoardItemSourceManualReview BoardItemSourceKind = "manual_review"
 )
 

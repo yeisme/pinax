@@ -938,41 +938,7 @@ type PlanningSnapshot struct {
 	CapturedAt    string            `json:"captured_at"`
 	Facts         map[string]string `json:"facts"`
 	Risks         []PlanningRisk    `json:"risks,omitempty"`
-	TaskBridge    *TaskBridgePlan   `json:"taskbridge,omitempty"`
 	SavedPath     string            `json:"saved_path,omitempty"`
-}
-
-// TaskBridgePlan records normalized daily task facts captured from TaskBridge.
-type TaskBridgePlan struct {
-	SchemaVersion string                 `json:"schema_version"`
-	CapturedAt    string                 `json:"captured_at"`
-	Date          string                 `json:"date"`
-	Status        string                 `json:"status"`
-	Summary       map[string]int         `json:"summary,omitempty"`
-	Tasks         []TaskBridgePlanTask   `json:"tasks,omitempty"`
-	Actions       []TaskBridgePlanAction `json:"actions,omitempty"`
-	Warnings      []string               `json:"warnings,omitempty"`
-}
-
-// TaskBridgePlanTask is the bounded task fact shape Pinax stores in planning snapshots.
-type TaskBridgePlanTask struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Status       string `json:"status,omitempty"`
-	Source       string `json:"source,omitempty"`
-	Priority     string `json:"priority,omitempty"`
-	Reason       string `json:"reason,omitempty"`
-	SectionID    string `json:"section_id,omitempty"`
-	SectionTitle string `json:"section_title,omitempty"`
-}
-
-// TaskBridgePlanAction records suggested TaskBridge actions without executing them.
-type TaskBridgePlanAction struct {
-	ID                   string `json:"id"`
-	Type                 string `json:"type"`
-	TaskID               string `json:"task_id"`
-	Reason               string `json:"reason,omitempty"`
-	RequiresConfirmation bool   `json:"requires_confirmation"`
 }
 
 // PlanningRisk 记录计划风险项。
@@ -1000,7 +966,7 @@ type PlanningReason struct {
 	Summary string `json:"summary"`
 }
 
-// PlanningActionDraft 记录 TaskBridge action file 草稿。
+// PlanningActionDraft 记录 Pinax 本地 planning action 草稿。
 type PlanningActionDraft struct {
 	SchemaVersion        string            `json:"schema_version"`
 	ActionID             string            `json:"action_id"`

@@ -1,6 +1,6 @@
 # 快速开始（5 分钟）
 
-本指南带你在 5 分钟内完成从安装到验证 Proof Loop 的最小流程。你将创建一个本地 Markdown vault、写入笔记、运行只读 proof loop 预览、生成并应用修复计划、并验证可回滚。
+本指南带你在 5 分钟内完成个人本地知识工具的最小闭环：创建 Markdown vault、记录内容、搜索、写 daily journal，并创建本地版本快照。
 
 本指南只覆盖本地核心流程，不涉及 Cloud Sync、MCP server、Templates、Project Boards 等高级能力。需要从空 vault 串到 sync/API/publish/plugin 的完整路线时，读 [完整使用样例](./usage/full-example.md)；命令索引见 [命令手册](./commands/README.md)。
 
@@ -55,33 +55,33 @@ pinax note add "First Note" --body "My first Pinax note." --vault ./my-notes
 
 `note add` 是推荐的笔记创建入口；`note new` 和 `note create` 是兼容别名。
 
-## 4. 运行 Proof Loop 预览（只读）
+## 4. 记录与找回
 
 ```bash
-pinax proof loop run --vault ./my-notes --json
+pinax inbox capture "Read the local-first paper" --vault ./my-notes
+pinax journal daily append --body "Reviewed local-first tools" --vault ./my-notes
+pinax search "local-first" --vault ./my-notes
 ```
 
-`proof loop run` 把 Capture → Retrieve → Diagnose → Plan → Snapshot → Apply 串成一条可调用、可审计的工作流。默认是只读预览，返回一个带 `proof_loop_run_id` 的 bounded projection，列出诊断结果和下一步动作，不会写 vault。
+这些命令只依赖本地 vault。同步、远程 API 和 Agent runtime 都不是个人主路径的前置条件。
 
-加上 `--apply --yes` 才会在新鲜 snapshot 之后执行已批准的低风险修复。
-
-## 5. 计划、快照、应用修复
-
-把诊断出的健康问题转成可审阅、可保存、受 snapshot 保护的修复动作：
+查看默认入口和完整命令目录：
 
 ```bash
-# 生成修复计划并保存到 .pinax/repair-plans/<plan_id>.json
-pinax repair plan --vault ./my-notes --save --json
-
-# 在应用前创建本地 version snapshot
-pinax version snapshot --vault ./my-notes --message "snapshot before repair"
-
-# 应用已保存计划中的低风险修复（metadata、tags、index rebuild、archive status）
-# <plan_id> 来自上一步 repair plan --save 的输出
-pinax repair apply --vault ./my-notes --plan <plan_id> --yes
+pinax --help
+pinax commands
 ```
 
-`repair apply` 只执行低风险修复（metadata、tags、index rebuild、archive status）；重复标题、断链、歧义链接、空笔记、孤儿笔记只生成人工审阅项，不会自动删除、合并或改写正文。
+## 5. 创建本地安全点
+
+在整理或批量修改前创建本地 version snapshot：
+
+```bash
+pinax backup create --vault ./my-notes --message "snapshot before repair"
+pinax backup history --vault ./my-notes --json
+```
+
+高级的 repair、organize、proof loop 和 restore 流程仍然保留，但不要求新用户先理解。
 
 ## 6. 证明可回滚
 
@@ -89,12 +89,12 @@ pinax repair apply --vault ./my-notes --plan <plan_id> --yes
 
 ```bash
 # 生成只读 restore plan（使用 version snapshot 输出的 snapshot_id）
-SNAPSHOT_ID=$(pinax version history --vault ./my-notes --json | jq -r '.data.snapshots[0].snapshot_id')
-pinax version restore first-note.md --revision "$SNAPSHOT_ID" --plan --vault ./my-notes --json
+SNAPSHOT_ID=$(pinax backup history --vault ./my-notes --json | jq -r '.data.snapshots[0].snapshot_id')
+pinax backup restore first-note.md --revision "$SNAPSHOT_ID" --plan --vault ./my-notes --json
 
 # 应用 restore plan 写回本地 Markdown
 # <restore_id> 来自上一步 version restore --plan 的输出
-pinax version restore apply --vault ./my-notes --plan <restore_id> --yes --json
+pinax backup restore apply --vault ./my-notes --plan <restore_id> --yes --json
 ```
 
 应用成功即证明：Pinax 的每一次 write 都有 snapshot 保护，可审计、可回滚。

@@ -21,6 +21,29 @@ type Orchestrator struct {
 	compiler *agentcontext.Compiler
 }
 
+func handoffSources(handoff *agentmemory.AgentHandoffRow) agentprotocol.SourceRefList {
+	if handoff == nil {
+		return nil
+	}
+	return handoff.Sources
+}
+
+func mergeSources(groups ...agentprotocol.SourceRefList) agentprotocol.SourceRefList {
+	seen := make(map[string]struct{})
+	var merged agentprotocol.SourceRefList
+	for _, group := range groups {
+		for _, source := range group {
+			key := source.Kind + "\x00" + source.Ref
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, source)
+		}
+	}
+	return merged
+}
+
 // NewOrchestrator 构造 orchestrator。
 func NewOrchestrator(store *agentmemory.Store, compiler *agentcontext.Compiler) *Orchestrator {
 	return &Orchestrator{store: store, compiler: compiler}
@@ -54,10 +77,11 @@ func (o *Orchestrator) Compile(ctx context.Context, req ContinuityRequest) (Cont
 	}
 
 	// 阶段 3: section projection（ContextPack 用分桶字段，不是 flat Entries）
-	sections := o.projectSections(pack, req.Budget)
+	sections := o.projectSections(pack, handoff, req.Budget)
 
 	// 阶段 4: source coverage（SourceRef 没有 Status 字段，从 presence 推断）
-	coverage := o.computeSourceCoverage(pack)
+	sources := mergeSources(pack.Sources, handoffSources(handoff))
+	coverage := o.computeSourceCoverage(sources)
 
 	// 阶段 5: budget truncation
 	truncated := pack.Truncated
@@ -67,7 +91,7 @@ func (o *Orchestrator) Compile(ctx context.Context, req ContinuityRequest) (Cont
 	}
 
 	// 阶段 6: next actions
-	nextActions := o.buildNextActions(req, pack, handoffStatus)
+	nextActions := o.buildNextActions(req, pack, handoffStatus, o.handoffID(handoff))
 
 	result := ContinuityPack{
 		SchemaVersion:  ContinuitySchemaVersion,
@@ -78,7 +102,7 @@ func (o *Orchestrator) Compile(ctx context.Context, req ContinuityRequest) (Cont
 		CurrentState:   o.deriveCurrentState(handoff),
 		Sections:       sections,
 		Conflicts:      pack.Conflicts,
-		Sources:        o.boundedSources(pack, req.Budget.MaxSources),
+		Sources:        o.boundedSources(sources, req.Budget.MaxSources),
 		SourceCoverage: coverage,
 		HandoffStatus:  handoffStatus,
 		HandoffID:      o.handoffID(handoff),
@@ -112,7 +136,7 @@ func (o *Orchestrator) selectHandoff(ctx context.Context, req ContinuityRequest)
 }
 
 // projectSections 将 ContextPack 的分桶 entries 投影为产品 sections。
-func (o *Orchestrator) projectSections(pack agentprotocol.ContextPack, budget ContinuityBudget) []ContinuitySection {
+func (o *Orchestrator) projectSections(pack agentprotocol.ContextPack, handoff *agentmemory.AgentHandoffRow, budget ContinuityBudget) []ContinuitySection {
 	type bucket struct {
 		kind    string
 		title   string
@@ -165,23 +189,59 @@ func (o *Orchestrator) projectSections(pack agentprotocol.ContextPack, budget Co
 	}
 
 	// 如果有 handoff-derived blockers/completed work，追加 sections
-	o.appendHandoffSections(&sections, budget)
+	o.appendHandoffSections(&sections, handoff, budget)
 
 	return sections
 }
 
 // appendHandoffSections 从最近的 handoff 提取 blockers 和 completed work。
 // 这是产品投影，不复制完整 handoff body。
-func (o *Orchestrator) appendHandoffSections(sections *[]ContinuitySection, budget ContinuityBudget) {
-	// handoff sections 由 app service 在 Compile 之外追加
-	// 这里只预留扩展点
+func (o *Orchestrator) appendHandoffSections(sections *[]ContinuitySection, handoff *agentmemory.AgentHandoffRow, budget ContinuityBudget) {
+	if handoff == nil {
+		return
+	}
+	for _, section := range []struct {
+		kind  string
+		title string
+		value string
+	}{
+		{kind: "handoff_decision", title: "Handoff decisions", value: handoff.Decisions},
+		{kind: "completed_work", title: "Completed work", value: handoff.CompletedWork},
+		{kind: "blocker", title: "Blockers", value: handoff.Blockers},
+		{kind: "verification", title: "Verification", value: handoff.Verification},
+		{kind: "follow_up", title: "Follow-ups", value: handoff.FollowUps},
+	} {
+		items := splitBoundedLines(section.value, budget.MaxItems)
+		if len(items) == 0 {
+			continue
+		}
+		*sections = append(*sections, ContinuitySection{Kind: section.kind, Title: section.title, Items: items})
+	}
 }
 
 // computeSourceCoverage 从 context pack 的 sources 计算解析情况。
 // SourceRef 没有 Status 字段，因此 Total = len(sources)，Resolved = Total（全部存在即解析）。
-func (o *Orchestrator) computeSourceCoverage(pack agentprotocol.ContextPack) SourceCoverage {
-	total := len(pack.Sources)
+func (o *Orchestrator) computeSourceCoverage(sources agentprotocol.SourceRefList) SourceCoverage {
+	total := len(sources)
 	return SourceCoverage{Total: total, Resolved: total}
+}
+
+func splitBoundedLines(value string, maxItems int) []string {
+	if maxItems < 1 {
+		maxItems = 1
+	}
+	var items []string
+	for _, line := range strings.Split(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		items = append(items, line)
+		if len(items) == maxItems {
+			break
+		}
+	}
+	return items
 }
 
 // truncateSections 按 budget 确定性截断 sections。
@@ -206,7 +266,7 @@ func (o *Orchestrator) truncateSections(sections []ContinuitySection, maxChars i
 }
 
 // buildNextActions 生成安全 drill-down 操作建议。
-func (o *Orchestrator) buildNextActions(req ContinuityRequest, pack agentprotocol.ContextPack, hs HandoffStatus) []agentprotocol.NextAction {
+func (o *Orchestrator) buildNextActions(req ContinuityRequest, pack agentprotocol.ContextPack, hs HandoffStatus, handoffID string) []agentprotocol.NextAction {
 	var actions []agentprotocol.NextAction
 
 	scopeStr := fmt.Sprintf("%s:%s", req.Scope.Kind, req.Scope.ID)
@@ -214,7 +274,7 @@ func (o *Orchestrator) buildNextActions(req ContinuityRequest, pack agentprotoco
 	if hs == HandoffStatusConsumed || hs == HandoffStatusExplicit {
 		actions = append(actions, agentprotocol.NextAction{
 			Name:    "View handoff details",
-			Command: fmt.Sprintf("pinax agent handoff show --scope %s", scopeStr),
+			Command: fmt.Sprintf("pinax agent handoff show %s", handoffID),
 		})
 	}
 
@@ -289,13 +349,13 @@ func (o *Orchestrator) handoffID(handoff *agentmemory.AgentHandoffRow) string {
 	return handoff.HandoffID
 }
 
-func (o *Orchestrator) boundedSources(pack agentprotocol.ContextPack, maxSources int) agentprotocol.SourceRefList {
-	if maxSources <= 0 || len(pack.Sources) <= maxSources {
-		return pack.Sources
+func (o *Orchestrator) boundedSources(sources agentprotocol.SourceRefList, maxSources int) agentprotocol.SourceRefList {
+	if maxSources <= 0 || len(sources) <= maxSources {
+		return sources
 	}
 	// SourceRef 没有 Status，按 Kind 优先级截断（note > receipt > task > other）
-	sorted := make(agentprotocol.SourceRefList, len(pack.Sources))
-	copy(sorted, pack.Sources)
+	sorted := make(agentprotocol.SourceRefList, len(sources))
+	copy(sorted, sources)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return sourceKindPriority(sorted[i].Kind) > sourceKindPriority(sorted[j].Kind)
 	})

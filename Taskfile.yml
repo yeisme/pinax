@@ -55,10 +55,31 @@ tasks:
     cmds:
       - go run ./internal/testkit/integrationevidence --profile agent-continuity
 
+  integration:agent-continuity:dogfood:
+    desc: Run ten redacted continuity samples against an isolated copy of a real vault.
+    cmds:
+      - test -n "$PINAX_CONTINUITY_DOGFOOD_VAULT" || (printf 'PINAX_CONTINUITY_DOGFOOD_VAULT is required\n' >&2; exit 2)
+      - go run ./internal/testkit/continuitydogfoodevidence --vault "$PINAX_CONTINUITY_DOGFOOD_VAULT"
+
+  integration:agent-continuity:followup:
+    desc: Run the day 7-14 continuity reuse follow-up against the preserved isolated vault.
+    cmds:
+      - test -n "$PINAX_CONTINUITY_DOGFOOD_VAULT" || (printf 'PINAX_CONTINUITY_DOGFOOD_VAULT is required\n' >&2; exit 2)
+      - test -n "$PINAX_CONTINUITY_COHORT_RUN" || (printf 'PINAX_CONTINUITY_COHORT_RUN is required\n' >&2; exit 2)
+      - go run ./internal/testkit/continuitydogfoodfollowup --vault "$PINAX_CONTINUITY_DOGFOOD_VAULT" --cohort-run "$PINAX_CONTINUITY_COHORT_RUN"
+
   integration:sync-real:
     desc: Run credential-safe real sync smoke when PINAX_SYNC_REAL_ENDPOINT is configured.
     cmds:
       - go run ./internal/testkit/syncrealevidence
+
+  integration:sync-macos-candidate:
+    desc: Validate a macOS release candidate and write bounded support evidence; does not access a vault or remote.
+    cmds:
+      - test -n "$PINAX_MACOS_SUPPORT_BINARY" || (printf 'PINAX_MACOS_SUPPORT_BINARY is required\n' >&2; exit 2)
+      - test -n "$PINAX_MACOS_SUPPORT_PROVENANCE" || (printf 'PINAX_MACOS_SUPPORT_PROVENANCE is required\n' >&2; exit 2)
+      - test -n "$PINAX_MACOS_SUPPORT_INSTALL_CHANNEL" || (printf 'PINAX_MACOS_SUPPORT_INSTALL_CHANNEL is required\n' >&2; exit 2)
+      - go run ./internal/testkit/macosreleaseevidence --pinax "$PINAX_MACOS_SUPPORT_BINARY" --provenance "$PINAX_MACOS_SUPPORT_PROVENANCE" --install-channel "$PINAX_MACOS_SUPPORT_INSTALL_CHANNEL"
 
   integration:kb-local:
     desc: Run the synthetic real Ollama to Inferrum v1 local-KB canary with redacted evidence.

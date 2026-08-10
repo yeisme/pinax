@@ -120,6 +120,7 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 
 	// credential (typed repository-encrypted S3/COS bundle via credentialctl)
 	addSyncRepoCredentialCommands(repoCmd, ctx)
+	addSyncRepoMigrateCommands(repoCmd, ctx)
 
 	// bootstrap
 	var bootstrapDevice, bootstrapUnlock, bootstrapUnlockRef, bootstrapPassphraseFile string
@@ -128,23 +129,35 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 		Use:   "bootstrap",
 		Short: "Bootstrap a new device from the declaration (pull-only)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Build the repository unlock source from the additive flags. When
-			// --unlock/--passphrase-file/--env-var is set, the bootstrap service
-			// proves the envelope unlocks (fail-closed) as part of the staged
-			// transaction before compiling the runtime.
-			var projectSource projectsecrets.UnlockSource
-			if bootstrapPassphraseFile != "" {
-				if src, err := projectsecrets.FileSource(bootstrapPassphraseFile); err == nil {
-					projectSource = src
+			defaultKeychainRef := ""
+			if bootstrapUnlock == "keychain" || bootstrapRememberKeychain {
+				var err error
+				defaultKeychainRef, err = defaultRepositoryKeychainRef(*ctx.vaultPath)
+				if err != nil {
+					return err
 				}
-			} else if bootstrapUnlock == "env" {
-				projectSource = projectsecrets.EnvSource("PINAX_REPO_PASS")
+			}
+			projectSource, selectedKeychain, err := resolveBootstrapUnlockSource(bootstrapUnlock, bootstrapUnlockRef, bootstrapPassphraseFile, defaultKeychainRef)
+			if err != nil {
+				return err
+			}
+			rememberTarget := selectedKeychain
+			if bootstrapRememberKeychain && rememberTarget == nil {
+				service, account, err := parseKeychainRef(defaultKeychainRef)
+				if err != nil {
+					return err
+				}
+				rememberTarget, err = projectsecrets.NewKeychainSource(service, account)
+				if err != nil {
+					return err
+				}
 			}
 			projection, err := ctx.svc.SyncRepoBootstrap(cmd.Context(), app.SyncRepoRuntimeRequest{
 				VaultPath:           *ctx.vaultPath,
 				DeviceID:            bootstrapDevice,
 				Yes:                 *ctx.yes,
 				ProjectUnlockSource: projectSource,
+				RememberKeychain:    rememberTarget,
 				Pull:                bootstrapPull,
 			})
 			if err == nil {
@@ -156,9 +169,6 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 				}
 				if cmd.Flags().Changed("passphrase-file") {
 					projection.Facts["passphrase_file"] = "configured"
-				}
-				if cmd.Flags().Changed("remember-keychain") {
-					projection.Facts["remember_keychain"] = "true"
 				}
 			}
 			return ctx.renderProjection(cmd, projection, err)

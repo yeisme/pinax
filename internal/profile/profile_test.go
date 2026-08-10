@@ -21,6 +21,22 @@ func TestLoad_EmptyDir(t *testing.T) {
 	}
 }
 
+func TestLoadAWSStaticCredentials(t *testing.T) {
+	path := writeAWSCredentialsFixture(t, `[cos]
+aws_access_key_id = AKID-MIGRATE
+aws_secret_access_key = SECRET-MIGRATE
+aws_session_token = SESSION-MIGRATE
+`)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", path)
+	credentials, err := LoadAWSStaticCredentials("cos")
+	if err != nil {
+		t.Fatalf("load credentials: %v", err)
+	}
+	if credentials.AccessKeyID != "AKID-MIGRATE" || credentials.SecretAccessKey != "SECRET-MIGRATE" || credentials.SessionToken != "SESSION-MIGRATE" {
+		t.Fatalf("credentials differ: %#v", credentials)
+	}
+}
+
 func TestSaveAndLoad(t *testing.T) {
 	dir := t.TempDir()
 	origXDG := os.Getenv("XDG_CONFIG_HOME")

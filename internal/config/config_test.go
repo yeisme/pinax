@@ -11,6 +11,27 @@ func TestDefaultConfigUsesInferrumSidecar(t *testing.T) {
 	if cfg.KB.Sidecar.Executable != "inferrum-lancedb-sidecar" {
 		t.Fatalf("KB sidecar executable = %q, want inferrum-lancedb-sidecar", cfg.KB.Sidecar.Executable)
 	}
+	if cfg.Output.Style != "table" {
+		t.Fatalf("output style = %q, want table", cfg.Output.Style)
+	}
+}
+
+func TestOutputStyleLoadsFromEnvAndExplicitFlag(t *testing.T) {
+	root := t.TempDir()
+	result, err := Load(LoadOptions{VaultPath: root, Env: mapEnv(map[string]string{"PINAX_OUTPUT_STYLE": "compact"}), ExplicitFlags: map[string]string{}})
+	if err != nil {
+		t.Fatalf("load compact output style: %v", err)
+	}
+	if result.Config.Output.Style != "compact" || !result.Sources.Contains("PINAX_OUTPUT_STYLE") {
+		t.Fatalf("env output style = %#v sources=%#v", result.Config.Output, result.Sources)
+	}
+	result, err = Load(LoadOptions{VaultPath: root, Env: mapEnv(map[string]string{}), ExplicitFlags: map[string]string{"output.style": "table"}})
+	if err != nil {
+		t.Fatalf("load table output style: %v", err)
+	}
+	if result.Config.Output.Style != "table" || !result.Sources.Contains("output.style") {
+		t.Fatalf("flag output style = %#v sources=%#v", result.Config.Output, result.Sources)
+	}
 }
 
 func TestLoadMergesDefaultsUserProjectEnvAndExplicitFlags(t *testing.T) {

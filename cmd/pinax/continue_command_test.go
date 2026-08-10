@@ -28,12 +28,12 @@ func TestContinueCommand_HelpExists(t *testing.T) {
 	}
 }
 
-// TestContinueCommand_InCommandTree verifies the root help lists the additive
-// `continue` entry point alongside the existing command tree.
+// TestContinueCommand_InCommandTree verifies the complete command catalog
+// retains the additive `continue` entry point.
 func TestContinueCommand_InCommandTree(t *testing.T) {
-	rootHelp := runCLI(t, "--help")
-	if !strings.Contains(rootHelp, "  continue") {
-		t.Fatalf("root --help should list continue:\n%s", rootHelp)
+	catalog := runCLI(t, "commands")
+	if !strings.Contains(catalog, "continue") {
+		t.Fatalf("command catalog should list continue:\n%s", catalog)
 	}
 }
 
@@ -90,10 +90,10 @@ func TestContinueCommand_ExperimentalFlag(t *testing.T) {
 // facade is purely additive: the pre-existing agent, memory, and brain entry
 // points remain registered and their help trees are unchanged.
 func TestContinueCommand_NoOldCommandChange(t *testing.T) {
-	rootHelp := runCLI(t, "--help")
+	catalog := runCLI(t, "commands")
 	for _, cmd := range []string{"agent", "memory", "brain"} {
-		if !strings.Contains(rootHelp, "  "+cmd) {
-			t.Fatalf("root --help should still list %q:\n%s", cmd, rootHelp)
+		if !strings.Contains(catalog, cmd) {
+			t.Fatalf("command catalog should still list %q:\n%s", cmd, catalog)
 		}
 	}
 

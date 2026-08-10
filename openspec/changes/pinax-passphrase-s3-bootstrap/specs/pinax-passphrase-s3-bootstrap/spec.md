@@ -65,6 +65,48 @@ Pinax SHALL support bootstrapping a new device from repository declaration and e
 - **AND** SHALL not report bootstrap success
 - **AND** SHALL provide a runnable doctor and pull retry command
 
+### Requirement: Capsa 内容密钥随仓库密文可移植
+
+Pinax SHALL allow the same repository envelope to carry the existing Capsa content encryption key without exposing it in Git or generated runtime config.
+
+#### Scenario: 新设备恢复内容密钥
+- **WHEN** the envelope contains the declared `encryption_key` entry with format `capsa_encryption_key.v1`
+- **THEN** bootstrap SHALL authenticate it with the same repository passphrase used for the S3 credential
+- **AND** SHALL persist it only to a device-level `stored://` reference
+- **AND** SHALL preserve the original key value and remote key identity
+
+#### Scenario: 内容密钥缺失或格式错误
+- **WHEN** the declared encryption entry is missing, empty or has another kind/format
+- **THEN** bootstrap SHALL fail before runtime compilation and pull
+- **AND** SHALL NOT generate a replacement content key
+
+### Requirement: Device profile 一键迁移
+
+Pinax SHALL provide a CLI-authored migration from an existing S3 device profile to the repository-encrypted configuration.
+
+#### Scenario: 迁移现有设备
+- **WHEN** 用户运行 `pinax sync repo migrate device-profile --unlock prompt --remember-keychain --yes --json`
+- **THEN** Pinax SHALL read the active S3 runtime, configured AWS shared profile and current Capsa content key
+- **AND** SHALL author `.pinax/pinax-sync.yaml` plus one `.pinax/project-secrets.yaml` containing `s3_credentials.v1` and `capsa_encryption_key.v1`
+- **AND** output SHALL report `remote_write=false` and `key_rotated=false`
+- **AND** SHALL NOT contact the remote, write `~/.aws/credentials` or expose plaintext
+
+#### Scenario: 迁移原子失败
+- **WHEN** envelope、declaration、Git protected-path update、fsync or atomic rename 中任一步失败
+- **THEN** the previous runtime、declaration and encrypted envelope SHALL remain usable
+- **AND** Pinax SHALL NOT leave a declaration that references an absent or unverifiable credential entry
+- **AND** output SHALL report `remote_write=false`
+
+#### Scenario: 重复执行相同迁移
+- **WHEN** the existing repository envelope already contains the same S3 credential identity and Capsa content-key identity
+- **THEN** Pinax SHALL return `already_migrated=true`
+- **AND** SHALL NOT rotate the DEK、rewrite ciphertext、change remote namespace or contact the remote
+
+#### Scenario: 既有 envelope 身份冲突
+- **WHEN** an existing envelope cannot be authenticated or contains another credential、content-key or repository identity
+- **THEN** migration SHALL fail with `migration_conflict`
+- **AND** SHALL require an explicit rotate/reconcile workflow rather than overwriting the envelope
+
 ### Requirement: Passphrase rekey
 
 Pinax SHALL support changing the repository unlock passphrase without rotating the Capsa content encryption key or S3 credentials.
@@ -90,3 +132,32 @@ Pinax SHALL produce reviewable bootstrap and credential evidence without exposin
 - **AND** SHALL include command、stdout、stderr、environment summary、artifacts and original exit code
 - **AND** SHALL scan evidence for passphrase、SecretId、SecretKey、Authorization header and decrypted note payload leakage
 
+### Requirement: macOS 支持声明受证据与平台元组约束
+
+Pinax release and onboarding documentation SHALL distinguish an observed macOS success from supported repository-encrypted S3/COS synchronization. A support claim SHALL name the verified `darwin/<arch>` tuple rather than extrapolating from a single Mac or from GoReleaser artifact availability.
+
+#### Scenario: 一台 Mac 已可用但证据未完整
+- **WHEN** an operator reports that a Mac completed the workflow but no redacted release-candidate evidence covers the full round-trip and recovery matrix
+- **THEN** the capability SHALL remain `experimental`
+- **AND** documentation MAY record the result as `observed`
+- **AND** SHALL NOT label all macOS architectures or installation channels as supported
+
+#### Scenario: 发布候选的只读合同探针
+- **WHEN** an operator invokes `task integration:sync-macos-candidate` with a release-candidate binary, safe release provenance and installation channel on a declared `darwin/<arch>` tuple
+- **THEN** the runner SHALL write the standard redacted evidence directory and `artifacts/platform-support.json`
+- **AND** SHALL record the exact platform tuple, macOS version, release provenance, installation channel and bootstrap/inbound/outbound/recovery command-contract stages
+- **AND** SHALL reject a non-Darwin host, missing/unsafe provenance or missing required contract stage, and SHALL NOT persist raw candidate command output or body
+- **AND** SHALL NOT open a vault, access a remote or change a support status beyond `candidate`
+- **AND** SHALL retain `bootstrap_pull`, `outbound_round_trip` and `recovery_matrix` as `not_run` until the separately authorized real workflow executes
+
+#### Scenario: 发布候选完成 macOS 双向验证
+- **WHEN** a release-candidate Pinax binary on one declared `darwin/<arch>` tuple completes existing-device remote-aware preflight, clone-time Keychain bootstrap pull, Mac deliberate durable push, existing-device pull/validation, and required recovery checks
+- **THEN** the redacted evidence SHALL identify the release provenance, platform tuple, stage outcomes, revision identities and recovery result
+- **AND** the support matrix MAY mark only that tuple as `supported`
+- **AND** the Mac bootstrap stage SHALL retain `pull_only=true` and `remote_write=false`
+- **AND** a changed Mac push SHALL include `remote_write=true`, a non-empty `revision_id` and read-back confirmation
+
+#### Scenario: 未验证的 macOS 架构或安装渠道
+- **WHEN** a GoReleaser archive exists for another macOS architecture or installation channel without matching evidence
+- **THEN** release documentation SHALL describe it as `unverified`
+- **AND** SHALL NOT infer workflow support from successful compilation, archive extraction or a different platform tuple

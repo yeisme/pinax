@@ -27,6 +27,7 @@ const (
 )
 
 type RenderOptions struct {
+	Style      string
 	ColorMode  string
 	ThemeName  string
 	ThemeRoles map[string]string
@@ -34,6 +35,12 @@ type RenderOptions struct {
 	Markdown   MarkdownOptions
 	IsTerminal bool
 	JSONIndent string
+	// SyncPreview and SyncLimit only affect human/agent sync previews. Machine
+	// JSON keeps the complete plan and sync_view regardless of these values.
+	SyncPreview  string
+	SyncLimit    int
+	SyncLimitSet bool
+	ContentDiff  bool
 }
 
 type MarkdownOptions struct {
@@ -80,7 +87,7 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 		}
 		return enc.Encode(projection)
 	case ModeAgent:
-		return renderAgent(w, projection)
+		return renderAgentWithOptions(w, projection, opts)
 	case ModeEvents:
 		return renderEvents(w, projection)
 	case ModeExplain:
@@ -91,6 +98,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 }
 
 func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
+	if strings.EqualFold(strings.TrimSpace(opts.Style), "compact") {
+		return renderCompactSummaryWithOptions(w, p, opts)
+	}
 	theme := newSummaryThemeWithOptions(w, opts)
 	if (p.Command == "project.list" || p.Command == "project.subproject.list") && p.Error == nil {
 		return renderSummaryProjectList(w, theme, p)
@@ -158,8 +168,49 @@ func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptio
 	return nil
 }
 
+func renderCompactSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
+	if p.Command == "note.preview" && p.Status == "success" && p.Error == nil {
+		return renderSummaryDataWithOptions(w, newSummaryThemeWithOptions(w, opts), p, opts)
+	}
+	if p.Error != nil {
+		if _, err := fmt.Fprintf(w, "error=%s: %s\n", p.Error.Code, p.Error.Message); err != nil {
+			return err
+		}
+		if p.Error.Hint != "" {
+			_, err := fmt.Fprintf(w, "next=%s\n", p.Error.Hint)
+			return err
+		}
+		return nil
+	}
+	if p.Summary != "" {
+		if _, err := fmt.Fprintf(w, "summary=%s\n", p.Summary); err != nil {
+			return err
+		}
+	}
+	keys := make([]string, 0, len(p.Facts))
+	for key := range p.Facts {
+		keys = append(keys, key)
+	}
+	sortFactKeys(keys)
+	for _, key := range keys {
+		if _, err := fmt.Fprintf(w, "%s=%s\n", key, p.Facts[key]); err != nil {
+			return err
+		}
+	}
+	if err := renderSummaryDataWithOptions(w, newSummaryThemeWithOptions(w, opts), p, opts); err != nil {
+		return err
+	}
+	for _, action := range p.Actions {
+		if _, err := fmt.Fprintf(w, "next.%s=%s\n", action.Name, action.Command); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type summaryTheme struct {
 	renderer *lipgloss.Renderer
+	width    int
 	header   lipgloss.Style
 	rule     lipgloss.Style
 	success  lipgloss.Style
@@ -179,6 +230,7 @@ func newSummaryThemeWithOptions(w io.Writer, opts RenderOptions) summaryTheme {
 	style := func(color string) lipgloss.Style { return renderer.NewStyle().Foreground(lipgloss.Color(color)) }
 	return summaryTheme{
 		renderer: renderer,
+		width:    opts.Width,
 		header:   style(roles.Heading).Bold(true),
 		rule:     style(roles.Rule),
 		success:  style(roles.Success).Bold(true),
@@ -349,6 +401,11 @@ func renderSummaryTable(w io.Writer, theme summaryTheme, header []string, rows [
 		BorderRow(false).
 		BorderStyle(theme.rule).
 		StyleFunc(summaryTableStyle(theme, header))
+	// Keep the established default table geometry at the configured 100-column
+	// baseline; any other explicit width opts into lipgloss table resizing.
+	if theme.width >= 20 && theme.width != 100 {
+		tw.Width(theme.width)
+	}
 	body := trimTrailingSpaceLines(tw.Render())
 	_, err := fmt.Fprintln(w, indentBlock(body, "  "))
 	return err
@@ -460,6 +517,32 @@ func hasAnyPrefix(value string, prefixes []string) bool {
 }
 
 func summaryFactLabel(key string) string {
+	if strings.HasPrefix(key, "sync.") {
+		switch strings.TrimPrefix(key, "sync.") {
+		case "result":
+			return "Sync result"
+		case "scope":
+			return "Sync scope"
+		case "added":
+			return "Added"
+		case "modified":
+			return "Modified"
+		case "deleted":
+			return "Deleted"
+		case "renamed":
+			return "Renamed"
+		case "conflicts":
+			return "Conflicts"
+		case "unchanged":
+			return "Unchanged"
+		case "total":
+			return "Sync changes"
+		case "bytes_uploaded":
+			return "Bytes uploaded"
+		case "bytes_downloaded":
+			return "Bytes downloaded"
+		}
+	}
 	if label, ok := projectListFactLabel(key); ok {
 		return label
 	}
@@ -574,6 +657,7 @@ func summaryFactLabel(key string) string {
 		"operations.total":         "Total operations",
 		"orphans":                  "Orphan notes",
 		"output.color":             "Output color",
+		"output.style":             "Output style",
 		"output.theme":             "Output theme",
 		"output.width":             "Output width",
 		"output_dir":               "Output directory",
@@ -839,6 +923,8 @@ func summaryHumanValue(_ string, value string) string {
 
 func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Projection, opts RenderOptions) error {
 	switch p.Command {
+	case "commands.list":
+		return renderSummaryCommandCatalog(w, theme, p.Data)
 	case "note.search":
 		return renderSummarySearchResults(w, theme, p.Data)
 	case "api.routes":
@@ -875,8 +961,8 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryDataList(w, theme, p.Data, []string{"events"}, []summaryListColumn{{Header: "Run ID", Path: "run_id", MaxWidth: 28}, {Header: "Direction", Path: "direction", MaxWidth: 12}, {Header: "Operation", Path: "kind", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "status", MaxWidth: 12}, {Header: "Backend", Path: "backend_kind", MaxWidth: 16}, {Header: "Time", Path: "ts", MaxWidth: 22}})
 	case "sync.logs.prune":
 		return renderSummaryNamedDataList(w, theme, "Delete candidates", p.Data, []string{"delete_candidates"}, deleteCandidateSummaryColumns())
-	case "sync.diff", "sync.push", "sync.pull":
-		return renderSummaryNamedDataList(w, theme, "Sync operations", p.Data, []string{"plan", "operations"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 18}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Status", Path: "status", MaxWidth: 14}})
+	case "sync", "sync.all", "sync.all.pull", "sync.all.push", "sync.diff", "sync.push", "sync.pull", "sync.logs.show":
+		return renderSummarySyncView(w, theme, p, opts)
 	case "plan.daily", "plan.weekly", "plan.monthly":
 		return renderSummaryPlanningSelectedTasks(w, theme, p.Data)
 	case "plan.actions":
@@ -1000,6 +1086,26 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 	}
 }
 
+func renderSummaryCommandCatalog(w io.Writer, theme summaryTheme, data any) error {
+	items := dataListMaps(data, "commands")
+	if len(items) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\nCommands"); err != nil {
+		return err
+	}
+	columns := []summaryListColumn{{Header: "Command", Path: "name", MaxWidth: 18}, {Header: "Level", Path: "visibility", MaxWidth: 10}, {Header: "Group", Path: "group", MaxWidth: 32}, {Header: "Description", Path: "summary", MaxWidth: 58}}
+	rows := make([][]string, 0, len(items))
+	for _, item := range items {
+		row := make([]string, 0, len(columns))
+		for _, column := range columns {
+			row = append(row, summaryCell(summaryColumnValue(item, column), column.MaxWidth))
+		}
+		rows = append(rows, row)
+	}
+	return renderSummaryTable(w, theme, []string{"Command", "Level", "Group", "Description"}, rows)
+}
+
 func issueSummaryColumns() []summaryListColumn {
 	return []summaryListColumn{{Header: "Severity", Path: "severity", MaxWidth: 12}, {Header: "Code", Paths: []string{"code", "issue_code"}, MaxWidth: 26}, {Header: "Path", Path: "path", MaxWidth: 42}, {Header: "Message", Path: "message", MaxWidth: 48}}
 }
@@ -1034,6 +1140,11 @@ func renderSummaryPlanningSelectedTasks(w io.Writer, theme summaryTheme, data an
 	if limit > 10 {
 		limit = 10
 	}
+	if len(items) > limit {
+		if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(items)); err != nil {
+			return err
+		}
+	}
 	rows := make([][]string, 0, limit)
 	for _, item := range items[:limit] {
 		rows = append(rows, []string{
@@ -1048,7 +1159,7 @@ func renderSummaryPlanningSelectedTasks(w io.Writer, theme summaryTheme, data an
 }
 
 func planningSelectedTaskRows(data any) []map[string]any {
-	tasks := dataListMaps(data, "snapshot", "taskbridge", "tasks")
+	tasks := dataListMaps(data, "snapshot", "task", "tasks")
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -1648,6 +1759,11 @@ func renderSummaryDataList(w io.Writer, theme summaryTheme, data any, listPath [
 	limit := len(items)
 	if limit > 10 {
 		limit = 10
+	}
+	if len(items) > limit {
+		if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(items)); err != nil {
+			return err
+		}
 	}
 	headers := make([]string, 0, len(columns))
 	for _, column := range columns {

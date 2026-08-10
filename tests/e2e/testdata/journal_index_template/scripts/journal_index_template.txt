@@ -10,7 +10,6 @@ stdout '"command":"daily.show"'
 stdout '"template":"journal.daily"'
 stdout '"path":"daily/2026-06-08.md"'
 exists vault/daily/2026-06-08.md
-grep 'pinax:managed name=planning-daily' vault/daily/2026-06-08.md
 grep 'pinax:managed name=daily-task-review' vault/daily/2026-06-08.md
 grep 'pinax:managed name=daily-captures' vault/daily/2026-06-08.md
 
@@ -66,7 +65,7 @@ stderr 'ShellCompDirectiveNoFileComp'
 exec pinax template inspect journal.daily --vault vault --json
 ! stderr .
 stdout '"command":"template.inspect"'
-stdout '"managed_blocks":"3"'
+stdout '"managed_blocks":"2"'
 stdout '"after_create_action_count":"1"'
 stdout 'pinax journal daily show --template journal.daily'
 

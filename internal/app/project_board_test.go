@@ -130,7 +130,7 @@ func TestPlanWeeklyIncludesSavedProjectBoardSnapshot(t *testing.T) {
 		t.Fatalf("board plan missing snapshot_id: %#v", boardPlan.Facts)
 	}
 
-	weekly, err := svc.PlanWeekly(ctx, PlanningRequest{VaultPath: root, WithTaskBridge: true, DryRun: true})
+	weekly, err := svc.PlanWeekly(ctx, PlanningRequest{VaultPath: root, DryRun: true})
 	if err != nil {
 		t.Fatalf("plan weekly: %v", err)
 	}

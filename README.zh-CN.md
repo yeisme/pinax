@@ -2,21 +2,22 @@
 
 [English README](./README.md)
 
-Pinax 是面向 Markdown vault 的 **agent-safe 知识控制平面**——它让 AI 安全地读取、诊断、修复和同步你真实的本地知识库，同时让每一次 agent 写入都可审计、可预览、可回滚。你的 Markdown vault 始终是真源；agent 看不到不该看的明文，云端也没有明文笔记。
+Pinax 是一个 **个人本地 Markdown 知识工具**。它先解决一个人的日常需求：快速记录、清空 inbox、写 journal、搜索 vault、推进项目，并留下本地版本证据。Markdown 文件始终是真源。
 
-> 三个可复述概念：**Local Vault 是真源 / Proof Loop 保护每一次 agent 写入 / Cloud Sync 只协调密文。**
+默认 CLI 只展示日常本地命令。已有 sync、Capsa、API、Agent、publish、plugin 能力不会删除，统一通过 `pinax commands` 发现，避免高级能力压住个人使用主路径。
 
-## The aha moment
+## 日常使用闭环
 
-一条命令跑完整个 agent-safe 流程——先预览，再 plan、snapshot、apply，出问题就 restore。每一步都有界：agent 读到的是 projection，不是原始正文；写入只通过显式的 plan → snapshot → apply 链发生。
+不需要先配置 daemon、云账号、remote backend 或多设备拓扑，直接从本地开始：
 
 ```bash
-pinax proof loop run --vault ./my-notes --json            # 预览：一个带 proof_loop_run_id 的 projection
-pinax repair plan --vault ./my-notes --save                # 把 vault 健康问题变成可审阅的 plan
-pinax version snapshot --vault ./my-notes --message "before repair"   # 任何写入前的保护快照
-pinax repair apply --vault ./my-notes --plan repair-abc123 --yes      # 只 apply 已批准的低风险修复
-pinax version restore notes/example.md --revision HEAD --plan --vault ./my-notes          # 出问题了？
-pinax version restore apply --vault ./my-notes --plan restore-<id> --yes                 # 通过 CLI 受控路径回滚
+pinax init ./my-notes --title "My Knowledge Base"
+pinax inbox capture "阅读 local-first 论文" --vault ./my-notes
+pinax note add "研究记录" --body "第一条笔记" --vault ./my-notes
+pinax journal daily append --body "今天整理了本地知识工具" --vault ./my-notes
+pinax search "local-first" --vault ./my-notes
+pinax backup create --vault ./my-notes --message "daily checkpoint"
+pinax commands
 ```
 
 ## 为什么用 Pinax
@@ -97,6 +98,7 @@ pinax template recommend --intent "动漫" --vault ./my-notes --json
 pinax template recommend --intent "便签" --vault ./my-notes --json
 pinax index refresh --vault ./my-notes --json
 pinax search "First note" --vault ./my-notes --json
+pinax backup create --message "first checkpoint" --vault ./my-notes
 ```
 
 中文内容模板覆盖 idea 种子、便签短文档、看剧、动漫、游戏、论文阅读、小说阅读、小说创作和视频笔记；`idea.*` 默认停放为 `kind: idea,status: parked`，`sticky.*` 默认进入 `kind: sticky,status: inbox`，不会绕过 `project item add` 变成受控 project board item。

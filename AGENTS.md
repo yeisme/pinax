@@ -10,7 +10,7 @@
 
 ## 项目定位
 
-Pinax 是 Go 编写的本地优先统一笔记 Agent CLI。它把用户知识资产保存在可迁移 Markdown vault 中，通过 SQLite/GORM 建立本地索引投影，通过 Git 管理版本和回滚，通过 CLI-backed Provider adapter 与 `ntn`、`lark-cli`、Connectors/internet-access 等外部能力协作。
+Pinax 是 Go 编写的本地优先统一笔记 Agent CLI。它把用户知识资产保存在可迁移 Markdown vault 中，通过 SQLite/GORM 建立本地索引投影，通过 Git 管理版本和回滚，通过 CLI-backed Provider adapter 与 `ntn`、`lark-cli`、internet-access 等外部能力协作。
 
 Pinax 不是云笔记后端、新闻爬虫、飞书知识库或长期 daemon。外部平台是 provider 或 delivery surface，Pinax vault 才是笔记真源。
 
@@ -30,9 +30,9 @@ Pinax 不是云笔记后端、新闻爬虫、飞书知识库或长期 daemon。�
 - CLI 输出、`--agent`、`--json`、`--events`、`--explain` 或脱敏合同：`ai-native-cli-output-contract`。
 - Go/Cobra/Viper CLI 架构：`golang-cobra-viper-cli-architecture`。
 - 后端、repository、provider adapter、事件和索引设计：`backend-system-workflow`。
-- 行为变更或 bugfix：`test-driven-development`。
-- 失败命令、provider 异常、Git 状态异常、索引或 sync 异常：`systematic-debugging`。
-- 完成前确认：`verification-before-completion`。
+- 行为变更或 bugfix：`yeisme-coding-execution-driver`。
+- 失败命令、provider 异常、Git 状态异常、索引或 sync 异常：`evidence-based root-cause diagnosis`。
+- 完成前确认：`task quality gates`。
 - PR/代码审查、质量扫描：`review`、`health`。
 - 性能专项：`performance-profiler`。
 
@@ -103,7 +103,7 @@ openspec validate --all
 
 修改 CLI 输出、结构化输出或脱敏规则时，补充 contract tests，并验证 stdout/stderr 分离。
 
-涉及 provider、Connectors、internet-access、Feishu 或 Git 的测试必须使用 fake executable、fake server、fixture vault、临时 Git 仓库和 testscript，不依赖真实公网、真实 token 或用户 vault。
+涉及 provider、internet-access、Feishu 或 Git 的测试必须使用 fake executable、fake server、fixture vault、临时 Git 仓库和 testscript，不依赖真实公网、真实 token 或用户 vault。
 
 ## OpenSpec 开发入口
 

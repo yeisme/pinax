@@ -85,15 +85,11 @@ func (s *Service) SyncRepoInit(_ context.Context, req SyncRepoInitRequest) (doma
 
 // writeSyncRepoConfig writes the declaration via the canonical boundary.
 func writeSyncRepoConfig(root string, cfg pinaxremote.SyncConfig) error {
-	path := pinaxremote.DeclarationPath(root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create declaration directory: %w", err)
-	}
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal declaration: %w", err)
 	}
-	return os.WriteFile(path, data, 0o600)
+	return atomicWriteFile(pinaxremote.DeclarationPath(root), data, 0o600)
 }
 
 // ensureSyncRepoGitignore protects device-owned and secrets runtime files from
@@ -252,6 +248,9 @@ type SyncRepoRuntimeRequest struct {
 	// of the staged bootstrap transaction. Nil is allowed when the declaration
 	// is not in repository-encrypted mode.
 	ProjectUnlockSource projectsecrets.UnlockSource
+	// RememberKeychain, when non-nil, receives the already verified repository
+	// passphrase after both credential and content-key entries authenticate.
+	RememberKeychain *projectsecrets.KeychainSource
 	// Pull requests the staged transaction to proceed to a pull after compiling
 	// the pull-only runtime. The compile-only safety property (no remote write
 	// until pull succeeds) holds regardless.
@@ -261,18 +260,18 @@ type SyncRepoRuntimeRequest struct {
 // SyncRepoBootstrap is the new-device pull-only first run: it unlocks secrets,
 // compiles + applies the runtime config and writes the source marker. On a
 // device with no local sync receipt it does NOT upload local deletions.
-func (s *Service) SyncRepoBootstrap(_ context.Context, req SyncRepoRuntimeRequest) (domain.Projection, error) {
-	return s.syncRepoApplyOrBootstrap(req, true)
+func (s *Service) SyncRepoBootstrap(ctx context.Context, req SyncRepoRuntimeRequest) (domain.Projection, error) {
+	return s.syncRepoApplyOrBootstrap(ctx, req, true)
 }
 
 // SyncRepoApply regenerates the runtime config from the declaration on an
 // already-initialized device. High-risk changes (workspace/namespace/key
 // identity/remote-delete) require explicit --yes.
-func (s *Service) SyncRepoApply(_ context.Context, req SyncRepoRuntimeRequest) (domain.Projection, error) {
-	return s.syncRepoApplyOrBootstrap(req, false)
+func (s *Service) SyncRepoApply(ctx context.Context, req SyncRepoRuntimeRequest) (domain.Projection, error) {
+	return s.syncRepoApplyOrBootstrap(ctx, req, false)
 }
 
-func (s *Service) syncRepoApplyOrBootstrap(req SyncRepoRuntimeRequest, bootstrap bool) (domain.Projection, error) {
+func (s *Service) syncRepoApplyOrBootstrap(ctx context.Context, req SyncRepoRuntimeRequest, bootstrap bool) (domain.Projection, error) {
 	command := "sync.repo.apply"
 	if bootstrap {
 		command = "sync.repo.bootstrap"
@@ -300,31 +299,43 @@ func (s *Service) syncRepoApplyOrBootstrap(req SyncRepoRuntimeRequest, bootstrap
 	// runtime. The snapshot is closed immediately — plaintext is not retained
 	// past the verification boundary. Any failure here aborts before compile, so
 	// no remote write / head replace can occur.
-	var unlockSourceFact, credentialModeFact string
+	var unlockSourceFact, credentialModeFact, contentKeyIDFact string
 	if declaration.Backend.S3 != nil {
 		credentialModeFact = declaration.Backend.S3.CredentialMode
 		if credentialModeFact == "" {
 			credentialModeFact = pinaxremote.CredentialModeDeviceProfile
 		}
 	}
-	if credentialModeFact == pinaxremote.CredentialModeRepositoryEncrypted && req.ProjectUnlockSource != nil {
-		credEntry := declaration.Secrets.CredentialID
-		if credEntry == "" {
-			credEntry = "default"
+	var heldSource *heldUnlockSource
+	if credentialModeFact == pinaxremote.CredentialModeRepositoryEncrypted {
+		if req.ProjectUnlockSource == nil {
+			ce := &domain.CommandError{Code: "sync_repo_unlock_required", Message: "repository unlock source is required", Hint: "Use --unlock prompt, --unlock keychain, --passphrase-file, or --unlock env."}
+			return domain.NewErrorProjection(command, ce), ce
 		}
-		resolver := NewSyncCredentialResolver("pinax", declaration.Workspace.WorkspaceID, credEntry)
-		// Use the project source to unlock; the snapshot is discarded after the
-		// provider is constructed, proving the bundle decrypts under the given
-		// passphrase without retaining plaintext.
-		_, snap, unlockErr := resolver.Resolve(context.Background(), root, req.ProjectUnlockSource)
+		heldSource, err = holdUnlockSource(ctx, req.ProjectUnlockSource)
+		if err != nil {
+			ce := &domain.CommandError{Code: "sync_repo_unlock_required", Message: "repository unlock source is unavailable", Hint: "Check the selected unlock source and retry."}
+			return domain.NewErrorProjection(command, ce), ce
+		}
+		defer heldSource.Close()
+		encryptionRef, unlockErr := resolveRepositoryBootstrapSecrets(ctx, root, declaration, heldSource)
 		if unlockErr != nil {
 			ce := &domain.CommandError{Code: "sync_repo_unlock_failed", Message: "repository credential envelope did not unlock", Hint: "Check the passphrase/keychain/file source; the Capsa content key and remote revisions are untouched."}
 			return domain.NewErrorProjection(command, ce), ce
 		}
-		if snap != nil {
-			_ = snap.Close()
+		resolved.credential = strings.TrimSpace(declaration.Secrets.CredentialID)
+		if resolved.credential == "" {
+			resolved.credential = "default"
 		}
-		unlockSourceFact = req.ProjectUnlockSource.Descriptor()
+		resolved.encryption = encryptionRef
+		contentKeyIDFact = pinaxremote.KeyID(encryptionRef)
+		unlockSourceFact = heldSource.Descriptor()
+		if req.RememberKeychain != nil {
+			if err := rememberKeychainSecret(ctx, req.RememberKeychain, heldSource.secret); err != nil {
+				ce := &domain.CommandError{Code: "keychain_store_unavailable", Message: "repository passphrase could not be verified in Keychain", Hint: "Unlock Keychain or retry without --remember-keychain."}
+				return domain.NewErrorProjection(command, ce), ce
+			}
+		}
 	}
 	// High-risk change detection: compare against existing runtime config.
 	existing, _ := pinaxremote.Load(root)
@@ -368,12 +379,43 @@ func (s *Service) syncRepoApplyOrBootstrap(req SyncRepoRuntimeRequest, bootstrap
 		projection.Facts["unlock_source"] = unlockSourceFact
 		projection.Facts["credential_verified"] = "true"
 	}
+	if req.RememberKeychain != nil {
+		projection.Facts["keychain_remembered"] = "true"
+		projection.Facts["keychain_account"] = req.RememberKeychain.AccountDigest()
+	}
+	if contentKeyIDFact != "" {
+		projection.Facts["content_key_id"] = contentKeyIDFact
+	}
 	if req.Pull {
-		// The pull itself requires the sync-run transport to consume the
-		// resolved AWS SDK provider, which depends on capsa SDK credential-
-		// provider support; record the intent and keep remote_write=false.
-		projection.Facts["pull_planned"] = "true"
+		pullProjection, pullErr := s.SyncPull(ctx, SyncRequest{
+			VaultPath:           root,
+			Target:              "capsa",
+			Yes:                 true,
+			ProjectUnlockSource: heldSource,
+		})
+		if pullErr != nil && (pullProjection.Error == nil || pullProjection.Error.Code != "cloud_empty_remote") {
+			ce := &domain.CommandError{Code: "bootstrap_pull_failed", Message: "runtime is ready but the initial pull failed", Hint: fmt.Sprintf("Run `pinax sync repo doctor --vault %s --json`, then retry `pinax sync pull --target capsa --vault %s --yes --json`.", shellQuote(root), shellQuote(root))}
+			projection.Status = "partial"
+			projection.Error = ce
+			projection.Facts["runtime_ready"] = "true"
+			projection.Facts["pull_applied"] = "false"
+			projection.Facts["remote_write"] = "false"
+			projection.Actions = append(projection.Actions, pullProjection.Actions...)
+			projection.Data = map[string]any{"pull": pullProjection}
+			return projection, ce
+		}
+		projection.Facts["pull_applied"] = "true"
+		if pullProjection.Error != nil && pullProjection.Error.Code == "cloud_empty_remote" {
+			projection.Facts["files_applied"] = "0"
+		}
+		projection.Facts["runtime_ready"] = "true"
 		projection.Facts["remote_write"] = "false"
+		for _, key := range []string{"revision_id", "files_applied", "run_id"} {
+			if value := pullProjection.Facts[key]; value != "" {
+				projection.Facts[key] = value
+			}
+		}
+		projection.Evidence = append(projection.Evidence, pullProjection.Evidence...)
 	}
 	if highRisk != "" {
 		projection.Facts["approved_change"] = highRisk

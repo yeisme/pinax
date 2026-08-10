@@ -420,6 +420,11 @@ type SyncRequest struct {
 	DeviceID       string
 	SecretRef      string
 	PathPolicy     string
+	Preview        string
+	Limit          int
+	ContentDiff    bool
+	Progress       string
+	LiveEvents     SyncEventSink
 	// ProjectUnlockSource, when set and the runtime config is in repository-
 	// encrypted S3 credential mode, unlocks the typed bundle and injects it as
 	// the AWS SDK credentials provider for the sync run. Nil keeps the existing

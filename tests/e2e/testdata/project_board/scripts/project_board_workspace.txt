@@ -61,7 +61,7 @@ exec pinax project board plan research --save --vault vault --json
 stdout '"command":"project.board.plan"'
 stdout '"saved_path":".pinax/planning/project-boards/'
 
-exec pinax plan weekly --taskbridge --dry-run --vault vault --json
+exec pinax plan weekly --dry-run --vault vault --json
 ! stderr .
 stdout '"command":"plan.weekly"'
 stdout '"board_snapshot_id":"project-board-'

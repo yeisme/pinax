@@ -387,24 +387,24 @@ Pinax SHALL enforce inbox and draft lifecycle transitions through application se
 - **THEN** it SHALL append a redacted event, append record metadata evidence when record ledger is available, and refresh the local index
 - **AND** stdout SHALL include stable facts for old status, new status, path, writes, record event, and index update status.
 
-### Requirement: Daily journal template SHALL reserve planning managed content
+### Requirement: Daily journal template SHALL reserve local task-review content
 
-Pinax SHALL provide a stable managed-block location for generated daily planning content while keeping user-authored daily note content editable.
+Pinax SHALL provide a stable managed-block location for local daily task review while keeping user-authored daily note content editable.
 
-#### Scenario: journal daily template includes planning block
+#### Scenario: journal daily template includes task-review block
 - **WHEN** a user runs `pinax journal daily open --template journal.daily --vault ./my-notes --json`
-- **THEN** a newly created daily note SHALL include `<!-- pinax:managed name=planning-daily -->`
+- **THEN** a newly created daily note SHALL include `<!-- pinax:managed name=daily-task-review -->`
 - **AND** it SHALL still include the existing `daily-captures` managed block
 
-#### Scenario: existing daily note receives planning block only on approval
-- **GIVEN** today's daily note exists without `planning-daily`
-- **WHEN** the user runs `pinax plan daily --vault ./my-notes --taskbridge --yes --json`
-- **THEN** Pinax MAY append the `planning-daily` managed block to the daily note
+#### Scenario: existing daily note receives task-review block only on approval
+- **GIVEN** today's daily note exists without `daily-task-review`
+- **WHEN** the user runs `pinax plan daily --task-review --yes --json`
+- **THEN** Pinax MAY append the `daily-task-review` managed block to the daily note
 - **AND** it SHALL preserve all existing user-authored content and other managed blocks
 
-#### Scenario: invalid planning block fails closed
-- **GIVEN** today's daily note has duplicate or unclosed `planning-daily` managed block markers
-- **WHEN** the user runs `pinax plan daily --vault ./my-notes --taskbridge --yes --json`
+#### Scenario: invalid task-review block fails closed
+- **GIVEN** today's daily note has duplicate or unclosed `daily-task-review` managed block markers
+- **WHEN** the user runs `pinax plan daily --task-review --yes --json`
 - **THEN** Pinax SHALL refuse the write with `PLANNING_BLOCK_CONFLICT`
 - **AND** it SHALL include a safe next action rather than guessing an insertion point
 
@@ -610,4 +610,3 @@ Pinax SHALL classify broad template workflow scenarios by readiness and expose v
 - **THEN** the template catalog SHALL own starter metadata, variable schema, output policy, and after-create action recommendations
 - **AND** the project workspace SHALL own board item state, columns, milestones, and project progress
 - **AND** template recommendation SHALL NOT directly mutate project board state; project writes SHALL continue through explicit project commands or application services.
-

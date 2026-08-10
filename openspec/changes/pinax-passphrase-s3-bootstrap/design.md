@@ -1,6 +1,6 @@
 ## Context
 
-Pinax 当前已经具备三层声明式同步模型：仓库声明 `.pinax/pinax-sync.yaml`、仓库密文 `.pinax/pinax-sync.secrets.yaml` 和本机运行态 `.pinax/cloud/`。第一版 unlock provider 只有 `fake` 与 `env`；direct S3 transport 通过 AWS SDK default credential chain 或 shared profile 获取凭据。因此，仓库虽然能够描述 bucket、endpoint、workspace 和 logical identity，却还不能让普通用户在新 Mac 上只凭 vault 口令完成 bootstrap。
+Pinax 当前已经具备三层声明式同步模型：仓库声明 `.pinax/pinax-sync.yaml`、credentialctl 仓库密文 `.pinax/project-secrets.yaml` 和本机运行态 `.pinax/cloud/`。历史 `.pinax/pinax-sync.secrets.yaml` 继续只服务旧 fake/env logical secret 兼容路径，不承载本变更的 S3 credential bundle。direct S3 transport 原先通过 AWS SDK default credential chain 或 shared profile 获取凭据，因此仓库虽然能够描述 bucket、endpoint、workspace 和 logical identity，却还不能让普通用户在新 Mac 上只凭 vault 口令完成完整的 pull、push 和后台同步生命周期。
 
 根级 `openspec/changes/portable-encrypted-project-bootstrap/` 规定通用 envelope、passphrase/Keychain、rekey 和 cross-language execution boundary 由 `cli/credentialctl` 所有。Pinax 是第一 canary，只实现 Pinax-specific secret schema、Capsa runtime compiler、S3 adapter injection、pull-only bootstrap、doctor 和 evidence；不得复制公共 crypto 或 Keychain adapter。
 
@@ -71,7 +71,7 @@ pinax sync repo bootstrap \
 
 ### 1. 复用现有 secrets asset，而不是提交 AWS 文件
 
-继续使用 `.pinax/pinax-sync.secrets.yaml`。`SecretEntry` 增加可选 `kind`、`format` 和 `version` metadata；已有 entry 缺少这些字段时继续按既有 string secret 解析。
+新增并统一使用 credentialctl 管理的 `.pinax/project-secrets.yaml` 保存 repository-encrypted typed entries；历史 `.pinax/pinax-sync.secrets.yaml` 保持原 schema 和读取行为，不迁移、不扩展为 S3 credential 容器。两类资产不得写入同一 logical identity，也不得在 runtime resolution 中互相 fallback。
 
 S3 credential bundle 的解密后逻辑结构为：
 
@@ -199,6 +199,142 @@ stdin payload 使用严格 JSON object，仅接受 allowlisted fields；交互�
 - 使用现有 `pinax capsa backend set s3 --profile <name> ...` 重新生成本机 runtime config。
 - 保留原 Capsa encryption key，继续读取同一远端 revision；不回滚或删除远端对象。
 - 仓库密文 bundle 可以保留但不再引用，或通过 Pinax CLI remove 后提交；不得手工编辑 envelope。
+
+## 实现补全（2026-07-28）
+
+实际审计发现原 bootstrap 仅记录 `pull_planned=true`，且 repository envelope 只承载 S3 credential，无法在全新设备恢复 Capsa 内容密钥。本轮按原安全边界补全：
+
+```mermaid
+flowchart LR
+    A[device-profile runtime] --> B[sync repo migrate device-profile]
+    C[AWS shared profile] --> B
+    D[existing Capsa content key] --> B
+    E[repository passphrase] --> B
+    B --> F[pinax-sync.yaml]
+    B --> G[project-secrets.yaml]
+    G --> H[s3_credentials.v1]
+    G --> I[capsa_encryption_key.v1]
+    J[git clone] --> K[sync repo bootstrap]
+    E --> K
+    K --> L[device stored:// content key]
+    K --> M[in-memory AWS provider]
+    K --> N[real pull-only SyncPull]
+    N --> O[remote_write=false]
+```
+
+bootstrap 现在只读取一次 prompt/file/env/Keychain secret，并在一次命令内复用于双 entry 校验、可选 Keychain remember 和 pull transport。runtime 编译成功但 pull 失败时返回 `status=partial`、`runtime_ready=true` 和可执行重试动作；空远端被视为零文件成功 pull。
+
+## 设计补强（2026-07-30）
+
+### 8. Repository unlock 必须覆盖完整同步生命周期
+
+`bootstrap --pull` 只解决新设备首次恢复，不能代表 S3 备份闭环已经完成。repository-encrypted 模式下，所有需要读取远端 head、manifest、blob 或提交 revision 的命令都必须通过同一 resolver：
+
+```text
+explicit --unlock/--unlock-ref/--passphrase-file/--env-var
+    > repository-scoped Keychain default
+    > fail closed
+```
+
+不得回退到 AWS shared profile、default credential chain 或进程中偶然存在的另一组 AWS 环境变量。以下命令面保持对称：
+
+```bash
+pinax sync diff --target capsa --unlock keychain --json
+pinax sync pull --target capsa --unlock keychain --yes --json
+pinax sync push --target capsa --unlock keychain --dry-run --json
+pinax sync push --target capsa --unlock keychain --yes --json
+```
+
+`diff` 和 push dry-run 必须读取真实 remote head；若只使用本地 cache，输出必须显式标记 `remote_checked=false`、`diff_scope=cached`，且不得作为备份前检查通过。daemon 不接受 prompt；launchd/systemd 只能使用 Keychain、0600 file 或显式 secret manager ref。credential 无法解锁时进入 `degraded`，跳过 Pull/Push，并报告可执行恢复动作。
+
+### 9. S3 备份成功是 revision commit，不是对象上传
+
+真实备份流程分为五个安全门：
+
+```mermaid
+flowchart LR
+    A[doctor: capability + envelope + key identity] --> B[remote-aware diff]
+    B --> C[push dry-run]
+    C --> D[push with approval]
+    D --> E{CAS commit}
+    E -->|remote_write=true + revision_id| F[read-back head + manifest]
+    E -->|false/error/conflict| G[backup incomplete]
+```
+
+只有同时满足以下事实才能声明备份完成：
+
+- `remote_write=true`；
+- `revision_id` 非空且不同于需要推进的旧 head；
+- manifest commit 完成，而不只是 blob 上传成功；
+- read-back 得到相同 remote head 和 manifest digest；
+- receipt 与 evidence 通过 secret scan。
+
+若没有内容变化，允许返回 `remote_write=false`，但必须明确 `up_to_date=true` 且 read-back head 与本机 trusted base 一致；不能把普通 `remote_write=false` 推断为成功。
+
+### 10. 旧二进制必须通过 capability gate fail closed
+
+仓库声明增加 additive `requires.capabilities`，迁移命令至少写入：
+
+```yaml
+requires:
+  capabilities:
+    - repository-encrypted-s3-v1
+    - capsa-remote-commit-v1
+    - pull-only-bootstrap-v1
+```
+
+支持该字段的新版本在 compile、doctor、diff、pull、push 和 daemon 启动前验证能力集合；缺失时返回 `sync_capability_unsupported`、`remote_write=false` 和真实升级动作。旧版本因 strict YAML unknown-field validation 直接拒绝 declaration，同样保持 fail closed。版本号只用于展示，安全 gate 依据 capability，不依赖 `dev` 或 prerelease 字符串比较。
+
+### 11. Device-profile migration 必须可计划、原子且可重入
+
+`sync repo migrate device-profile` 在写入前先生成 plan，验证 runtime、AWS profile、Capsa 内容密钥、目标 envelope 状态和 Git protected paths。apply 使用同目录临时文件、fsync 和 atomic rename 提交 declaration/envelope；任一步失败时旧 runtime、旧 declaration 和旧 envelope 继续可用。
+
+重复执行时：
+
+- 相同 credential/content-key identity 返回 `already_migrated=true`，不重建 DEK、不改变 ciphertext、不写远端；
+- 检测到 identity 或 remote namespace 不一致时返回 `migration_conflict`，要求显式 rotate/reconcile；
+- 不允许覆盖一个无法用当前口令验证的既有 `.pinax/project-secrets.yaml`；
+- migration receipt 必须保持 `remote_write=false`、`key_rotated=false`。
+
+### 12. 发布与 Mac restore gate
+
+该 capability 在以下证据齐全前保持 `experimental`：
+
+1. 从发布候选二进制执行 migration，而不是使用工作树内 `go run` 代替发布验证；
+2. 现有设备使用 repository Keychain 完成 remote-aware dry-run 和一次 deliberate push，得到 durable commit 或可信 `up_to_date=true`；
+3. 一台真实 macOS 设备从私有 Git clone，仅凭 repository passphrase bootstrap，写入 Keychain 并 pull；
+4. Mac 再新增一篇 canary note，使用 Keychain push，原设备 pull 后内容和 revision 一致；
+5. evidence 中无 passphrase、SecretId、SecretKey、Authorization、解密 note body 或 Keychain value。
+
+### 13. macOS 支持从“可用观察”毕业为可承诺合同
+
+2026-08-09 已收到运营者的正向观察：一台 Mac 可以使用当前流程。这足以启动 support graduation，但不足以把 capability 或所有 Mac 架构写成 `Supported`。发布二进制能构建 `darwin/amd64` 和 `darwin/arm64` 也只是分发前提，不能替代真实 Keychain、S3/COS 和跨设备验证。
+
+支持状态按实际平台元组声明，而不是按笼统的“Mac”声明：
+
+| 状态 | 含义 | 可以对外表述 |
+| --- | --- | --- |
+| `observed` | 一台真实 Mac 的正向使用报告，尚未有完整可复核 evidence。 | “已在一台 Mac 上观察到可用”，不可写为 stable/support。 |
+| `candidate` | 发布候选二进制在指定 `darwin/<arch>`、精确 macOS 版本与安装渠道上完成只读版本/命令合同探针；真实 bootstrap、双向 sync 与恢复 stage 显式为 `not_run`。 | “该平台正在发布候选验证”。 |
+| `supported` | 同一发布候选完成 inbound 与 outbound 双向 round-trip、恢复矩阵和 secret scan；evidence 可复核。 | “Pinax repository-encrypted S3/COS sync 支持该 `darwin/<arch>` 元组”。 |
+| `unverified` | 没有对应证据的 macOS 架构、版本或安装渠道。 | 仅可说明发布 artifact 存在，不可承诺 workflow 支持。 |
+
+```mermaid
+flowchart LR
+    A[Mac 可用观察] --> B[observed]
+    B --> C[发布候选 + platform tuple]
+    C --> CP[只读合同探针 candidate]
+    CP --> D[Keychain bootstrap + pull-only]
+    D --> E[Mac deliberate push + durable read-back]
+    E --> F[既有设备 pull + vault validate]
+    F --> G[恢复矩阵 + redaction scan]
+    G -->|all pass| H[supported: exact darwin/arch]
+    G -->|any failure| I[experimental + rollback]
+```
+
+发布候选合同 runner 必须复用项目的 `temp/integration-test-runs/<run-id>/` 合同，并由 CLI/testkit 生成 `summary.json`、`command.txt`、`stdout.log`、`stderr.log`、`env.json` 和 artifacts。它在 `artifacts/platform-support.json` 记录 release provenance、`GOOS`/`GOARCH`、精确 macOS 版本、安装渠道和 contract stage；不得记录 hostname、绝对 vault 路径、Keychain account/value、passphrase、S3/COS credential、Authorization header 或 note body，且不打开 vault 或调用远端。后续真实 dogfood receipt 才记录经过脱敏的 revision identity 和 recovery class。现有 `task integration:sync-real` 可继续作为真实 transport smoke 的补充，但不能单独证明 macOS Keychain 与双向支持。
+
+外部写入仍保持人工授权：只有完成 Mac 的 `doctor`、remote-aware `diff` 和 push dry-run 后，operator 才能执行 deliberate push。任何 `remote_write=false` 都不能单独作为成功结论；新设备 bootstrap 必须保持 `pull_only=true` 与 `remote_write=false`，而有变化的 Mac push 必须返回 `remote_write=true`、非空 `revision_id` 和 read-back 一致性。失败时立即停止双向写入，撤销 canary credential，并从最后 trusted revision 或 device-profile rollback 路径恢复。
 
 ## Risks And Open Decisions
 

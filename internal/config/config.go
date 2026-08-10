@@ -31,6 +31,7 @@ type RemoteConfig struct {
 }
 
 type OutputConfig struct {
+	Style    string         `mapstructure:"style" yaml:"style" json:"style"`
 	Color    string         `mapstructure:"color" yaml:"color" json:"color"`
 	Theme    string         `mapstructure:"theme" yaml:"theme" json:"theme"`
 	Width    int            `mapstructure:"width" yaml:"width" json:"width"`
@@ -182,7 +183,7 @@ func ErrorCode(err error) string {
 
 func DefaultConfig() Config {
 	return Config{
-		Output:  OutputConfig{Color: "auto", Theme: "pinax", Width: 100, Markdown: MarkdownConfig{Enabled: true, Style: "auto"}},
+		Output:  OutputConfig{Style: "table", Color: "auto", Theme: "pinax", Width: 100, Markdown: MarkdownConfig{Enabled: true, Style: "auto"}},
 		Editor:  EditorConfig{},
 		Note:    NoteConfig{Status: "active"},
 		KB:      KBConfig{Sidecar: KBSidecarConfig{Executable: "inferrum-lancedb-sidecar", TimeoutSeconds: 30}},
@@ -309,6 +310,9 @@ func configFromViper(v *viper.Viper, set map[string]bool) Config {
 	if set["output.color"] {
 		cfg.Output.Color = v.GetString("output.color")
 	}
+	if set["output.style"] {
+		cfg.Output.Style = v.GetString("output.style")
+	}
 	if set["output.theme"] {
 		cfg.Output.Theme = v.GetString("output.theme")
 	}
@@ -377,6 +381,7 @@ func configKeys() []string {
 		"vault",
 		"remote.api_url",
 		"output.color",
+		"output.style",
 		"output.theme",
 		"output.width",
 		"output.markdown.enabled",
@@ -405,6 +410,7 @@ func settingsProjectionKeys() []string {
 		"vault",
 		"remote.api_url",
 		"output.color",
+		"output.style",
 		"output.theme",
 		"output.width",
 		"output.markdown.enabled",
@@ -467,6 +473,8 @@ func envConfigKey(envKey string) string {
 		return "remote.api_url"
 	case "PINAX_OUTPUT_COLOR", "NO_COLOR":
 		return "output.color"
+	case "PINAX_OUTPUT_STYLE":
+		return "output.style"
 	case "PINAX_OUTPUT_THEME":
 		return "output.theme"
 	case "PINAX_OUTPUT_WIDTH":
@@ -560,6 +568,9 @@ func mergeConfig(dst *Config, src Config, isSet func(string) bool) {
 }
 
 func mergeOutput(dst *OutputConfig, src OutputConfig, isSet func(string) bool) {
+	if isSet("output.style") {
+		dst.Style = src.Style
+	}
 	if isSet("output.color") {
 		dst.Color = src.Color
 	}
@@ -614,6 +625,7 @@ func applyEnv(cfg *Config, sources *SourceSet, env func(string) (string, bool)) 
 	apply("PINAX_VAULT", func(v string) { cfg.Vault = v })
 	apply("PINAX_API_URL", func(v string) { cfg.Remote.APIURL = v })
 	apply("PINAX_OUTPUT_COLOR", func(v string) { cfg.Output.Color = v })
+	apply("PINAX_OUTPUT_STYLE", func(v string) { cfg.Output.Style = v })
 	apply("PINAX_OUTPUT_THEME", func(v string) { cfg.Output.Theme = v })
 	apply("PINAX_OUTPUT_WIDTH", func(v string) {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -654,6 +666,8 @@ func applyExplicitFlags(cfg *Config, sources *SourceSet, flags map[string]string
 			cfg.Remote.APIURL = value
 		case "output.color":
 			cfg.Output.Color = value
+		case "output.style":
+			cfg.Output.Style = value
 		case "output.theme":
 			cfg.Output.Theme = value
 		case "output.width":
@@ -683,6 +697,9 @@ func applyExplicitFlags(cfg *Config, sources *SourceSet, flags map[string]string
 }
 
 func (cfg Config) Validate() error {
+	if !oneOf(cfg.Output.Style, "table", "compact") {
+		return configInvalid("output.style", cfg.Output.Style)
+	}
 	if !oneOf(cfg.Output.Color, "auto", "always", "never") {
 		return configInvalid("output.color", cfg.Output.Color)
 	}
@@ -852,6 +869,8 @@ func Value(cfg Config, key string) (string, bool) {
 		return cfg.Remote.APIURL, true
 	case "output.color":
 		return cfg.Output.Color, true
+	case "output.style":
+		return cfg.Output.Style, true
 	case "output.theme":
 		return cfg.Output.Theme, true
 	case "output.width":

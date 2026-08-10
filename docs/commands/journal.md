@@ -21,7 +21,7 @@ pinax journal monthly append --body "Monthly summary" --vault ./my-notes
 
 ## Daily Template
 
-The recommended `journal.daily` template includes two managed blocks: `planning-daily` for TaskBridge daily Markdown todos and `daily-captures` for Pinax capture links. User-written journal text stays outside those blocks.
+The recommended `journal.daily` template includes two managed blocks: `daily-task-review` for local project-board review and `daily-captures` for Pinax capture links. User-written journal text stays outside those blocks.
 
 ## Compatible Aliases
 

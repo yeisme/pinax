@@ -131,6 +131,11 @@ func TestCompile_HandoffSelection(t *testing.T) {
 		Objective:     "Ship continuity tests",
 		CurrentState:  "Orchestrator tests in progress",
 		Decisions:     []string{"Use bounded sections"},
+		CompletedWork: []string{"Added continuity contract tests"},
+		Blockers:      []string{"Waiting for real vault dogfood"},
+		Verification:  []string{"go test ./internal/agentcontinuity"},
+		FollowUps:     []string{"Run Agent B continuation"},
+		Sources:       agentprotocol.SourceRefList{{Kind: "note", Ref: "notes/continuity-design.md"}},
 		CreatedAt:     time.Now().UTC(),
 	}
 	if err := store.SaveHandoff(ctx, h); err != nil {
@@ -153,6 +158,17 @@ func TestCompile_HandoffSelection(t *testing.T) {
 	}
 	if pack.CurrentState != "Orchestrator tests in progress" {
 		t.Errorf("current_state = %q, want %q", pack.CurrentState, "Orchestrator tests in progress")
+	}
+	for _, kind := range []string{"handoff_decision", "completed_work", "blocker", "verification", "follow_up"} {
+		if !hasSection(pack, kind) {
+			t.Errorf("expected %s section from handoff; got %+v", kind, pack.Sections)
+		}
+	}
+	if len(pack.Sources) != 1 || pack.Sources[0].Ref != "notes/continuity-design.md" {
+		t.Errorf("handoff sources missing from continuity pack: %+v", pack.Sources)
+	}
+	if pack.SourceCoverage.Total != 1 || pack.SourceCoverage.Resolved != 1 {
+		t.Errorf("source coverage = %+v, want 1/1", pack.SourceCoverage)
 	}
 }
 

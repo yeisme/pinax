@@ -19,6 +19,7 @@ type commandBuildContext struct {
 	apiToken                 *string
 	apiTokenFile             *string
 	colorMode                *string
+	outputStyle              *string
 	themeName                *string
 	renderWidth              *int
 	markdownStyle            *string
@@ -98,6 +99,11 @@ type commandBuildContext struct {
 	syncDryRun               *bool
 	syncBaseRevision         *string
 	syncRemoteRevision       *string
+	syncPreview              *string
+	syncLimit                *int
+	syncLimitSet             *bool
+	syncContentDiff          *bool
+	syncProgress             *string
 	cloudEndpoint            *string
 	cloudWorkspace           *string
 	cloudDevice              *string
@@ -125,7 +131,6 @@ type commandBuildContext struct {
 	backendRoot              *string
 	backendRemote            *string
 	planFromPeriod           *string
-	planWithTaskBridge       *bool
 	planTaskReview           *bool
 	planDryRun               *bool
 	planSave                 *bool

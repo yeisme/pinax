@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	pinaxremote "github.com/yeisme/pinax/internal/remote"
 )
 
 // runCLIWithStdin runs the root command with a stdin string and returns
@@ -24,6 +26,76 @@ func runCLIWithStdin(t *testing.T, stdin string, args ...string) (string, string
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return out.String(), errOut.String(), err
+}
+
+func TestSyncPullHelpIncludesUnifiedUnlockFlags(t *testing.T) {
+	out, _, err := runCLIWithStdin(t, "", "sync", "pull", "--help")
+	if err != nil {
+		t.Fatalf("sync pull help: %v", err)
+	}
+	for _, flag := range []string{"--unlock", "--unlock-ref", "--passphrase-file", "--env-var"} {
+		if !strings.Contains(out, flag) {
+			t.Fatalf("help missing %s: %s", flag, out)
+		}
+	}
+}
+
+func TestDefaultRepositoryKeychainRefFallsBackToRuntimeWorkspace(t *testing.T) {
+	root := mustInitVault(t)
+	if _, err := pinaxremote.Login(root, pinaxremote.LoginRequest{
+		Endpoint: "s3://bucket/prefix", WorkspaceID: "ws-keychain", DeviceID: "mac1", BackendKind: "s3-direct",
+		S3: &pinaxremote.S3Config{Bucket: "bucket", Prefix: "prefix"},
+	}); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+	ref, err := defaultRepositoryKeychainRef(root)
+	if err != nil {
+		t.Fatalf("default ref: %v", err)
+	}
+	if ref != "keychain://pinax/pinax:ws-keychain" {
+		t.Fatalf("ref: %q", ref)
+	}
+}
+
+func TestResolveBootstrapUnlockSource(t *testing.T) {
+	t.Setenv("PINAX_REPO_PASS", "env-pass")
+	dir := t.TempDir()
+	file := filepath.Join(dir, "pass")
+	if err := os.WriteFile(file, []byte("file-pass\n"), 0o600); err != nil {
+		t.Fatalf("write passphrase file: %v", err)
+	}
+	tests := []struct {
+		name       string
+		unlock     string
+		unlockRef  string
+		passFile   string
+		descriptor string
+	}{
+		{name: "prompt", unlock: "prompt", descriptor: "prompt"},
+		{name: "env", unlock: "env", descriptor: "env"},
+		{name: "file", unlock: "file", passFile: file, descriptor: "file"},
+		{name: "keychain", unlock: "keychain", unlockRef: "keychain://pinax/repo-account", descriptor: "keychain"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source, _, err := resolveBootstrapUnlockSource(test.unlock, test.unlockRef, test.passFile, "")
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if source.Descriptor() != test.descriptor {
+				t.Fatalf("descriptor: got %q want %q", source.Descriptor(), test.descriptor)
+			}
+		})
+	}
+	if _, _, err := resolveBootstrapUnlockSource("unknown", "", "", ""); err == nil {
+		t.Fatal("unknown unlock mode accepted")
+	}
+	if _, _, err := resolveBootstrapUnlockSource("keychain", "bad-ref", "", ""); err == nil {
+		t.Fatal("invalid keychain ref accepted")
+	}
+	if _, _, err := resolveBootstrapUnlockSource("", "", "", ""); err != nil {
+		t.Fatalf("empty unlock should keep compile-only compatibility: %v", err)
+	}
 }
 
 func mustInitVault(t *testing.T) string {
@@ -160,23 +232,13 @@ func TestSyncRepoBootstrapAdditiveFlagsSurfaceFacts(t *testing.T) {
 		t.Fatalf("repo init: %v", err)
 	}
 	out, _, err := runCLIWithStdin(t, "", "sync", "repo", "bootstrap", "--vault", root,
-		"--device", "mac2", "--unlock", "prompt", "--pull", "--remember-keychain", "--yes", "--json")
+		"--device", "mac2", "--yes", "--json")
 	if err != nil {
 		t.Fatalf("bootstrap: %v\n%s", err, out)
 	}
 	p := decodeProjection(t, out)
 	if p["command"] != "sync.repo.bootstrap" {
 		t.Fatalf("bootstrap projection: %s", out)
-	}
-	facts := p["facts"].(map[string]interface{})
-	if facts["unlock"] != "prompt" {
-		t.Fatalf("unlock fact: %v", facts["unlock"])
-	}
-	if facts["pull_planned"] != "true" {
-		t.Fatalf("pull_planned fact: %v", facts["pull_planned"])
-	}
-	if facts["remember_keychain"] != "true" {
-		t.Fatalf("remember_keychain fact: %v", facts["remember_keychain"])
 	}
 	// Without --pull the compile-only behavior must still work and not set pull.
 	out2, _, err := runCLIWithStdin(t, "", "sync", "repo", "bootstrap", "--vault", root,
@@ -186,7 +248,7 @@ func TestSyncRepoBootstrapAdditiveFlagsSurfaceFacts(t *testing.T) {
 	}
 	p2 := decodeProjection(t, out2)
 	facts2 := p2["facts"].(map[string]interface{})
-	if _, hasPull := facts2["pull_planned"]; hasPull {
+	if _, hasPull := facts2["pull_applied"]; hasPull {
 		t.Fatalf("compile-only bootstrap should not set pull fact: %s", out2)
 	}
 }

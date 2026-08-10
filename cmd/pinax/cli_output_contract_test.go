@@ -15,7 +15,7 @@ func TestCLITreeHelpSmoke(t *testing.T) {
 		want   []string
 		absent []string
 	}{
-		{args: []string{"--help"}, want: []string{"Local vault", "Note workflows", "Organization and search", "Automation and integrations", "Configuration and maintenance", "vault", "journal", "storage", "organize", "note", "folder", "template"}, absent: []string{"\n  daily ", "\n  weekly ", "\n  monthly ", "\n  stats ", "\n  validate ", "\n  doctor ", "\n  dashboard ", "\n  tag ", "\n  kind ", "\n  group ", "\n  schema "}},
+		{args: []string{"--help"}, want: []string{"Start here", "Capture and write", "Find and organize", "Local safety", "More commands", "init", "vault", "note", "inbox", "journal", "search", "project", "backup", "commands", "pinax commands", "--vault", "--json", "--agent"}, absent: []string{"\n  version ", "\n  sync ", "\n  capsa ", "\n  api ", "\n  agent ", "\n  publish ", "\n  plugin ", "\n  backend ", "\n  storage ", "\n  organize ", "\n  folder ", "\n  template ", "\n  daily ", "\n  weekly ", "\n  monthly ", "\n  stats ", "\n  validate ", "\n  doctor ", "\n  dashboard ", "\n  tag ", "\n  kind ", "\n  group ", "\n  schema ", "--api-url", "--api-token", "--api-token-file", "--color", "--theme", "--width", "--markdown-style"}},
 		{args: []string{"vault", "--help"}, want: []string{"stats", "validate", "doctor", "dashboard"}},
 		{args: []string{"journal", "--help"}, want: []string{"daily", "weekly", "monthly"}},
 		{args: []string{"storage", "--help"}, want: []string{"set", "status", "doctor"}, absent: []string{"\n  set-local ", "\n  set-s3 "}},
@@ -34,6 +34,75 @@ func TestCLITreeHelpSmoke(t *testing.T) {
 				t.Fatalf("help %v should hide compatibility command %q:\n%s", tc.args, strings.TrimSpace(absent), out)
 			}
 		}
+	}
+}
+
+func TestCLICommandCatalogOutputModes(t *testing.T) {
+	human := runCLI(t, "commands")
+	for _, want := range []string{"Complete command catalog", "init", "note", "sync", "capsa", "core", "advanced"} {
+		if !strings.Contains(human, want) {
+			t.Fatalf("human command catalog missing %q:\n%s", want, human)
+		}
+	}
+
+	jsonOut := runCLI(t, "commands", "--json")
+	var envelope struct {
+		Command string `json:"command"`
+		Status  string `json:"status"`
+		Data    struct {
+			Commands []struct {
+				Name       string `json:"name"`
+				Visibility string `json:"visibility"`
+			} `json:"commands"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &envelope); err != nil {
+		t.Fatalf("command catalog JSON invalid: %v\n%s", err, jsonOut)
+	}
+	if envelope.Command != "commands.list" || envelope.Status != "success" {
+		t.Fatalf("command catalog envelope = %#v", envelope)
+	}
+	wantVisibility := map[string]string{"note": "core", "backup": "core", "version": "advanced", "sync": "advanced"}
+	for _, entry := range envelope.Data.Commands {
+		if want, ok := wantVisibility[entry.Name]; ok {
+			if entry.Visibility != want {
+				t.Fatalf("command %s visibility = %q, want %q", entry.Name, entry.Visibility, want)
+			}
+			delete(wantVisibility, entry.Name)
+		}
+	}
+	if len(wantVisibility) != 0 {
+		t.Fatalf("command catalog missing entries: %#v", wantVisibility)
+	}
+
+	agent := runCLI(t, "commands", "--agent")
+	for _, want := range []string{"command=commands.list", "status=success", "fact.commands.total=", "fact.commands.core=", "fact.commands.advanced="} {
+		if !strings.Contains(agent, want) {
+			t.Fatalf("agent command catalog missing %q:\n%s", want, agent)
+		}
+	}
+
+	events := runCLI(t, "commands", "--events")
+	assertNDJSONEvents(t, events, "commands.list")
+}
+
+func TestCLIAdvancedCommandsRemainExecutableWhenHiddenFromRootHelp(t *testing.T) {
+	for _, tc := range []struct {
+		command string
+		want    string
+	}{
+		{command: "sync", want: "sync"},
+		{command: "capsa", want: "Capsa"},
+		{command: "api", want: "API"},
+		{command: "agent", want: "agent"},
+	} {
+		out := runCLI(t, tc.command, "--help")
+		if !strings.Contains(out, tc.want) {
+			t.Fatalf("advanced command %s is not executable:\n%s", tc.command, out)
+		}
+	}
+	if apiHelp := runCLI(t, "api", "--help"); !strings.Contains(apiHelp, "--api-url") {
+		t.Fatalf("advanced API help should retain advanced global flags:\n%s", apiHelp)
 	}
 }
 

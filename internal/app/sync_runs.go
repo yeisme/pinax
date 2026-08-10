@@ -237,12 +237,31 @@ func syncRunCounts(plan syncplan.Plan, base map[string]int) map[string]int {
 	}
 	counts["operations"] = len(plan.Operations)
 	counts["conflicts"] = len(plan.ConflictQueue)
+	for _, key := range []string{"added", "modified", "deleted", "renamed", "bytes_uploaded", "bytes_downloaded"} {
+		if _, ok := counts[key]; !ok {
+			counts[key] = 0
+		}
+	}
 	for _, op := range plan.Operations {
 		switch op.Kind {
 		case "upload_blob":
 			counts["upload_blobs"]++
+			if op.BaseRevision == "" {
+				counts["added"]++
+			} else {
+				counts["modified"]++
+			}
 		case "download_blob":
 			counts["download_blobs"]++
+			if op.BaseRevision == "" {
+				counts["added"]++
+			} else {
+				counts["modified"]++
+			}
+		case "delete_local", "delete_remote":
+			counts["deleted"]++
+		case "move":
+			counts["renamed"]++
 		case "conflict":
 			counts["conflicts"]++
 		}
@@ -272,6 +291,10 @@ func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
 				facts[key] = value
 			}
 		}
+		if code := syncRunOperationChangeCode(operation); code != "" {
+			facts["change_code"] = code
+		}
+		facts["change_state"] = syncRunOperationChangeState(operation.Status, receipt.Status)
 		if err := appendEvent(root, "sync.file", receipt.Status, facts); err != nil {
 			return err
 		}
@@ -291,6 +314,38 @@ func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
 		facts["error_code"] = receipt.Error.Code
 	}
 	return appendEvent(root, "sync.run", receipt.Status, facts)
+}
+
+func syncRunOperationChangeCode(operation syncplan.Operation) string {
+	switch operation.Kind {
+	case "upload_blob", "download_blob":
+		if operation.BaseRevision == "" {
+			return "A"
+		}
+		return "M"
+	case "delete_local", "delete_remote":
+		return "D"
+	case "move":
+		return "R"
+	case "conflict", "revision_conflict", "path_collision":
+		return "C"
+	default:
+		return ""
+	}
+}
+
+func syncRunOperationChangeState(operationStatus, receiptStatus string) string {
+	if operationStatus == "conflict" || receiptStatus == "conflict" {
+		return "conflict"
+	}
+	switch receiptStatus {
+	case "success":
+		return "applied"
+	case "failed", "partial":
+		return "failed"
+	default:
+		return "planned"
+	}
 }
 
 func sanitizeCommandError(err *domain.CommandError) *domain.CommandError {
@@ -412,7 +467,18 @@ func (s *Service) SyncLogsShow(_ context.Context, req SyncLogsRequest) (domain.P
 	projection.Facts["status"] = record.Receipt.Status
 	projection.Facts["remote_write"] = fmt.Sprint(record.Receipt.RemoteWrite)
 	projection.Facts["backend_kind"] = record.Receipt.BackendKind
-	projection.Data = map[string]any{"receipt": record.Receipt}
+	data := map[string]any{"receipt": record.Receipt}
+	viewResult := "planned"
+	switch record.Receipt.Status {
+	case "success":
+		viewResult = "applied"
+	case "failed":
+		viewResult = "failed"
+	case "partial":
+		viewResult = "partial"
+	}
+	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(syncplan.Plan{Direction: syncplan.Direction(record.Receipt.Direction), Target: record.Receipt.Target, BaseRevision: record.Receipt.BaseRevision, RemoteRevision: record.Receipt.RemoteRevisionBefore, Operations: record.Receipt.Operations}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, syncOutputViewOptions{Scope: "cached", Result: viewResult, RemoteAfter: record.Receipt.RevisionID, LocalAfter: record.Receipt.RevisionID, PathPolicy: record.Receipt.Redaction.PathPolicy}))
+	projection.Data = data
 	projection.Evidence = []string{filepath.ToSlash(strings.TrimPrefix(record.Path, root+string(os.PathSeparator)))}
 	return projection, nil
 }

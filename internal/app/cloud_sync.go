@@ -49,7 +49,13 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 	if err != nil {
 		return cloudStateErrorProjection(command, root, err)
 	}
+	if gateErr := syncCapabilityGate(root); gateErr != nil {
+		projection := errorProjection(command, gateErr)
+		projection.Facts["remote_write"] = "false"
+		return projection, gateErr
+	}
 	receipt := syncRunStart(command, direction, state, pathPolicy, outputTarget)
+	emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "scan", Direction: string(direction), RunID: receipt.RunID, Status: "running", RemoteWrite: false})
 	localManifest, err := buildLocalCloudManifest(root, state)
 	if err != nil {
 		projection := errorProjection(command, err)
@@ -68,7 +74,27 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		baseManifest = pinaxcloud.Manifest{SchemaVersion: pinaxcloud.ManifestSchemaVersion}
 	}
 	remoteSnapshot := cloudRemoteSnapshot{}
-	if isExecutableCloudState(state) && direction == syncplan.DirectionPull && req.Yes && !req.DryRun {
+	remoteLoaded := false
+	attachContentDiff := func(data map[string]any, plan syncplan.Plan, remoteManifest pinaxcloud.Manifest) {
+		view := buildSyncOutputView(plan, baseManifest, localManifest, remoteManifest, syncOutputViewOptions{Scope: syncOutputScope(remoteLoaded), Result: "planned", PathPolicy: pathPolicy})
+		if strings.EqualFold(strings.TrimSpace(req.Preview), "diff") {
+			data["metadata_diff"] = buildSyncMetadataDiff(view)
+		}
+		if req.ContentDiff {
+			data["content_diff"] = buildSyncContentDiff(root, plan, baseManifest, localManifest, remoteManifest, pathPolicy)
+		}
+	}
+	// diff and push dry-run MUST read the real remote head (pinax-passphrase-s3-
+	// bootstrap task 6.7) so the result reflects remote-aware state. Only a real
+	// pull hard-fails when the remote cannot be read; diff and push dry-run
+	// degrade to a cached (local-only) comparison when the remote is unavailable
+	// or the credential cannot be unlocked, and MUST mark remote_checked=false so
+	// the cached result cannot pass as a pre-backup check (task 6.8).
+	shouldLoadRemote := isExecutableCloudState(state) && (direction == syncplan.DirectionPull && req.Yes && !req.DryRun ||
+		direction == syncplan.DirectionDiff ||
+		direction == syncplan.DirectionPush && req.DryRun)
+	if shouldLoadRemote {
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "remote_head", Direction: string(direction), RunID: receipt.RunID, Status: "running"})
 		snapshot, snapshotErr := loadCloudRemoteSnapshotWithCredential(ctx, state, root, req.ProjectUnlockSource)
 		if snapshotErr != nil {
 			if direction == syncplan.DirectionPull && req.Yes && !req.DryRun {
@@ -77,6 +103,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			}
 		} else {
 			remoteSnapshot = snapshot
+			remoteLoaded = true
 		}
 	}
 	remoteRevision := strings.TrimSpace(req.RemoteRevision)
@@ -97,6 +124,7 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		baseManifest = pinaxcloud.Manifest{SchemaVersion: localManifest.SchemaVersion}
 	}
 	plan, planErr := syncplan.BuildPlan(syncplan.Request{Direction: direction, Target: outputTarget, LocalManifest: localManifest, BaseManifest: baseManifest, RemoteManifest: remoteSnapshot.Manifest, BaseRevision: baseRevision, RemoteRevision: remoteRevision, DryRun: req.DryRun, Yes: req.Yes})
+	emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "plan", Direction: string(direction), RunID: receipt.RunID, Completed: 0, Total: len(plan.Operations), Status: "planned", Facts: map[string]string{"scope": syncOutputScope(remoteLoaded)}})
 	localDiffPlan, localDiffErr := syncplan.BuildPlan(syncplan.Request{Direction: syncplan.DirectionDiff, Target: outputTarget, LocalManifest: localManifest, BaseManifest: baseManifest, RemoteManifest: remoteSnapshot.Manifest, BaseRevision: baseRevision, RemoteRevision: remoteRevision, DryRun: true, Yes: true})
 	if localDiffErr != nil && planErr == nil {
 		planErr = localDiffErr
@@ -114,7 +142,10 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		addCloudSyncFacts(&projection, state, plan)
 		addCapsaBridgeFacts(&projection, req.Target)
 		addCloudContentFacts(&projection, localManifest)
-		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
+		data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
+		attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, remoteSnapshot.Manifest, syncOutputViewOptions{Scope: syncOutputScope(remoteLoaded), Result: "failed", PathPolicy: pathPolicy}))
+		attachContentDiff(data, plan, remoteSnapshot.Manifest)
+		projection.Data = data
 		return projection, commandErr
 	}
 	if planErr != nil {
@@ -125,9 +156,43 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		if gateErr := syncManifestRemoteWriteGate(root); gateErr != nil {
 			projection := errorProjection(command, gateErr)
 			projection.Facts["remote_write"] = "false"
+			projection.Facts["local_write"] = "false"
 			projection.Actions = []domain.Action{{Name: "manifest_status", Command: fmt.Sprintf("pinax sync manifest audit --vault %s --json", shellQuote(root))}}
 			return projection, gateErr
 		}
+		// Up-to-date fast path (pinax-passphrase-s3-bootstrap task 6.8): read the
+		// real remote head and compare the local manifest content against it. When
+		// the entries and delete markers already match the remote there is nothing
+		// to push, so report up_to_date=true with a remote-aware read-back
+		// (distinguishable from a blocked or failed push) instead of committing a
+		// no-op revision. Any difference (content, mode, or delete marker) falls
+		// through to the normal rebase path so a needed push is never skipped.
+		upToDateSnapshot, upToDateErr := loadCloudRemoteSnapshotWithCredential(ctx, state, root, req.ProjectUnlockSource)
+		if upToDateErr == nil && cloudManifestContentEqual(localManifest, upToDateSnapshot.Manifest) {
+			projection := domain.NewProjection(command, "Remote is already up to date; nothing to push.")
+			projection.Actions = []domain.Action{{Name: "diff", Command: fmt.Sprintf("pinax sync diff --target %s --vault %s --json", outputTarget, shellQuote(root))}}
+			receipt, _, receiptErr := finishSyncRun(root, receipt, plan, "success", nil, projection.Actions, pathPolicy, started)
+			if receiptErr != nil {
+				return errorProjection(command, receiptErr), receiptErr
+			}
+			if err := writeCurrentSyncState(root, state, receipt, upToDateSnapshot.RevisionID); err != nil {
+				return errorProjection(command, err), err
+			}
+			emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "done", Direction: string(direction), RunID: receipt.RunID, Status: "up_to_date", RevisionID: upToDateSnapshot.RevisionID})
+			addCloudSyncFacts(&projection, state, plan)
+			addCapsaBridgeFacts(&projection, req.Target)
+			addCloudContentFacts(&projection, localManifest)
+			projection.Facts["up_to_date"] = "true"
+			projection.Facts["remote_checked"] = "true"
+			projection.Facts["remote_write"] = "false"
+			projection.Facts["run_id"] = receipt.RunID
+			data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "up_to_date": true, "receipt": receipt}
+			attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, upToDateSnapshot.Manifest, syncOutputViewOptions{Scope: "remote-aware", Result: "up_to_date", RemoteAfter: upToDateSnapshot.RevisionID, LocalAfter: upToDateSnapshot.RevisionID, PathPolicy: pathPolicy}))
+			attachContentDiff(data, plan, upToDateSnapshot.Manifest)
+			projection.Data = data
+			return projection, nil
+		}
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "transfer", Direction: string(direction), RunID: receipt.RunID, Total: len(plan.Operations), Status: "running", RemoteWrite: true})
 		rebaseResult, execErr := runCloudPushRebase(cloudRebasePlan{
 			commit: func(base string) (cloudsync.CommitResult, error) {
 				return executeCloudPushWithCredential(ctx, root, state, localManifest, base, req.ProjectUnlockSource)
@@ -158,7 +223,10 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			addCloudSyncFacts(&projection, state, plan)
 			addCapsaBridgeFacts(&projection, req.Target)
 			addCloudContentFacts(&projection, localManifest)
-			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "conflicts": conflicts, "receipt": receipt}
+			data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "conflicts": conflicts, "receipt": receipt}
+			attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, remoteSnapshot.Manifest, syncOutputViewOptions{Scope: "remote-aware", Result: "failed", PathPolicy: pathPolicy}))
+			attachContentDiff(data, plan, remoteSnapshot.Manifest)
+			projection.Data = data
 			return projection, commandErr
 		}
 		if execErr != nil {
@@ -172,10 +240,14 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
-			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
+			data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
+			attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, remoteSnapshot.Manifest, syncOutputViewOptions{Scope: syncOutputScope(remoteLoaded), Result: "failed", PathPolicy: pathPolicy}))
+			attachContentDiff(data, plan, remoteSnapshot.Manifest)
+			projection.Data = data
 			return projection, commandErr
 		}
 		commit := rebaseResult.Commit
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "commit", Direction: string(direction), RunID: receipt.RunID, Status: "running", RevisionID: commit.RevisionID, RemoteWrite: commit.RemoteWrite})
 		plan.RemoteWrite = commit.RemoteWrite
 		receipt.RemoteWrite = commit.RemoteWrite
 		receipt.RevisionID = commit.RevisionID
@@ -200,13 +272,22 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		if err := writeCurrentSyncState(root, state, receipt, commit.RevisionID); err != nil {
 			return errorProjection(command, err), err
 		}
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "done", Direction: string(direction), RunID: receipt.RunID, Status: "success", RevisionID: commit.RevisionID, RemoteWrite: receipt.RemoteWrite})
 		addCloudSyncFacts(&projection, state, plan)
 		addCapsaBridgeFacts(&projection, req.Target)
 		addCloudContentFacts(&projection, localManifest)
+		setRemoteCheckedFacts(&projection, true)
+		if commit.RemoteWrite {
+			projection.Facts["durable_commit"] = "true"
+		}
 		projection.Facts["run_id"] = receipt.RunID
 		projection.Facts["revision_id"] = commit.RevisionID
+		projection.Facts["local_write"] = "false"
 		projection.Evidence = []string{receiptPath}
-		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": commit.RemoteWrite, "revision_id": commit.RevisionID, "manifest_blob_id": commit.ManifestBlobID, "receipt": receipt}
+		data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": commit.RemoteWrite, "revision_id": commit.RevisionID, "manifest_blob_id": commit.ManifestBlobID, "receipt": receipt}
+		attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, localManifest, syncOutputViewOptions{Scope: "remote-aware", Result: "applied", RemoteAfter: commit.RevisionID, LocalAfter: commit.RevisionID, PathPolicy: pathPolicy}))
+		attachContentDiff(data, plan, localManifest)
+		projection.Data = data
 		return projection, nil
 	}
 	if direction == syncplan.DirectionPull && req.Yes && !req.DryRun && isExecutableCloudState(state) {
@@ -223,9 +304,13 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			addCloudSyncFacts(&projection, state, localDiffPlan)
 			addCapsaBridgeFacts(&projection, req.Target)
 			projection.Facts["local_unpushed_changes"] = fmt.Sprint(len(localUnpushedCloudOps(localDiffPlan)))
-			projection.Data = map[string]any{"plan": syncops.SanitizePlan(localDiffPlan, pathPolicy), "receipt": receipt}
+			data := map[string]any{"plan": syncops.SanitizePlan(localDiffPlan, pathPolicy), "receipt": receipt}
+			attachSyncOutputView(projection.Facts, data, buildSyncOutputView(localDiffPlan, baseManifest, localManifest, remoteSnapshot.Manifest, syncOutputViewOptions{Scope: syncOutputScope(remoteLoaded), Result: "failed", PathPolicy: pathPolicy}))
+			attachContentDiff(data, localDiffPlan, remoteSnapshot.Manifest)
+			projection.Data = data
 			return projection, commandErr
 		}
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "transfer", Direction: string(direction), RunID: receipt.RunID, Total: len(plan.Operations), Status: "running"})
 		pullResult, execErr := executeCloudPull(ctx, root, state, plan, remoteSnapshot)
 		if execErr != nil {
 			commandErr := commandErrorFromError(execErr)
@@ -237,10 +322,14 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
-			projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
+			data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "receipt": receipt}
+			attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, remoteSnapshot.Manifest, syncOutputViewOptions{Scope: syncOutputScope(remoteLoaded), Result: "failed", PathPolicy: pathPolicy}))
+			attachContentDiff(data, plan, remoteSnapshot.Manifest)
+			projection.Data = data
 			return projection, commandErr
 		}
 		receipt.LocalWrite = pullResult.FilesApplied > 0 || pullResult.DeletesApplied > 0
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "apply", Direction: string(direction), RunID: receipt.RunID, Completed: pullResult.FilesApplied + pullResult.DeletesApplied, Total: len(plan.Operations), Status: "running", LocalWrite: receipt.LocalWrite})
 		receipt.RevisionID = pullResult.RevisionID
 		receipt.ManifestBlobID = pullResult.ManifestBlobID
 		receipt.Counts["files_applied"] = pullResult.FilesApplied
@@ -261,16 +350,23 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		if err := writeCurrentSyncState(root, state, receipt, pullResult.RevisionID); err != nil {
 			return errorProjection(command, err), err
 		}
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "verify", Direction: string(direction), RunID: receipt.RunID, Status: "success", RevisionID: pullResult.RevisionID, LocalWrite: receipt.LocalWrite})
+		emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "done", Direction: string(direction), RunID: receipt.RunID, Status: "success", RevisionID: pullResult.RevisionID, LocalWrite: receipt.LocalWrite})
 		addCloudSyncFacts(&projection, state, plan)
 		addCapsaBridgeFacts(&projection, req.Target)
+		setRemoteCheckedFacts(&projection, true)
 		projection.Facts["run_id"] = receipt.RunID
 		projection.Facts["files_applied"] = fmt.Sprint(pullResult.FilesApplied)
 		projection.Facts["delete_markers_applied"] = fmt.Sprint(pullResult.DeletesApplied)
 		projection.Facts["revision_id"] = pullResult.RevisionID
 		projection.Facts["conflicts"] = fmt.Sprint(len(pullResult.Conflicts))
+		projection.Facts["local_write"] = fmt.Sprint(receipt.LocalWrite)
 		addSyncConflictFacts(&projection, pullResult.Conflicts)
 		projection.Evidence = []string{receiptPath}
-		projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "delete_markers_applied": pullResult.DeletesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": receipt}
+		data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "delete_markers_applied": pullResult.DeletesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": receipt}
+		attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, pullResult.Manifest, syncOutputViewOptions{Scope: "remote-aware", Result: "applied", RemoteAfter: pullResult.RevisionID, LocalAfter: pullResult.RevisionID, PathPolicy: pathPolicy}))
+		attachContentDiff(data, plan, pullResult.Manifest)
+		projection.Data = data
 		return projection, nil
 	}
 	projection := domain.NewProjection(command, "Capsa sync plan generated; real remote writes are not wired yet.")
@@ -298,12 +394,24 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		return errorProjection(command, receiptErr), receiptErr
 	}
 	_ = writeCurrentSyncState(root, state, receipt, "")
+	emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "done", Direction: string(direction), RunID: receipt.RunID, Status: status, RemoteWrite: receipt.RemoteWrite, LocalWrite: receipt.LocalWrite})
 	addCloudSyncFacts(&projection, state, plan)
 	addCapsaBridgeFacts(&projection, req.Target)
 	addCloudContentFacts(&projection, localManifest)
+	setRemoteCheckedFacts(&projection, remoteLoaded)
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Evidence = []string{receiptPath}
-	projection.Data = map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "blocked_by": projection.Facts["blocked_by"], "receipt": receipt}
+	data := map[string]any{"plan": syncops.SanitizePlan(plan, pathPolicy), "blocked_by": projection.Facts["blocked_by"], "receipt": receipt}
+	result := "planned"
+	switch status {
+	case "partial":
+		result = "partial"
+	case "failed":
+		result = "failed"
+	}
+	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(plan, baseManifest, localManifest, remoteSnapshot.Manifest, syncOutputViewOptions{Scope: syncOutputScope(remoteLoaded), Result: result, PathPolicy: pathPolicy}))
+	attachContentDiff(data, plan, remoteSnapshot.Manifest)
+	projection.Data = data
 	return projection, nil
 }
 
@@ -386,7 +494,20 @@ func cloudTransportForStateWithCredential(ctx context.Context, state pinaxcloud.
 	if state.Config.S3 != nil {
 		mode = state.Config.S3.CredentialMode
 	}
-	if mode != pinaxcloud.CredentialModeRepositoryEncrypted || source == nil {
+	// Fail closed (pinax-passphrase-s3-bootstrap task 6.7): repository-encrypted
+	// mode MUST NOT fall back to the device-local shared AWS profile, default
+	// credential chain or unrelated process AWS environment variables. An
+	// explicit unlock source is required to unlock the typed bundle before any
+	// remote access, so a missing source is an error rather than a silent
+	// fallback to another local account.
+	if mode == pinaxcloud.CredentialModeRepositoryEncrypted && source == nil {
+		return nil, nil, &domain.CommandError{
+			Code:    "sync_repo_unlock_required",
+			Message: "repository-encrypted credential mode requires an explicit unlock source",
+			Hint:    "Use --unlock keychain/file/env, --passphrase-file, or --env-var to supply the repository passphrase.",
+		}
+	}
+	if mode != pinaxcloud.CredentialModeRepositoryEncrypted {
 		t, err := cloudTransportForState(ctx, state)
 		return t, nil, err
 	}
@@ -443,9 +564,9 @@ func loadCloudRemoteSnapshot(ctx context.Context, state pinaxcloud.State) (cloud
 // fetches, so the credential flows through the whole pull. When source is nil
 // or the mode is not repository-encrypted, it falls back to loadCloudRemoteSnapshot.
 func loadCloudRemoteSnapshotWithCredential(ctx context.Context, state pinaxcloud.State, repoRoot string, source projectsecrets.UnlockSource) (cloudRemoteSnapshot, error) {
-	if source == nil {
-		return loadCloudRemoteSnapshot(ctx, state)
-	}
+	// Always route through the unified credential-aware transport so a
+	// repository-encrypted vault with no unlock source fails closed instead of
+	// silently reading via the device-local shared profile chain (task 6.7).
 	transport, snap, err := cloudTransportForStateWithCredential(ctx, state, repoRoot, source)
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
@@ -920,22 +1041,15 @@ func safeSyncManifestCachePath(root, rel string) (string, error) {
 // credentials provider into the push transport. The snapshot is closed after
 // the transport is built (StaticCredentialsProvider is self-contained).
 func executeCloudPushWithCredential(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string, source projectsecrets.UnlockSource) (cloudsync.CommitResult, error) {
-	var transport cloudsync.Transport
-	if source != nil {
-		t, snap, err := cloudTransportForStateWithCredential(ctx, state, root, source)
-		if err != nil {
-			return cloudsync.CommitResult{}, err
-		}
-		if snap != nil {
-			_ = snap.Close()
-		}
-		transport = t
-	} else {
-		t, err := cloudTransportForState(ctx, state)
-		if err != nil {
-			return cloudsync.CommitResult{}, err
-		}
-		transport = t
+	// Resolve the transport through the unified credential-aware path so a
+	// repository-encrypted vault with no unlock source fails closed instead of
+	// falling back to the device-local shared profile chain (task 6.7).
+	transport, snap, err := cloudTransportForStateWithCredential(ctx, state, root, source)
+	if err != nil {
+		return cloudsync.CommitResult{}, err
+	}
+	if snap != nil {
+		_ = snap.Close()
 	}
 	if strings.TrimSpace(baseRevision) == "" {
 		baseRevision = localCloudBaseRevision(root, state)
@@ -1061,7 +1175,41 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 	if err := transport.PutManifest(ctx, manifestBlobID, cloudEnvelope(manifestEnvelope)); err != nil {
 		return cloudsync.CommitResult{}, err
 	}
-	return transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, ObjectRefs: objectRefs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
+	result, err := transport.CommitRevision(ctx, cloudsync.CommitRequest{BaseRevision: baseRevision, RevisionID: "rev_" + time.Now().UTC().Format("20060102150405.000000000"), ManifestBlobID: manifestBlobID, BlobIDs: blobIDs, ObjectRefs: objectRefs, DeviceID: state.Config.DeviceID, RequestID: "pinax-" + time.Now().UTC().Format("20060102150405.000000000")})
+	if err != nil {
+		return cloudsync.CommitResult{}, err
+	}
+	// Durable commit read-back (pinax-passphrase-s3-bootstrap task 6.8): a backup
+	// is durable only once the committed revision is observable on the remote.
+	// If the head or manifest cannot be read back, report remote_write=false so
+	// the caller treats the backup as incomplete rather than trusting the
+	// CommitRevision call alone.
+	if !verifyDurableCommit(ctx, transport, state.Config.WorkspaceID, result) {
+		return cloudsync.CommitResult{RevisionID: result.RevisionID, ManifestBlobID: result.ManifestBlobID, RemoteWrite: false}, nil
+	}
+	return result, nil
+}
+
+// remoteReadBack is the minimal transport surface required to verify a durable
+// commit. cloudsync.Transport satisfies it; tests may supply a focused fake.
+type remoteReadBack interface {
+	CurrentHead(ctx context.Context, vaultID string) (cloudsync.Head, error)
+	GetManifest(ctx context.Context, blobID string) (cloudsync.Envelope, error)
+}
+
+// verifyDurableCommit confirms the committed revision is observable on the
+// remote by reading back the head and manifest. A commit whose revision is not
+// observable (head missing, head mismatch, or manifest unreadable) is not
+// durable and MUST be reported as remote_write=false.
+func verifyDurableCommit(ctx context.Context, transport remoteReadBack, workspaceID string, result cloudsync.CommitResult) bool {
+	head, err := transport.CurrentHead(ctx, workspaceID)
+	if err != nil || strings.TrimSpace(head.CurrentRevision) == "" || head.CurrentRevision != result.RevisionID {
+		return false
+	}
+	if _, err := transport.GetManifest(ctx, result.ManifestBlobID); err != nil {
+		return false
+	}
+	return true
 }
 
 // isCloudRevisionConflict reports whether err is a CAS revision conflict from
@@ -1193,7 +1341,9 @@ func cloudSyncNotConfiguredProjection(root, target string) domain.Projection {
 	projection.Facts["backend_required"] = "true"
 	projection.Facts["configured"] = "false"
 	projection.Facts["remote_write"] = "false"
-	projection.Data = map[string]any{"target": outputTarget, "remote_write": false, "plan": map[string]any{"target": outputTarget, "status": "backend_required"}}
+	data := map[string]any{"target": outputTarget, "remote_write": false, "plan": map[string]any{"target": outputTarget, "status": "backend_required"}}
+	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(syncplan.Plan{Direction: syncplan.DirectionDiff, Target: outputTarget}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, syncOutputViewOptions{Scope: "cached", Result: "partial"}))
+	projection.Data = data
 	projection.Actions = []domain.Action{{Name: "login", Command: fmt.Sprintf("pinax %s login --vault %s --endpoint <url> --workspace <id> --device <id> --secret-ref <ref>", syncConfigCommand(target), shellQuote(root))}}
 	addCapsaBridgeFacts(&projection, target)
 	return projection
@@ -1215,6 +1365,57 @@ func addCloudSyncFacts(projection *domain.Projection, state pinaxcloud.State, pl
 	projection.Facts["base_revision"] = plan.BaseRevision
 	projection.Facts["remote_revision"] = plan.RemoteRevision
 	projection.Facts["conflicts"] = fmt.Sprint(len(plan.ConflictQueue))
+}
+
+// cloudManifestContentEqual reports whether two manifests carry the same sync
+// content identity — entries matched by PathHash -> (BlobID, Mode, ObjectKind)
+// and delete markers matched by PathHash -> (ObjectKind, TombstoneID,
+// TrashBlobID). Volatile per-build metadata (GeneratedAt, UpdatedAt, device/
+// revision bookkeeping) is ignored so a rebuilt-but-unchanged manifest compares
+// equal. This is the up-to-date signal for push (task 6.8): when the local
+// manifest content already equals the remote, there is nothing to push.
+func cloudManifestContentEqual(a, b pinaxcloud.Manifest) bool {
+	if len(a.Entries) != len(b.Entries) || len(a.Deletes) != len(b.Deletes) {
+		return false
+	}
+	wantEntries := make(map[string]string, len(a.Entries))
+	for _, e := range a.Entries {
+		wantEntries[e.PathHash] = e.BlobID + "\x00" + e.ObjectKind + "\x00" + fmt.Sprint(e.Mode)
+	}
+	for _, e := range b.Entries {
+		if wantEntries[e.PathHash] != e.BlobID+"\x00"+e.ObjectKind+"\x00"+fmt.Sprint(e.Mode) {
+			return false
+		}
+		delete(wantEntries, e.PathHash)
+	}
+	if len(wantEntries) != 0 {
+		return false
+	}
+	wantDeletes := make(map[string]string, len(a.Deletes))
+	for _, d := range a.Deletes {
+		wantDeletes[d.PathHash] = d.ObjectKind + "\x00" + d.TombstoneID + "\x00" + d.TrashBlobID
+	}
+	for _, d := range b.Deletes {
+		if wantDeletes[d.PathHash] != d.ObjectKind+"\x00"+d.TombstoneID+"\x00"+d.TrashBlobID {
+			return false
+		}
+		delete(wantDeletes, d.PathHash)
+	}
+	return len(wantDeletes) == 0
+}
+
+// setRemoteCheckedFacts records whether the projection reflects a real
+// remote-aware comparison (the remote head + manifest were actually read) or a
+// cached, local-only comparison (pinax-passphrase-s3-bootstrap task 6.8). A
+// cached diff/dry-run MUST NOT pass as a pre-backup check.
+func setRemoteCheckedFacts(projection *domain.Projection, remoteLoaded bool) {
+	if remoteLoaded {
+		projection.Facts["remote_checked"] = "true"
+		projection.Facts["diff_scope"] = "remote-aware"
+	} else {
+		projection.Facts["remote_checked"] = "false"
+		projection.Facts["diff_scope"] = "cached"
+	}
 }
 
 func addCloudContentFacts(projection *domain.Projection, manifest pinaxcloud.Manifest) {

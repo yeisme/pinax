@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -162,6 +163,12 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 	}
 
 	projection := domain.NewProjection("sync.all", "Bidirectional sync completed.")
+	projection.Status = combinedSyncStatus(pullProj.Status, pushProj.Status)
+	pullView, pullViewOK := syncViewFromProjection(pullProj)
+	pushView, pushViewOK := syncViewFromProjection(pushProj)
+	aggregateView := aggregateSyncOutputViews(pullView, pullViewOK, pushView, pushViewOK, projection.Status)
+	pullReceipt, _ := syncReceiptFromProjection(pullProj)
+	pushReceipt, _ := syncReceiptFromProjection(pushProj)
 	state, stateErr := cloudStateForSync(root, req)
 	if stateErr == nil {
 		receipt := syncRunStart("sync.all", syncplan.Direction("all"), state, req.PathPolicy, target)
@@ -174,7 +181,14 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 			receipt.RevisionID = rev
 		}
 		receipt.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))}}
-		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, syncplan.Plan{Direction: syncplan.Direction("all"), Target: syncOutputTarget(target), RemoteWrite: receipt.RemoteWrite}, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
+		aggregatePlan := syncplan.Plan{Direction: syncplan.Direction("all"), Target: syncOutputTarget(target), RemoteWrite: receipt.RemoteWrite}
+		if pullReceipt != nil {
+			aggregatePlan.Operations = append(aggregatePlan.Operations, pullReceipt.Operations...)
+		}
+		if pushReceipt != nil {
+			aggregatePlan.Operations = append(aggregatePlan.Operations, pushReceipt.Operations...)
+		}
+		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, aggregatePlan, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
 		if receiptErr == nil {
 			_ = writeCurrentSyncState(root, state, receipt, receipt.RevisionID)
 			projection.Facts["run_id"] = receipt.RunID
@@ -184,8 +198,95 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 	}
 	projection.Facts["target"] = syncOutputTarget(target)
 	addCapsaBridgeFacts(&projection, target)
-	projection.Data = map[string]any{"pull": pullProj.Data, "push": pushProj.Data}
+	data := map[string]any{"pull": pullProj.Data, "push": pushProj.Data}
+	attachSyncOutputView(projection.Facts, data, aggregateView)
+	projection.Data = data
 	return projection, nil
+}
+
+func syncViewFromProjection(projection domain.Projection) (syncOutputView, bool) {
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		return syncOutputView{}, false
+	}
+	view, ok := data["sync_view"].(syncOutputView)
+	return view, ok
+}
+
+func syncReceiptFromProjection(projection domain.Projection) (*SyncRunReceipt, bool) {
+	data, ok := projection.Data.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	switch receipt := data["receipt"].(type) {
+	case SyncRunReceipt:
+		copy := receipt
+		return &copy, true
+	case *SyncRunReceipt:
+		return receipt, receipt != nil
+	default:
+		return nil, false
+	}
+}
+
+func aggregateSyncOutputViews(pull syncOutputView, pullOK bool, push syncOutputView, pushOK bool, result string) syncOutputView {
+	view := syncOutputView{SchemaVersion: syncOutputViewSchemaVersion, Direction: "all", Scope: "cached", Result: "planned"}
+	if pullOK {
+		view.Scope = pull.Scope
+		view.Revisions = pull.Revisions
+		view.Counts = pull.Counts
+		view.Bytes = pull.Bytes
+		view.Changes = append(view.Changes, pull.Changes...)
+	}
+	if pushOK {
+		if push.Scope == "remote-aware" {
+			view.Scope = push.Scope
+		}
+		if view.Revisions.Base == "" {
+			view.Revisions.Base = push.Revisions.Base
+		}
+		if push.Revisions.RemoteBefore != "" {
+			view.Revisions.RemoteBefore = push.Revisions.RemoteBefore
+		}
+		if push.Revisions.RemoteAfter != "" {
+			view.Revisions.RemoteAfter = push.Revisions.RemoteAfter
+		}
+		if push.Revisions.LocalAfter != "" {
+			view.Revisions.LocalAfter = push.Revisions.LocalAfter
+		}
+		view.Counts.Added += push.Counts.Added
+		view.Counts.Modified += push.Counts.Modified
+		view.Counts.Deleted += push.Counts.Deleted
+		view.Counts.Renamed += push.Counts.Renamed
+		view.Counts.Conflicts += push.Counts.Conflicts
+		view.Counts.Unchanged += push.Counts.Unchanged
+		view.Bytes.Uploaded += push.Bytes.Uploaded
+		view.Bytes.Downloaded += push.Bytes.Downloaded
+		view.Changes = append(view.Changes, push.Changes...)
+	}
+	view.Counts.Total = view.Counts.Added + view.Counts.Modified + view.Counts.Deleted + view.Counts.Renamed + view.Counts.Conflicts + view.Counts.Unchanged
+	view.Total = len(view.Changes)
+	view.Shown = view.Total
+	view.Result = syncOutputResultFromStatus(result)
+	sort.SliceStable(view.Changes, func(i, j int) bool {
+		left := syncOutputFirstNonEmpty(view.Changes[i].Path, view.Changes[i].ToPath, view.Changes[i].FromPath)
+		right := syncOutputFirstNonEmpty(view.Changes[j].Path, view.Changes[j].ToPath, view.Changes[j].FromPath)
+		return left < right
+	})
+	return view
+}
+
+func syncOutputResultFromStatus(status string) string {
+	switch status {
+	case "failed":
+		return "failed"
+	case "partial":
+		return "partial"
+	case "success":
+		return "applied"
+	default:
+		return "planned"
+	}
 }
 
 func combinedSyncStatus(statuses ...string) string {

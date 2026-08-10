@@ -43,6 +43,52 @@ func TestSummaryColorModes(t *testing.T) {
 	}
 }
 
+func TestSyncViewRendersTableAgentAndJSONProjection(t *testing.T) {
+	projection := domain.NewProjection("sync.push", "Sync push completed.")
+	projection.Facts["sync.result"] = "applied"
+	projection.Facts["sync.scope"] = "remote-aware"
+	projection.Data = map[string]any{"sync_view": map[string]any{
+		"schema_version": "pinax.sync.output.v1",
+		"direction":      "push",
+		"scope":          "remote-aware",
+		"result":         "applied",
+		"counts":         map[string]any{"added": 1, "modified": 1, "deleted": 0, "renamed": 0, "conflicts": 0, "unchanged": 2, "total": 4},
+		"revisions":      map[string]any{"base": "rev_base", "remote_after": "rev_after"},
+		"changes":        []map[string]any{{"code": "A", "state": "applied", "path": "notes/new.md", "operation": "upload_blob"}, {"code": "M", "state": "applied", "path": "notes/today.md", "operation": "upload_blob"}},
+		"shown":          2,
+		"total":          2,
+		"truncated":      false,
+	}}
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never", SyncLimit: 1, SyncLimitSet: true}); err != nil {
+		t.Fatalf("summary: %v", err)
+	}
+	for _, want := range []string{"Sync summary", "Added", "Modified", "Changes", "A", "notes/new.md", "shown 1/2"} {
+		if !strings.Contains(summary.String(), want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary.String())
+		}
+	}
+
+	var agent bytes.Buffer
+	if err := RenderWithOptions(&agent, ModeAgent, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("agent: %v", err)
+	}
+	for _, want := range []string{"fact.sync.result=applied", "fact.sync.change_total=2", "change.1.code=A", "change.1.path=notes/new.md"} {
+		if !strings.Contains(agent.String(), want) {
+			t.Fatalf("agent missing %q:\n%s", want, agent.String())
+		}
+	}
+
+	var jsonOut bytes.Buffer
+	if err := RenderWithOptions(&jsonOut, ModeJSON, projection, RenderOptions{ColorMode: "always"}); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if strings.Count(strings.TrimSpace(jsonOut.String()), "\n") != 0 || strings.Contains(jsonOut.String(), "\x1b[") {
+		t.Fatalf("json is not a single ANSI-free envelope: %s", jsonOut.String())
+	}
+}
+
 func TestMachineOutputsNeverUseANSI(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	t.Setenv("PINAX_COLOR", "always")

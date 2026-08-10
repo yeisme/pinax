@@ -39,8 +39,21 @@ Output contract for relationship commands:
 
 ## Human Rendering Configuration
 
-`--color`, `--theme`, `--width`, `--markdown-style`, and `output.*` configuration affect only the default human summary output. `--json`, `--agent`, `--events`, and `--explain` must continue to render the machine contract from the same projection and must not include ANSI, Glamour decorations, table colors, or pager control sequences.
+`--output-style table|compact`, `--color`, `--theme`, `--width`, `--markdown-style`, and `output.*` configuration affect only the default human summary output. The default style is `table`; `PINAX_OUTPUT_STYLE` and `output.style` accept `table` or `compact`. `--json`, `--agent`, `--events`, and `--explain` ignore the human style and must continue to render the machine contract from the same projection without ANSI, Glamour decorations, table colors, or pager control sequences.
 
 Themes take effect through semantic roles: `accent`, `muted`, `rule`, `success`, `warning`, `danger`, `key`, `value`, `path`, `link`, `code`, `heading`. Built-in themes are `pinax`, `mono`, and `high-contrast`; the `custom` theme only overrides roles declared by the user, and missing roles fall back to `pinax`.
 
 Markdown/Glamour is used only for body-reading scenarios in default human mode, such as `note show/read`, `daily/weekly/monthly show`, and `template show/render`. Machine modes preserve the original `data.body` or `data.note.body` and must not write rendered ANSI text.
+
+## Sync output view
+
+`sync`, `sync diff`, `sync push`, `sync pull`, `sync all`, and `sync logs show` may include additive `data.sync_view` with `schema_version=pinax.sync.output.v1`. The view contains direction, scope (`remote-aware|cached`), result, revisions, counts, byte totals, Git-style changes (`A|M|D|R|C`), and `shown/total/truncated`. Existing `data.plan.operations`, receipt fields, `path`, `path_hash`, and `operation_status` remain authoritative and compatible.
+
+```bash
+pinax sync diff --vault ./my-notes --preview status --limit 10
+pinax sync diff --vault ./my-notes --preview diff
+pinax sync diff --vault ./my-notes --content-diff --limit 5
+pinax sync diff --vault ./my-notes --preview none
+```
+
+`--limit 0` keeps statistics and revisions but hides paths. Content diff is opt-in, bounded to 64 KiB per file, 256 KiB per run, and 10 files, and is never written to receipts, events, or remote objects. Agent output reports only diff counts; events never carry content hunks.

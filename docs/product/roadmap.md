@@ -110,7 +110,7 @@ v0.2 不引入新功能领域，核心是关闭三笔 P0 credit debt——这些
 | 不做 | 原因 | 替代方案 |
 | --- | --- | --- |
 | **云笔记后端** | Pinax 不是 Notion 替代品；vault 是真源，cloud 只协调密文 | 用户保留自有 Markdown vault |
-| **新闻爬虫 / 内容抓取** | 外部资料通过 CLI-backed Provider adapter 拉取，Pinax 不自建 crawler | 使用 `ntn`、`lark-cli`、Connectors/internet-access 等 provider |
+| **新闻爬虫 / 内容抓取** | 外部资料通过 CLI-backed Provider adapter 拉取，Pinax 不自建 crawler | 使用 `ntn`、`lark-cli`、internet-access 等 provider |
 | **飞书知识库** | 飞书是 provider / delivery surface，不是 vault 替代 | 飞书内容通过 adapter 导入 vault |
 | **长期 daemon** | Pinax 是 CLI-only 短生命周期进程 | `sync daemon` 是本地 watch-and-poll 进程，不是常驻服务 |
 | **内置编辑器 UI** | 完整编辑器属于 Workbench 模块 | `pinax vault dashboard` 提供只读控制台；编辑器归 `client/yeisme-workbench`（参见 [Dashboard PRD §3](./dashboard-prd.md#3-产品定位)） |

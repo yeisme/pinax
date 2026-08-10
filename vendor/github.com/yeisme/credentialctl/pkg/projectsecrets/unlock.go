@@ -1,6 +1,7 @@
 package projectsecrets
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -178,6 +179,94 @@ func (p *PromptSource) Secret(ctx context.Context) ([]byte, error) {
 	return secret, nil
 }
 
+// Remember stores the repository passphrase in the scoped macOS Keychain
+// item. The secret is provided through the child process stdin and is never
+// placed in the process argument vector.
+func (k *KeychainSource) Remember(ctx context.Context, secret []byte) error {
+	if len(secret) == 0 {
+		return UnlockRequiredError("empty keychain secret")
+	}
+	execPath, err := k.executablePath()
+	if err != nil {
+		return err
+	}
+	cmdFn := k.execCommand
+	if cmdFn == nil {
+		cmdFn = exec.Command
+	}
+	cmd := cmdFn(execPath,
+		"add-generic-password",
+		"-U",
+		"-s", k.service,
+		"-a", k.account,
+		"-w",
+	)
+	payload := make([]byte, len(secret)+1)
+	copy(payload, secret)
+	payload[len(payload)-1] = '\n'
+	defer func() {
+		for i := range payload {
+			payload[i] = 0
+		}
+	}()
+	cmd.Stdin = bytes.NewReader(payload)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		classified := classifyKeychainError(err, out)
+		for i := range out {
+			out[i] = 0
+		}
+		return classified
+	}
+	for i := range out {
+		out[i] = 0
+	}
+	return nil
+}
+
+// Delete removes the scoped repository passphrase from macOS Keychain.
+func (k *KeychainSource) Delete(ctx context.Context) error {
+	execPath, err := k.executablePath()
+	if err != nil {
+		return err
+	}
+	cmdFn := k.execCommand
+	if cmdFn == nil {
+		cmdFn = exec.Command
+	}
+	cmd := cmdFn(execPath,
+		"delete-generic-password",
+		"-s", k.service,
+		"-a", k.account,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		classified := classifyKeychainError(err, out)
+		for i := range out {
+			out[i] = 0
+		}
+		return classified
+	}
+	for i := range out {
+		out[i] = 0
+	}
+	return nil
+}
+
+func (k *KeychainSource) executablePath() (string, error) {
+	if runtime.GOOS != "darwin" && !k.fakeExec {
+		return "", KeychainUnavailableError("keychain only available on macOS")
+	}
+	execPath := k.execPath
+	if execPath == "" {
+		execPath = defaultSecurityPath()
+	}
+	if _, err := os.Stat(execPath); err != nil {
+		return "", KeychainUnavailableError("security executable unavailable")
+	}
+	return execPath, nil
+}
+
 // KeychainSource reads the unlock secret from the macOS Keychain via the fixed
 // /usr/bin/security executable. Service/account metadata may be surfaced
 // redacted; the value is never printed. On non-darwin hosts or when the
@@ -225,15 +314,9 @@ func NewKeychainSource(service, account string, opts ...KeychainOption) (*Keycha
 func (k *KeychainSource) Descriptor() string { return "keychain" }
 
 func (k *KeychainSource) Secret(ctx context.Context) ([]byte, error) {
-	if runtime.GOOS != "darwin" && !k.fakeExec {
-		return nil, KeychainUnavailableError("keychain only available on macOS")
-	}
-	execPath := k.execPath
-	if execPath == "" {
-		execPath = defaultSecurityPath()
-	}
-	if _, err := os.Stat(execPath); err != nil {
-		return nil, KeychainUnavailableError("security executable unavailable")
+	execPath, err := k.executablePath()
+	if err != nil {
+		return nil, err
 	}
 	cmdFn := k.execCommand
 	if cmdFn == nil {

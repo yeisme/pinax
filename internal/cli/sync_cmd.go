@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/output"
 	"github.com/yeisme/pinax/internal/profile"
+	"golang.org/x/term"
 )
 
 func resolveSyncRequest(req app.SyncRequest) app.SyncRequest {
@@ -107,6 +109,150 @@ func syncDaemonLiveSink(w io.Writer, mode output.Mode, seq *int) syncdaemon.Even
 	}
 }
 
+type syncProgressStream struct {
+	w        io.Writer
+	mode     output.Mode
+	seq      int
+	terminal bool
+	command  string
+}
+
+func newSyncProgressStream(cmd *cobra.Command, ctx commandBuildContext) *syncProgressStream {
+	mode := ctx.outputMode()
+	if mode == output.ModeJSON || mode == output.ModeAgent || mode == output.ModeExplain {
+		return nil
+	}
+	progress := strings.ToLower(strings.TrimSpace(*ctx.syncProgress))
+	if progress == "" {
+		progress = "auto"
+	}
+	if progress == "never" {
+		return nil
+	}
+	stream := &syncProgressStream{w: cmd.OutOrStdout(), mode: mode, seq: 1, command: syncProgressCommand(cmd)}
+	if mode == output.ModeEvents {
+		_ = stream.write(map[string]any{"type": "start", "status": "running"})
+		return stream
+	}
+	stream.w = cmd.ErrOrStderr()
+	if file, ok := stream.w.(*os.File); ok {
+		stream.terminal = term.IsTerminal(int(file.Fd()))
+	}
+	return stream
+}
+
+// syncProgressCommand returns the stable projection command used by machine
+// event consumers. Cobra's CommandPath includes the executable name, while
+// the CLI output contract uses the existing dot-delimited command IDs.
+func syncProgressCommand(cmd *cobra.Command) string {
+	if cmd == nil {
+		return "sync"
+	}
+	parts := make([]string, 0, 3)
+	for current := cmd; current != nil; current = current.Parent() {
+		name := strings.TrimSpace(current.Name())
+		if name == "" || name == "pinax" {
+			break
+		}
+		parts = append(parts, name)
+	}
+	for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
+		parts[left], parts[right] = parts[right], parts[left]
+	}
+	if len(parts) == 0 {
+		return "sync"
+	}
+	return strings.Join(parts, ".")
+}
+
+func (s *syncProgressStream) sink() app.SyncEventSink {
+	if s == nil {
+		return nil
+	}
+	return func(event app.SyncEvent) {
+		if s.mode == output.ModeEvents {
+			s.seq++
+			payload := map[string]any{"type": "progress", "seq": s.seq, "phase": event.Phase, "direction": event.Direction, "run_id": event.RunID, "completed": event.Completed, "total": event.Total, "bytes_completed": event.BytesCompleted, "bytes_total": event.BytesTotal, "operation": event.Operation, "change_code": event.ChangeCode, "path": event.Path, "path_hash": event.PathHash, "status": event.Status, "revision_id": event.RevisionID, "remote_write": event.RemoteWrite, "local_write": event.LocalWrite}
+			if len(event.Facts) > 0 {
+				payload["facts"] = event.Facts
+			}
+			_ = s.write(payload)
+			return
+		}
+		status := event.Status
+		if status == "" {
+			status = "running"
+		}
+		line := fmt.Sprintf("sync %s %s", event.Phase, status)
+		if event.Total > 0 {
+			line = fmt.Sprintf("%s (%d/%d)", line, event.Completed, event.Total)
+		}
+		if s.terminal {
+			_, _ = fmt.Fprintf(s.w, "\r%-72s", line)
+		} else {
+			_, _ = fmt.Fprintln(s.w, line)
+		}
+	}
+}
+
+func (s *syncProgressStream) write(payload map[string]any) error {
+	payload["spec_version"] = "1.0"
+	payload["mode"] = "events"
+	payload["command"] = s.command
+	enc := json.NewEncoder(s.w)
+	enc.SetEscapeHTML(false)
+	return enc.Encode(payload)
+}
+
+func (s *syncProgressStream) finish(projection domain.Projection, err error) error {
+	if s == nil {
+		return nil
+	}
+	if s.mode == output.ModeEvents {
+		s.seq++
+		typ := "end"
+		if err != nil || projection.Status == "failed" {
+			typ = "error"
+		}
+		payload := map[string]any{"type": typ, "seq": s.seq, "status": projection.Status, "summary": projection.Summary}
+		if len(projection.Facts) > 0 {
+			payload["facts"] = projection.Facts
+		}
+		if projection.Error != nil {
+			payload["error"] = projection.Error
+		}
+		return s.write(payload)
+	}
+	if s.terminal {
+		_, _ = fmt.Fprintln(s.w)
+	}
+	return nil
+}
+
+func finishSyncUnlockError(cmd *cobra.Command, ctx commandBuildContext, stream *syncProgressStream, command string, err error) error {
+	if err == nil {
+		return nil
+	}
+	commandErr, ok := err.(*domain.CommandError)
+	if !ok {
+		commandErr = &domain.CommandError{Code: "sync_unlock", Message: err.Error(), Hint: "Check the repository unlock source and try again"}
+	}
+	projection := domain.NewErrorProjection(command, commandErr)
+	return finishSyncCommand(cmd, ctx, stream, projection, commandErr)
+}
+
+func finishSyncCommand(cmd *cobra.Command, ctx commandBuildContext, stream *syncProgressStream, projection domain.Projection, err error) error {
+	if stream != nil {
+		if streamErr := stream.finish(projection, err); streamErr != nil {
+			return streamErr
+		}
+		if stream.mode == output.ModeEvents {
+			return err
+		}
+	}
+	return ctx.renderProjection(cmd, projection, err)
+}
+
 func writeSyncDaemonStreamEvent(w io.Writer, payload map[string]any) error {
 	payload["spec_version"] = "1.0"
 	payload["mode"] = "events"
@@ -125,19 +271,90 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	var daemonPollInterval time.Duration
 	var daemonSyncTimeout time.Duration
 	var daemonOnce bool
+	var daemonUnlock string
+	var daemonUnlockRef string
+	var daemonPassphraseFile string
+	var daemonEnvVar string
 	var syncPullPassphraseFile string
 	var syncPullEnvVar string
+	var syncPullUnlock string
+	var syncPullUnlockRef string
+	var syncDiffUnlock string
+	var syncDiffUnlockRef string
+	var syncDiffPassphraseFile string
+	var syncDiffEnvVar string
+	var syncPushUnlock string
+	var syncPushUnlockRef string
+	var syncPushPassphraseFile string
+	var syncPushEnvVar string
+	addSyncUnlockFlags := func(c *cobra.Command, unlock, unlockRef, passphraseFile, envVar *string) {
+		c.Flags().StringVar(unlock, "unlock", "", "Unlock source: prompt|keychain|file|env")
+		c.Flags().StringVar(unlockRef, "unlock-ref", "", "Keychain reference keychain://<service>/<account>")
+		c.Flags().StringVar(passphraseFile, "passphrase-file", "", "Read repository-encrypted unlock passphrase from a 0600 regular file")
+		c.Flags().StringVar(envVar, "env-var", "", "Read repository-encrypted unlock passphrase from a named environment variable")
+	}
 	addPathPolicyFlag := func(c *cobra.Command) {
 		c.Flags().StringVar(&syncPathPolicy, "path-policy", "default", "Path redaction policy for sync receipts: default, hash, or omitted")
 		_ = c.RegisterFlagCompletionFunc("path-policy", staticCompletion("path-policy", "default", "hash", "omitted"))
+	}
+	addSyncViewFlags := func(c *cobra.Command) {
+		c.Flags().StringVar(ctx.syncPreview, "preview", "status", "Sync preview: status, diff, or none")
+		c.Flags().IntVar(ctx.syncLimit, "limit", 10, "Maximum sync changes to display; 0 shows statistics only")
+		c.Flags().BoolVar(ctx.syncContentDiff, "content-diff", false, "Include bounded Markdown content diff")
+		c.Flags().StringVar(ctx.syncProgress, "progress", "auto", "Progress output: auto, always, or never")
+		_ = c.RegisterFlagCompletionFunc("preview", staticCompletion("preview", "status", "diff", "none"))
+		_ = c.RegisterFlagCompletionFunc("progress", staticCompletion("progress", "auto", "always", "never"))
+	}
+	configureSyncRenderOptions := func(cmd *cobra.Command) {
+		if ctx.renderOptions == nil {
+			return
+		}
+		opts := ctx.renderOptions
+		opts.SyncPreview = strings.TrimSpace(*ctx.syncPreview)
+		if opts.SyncPreview == "" {
+			opts.SyncPreview = "status"
+		}
+		opts.SyncLimit = *ctx.syncLimit
+		if flag := cmd.Flags().Lookup("limit"); flag != nil {
+			opts.SyncLimitSet = flag.Changed
+		} else if flag := cmd.InheritedFlags().Lookup("limit"); flag != nil {
+			opts.SyncLimitSet = flag.Changed
+		}
+		opts.ContentDiff = *ctx.syncContentDiff
+	}
+	syncRequestOptions := func() (string, int, bool, string) {
+		preview := strings.TrimSpace(*ctx.syncPreview)
+		if preview == "" {
+			preview = "status"
+		}
+		return preview, *ctx.syncLimit, *ctx.syncContentDiff, strings.TrimSpace(*ctx.syncProgress)
+	}
+	validateSyncViewFlags := func(cmd *cobra.Command) error {
+		preview, limit, _, progress := syncRequestOptions()
+		if preview != "status" && preview != "diff" && preview != "none" {
+			return renderCommandError(cmd, ctx.outputMode(), "sync.output", "invalid_preview", "sync preview must be status, diff, or none", "Use --preview status, --preview diff, or --preview none")
+		}
+		if limit < 0 {
+			return renderCommandError(cmd, ctx.outputMode(), "sync.output", "invalid_limit", "sync limit must be zero or greater", "Use --limit 0 to hide paths or a positive limit")
+		}
+		if progress != "" && progress != "auto" && progress != "always" && progress != "never" {
+			return renderCommandError(cmd, ctx.outputMode(), "sync.output", "invalid_progress", "sync progress must be auto, always, or never", "Use --progress auto, --progress always, or --progress never")
+		}
+		return nil
 	}
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Generate and execute a one-command bidirectional sync plan",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			request := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, PathPolicy: syncPathPolicy})
+			configureSyncRenderOptions(cmd)
+			if err := validateSyncViewFlags(cmd); err != nil {
+				return err
+			}
+			stream := newSyncProgressStream(cmd, ctx)
+			preview, limit, contentDiff, progress := syncRequestOptions()
+			request := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, PathPolicy: syncPathPolicy, Preview: preview, Limit: limit, ContentDiff: contentDiff, Progress: progress, LiveEvents: stream.sink()})
 			projection, err := ctx.svc.SyncAll(cmd.Context(), request)
-			return ctx.renderProjection(cmd, projection, err)
+			return finishSyncCommand(cmd, ctx, stream, projection, err)
 		},
 	}
 	syncCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
@@ -145,6 +362,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	syncCmd.Flags().BoolVar(ctx.syncDryRun, "dry-run", false, "Only run merge calculation")
 	syncCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync writes")
 	addPathPolicyFlag(syncCmd)
+	addSyncViewFlags(syncCmd)
 
 	syncInitCmd := &cobra.Command{
 		Use:   "init",
@@ -174,8 +392,20 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		Use:   "diff",
 		Short: "Generate a sync diff plan",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.SyncDiff(cmd.Context(), resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy}))
-			return ctx.renderProjection(cmd, projection, err)
+			configureSyncRenderOptions(cmd)
+			if err := validateSyncViewFlags(cmd); err != nil {
+				return err
+			}
+			stream := newSyncProgressStream(cmd, ctx)
+			source, err := resolveSyncUnlockSource(*ctx.vaultPath, syncDiffUnlock, syncDiffUnlockRef, syncDiffPassphraseFile, syncDiffEnvVar)
+			if err != nil {
+				return finishSyncUnlockError(cmd, ctx, stream, "sync.diff", err)
+			}
+			preview, limit, contentDiff, progress := syncRequestOptions()
+			req := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy, Preview: preview, Limit: limit, ContentDiff: contentDiff, Progress: progress, LiveEvents: stream.sink()})
+			req.ProjectUnlockSource = source
+			projection, err := ctx.svc.SyncDiff(cmd.Context(), req)
+			return finishSyncCommand(cmd, ctx, stream, projection, err)
 		},
 	}
 	syncDiffCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
@@ -183,14 +413,28 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	syncDiffCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
 	syncDiffCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	addPathPolicyFlag(syncDiffCmd)
+	addSyncViewFlags(syncDiffCmd)
+	addSyncUnlockFlags(syncDiffCmd, &syncDiffUnlock, &syncDiffUnlockRef, &syncDiffPassphraseFile, &syncDiffEnvVar)
 	_ = syncDiffCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.AddCommand(syncDiffCmd)
 	syncPushCmd := &cobra.Command{
 		Use:   "push",
 		Short: "Record sync push state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.SyncPush(cmd.Context(), resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy}))
-			return ctx.renderProjection(cmd, projection, err)
+			configureSyncRenderOptions(cmd)
+			if err := validateSyncViewFlags(cmd); err != nil {
+				return err
+			}
+			stream := newSyncProgressStream(cmd, ctx)
+			source, err := resolveSyncUnlockSource(*ctx.vaultPath, syncPushUnlock, syncPushUnlockRef, syncPushPassphraseFile, syncPushEnvVar)
+			if err != nil {
+				return finishSyncUnlockError(cmd, ctx, stream, "sync.push", err)
+			}
+			preview, limit, contentDiff, progress := syncRequestOptions()
+			req := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy, Preview: preview, Limit: limit, ContentDiff: contentDiff, Progress: progress, LiveEvents: stream.sink()})
+			req.ProjectUnlockSource = source
+			projection, err := ctx.svc.SyncPush(cmd.Context(), req)
+			return finishSyncCommand(cmd, ctx, stream, projection, err)
 		},
 	}
 	syncPushCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
@@ -199,16 +443,28 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	syncPushCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPushCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
 	addPathPolicyFlag(syncPushCmd)
+	addSyncViewFlags(syncPushCmd)
+	addSyncUnlockFlags(syncPushCmd, &syncPushUnlock, &syncPushUnlockRef, &syncPushPassphraseFile, &syncPushEnvVar)
 	_ = syncPushCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.AddCommand(syncPushCmd)
 	syncPullCmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Record sync pull state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			req := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy})
-			req.ProjectUnlockSource = resolveProjectUnlockSource(syncPullPassphraseFile, syncPullEnvVar)
+			configureSyncRenderOptions(cmd)
+			if err := validateSyncViewFlags(cmd); err != nil {
+				return err
+			}
+			stream := newSyncProgressStream(cmd, ctx)
+			source, err := resolveSyncUnlockSource(*ctx.vaultPath, syncPullUnlock, syncPullUnlockRef, syncPullPassphraseFile, syncPullEnvVar)
+			if err != nil {
+				return finishSyncUnlockError(cmd, ctx, stream, "sync.pull", err)
+			}
+			preview, limit, contentDiff, progress := syncRequestOptions()
+			req := resolveSyncRequest(app.SyncRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, DryRun: *ctx.syncDryRun, BaseRevision: *ctx.syncBaseRevision, RemoteRevision: *ctx.syncRemoteRevision, PathPolicy: syncPathPolicy, Preview: preview, Limit: limit, ContentDiff: contentDiff, Progress: progress, LiveEvents: stream.sink()})
+			req.ProjectUnlockSource = source
 			projection, err := ctx.svc.SyncPull(cmd.Context(), req)
-			return ctx.renderProjection(cmd, projection, err)
+			return finishSyncCommand(cmd, ctx, stream, projection, err)
 		},
 	}
 	syncPullCmd.Flags().StringVar(ctx.syncTarget, "target", "capsa", "Sync target: capsa, git, s3, cloud, or pinax-cloud")
@@ -216,9 +472,9 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	syncPullCmd.Flags().StringVar(ctx.syncBaseRevision, "base-revision", "", "Locally known Capsa base revision")
 	syncPullCmd.Flags().StringVar(ctx.syncRemoteRevision, "remote-revision", "", "Capsa remote revision for tests or fake backends")
 	syncPullCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm sync state writes")
-	syncPullCmd.Flags().StringVar(&syncPullPassphraseFile, "passphrase-file", "", "Read repository-encrypted unlock passphrase from a 0600 regular file")
-	syncPullCmd.Flags().StringVar(&syncPullEnvVar, "env-var", "", "Read repository-encrypted unlock passphrase from a named environment variable")
 	addPathPolicyFlag(syncPullCmd)
+	addSyncViewFlags(syncPullCmd)
+	addSyncUnlockFlags(syncPullCmd, &syncPullUnlock, &syncPullUnlockRef, &syncPullPassphraseFile, &syncPullEnvVar)
 	_ = syncPullCmd.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	syncCmd.AddCommand(syncPullCmd)
 
@@ -288,15 +544,26 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	daemonCmd := &cobra.Command{Use: "daemon", Short: "Run the local Capsa sync daemon"}
 	daemonRunCmd := &cobra.Command{Use: "run", Short: "Run the sync daemon in the foreground", RunE: func(cmd *cobra.Command, args []string) error {
+		if daemonUnlock == "prompt" {
+			return fmt.Errorf("--unlock prompt is not allowed for the daemon; use keychain, file, or env so the daemon never blocks on a TTY")
+		}
+		source, err := resolveSyncUnlockSource(*ctx.vaultPath, daemonUnlock, daemonUnlockRef, daemonPassphraseFile, daemonEnvVar)
+		if err != nil {
+			return err
+		}
 		mode := ctx.outputMode()
 		streamSeq := 1
-		live := syncDaemonLiveSink(cmd.OutOrStdout(), mode, &streamSeq)
+		liveWriter := cmd.ErrOrStderr()
+		if mode == output.ModeEvents {
+			liveWriter = cmd.OutOrStdout()
+		}
+		live := syncDaemonLiveSink(liveWriter, mode, &streamSeq)
 		if mode == output.ModeEvents {
 			if err := writeSyncDaemonStreamEvent(cmd.OutOrStdout(), map[string]any{"type": "start", "seq": streamSeq, "status": "running"}); err != nil {
 				return err
 			}
 		}
-		projection, err := ctx.svc.SyncDaemonRun(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, Once: daemonOnce, PollInterval: daemonPollInterval, SyncTimeout: daemonSyncTimeout, LiveEvents: live})
+		projection, err := ctx.svc.SyncDaemonRun(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, Once: daemonOnce, PollInterval: daemonPollInterval, SyncTimeout: daemonSyncTimeout, LiveEvents: live, ProjectUnlockSource: source})
 		if mode == output.ModeEvents {
 			endType := "end"
 			if err != nil || projection.Status == "failed" {
@@ -309,7 +576,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	daemonStartCmd := &cobra.Command{Use: "start", Short: "Start the sync daemon in the background", RunE: func(cmd *cobra.Command, args []string) error {
-		projection, err := ctx.svc.SyncDaemonStart(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, PollInterval: daemonPollInterval, SyncTimeout: daemonSyncTimeout})
+		if daemonUnlock == "prompt" {
+			return fmt.Errorf("--unlock prompt is not allowed for the daemon; use keychain, file, or env so the daemon never blocks on a TTY")
+		}
+		projection, err := ctx.svc.SyncDaemonStart(cmd.Context(), app.SyncDaemonRequest{VaultPath: *ctx.vaultPath, Target: *ctx.syncTarget, Yes: *ctx.yes, PollInterval: daemonPollInterval, SyncTimeout: daemonSyncTimeout, UnlockFlags: app.SyncDaemonUnlockFlags{Unlock: daemonUnlock, UnlockRef: daemonUnlockRef, PassphraseFile: daemonPassphraseFile, EnvVar: daemonEnvVar}})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	daemonStatusCmd := &cobra.Command{Use: "status", Short: "Show sync daemon status", RunE: func(cmd *cobra.Command, args []string) error {
@@ -329,6 +599,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		c.Flags().BoolVar(ctx.yes, "yes", false, "Confirm automatic sync writes")
 		c.Flags().DurationVar(&daemonPollInterval, "poll-interval", time.Second, "Remote head poll interval")
 		c.Flags().DurationVar(&daemonSyncTimeout, "sync-timeout", 30*time.Second, "Per-sync operation timeout")
+		addSyncUnlockFlags(c, &daemonUnlock, &daemonUnlockRef, &daemonPassphraseFile, &daemonEnvVar)
 		_ = c.RegisterFlagCompletionFunc("target", syncTargetCompletion)
 	}
 	daemonRunCmd.Flags().BoolVar(&daemonOnce, "once", false, "Run one daemon sync cycle and exit")

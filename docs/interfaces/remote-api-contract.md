@@ -116,7 +116,7 @@ POST /v1/project-items/{ref}:{action}
 RPC Pinax.ProjectItem.Plan
 ```
 
-When confirmation is missing for archival or high-risk changes, return `approval_required`; when a version snapshot is missing, return `snapshot_required` and include a runnable `pinax version snapshot ...` action. Remote plans do not modify Markdown, `.pinax/`, Git, TaskBridge, providers, or remote services; real writes are still executed through explicit CLI commands.
+When confirmation is missing for archival or high-risk changes, return `approval_required`; when a version snapshot is missing, return `snapshot_required` and include a runnable `pinax version snapshot ...` action. Remote plans do not modify Markdown, `.pinax/`, Git, providers, or remote services; real writes are still executed through explicit CLI commands.
 
 Folder mutation routes reuse the CLI service and do not write the filesystem directly:
 

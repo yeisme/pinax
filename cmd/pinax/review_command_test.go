@@ -28,12 +28,12 @@ func TestReviewCommand_HelpExists(t *testing.T) {
 	}
 }
 
-// TestReviewCommand_InCommandTree verifies the root help lists the additive
-// `review` entry point alongside the existing command tree.
+// TestReviewCommand_InCommandTree verifies the complete command catalog
+// retains the additive `review` entry point.
 func TestReviewCommand_InCommandTree(t *testing.T) {
-	rootHelp := runCLI(t, "--help")
-	if !strings.Contains(rootHelp, "  review") {
-		t.Fatalf("root --help should list review:\n%s", rootHelp)
+	catalog := runCLI(t, "commands")
+	if !strings.Contains(catalog, "review") {
+		t.Fatalf("command catalog should list review:\n%s", catalog)
 	}
 }
 

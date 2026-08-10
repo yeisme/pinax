@@ -1,6 +1,10 @@
 # sync Command
 `pinax sync` generates, records, and executes sync plans. Explicit `diff`/`push`/`pull` commands are short-lived workflows; `pinax sync daemon` is the local long-running process for automatic Capsa Sync.
 
+For Pinax vault backup and new-device restore, the preferred target architecture is repository-encrypted S3/COS: Git carries Markdown plus `.pinax/pinax-sync.yaml` and encrypted `.pinax/project-secrets.yaml`; Capsa direct S3 stores encrypted blobs, manifests and revisions. Git is a companion/version channel, not a replacement for native S3 commit evidence. rclone is a provider compatibility or external archive fallback, not the first recommendation.
+
+This preferred repository-encrypted path remains **experimental** until the active binary supports remote-aware repository unlock for `diff|push`, durable manifest commit read-back, capability gating, atomic migration and real macOS bidirectional dogfood. A projection containing `real remote writes are not wired yet`, `remote_checked=false`, or `remote_write=false` without `up_to_date=true` is not proof of a completed backup.
+
 For `--target capsa`, the protocol is distributed: every device keeps a local vault, and the selected Capsa Sync transport coordinates encrypted blob, manifest, and revision exchange. The content manifest is selected by `.pinaxignore` and can include Markdown, scripts, assets, attachments, and other regular files. The transport can be Capsa Server, S3-compatible direct storage, rclone direct storage, or embedded Go API/local RPC. This differs from `pinax api serve`, which is centralized remote access to one server-side vault.
 
 Project and subproject deletions are represented as explicit encrypted delete markers in the manifest. A deletion is not inferred from a missing file entry. Push reports additive `delete_markers` and `trash_backup_blobs` facts, and `remote_write=true` is still emitted only after the selected transport commits the revision.
@@ -29,6 +33,26 @@ The backup mirror boundary also excludes realtime daemon and conflict policy cha
 | `pinax sync conflicts diff <file>` | Shows a diff between a conflict copy and its trunk file. | Read-only. |
 | `pinax sync conflicts show <file>` | Shows conflict content for manual or agent merge workflows. | Read-only. |
 | `pinax sync conflicts resolve <file>` | Resolves a conflict copy by keeping local, keeping remote, or applying a merged file. | Requires explicit resolve flags and write confirmation where supported. |
+
+## Output and preview
+
+默认人类输出是表格，机器模式仍来自同一 projection：
+
+```bash
+pinax sync diff --vault ./my-notes --preview status --limit 10
+pinax sync diff --vault ./my-notes --preview diff
+pinax sync diff --vault ./my-notes --content-diff --limit 5
+pinax sync --vault ./my-notes --progress auto
+pinax sync --vault ./my-notes --events
+pinax sync --vault ./my-notes --agent
+pinax sync --vault ./my-notes --json
+```
+
+`--preview status` 显示 Added/Modified/Deleted/Renamed/Conflicts 与最多 N 条 A/M/D/R/C 路径；`--preview diff` 增加 manifest 元数据 unified diff；`--preview none` 只保留统计和 revision。`--limit 0` 不列路径。`--content-diff` 只在显式启用时生成有界 Markdown 正文 diff，且不会进入 receipt、事件日志或 COS/S3 对象。
+
+同步 projection 可选包含 `data.sync_view`（`pinax.sync.output.v1`）。`scope=remote-aware` 表示本次比较读取了远端 head；`scope=cached` 只表示本地缓存比较，不是远端备份成功证据。JSON 保留完整 `data.plan.operations`，agent 只输出有限 `change.N.*`，events 只输出 `start/progress/end/error` NDJSON。
+
+默认进度写 stderr：TTY 使用单行刷新，非 TTY 使用简洁阶段行；`--progress never` 完全关闭实时进度。`--json` 和 `--agent` 不输出实时进度，`--events` 将进度写入 stdout NDJSON。
 
 ## Common workflows
 
@@ -349,7 +373,8 @@ Logical identities (`credential_id`, `encryption_key_id`) are resolved per-devic
 | `pinax sync repo secret set` | Stores an encrypted secret value under a logical identity. | Writes `.pinax/project-secrets.yaml` (ciphertext only). Plaintext is transient. |
 | `pinax sync repo secret list` | Lists secret metadata (name, identity, provider). | Read-only; never shows plaintext. |
 | `pinax sync repo secret remove` | Removes an encrypted secret. | Mutates the encrypted asset. |
-| `pinax sync repo bootstrap` | First device run: unlocks secrets, compiles + writes the runtime config, writes the source marker. New devices default to **pull-only**. | Writes `.pinax/cloud/config.yaml`; does not upload local deletions on a fresh device. |
+| `pinax sync repo bootstrap` | First device run: unlocks the repository credential and content key, compiles the runtime config, and optionally performs the initial pull. | `--pull --yes` executes a pull-only sync; `remote_write=false`. |
+| `pinax sync repo migrate device-profile` | Converts the current AWS shared profile and Capsa content key into one repository-encrypted envelope. | Writes declaration, ciphertext envelope and managed ignore entries; never contacts the remote. |
 | `pinax sync repo plan` | Reports intended config changes and drift. | No writes. |
 | `pinax sync repo apply` | Regenerates the runtime config from the declaration on an initialized device. | Requires `--yes` for high-risk changes (workspace, backend namespace, encryption key identity, remote-delete policy). Backs up the prior runtime config for rollback. |
 | `pinax sync repo doctor` | Diagnoses declaration/runtime drift, key identity and device state. | Read-only. |
@@ -408,7 +433,15 @@ The env loader reuses the same unlock providers as `pinax sync repo secret`. The
 
 ## Repository-encrypted S3/COS credentials (experimental)
 
-`pinax sync repo credential` manages a **typed** repository-encrypted S3/COS credential bundle (`s3_credentials.v1`) through the shared `credentialctl` project-secrets library. The ciphertext lives in `.pinax/project-secrets.yaml` (a `yeisme.project_secrets.v0.1` envelope) and can be committed; the passphrase unlocks from a file or env var (TTY prompt and macOS Keychain are owned by credentialctl). This is the recommended path for new Mac bootstrap; the legacy AWS shared profile remains a fully supported fallback.
+`pinax sync repo` can keep both the typed S3/COS credential bundle (`s3_credentials.v1`) and the Capsa content encryption key (`capsa_encryption_key.v1`) in one `credentialctl` project-secrets envelope. The ciphertext lives in `.pinax/project-secrets.yaml` and can be committed. Prompt, macOS Keychain, `0600` file and `PINAX_REPO_PASS` env unlock sources are supported; plaintext never enters the repository runtime YAML or structured output.
+
+Recommendation order:
+
+1. Use this repository-encrypted S3/COS workflow when the active binary reports all required capabilities.
+2. Keep Git for Markdown history, declaration/ciphertext review, clone and rollback.
+3. Use rclone only when native Pinax S3 cannot support the selected provider or as a separately labeled archive fallback.
+
+The initial clone-time bootstrap is pull-only. Do not describe the full S3 backup lifecycle as stable until ordinary repository-encrypted push can perform a remote-aware dry-run and return either durable `remote_write=true` plus revision read-back, or `up_to_date=true` plus `remote_checked=true`.
 
 ### Commands
 
@@ -418,8 +451,10 @@ The env loader reuses the same unlock providers as `pinax sync repo secret`. The
 | `pinax sync repo credential set --stdin` | Encrypts one `s3_credentials.v1` bundle (payload via `--stdin`). | Re-writes the envelope atomically. Field-level validation runs before encryption; errors never echo values. |
 | `pinax sync repo credential list` | Lists credential bundle metadata (name/identity/kind/format/version). | Read-only; no plaintext. |
 | `pinax sync repo credential remove` | Removes one credential bundle. | Requires the unlock passphrase. |
+| `pinax sync repo migrate device-profile --unlock prompt --remember-keychain --yes` | Imports the active device AWS profile and existing content key into the portable envelope. | Local files only; `remote_write=false`, `key_rotated=false`. |
+| `pinax sync repo bootstrap --unlock prompt --remember-keychain --pull --yes` | Clone-time one-command restore. | Restores the content key to a device-level `stored://` reference and executes pull-only sync. |
 
-Passphrase source: `--passphrase-file <0600 file>` or `--env-var <name>`. All structured output (`--json`/`--agent`/`--events`/`--explain`) carries metadata only — never the access key, secret key, session token, passphrase, or ciphertext value.
+Bootstrap/migration unlock source: `--unlock prompt|keychain|file|env`; file mode uses `--passphrase-file`, env mode reads `PINAX_REPO_PASS`, and Keychain references use `keychain://<service>/<account>`. All structured output carries metadata only — never the access key, secret key, session token, content key, passphrase, or ciphertext value.
 
 ### Declaration: `credential_mode`
 
