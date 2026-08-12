@@ -42,6 +42,85 @@ CGO_ENABLED=0 go run ./internal/testkit/kblocalevidence --allow-disk-high-water
 
 只有 `summary.json` 的 `real_ollama_embed=true`、`inferrum_sidecar_v1=true`、`redacted=true` 且 artifact 的 `quality_verdict` 被正确标为 `not_proven_without_real_corpus`，才可把这次运行当作组件链路证据；它不能替代真实资料评测。
 
+## MacBook Air M4 真实语料候选评测
+
+M4 Air 的 first-support baseline 是 `qwen3-embedding:0.6b`。不要复用当前服务器的 `pinax-qwen3-embedding:lowmem` 标签，除非该 exact derived tag 已在目标 Mac 上重新创建、doctor 通过且 artifact 记录了对应的 model manifest identity。
+
+### 必经兼容性预检
+
+从仓库根目录开始。Ollama 的 M 系列 macOS 支持要求 macOS 14+；当前 Inferrum sidecar 要求 Python 3.10+，并把 LanceDB 限制为 `>=0.33,<0.34`。先在 M4 上完成二进制 + 原生 embedded LanceDB 检查，不使用 vault，也不需要容器：
+
+```bash
+cd cli/inferrum
+sw_vers -productVersion  # Expected: 14 or later
+uname -m                 # Expected: arm64
+python3 --version        # Expected: 3.10 or later
+ollama --version
+
+python3 -m venv ./temp/embedded-venv
+./temp/embedded-venv/bin/python -m pip install ./tools/inferrum-lancedb-sidecar
+CGO_ENABLED=0 go build -trimpath -o ./temp/bin/inferrum ./cmd/inferrum
+./temp/bin/inferrum validate embedded \
+  --root ./temp/m4-preflight \
+  --sidecar ./temp/embedded-venv/bin/inferrum-lancedb-sidecar \
+  --json
+```
+
+如果版本/架构不符合、LanceDB 未以 macOS-arm64 兼容包安装，或 `validate embedded` 失败，停止，不要运行真实语料 runner，也不要把该主机标为 M4 性能证据。通过后回到 Pinax 构建二进制并拉取 baseline：
+
+```bash
+cd ../pinax
+mkdir -p ./temp/bin
+CGO_ENABLED=0 go build -trimpath -o ./temp/bin/pinax ./cmd/pinax
+CGO_ENABLED=0 go build -trimpath -o ./temp/bin/pinax-kb-evidence ./internal/testkit/kblocalevidence
+ollama pull qwen3-embedding:0.6b
+
+./temp/bin/pinax kb provider doctor ollama \
+  --model qwen3-embedding:0.6b --vault <vault> --json
+```
+
+也可在准备 vault 或评测集之前，用 Pinax 的 standalone gate 生成标准脱敏兼容性 evidence。它不读取 vault、不连接 Ollama、不创建 candidate 或 activation；`m4-preflight.json` 必须显示 `scope=compatibility_only`，通过只证明目标 M4 的编译 Inferrum + sidecar LanceDB 资格，不能当作质量、容量或 first-support 发布证据：
+
+```bash
+PINAX_KB_SIDECAR=../inferrum/temp/embedded-venv/bin/inferrum-lancedb-sidecar \
+PINAX_KB_INFERRUM_BINARY=../inferrum/temp/bin/inferrum \
+task integration:kb-m4-preflight
+```
+
+准备一个包含 50–200 份真实或脱敏 Markdown/纯文本的现有 vault，以及 20–50 个带期望 citation 的版本化 suite。将 `PINAX_KB_SIDECAR` 指向已安装的 `inferrum-lancedb-sidecar` 后，使用 runner 创建候选、评测候选并保存脱敏证据：
+
+```bash
+PINAX_KB_SIDECAR=../inferrum/temp/embedded-venv/bin/inferrum-lancedb-sidecar \
+./temp/bin/pinax-kb-evidence \
+  --real-corpus \
+  --m4-preflight \
+  --vault <vault> \
+  --suite .pinax/kb/evaluation-suites/m4-baseline.json \
+  --provider ollama \
+  --model qwen3-embedding:0.6b \
+  --pinax-binary ./temp/bin/pinax \
+  --inferrum-binary ../inferrum/temp/bin/inferrum
+```
+
+该命令在 `temp/integration-test-runs/<run-id>/` 写入标准 evidence、`artifacts/m4-preflight.json`、`artifacts/provider-benchmark.json` 与 `artifacts/real-corpus.json`。真实语料预检会在读取 vault 前从 sidecar shebang 解析实际 interpreter，并验证已解析 Pinax、Inferrum 两个 Mach-O binary 均为原生 `arm64`；随后以同一 Inferrum binary 对 exact model 执行一次固定的安全 provider benchmark（64 samples、batch 8、warmup 1），再开始 candidate。`provider-benchmark.json` 和 `real-corpus.json.provider_benchmark` 只保留 provider/model、batch、实测维度、warmup/elapsed/P50/P95、items/s、scope 与 not-measured facts；它不读取 vault，不能代替真实 citation/质量或内存压力结论。benchmark 失败或输出不符合合同会在读取 vault 前停止。预检只记录 sidecar Python、macOS 主次版本、M4/M4 Air host 状态、sidecar Python/Pinax/Inferrum binary 的安全架构值，以及 Inferrum embedded-LanceDB 的 backend/dependency/dimension/row/store-state facts，会在实际 LanceDB 验证前拒绝 Rosetta/x86。compatibility-only 预检故意不解析或检查 Pinax binary，也不连接 Ollama 或运行 benchmark。artifact 不保存二进制路径、sidecar 路径、vault 路径、正文、问题、期望答案、向量、token 或 provider payload。`target_m4_status` 保持“观察到 Apple M4”的既有语义；新增的 `target_m4_air_status` 只有在 `arm64` Apple M4 且 `hw.model` 属于当前支持的 M4 Air 型号时才为 `confirmed`，且不会持久化原始 model identifier。`pinax_binary_architecture`、`provider_benchmark` 与已有 M4 架构字段都是可选 additive facts；真实语料成功时同时出现在 `real-corpus.json` 顶层或嵌套投影，旧 consumer 可忽略它们。只有 `m4-preflight.json` 的 `status=passed`、两个 status 都为 `confirmed`、`sidecar_python_architecture=arm64`、`inferrum_binary_architecture=arm64`、`pinax_binary_architecture=arm64`、`provider-benchmark.json.status=passed`，且 `real-corpus.json` 的同名 `m4_preflight` 与 `provider_benchmark` 为 passed，才可将本次结果作为 M4 Air baseline 证据。还必须检查可选 `first_support_gate.status=passed`：它独立要求 Recall@5 `>=0.80`、MRR@10 `>=0.65`、citation coverage `=1.00`、failure count `=0` 和 active generation 未变化。它不会改写通用 `kb evaluate` receipt；若 top-10 的通用评测为 passed、但 top-K citation coverage 不完整，runner 会保留 `real-corpus.json`、写失败 artifact 并非零退出。`unconfirmed` 或 `not_macos` 不能当作 M4 性能证据。
+
+runner 只会写 candidate generation 并执行 `kb evaluate`，不调用 `kb activate` 或 `kb rollback`。它会在运行前后读取 Pinax 的权威 activation descriptor；无论评测通过与否，artifact 都会写 `activation_status=not_attempted`，并记录前后 sequence/active generation 的脱敏身份。两者不同会以 `activation_state_changed` 失败，不能作为可激活的候选证据。`real-corpus.json.resources` 还会记录 `provider_doctor_duration_ms`、`candidate_rebuild_duration_ms` 与 `candidate_evaluation_duration_ms`，它们是实际子命令时长而非未经证明的 cold/warm 标签；现有 consumer 可忽略这些新增字段。比较 `qwen3-embedding:4b` 或 `qwen3-embedding:8b` 时，保持同一 vault、suite、chunk profile 和批处理条件，只替换 `--model`，并先比较 Recall@5、MRR@10、citation coverage、Inferrum synthetic provider benchmark 的 P95、上述 candidate 时长、RSS 与资源压力；不要因单次 provider benchmark 自动激活更大的模型。
+
+也可以使用会先构建两个 CGO-disabled 二进制的任务入口；调用它本身是一次对指定 vault 的 candidate rebuild：
+
+```bash
+PINAX_KB_REAL_CORPUS_VAULT=<vault> \
+PINAX_KB_REAL_CORPUS_SUITE=.pinax/kb/evaluation-suites/m4-baseline.json \
+PINAX_KB_REAL_CORPUS_MODEL=qwen3-embedding:0.6b \
+PINAX_KB_SIDECAR=../inferrum/temp/embedded-venv/bin/inferrum-lancedb-sidecar \
+PINAX_KB_INFERRUM_BINARY=../inferrum/temp/bin/inferrum \
+task integration:kb-real-corpus
+```
+
+`task integration:kb-real-corpus` 始终加上 `--m4-preflight`，因此缺少 `PINAX_KB_INFERRUM_BINARY`、Pinax/Inferrum binary 不是原生 `arm64`、预检失败或 host 不符合时会在读取 vault 前失败并保留脱敏 failure artifact。直接调用 runner 但省略 `--m4-preflight` 仍兼容此前的 candidate-only 行为，却不能被当作 M4 baseline、容量或发布验收证据。
+
+只有真实语料评测通过既定质量门、人工检查 receipt/evidence，且操作员明确决定后，才单独运行 `pinax kb activate`。失败候选、M4 identity 未确认、citation coverage 不完整、权限/秘密泄漏或持续内存压力都应保留当前 active generation，并按已有 `kb rollback` 路径恢复。
+
 ## 真实服务检查
 
 ```bash

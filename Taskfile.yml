@@ -86,6 +86,27 @@ tasks:
     cmds:
       - go run ./internal/testkit/kblocalevidence
 
+  integration:kb-m4-preflight:
+    desc: Run target M4 embedded-LanceDB compatibility evidence without accessing a vault or Ollama.
+    cmds:
+      - test -n "$PINAX_KB_SIDECAR" || (printf 'PINAX_KB_SIDECAR is required\n' >&2; exit 2)
+      - test -n "$PINAX_KB_INFERRUM_BINARY" || (printf 'PINAX_KB_INFERRUM_BINARY is required\n' >&2; exit 2)
+      - mkdir -p ./temp/bin
+      - CGO_ENABLED=0 go build -trimpath -o ./temp/bin/pinax-kb-evidence ./internal/testkit/kblocalevidence
+      - ./temp/bin/pinax-kb-evidence --m4-preflight-only --inferrum-binary "$PINAX_KB_INFERRUM_BINARY"
+
+  integration:kb-real-corpus:
+    desc: Run M4-preflighted Ollama candidate evaluation without activation; writes redacted evidence.
+    cmds:
+      - test -n "$PINAX_KB_REAL_CORPUS_VAULT" || (printf 'PINAX_KB_REAL_CORPUS_VAULT is required\n' >&2; exit 2)
+      - test -n "$PINAX_KB_REAL_CORPUS_SUITE" || (printf 'PINAX_KB_REAL_CORPUS_SUITE is required\n' >&2; exit 2)
+      - test -n "$PINAX_KB_SIDECAR" || (printf 'PINAX_KB_SIDECAR is required\n' >&2; exit 2)
+      - test -n "$PINAX_KB_INFERRUM_BINARY" || (printf 'PINAX_KB_INFERRUM_BINARY is required\n' >&2; exit 2)
+      - mkdir -p ./temp/bin
+      - CGO_ENABLED=0 go build -trimpath -o ./temp/bin/pinax ./cmd/pinax
+      - CGO_ENABLED=0 go build -trimpath -o ./temp/bin/pinax-kb-evidence ./internal/testkit/kblocalevidence
+      - ./temp/bin/pinax-kb-evidence --real-corpus --m4-preflight --vault "$PINAX_KB_REAL_CORPUS_VAULT" --suite "$PINAX_KB_REAL_CORPUS_SUITE" --provider ollama --model "${PINAX_KB_REAL_CORPUS_MODEL:-qwen3-embedding:0.6b}" --pinax-binary ./temp/bin/pinax --inferrum-binary "$PINAX_KB_INFERRUM_BINARY"
+
   kb:sidecar:test:
     desc: Run Pinax Inferrum adapter and sidecar contract tests.
     deps: [kb:sidecar:protocol]
