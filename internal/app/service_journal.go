@@ -65,7 +65,7 @@ func (s *Service) DailyAppend(_ context.Context, req DailyRequest) (domain.Proje
 	if err := refreshIndex(root); err != nil {
 		return errorProjection("daily.append", err), err
 	}
-	_ = appendEvent(root, "daily.append", "success", map[string]string{"path": rel})
+	appendEventWarned(root, "daily.append", "success", map[string]string{"path": rel})
 	projection := domain.NewProjection("daily.append", "Daily note appended.")
 	projection.Facts["path"] = rel
 	projection.Facts["date"] = key
@@ -150,7 +150,7 @@ func (s *Service) appendJournal(_ context.Context, period string, req DailyReque
 	if err := refreshIndex(root); err != nil {
 		return errorProjection(period+".append", err), err
 	}
-	_ = appendEvent(root, period+".append", "success", map[string]string{"path": rel})
+	appendEventWarned(root, period+".append", "success", map[string]string{"path": rel})
 	projection := domain.NewProjection(period+".append", journalLabel(period)+" appended.")
 	projection.Facts["path"] = rel
 	projection.Facts["template"] = journalTemplateName(period, req)
@@ -227,7 +227,7 @@ func (s *Service) InboxTriage(_ context.Context, req InboxTriageRequest) (domain
 	if err := refreshIndex(root); err != nil {
 		return errorProjection("inbox.triage", err), err
 	}
-	_ = appendEvent(root, "inbox.triage", "success", map[string]string{"from": note.Path, "to": targetRel})
+	appendEventWarned(root, "inbox.triage", "success", map[string]string{"from": note.Path, "to": targetRel})
 	projection := noteMutationProjection("inbox.triage", "Inbox note triaged.", targetRel, meta)
 	projection.Facts["path"] = targetRel
 	projection.Facts["group"] = group

@@ -135,7 +135,9 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		projection.Actions = append(syncConflictActions(root, nil), domain.Action{Name: "logs", Command: fmt.Sprintf("pinax sync logs show %s --vault %s --json", receipt.RunID, shellQuote(root))})
 		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 		if receiptErr == nil {
-			_ = writeCurrentSyncState(root, state, receipt, "")
+			if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+				warnPersistFailure("sync state", err)
+			}
 			projection.Facts["run_id"] = receipt.RunID
 			projection.Evidence = []string{receiptPath}
 		}
@@ -215,7 +217,9 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			projection.Actions = syncConflictActions(root, conflicts)
 			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
-				_ = writeCurrentSyncState(root, state, receipt, "")
+				if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+					warnPersistFailure("sync state", err)
+				}
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Facts["conflicts"] = fmt.Sprint(len(conflicts))
 				projection.Evidence = []string{receiptPath}
@@ -236,7 +240,9 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax %s doctor --vault %s --json", syncConfigCommand(req.Target), shellQuote(root))}}
 			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
-				_ = writeCurrentSyncState(root, state, receipt, "")
+				if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+					warnPersistFailure("sync state", err)
+				}
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
@@ -297,7 +303,9 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			projection.Actions = []domain.Action{{Name: "sync", Command: fmt.Sprintf("pinax sync --target %s --vault %s --yes", outputTarget, shellQuote(root))}, {Name: "diff", Command: fmt.Sprintf("pinax sync diff --target %s --vault %s --json", outputTarget, shellQuote(root))}}
 			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, localDiffPlan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
-				_ = writeCurrentSyncState(root, state, receipt, "")
+				if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+					warnPersistFailure("sync state", err)
+				}
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
@@ -318,7 +326,9 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 			projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax %s doctor --vault %s --json", syncConfigCommand(req.Target), shellQuote(root))}}
 			receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, plan, "failed", commandErr, projection.Actions, pathPolicy, started)
 			if receiptErr == nil {
-				_ = writeCurrentSyncState(root, state, receipt, "")
+				if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+					warnPersistFailure("sync state", err)
+				}
 				projection.Facts["run_id"] = receipt.RunID
 				projection.Evidence = []string{receiptPath}
 			}
@@ -393,7 +403,9 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 	if receiptErr != nil {
 		return errorProjection(command, receiptErr), receiptErr
 	}
-	_ = writeCurrentSyncState(root, state, receipt, "")
+	if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+		warnPersistFailure("sync state", err)
+	}
 	emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "done", Direction: string(direction), RunID: receipt.RunID, Status: status, RemoteWrite: receipt.RemoteWrite, LocalWrite: receipt.LocalWrite})
 	addCloudSyncFacts(&projection, state, plan)
 	addCapsaBridgeFacts(&projection, req.Target)

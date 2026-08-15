@@ -68,7 +68,7 @@ func (s *Service) BriefingRun(_ context.Context, req BriefingRunRequest) (domain
 		if err := writeBriefingCandidates(root, queue, candidates); err != nil {
 			return errorProjection("briefing.run", err), err
 		}
-		_ = appendEvent(root, "briefing.run", "success", map[string]string{"candidates": fmt.Sprint(len(candidates)), "writes": "true"})
+		appendEventWarned(root, "briefing.run", "success", map[string]string{"candidates": fmt.Sprint(len(candidates)), "writes": "true"})
 	}
 	projection := domain.NewProjection("briefing.run", "Briefing candidates generated.")
 	if req.DryRun {
@@ -282,7 +282,7 @@ func writeSyncState(root, target, direction string, sink SyncEventSink) (domain.
 	if err := writeJSONAsset(filepath.Join(root, ".pinax", "sync-state.json"), state); err != nil {
 		return errorProjection("sync."+direction, err), err
 	}
-	_ = appendEvent(root, "sync."+direction, "partial", map[string]string{"target": target, "remote_write": "false"})
+	appendEventWarned(root, "sync."+direction, "partial", map[string]string{"target": target, "remote_write": "false"})
 	emitSyncEvent(sink, SyncEvent{Type: "progress", Phase: "done", Direction: direction, Status: "partial", RemoteWrite: false})
 	projection := domain.NewProjection("sync."+direction, "Sync status recorded; remote writes have not executed.")
 	projection.Status = "partial"

@@ -204,7 +204,7 @@ func (s *Service) AttachNoteFile(ctx context.Context, req NoteAttachRequest) (do
 			return errorProjection("note.attach", err), err
 		}
 	}
-	_ = appendEvent(root, "note.attach", "success", map[string]string{"path": note.Path, "attachment_path": attachmentRel})
+	appendEventWarned(root, "note.attach", "success", map[string]string{"path": note.Path, "attachment_path": attachmentRel})
 	projection := domain.NewProjection("note.attach", "Attachment added to note.")
 	projection.Facts["path"] = note.Path
 	projection.Facts["attachment_path"] = attachmentRel
@@ -330,7 +330,7 @@ func (s *Service) ImportMarkdown(_ context.Context, req ImportMarkdownRequest) (
 	if err != nil {
 		return errorProjection("import.markdown", err), err
 	}
-	_ = appendEvent(root, "import.markdown", "success", map[string]string{"written": fmt.Sprint(written), "receipt_path": receiptRel})
+	appendEventWarned(root, "import.markdown", "success", map[string]string{"written": fmt.Sprint(written), "receipt_path": receiptRel})
 	projection.Summary = "Markdown imported."
 	projection.Facts["written"] = fmt.Sprint(written)
 	projection.Facts["overwritten"] = fmt.Sprint(countImportPlans(plans, "overwrite"))
@@ -471,7 +471,7 @@ func (s *Service) RenameNote(ctx context.Context, req NoteMutationRequest) (doma
 	if err := commitNoteContent(path, target, updated); err != nil {
 		return errorProjection("note.rename", err), err
 	}
-	_ = appendEvent(root, "note.rename", "success", map[string]string{"from": note.Path, "to": targetRel})
+	appendEventWarned(root, "note.rename", "success", map[string]string{"from": note.Path, "to": targetRel})
 	projection := noteMutationProjection("note.rename", "Note renamed.", targetRel, meta)
 	recordNote := domain.Note{ID: meta["note_id"], Title: newTitle, Path: targetRel, Body: strings.TrimSpace(strings.TrimPrefix(updated, renderFrontmatter(meta, "")))}
 	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteRenamed, "note.rename:"+recordNote.ID+":"+targetRel, recordNote, note.Path)
@@ -524,7 +524,7 @@ func (s *Service) MoveNote(ctx context.Context, req NoteMutationRequest) (domain
 	if err := os.Rename(path, target); err != nil {
 		return errorProjection("note.move", err), err
 	}
-	_ = appendEvent(root, "note.move", "success", map[string]string{"from": note.Path, "to": targetRel})
+	appendEventWarned(root, "note.move", "success", map[string]string{"from": note.Path, "to": targetRel})
 	projection := noteMutationProjection("note.move", "Note moved.", targetRel, map[string]string{"note_id": note.ID, "title": note.Title})
 	note.Path = targetRel
 	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMoved, "note.move:"+note.ID+":"+oldPath+":"+targetRel, note, oldPath)
@@ -553,7 +553,7 @@ func (s *Service) ArchiveNote(ctx context.Context, req NoteMutationRequest) (dom
 	if err := commitNoteContent(path, path, updated); err != nil {
 		return errorProjection("note.archive", err), err
 	}
-	_ = appendEvent(root, "note.archive", "success", map[string]string{"path": note.Path})
+	appendEventWarned(root, "note.archive", "success", map[string]string{"path": note.Path})
 	projection := noteMutationProjection("note.archive", "Note archived.", note.Path, meta)
 	projection.Facts["status"] = "archived"
 	note.Status = "archived"
@@ -581,7 +581,7 @@ func (s *Service) DeleteNote(ctx context.Context, req NoteDeleteRequest) (domain
 		if err := os.Remove(path); err != nil {
 			return errorProjection("note.delete", err), err
 		}
-		_ = appendEvent(root, "note.delete", "success", map[string]string{"path": note.Path, "hard": "true"})
+		appendEventWarned(root, "note.delete", "success", map[string]string{"path": note.Path, "hard": "true"})
 		projection.Facts["hard"] = "true"
 		recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteDeleted, "note.delete:"+note.ID+":"+note.Path, note, "")
 		if recordErr != nil {
@@ -604,7 +604,7 @@ func (s *Service) DeleteNote(ctx context.Context, req NoteDeleteRequest) (domain
 	if err := os.Rename(path, trashPath); err != nil {
 		return errorProjection("note.delete", err), err
 	}
-	_ = appendEvent(root, "note.delete", "success", map[string]string{"path": note.Path, "trash_path": trashRel})
+	appendEventWarned(root, "note.delete", "success", map[string]string{"path": note.Path, "trash_path": trashRel})
 	projection.Summary = "Note moved to trash."
 	projection.Facts["trash_path"] = trashRel
 	projection.Data = map[string]any{"note": note, "trash_path": trashRel}
@@ -646,7 +646,7 @@ func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Proje
 	if err := commitNoteContent(path, path, updated); err != nil {
 		return errorProjection("note.tag", err), err
 	}
-	_ = appendEvent(root, "note.tag", "success", map[string]string{"path": note.Path, "operation": req.Operation})
+	appendEventWarned(root, "note.tag", "success", map[string]string{"path": note.Path, "operation": req.Operation})
 	projection := noteMutationProjection("note.tag", "Note tags updated.", note.Path, meta)
 	projection.Facts["tags"] = strings.Join(tags, ",")
 	projection.Data = map[string]any{"note": domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Tags: tags, Project: note.Project, Status: meta["status"]}}
@@ -706,7 +706,7 @@ func (s *Service) PatchNoteProperty(ctx context.Context, req NotePropertyRequest
 	if err := commitNoteContent(path, path, updated); err != nil {
 		return errorProjection("note.property", err), err
 	}
-	_ = appendEvent(root, "note.property", "success", map[string]string{"path": note.Path, "operation": operation, "property": key})
+	appendEventWarned(root, "note.property", "success", map[string]string{"path": note.Path, "operation": operation, "property": key})
 	projection := noteMutationProjection("note.property", summary, note.Path, meta)
 	projection.Facts["operation"] = operation
 	projection.Facts["property"] = key
@@ -816,7 +816,7 @@ func (s *Service) BulkTag(ctx context.Context, req NoteTagBulkRequest) (domain.P
 		}
 		recordEvents++
 	}
-	_ = appendEvent(root, command, "success", map[string]string{"old_tag": oldTag, "new_tag": newTag, "changed": fmt.Sprint(len(changed))})
+	appendEventWarned(root, command, "success", map[string]string{"old_tag": oldTag, "new_tag": newTag, "changed": fmt.Sprint(len(changed))})
 	projection.Facts["record_events"] = fmt.Sprint(recordEvents)
 	if err := refreshIndex(root); err != nil {
 		projection.Status = "partial"
@@ -937,7 +937,7 @@ func (s *Service) BulkFolder(ctx context.Context, req NoteFolderBulkRequest) (do
 		}
 		recordEvents++
 	}
-	_ = appendEvent(root, command, "success", map[string]string{"old_folder": oldFolder, "new_folder": newFolder, "changed": fmt.Sprint(len(changes))})
+	appendEventWarned(root, command, "success", map[string]string{"old_folder": oldFolder, "new_folder": newFolder, "changed": fmt.Sprint(len(changes))})
 	projection.Facts["record_events"] = fmt.Sprint(recordEvents)
 	if err := refreshIndex(root); err != nil {
 		projection.Status = "partial"

@@ -72,7 +72,7 @@ func (s *Service) DatabaseSchemaSet(_ context.Context, req DatabaseSchemaRequest
 		return errorProjection("database.schema.set", err), err
 	}
 	validation := validatePropertySchemaAgainstVault(root, name, propertyType, values)
-	_ = appendEvent(root, "database.schema.set", "success", map[string]string{"property": name, "type": string(propertyType)})
+	appendEventWarned(root, "database.schema.set", "success", map[string]string{"property": name, "type": string(propertyType)})
 	projection := domain.NewProjection("database.schema.set", "Database property schema saved.")
 	projection.Facts["property"] = name
 	projection.Facts["type"] = string(propertyType)

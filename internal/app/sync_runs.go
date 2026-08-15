@@ -380,7 +380,9 @@ func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, 
 	if finishErr != nil {
 		return finishErr
 	}
-	_ = writeCurrentSyncState(root, state, receipt, "")
+	if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+		warnPersistFailure("sync state", err)
+	}
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Facts["remote_write"] = "false"
 	projection.Facts["target"] = outputTarget

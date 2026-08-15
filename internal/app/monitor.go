@@ -233,8 +233,12 @@ func (r *monitorRecorder) Finish(status string, err error) (string, string) {
 	r.run.Evidence = []string{evidence, filepath.ToSlash(filepath.Join(".pinax", "monitor", "events.jsonl"))}
 	run := r.run
 	r.mu.Unlock()
-	_ = writeMonitorRun(r.root, run)
-	_ = appendMonitorEvent(r.root, run)
+	if err := writeMonitorRun(r.root, run); err != nil {
+		warnPersistFailure("monitor run", err)
+	}
+	if err := appendMonitorEvent(r.root, run); err != nil {
+		warnPersistFailure("monitor event", err)
+	}
 	return run.RunID, evidence
 }
 

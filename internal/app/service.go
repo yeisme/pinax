@@ -1104,7 +1104,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		eventFacts["template_use_id"] = projection.Facts["template_use_id"]
 		eventFacts["scenario_id"] = templateMeta.ScenarioID
 	}
-	_ = appendEvent(root, "note.new", "success", eventFacts)
+	appendEventWarned(root, "note.new", "success", eventFacts)
 	return projection, nil
 }
 
@@ -1809,7 +1809,7 @@ func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.P
 		}
 		applied++
 		changedPaths = append(changedPaths, note.Path)
-		_ = appendEvent(root, "metadata.apply", "success", map[string]string{"path": note.Path})
+		appendEventWarned(root, "metadata.apply", "success", map[string]string{"path": note.Path})
 	}
 	projection := domain.NewProjection("metadata.apply", "Metadata applied.")
 	projection.Facts["applied_updates"] = fmt.Sprint(applied)
@@ -1979,7 +1979,7 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		}
 		appliedMetadata++
 		changedPaths = append(changedPaths, op.Path)
-		_ = appendEvent(root, "organize.apply", "success", map[string]string{"kind": op.Kind, "path": op.Path})
+		appendEventWarned(root, "organize.apply", "success", map[string]string{"kind": op.Kind, "path": op.Path})
 	}
 	appliedMoves := 0
 	skipped := 0
@@ -2017,7 +2017,7 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		}
 		changedPaths = append(changedPaths, op.Path, op.Target)
 		appliedMoves++
-		_ = appendEvent(root, "organize.apply", "success", map[string]string{"from": op.Path, "to": op.Target})
+		appendEventWarned(root, "organize.apply", "success", map[string]string{"from": op.Path, "to": op.Target})
 	}
 	if savedPlan != nil {
 		_ = refreshIndex(root)
@@ -2066,12 +2066,12 @@ func lifecycleFeedbackID(assetID, lifecycle, reason string) string {
 	return "lifecycle_" + assetID + "_" + hex.EncodeToString(sum[:])[:12]
 }
 
-func (s *Service) VersionStatus(_ context.Context, req VaultRequest) (domain.Projection, error) {
+func (s *Service) VersionStatus(ctx context.Context, req VaultRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("version.status", err), err
 	}
-	status, err := s.versionBackend.Status(context.Background(), pinaxversion.StatusRequest{Root: root})
+	status, err := s.versionBackend.Status(ctx, pinaxversion.StatusRequest{Root: root})
 	if err != nil {
 		return errorProjection("version.status", err), err
 	}
@@ -2132,7 +2132,7 @@ func (s *Service) VersionSnapshot(ctx context.Context, req SnapshotRequest) (dom
 	if err != nil {
 		return errorProjection("version.snapshot", err), err
 	}
-	_ = appendEvent(root, "version.snapshot", "success", map[string]string{"snapshot_id": snapshot.SnapshotID})
+	appendEventWarned(root, "version.snapshot", "success", map[string]string{"snapshot_id": snapshot.SnapshotID})
 	projection := domain.NewProjection("version.snapshot", "Version snapshot recorded.")
 	projection.Facts["snapshot_id"] = snapshot.SnapshotID
 	projection.Facts["version_backend"] = snapshot.Backend
@@ -2275,7 +2275,7 @@ func (s *Service) ensureJournalNote(vaultPath, period string, req DailyRequest) 
 	if _, err := appendNoteRecordEvent(context.Background(), root, domain.RecordEventNoteCreated, "journal.create:"+journalNote.ID+":"+rel, journalNote, ""); err != nil {
 		return "", "", "", err
 	}
-	_ = appendEvent(root, period+".create", "success", map[string]string{"path": rel, "template": templateName})
+	appendEventWarned(root, period+".create", "success", map[string]string{"path": rel, "template": templateName})
 	return root, rel, key, nil
 }
 
@@ -2475,7 +2475,7 @@ func saveProjectRegistryProjection(root string, registry domain.ProjectRegistry,
 	if created {
 		status = "created"
 	}
-	_ = appendEvent(root, "project.create", "success", map[string]string{"project": project.Slug, "status": status})
+	appendEventWarned(root, "project.create", "success", map[string]string{"project": project.Slug, "status": status})
 	projection := domain.NewProjection("project.create", "Project created.")
 	projection.Facts["project"] = project.Slug
 	projection.Facts["name"] = project.Name
@@ -4603,6 +4603,21 @@ func ensureEventLog(root string) error {
 		return err
 	}
 	return file.Close()
+}
+
+// warnPersistFailure reports an evidence/event persistence failure on stderr.
+// Persisting evidence must never fail the main command, but a full disk or a
+// read-only vault must not silently swallow the loss either.
+func warnPersistFailure(op string, err error) {
+	fmt.Fprintf(os.Stderr, "pinax: failed to persist %s: %v\n", op, err)
+}
+
+// appendEventWarned appends a vault event, reporting persistence failures on
+// stderr instead of silently discarding them.
+func appendEventWarned(root, eventType, status string, facts map[string]string) {
+	if err := appendEvent(root, eventType, status, facts); err != nil {
+		warnPersistFailure("event "+eventType, err)
+	}
 }
 
 func appendEvent(root, eventType, status string, facts map[string]string) error {

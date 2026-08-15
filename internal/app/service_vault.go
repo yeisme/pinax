@@ -59,7 +59,7 @@ func (s *Service) InitVault(_ context.Context, req InitVaultRequest) (domain.Pro
 	if err := ensureEventLog(root); err != nil {
 		return errorProjection("vault.init", err), err
 	}
-	_ = appendEvent(root, "vault.init", "success", map[string]string{"title": req.Title})
+	appendEventWarned(root, "vault.init", "success", map[string]string{"title": req.Title})
 
 	projection := domain.NewProjection("vault.init", "Pinax vault initialized.")
 	projection.Facts["vault"] = root
@@ -154,7 +154,7 @@ func (s *Service) VaultIgnoreApply(_ context.Context, req VaultIgnoreRequest) (d
 			return errorProjection("vault.ignore.apply", err), err
 		}
 	}
-	_ = appendEvent(root, "vault.ignore.apply", "success", map[string]string{"operations": fmt.Sprint(len(ops))})
+	appendEventWarned(root, "vault.ignore.apply", "success", map[string]string{"operations": fmt.Sprint(len(ops))})
 	projection := domain.NewProjection("vault.ignore.apply", "Vault ignore configuration updated.")
 	projection.Facts["local_write"] = "true"
 	projection.Facts["operations"] = fmt.Sprint(len(ops))
@@ -427,7 +427,7 @@ func (s *Service) SwitchProject(_ context.Context, req ProjectRequest) (domain.P
 	if err := saveProjectRegistry(root, registry); err != nil {
 		return errorProjection("project.switch", err), err
 	}
-	_ = appendEvent(root, "project.switch", "success", map[string]string{"project": req.Slug})
+	appendEventWarned(root, "project.switch", "success", map[string]string{"project": req.Slug})
 	projection := domain.NewProjection("project.switch", "Current project switched.")
 	projection.Facts["project"] = project.Slug
 	projection.Facts["notes_prefix"] = project.NotesPrefix
@@ -451,7 +451,7 @@ func (s *Service) SetLocalStorage(_ context.Context, req StorageRequest) (domain
 	if err := saveStorageProfile(root, profile); err != nil {
 		return errorProjection("storage.set_local", err), err
 	}
-	_ = appendEvent(root, "storage.set_local", "success", map[string]string{"backend": "local"})
+	appendEventWarned(root, "storage.set_local", "success", map[string]string{"backend": "local"})
 	return storageProjection("storage.set_local", "Local storage backend configured.", profile), nil
 }
 
@@ -471,7 +471,7 @@ func (s *Service) SetS3Storage(_ context.Context, req StorageRequest) (domain.Pr
 	if err := saveStorageProfile(root, profile); err != nil {
 		return errorProjection("storage.set_s3", err), err
 	}
-	_ = appendEvent(root, "storage.set_s3", "success", map[string]string{"backend": "s3", "bucket": req.Bucket, "region": req.Region})
+	appendEventWarned(root, "storage.set_s3", "success", map[string]string{"backend": "s3", "bucket": req.Bucket, "region": req.Region})
 	projection := storageProjection("storage.set_s3", "S3 storage backend configured.", profile)
 	projection.Actions = []domain.Action{{Name: "doctor", Command: fmt.Sprintf("pinax storage doctor --vault %s", shellQuote(root))}}
 	return projection, nil
@@ -678,7 +678,7 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 		if op.Mode != "automatic" {
 			op.Status = "skipped"
 			skipped = append(skipped, op)
-			_ = appendEvent(root, "repair.apply", "skipped", map[string]string{"plan_id": plan.PlanID, "operation_id": op.OperationID, "kind": op.Kind, "reason": "manual_review"})
+			appendEventWarned(root, "repair.apply", "skipped", map[string]string{"plan_id": plan.PlanID, "operation_id": op.OperationID, "kind": op.Kind, "reason": "manual_review"})
 			continue
 		}
 		if err := s.applyRepairOperation(ctx, root, op); err != nil {
@@ -689,7 +689,7 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 		if op.Path != "" {
 			changedPaths = append(changedPaths, op.Path)
 		}
-		_ = appendEvent(root, "repair.apply", "success", map[string]string{"plan_id": plan.PlanID, "operation_id": op.OperationID, "kind": op.Kind})
+		appendEventWarned(root, "repair.apply", "success", map[string]string{"plan_id": plan.PlanID, "operation_id": op.OperationID, "kind": op.Kind})
 	}
 	projection := domain.NewProjection("repair.apply", "Repair plan applied.")
 	projection.Facts["plan_id"] = plan.PlanID

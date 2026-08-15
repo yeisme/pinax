@@ -115,7 +115,7 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 		}
 		snapshot.SavedPath = snapRel
 	}
-	_ = appendEvent(root, command, "success", map[string]string{"period": string(period), "snapshot_id": snapshot.SnapshotID})
+	appendEventWarned(root, command, "success", map[string]string{"period": string(period), "snapshot_id": snapshot.SnapshotID})
 	projection := domain.NewProjection(command, string(period)+" plan generated.")
 	projection.Facts["period"] = string(period)
 	projection.Facts["snapshot_id"] = snapshot.SnapshotID
@@ -182,7 +182,7 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 		return errorProjection("plan.actions", err), err
 	}
 	draft.SavedPath = rel
-	_ = appendEvent(root, "plan.actions", "success", map[string]string{"action_id": draft.ActionID, "saved_path": rel})
+	appendEventWarned(root, "plan.actions", "success", map[string]string{"action_id": draft.ActionID, "saved_path": rel})
 	projection := domain.NewProjection("plan.actions", "Action draft saved.")
 	projection.Facts["action_id"] = draft.ActionID
 	projection.Facts["source_decision"] = draft.SourceDecision
@@ -221,7 +221,7 @@ func (s *Service) PlanSnapshot(_ context.Context, req PlanningRequest) (domain.P
 		return errorProjection("plan.snapshot", err), err
 	}
 	snapshot.SavedPath = snapRel
-	_ = appendEvent(root, "plan.snapshot", "success", map[string]string{"snapshot_id": snapshot.SnapshotID})
+	appendEventWarned(root, "plan.snapshot", "success", map[string]string{"snapshot_id": snapshot.SnapshotID})
 	projection := domain.NewProjection("plan.snapshot", "Planning snapshot saved.")
 	projection.Facts["snapshot_id"] = snapshot.SnapshotID
 	projection.Facts["saved_path"] = snapRel

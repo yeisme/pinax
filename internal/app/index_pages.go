@@ -75,7 +75,7 @@ func (s *Service) CreateIndexPage(ctx context.Context, req IndexPageRequest) (do
 	if err := refreshIndex(root); err != nil {
 		return errorProjection("index.page.create", err), err
 	}
-	_ = appendEvent(root, "index.page.create", "success", map[string]string{"path": rendered.Path, "template": rendered.Template, "created": fmt.Sprint(created)})
+	appendEventWarned(root, "index.page.create", "success", map[string]string{"path": rendered.Path, "template": rendered.Template, "created": fmt.Sprint(created)})
 	projection := domain.NewProjection("index.page.create", "Index page created.")
 	fillIndexPageFacts(&projection, rendered)
 	projection.Facts["created"] = fmt.Sprint(created)
@@ -118,7 +118,7 @@ func (s *Service) RefreshIndexPage(ctx context.Context, req IndexPageRequest) (d
 	if err := refreshIndex(root); err != nil {
 		return errorProjection("index.page.refresh", err), err
 	}
-	_ = appendEvent(root, "index.page.refresh", "success", map[string]string{"path": rendered.Path, "template": rendered.Template})
+	appendEventWarned(root, "index.page.refresh", "success", map[string]string{"path": rendered.Path, "template": rendered.Template})
 	projection := domain.NewProjection("index.page.refresh", "Index page managed block refreshed.")
 	fillIndexPageFacts(&projection, rendered)
 	projection.Facts["writes"] = "true"

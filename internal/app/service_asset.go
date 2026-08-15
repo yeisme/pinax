@@ -35,7 +35,7 @@ func (s *Service) AssetAdd(_ context.Context, req AssetRequest) (domain.Projecti
 	if err != nil {
 		return errorProjection("asset.add", err), err
 	}
-	_ = appendEvent(root, "asset.add", "success", map[string]string{"asset_path": asset.Path})
+	appendEventWarned(root, "asset.add", "success", map[string]string{"asset_path": asset.Path})
 	projection := domain.NewProjection("asset.add", "Asset added to vault.")
 	assetFacts(&projection, asset)
 	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax asset show %s --vault %s --json", shellQuote(asset.Filename), shellQuote(root))}}

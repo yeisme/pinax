@@ -36,7 +36,7 @@ func (s *Service) SyncIndex(_ context.Context, req VaultRequest) (domain.Project
 	if err != nil {
 		return errorProjection("index.sync", err), err
 	}
-	_ = appendEvent(root, "index.sync", "success", map[string]string{"created": fmt.Sprint(result.Created), "changed": fmt.Sprint(result.Changed), "moved": fmt.Sprint(result.Moved), "deleted": fmt.Sprint(result.Deleted)})
+	appendEventWarned(root, "index.sync", "success", map[string]string{"created": fmt.Sprint(result.Created), "changed": fmt.Sprint(result.Changed), "moved": fmt.Sprint(result.Moved), "deleted": fmt.Sprint(result.Deleted)})
 	projection := domain.NewProjection("index.sync", "Local index synced.")
 	projection.Facts["created"] = fmt.Sprint(result.Created)
 	projection.Facts["changed"] = fmt.Sprint(result.Changed)
@@ -317,7 +317,7 @@ func (s *Service) IndexRefresh(ctx context.Context, req IndexRefreshRequest) (pr
 	if result.IndexStatus == "partial" {
 		status = "partial"
 	}
-	_ = appendEvent(root, "index.refresh", status, map[string]string{"scanned": fmt.Sprint(result.Scanned), "indexed": fmt.Sprint(result.Indexed), "failed": fmt.Sprint(result.Failed)})
+	appendEventWarned(root, "index.refresh", status, map[string]string{"scanned": fmt.Sprint(result.Scanned), "indexed": fmt.Sprint(result.Indexed), "failed": fmt.Sprint(result.Failed)})
 	projection = domain.NewProjection("index.refresh", "Local index refresh completed.")
 	projection.Status = status
 	projection.Facts["scanned"] = fmt.Sprint(result.Scanned)
@@ -419,7 +419,7 @@ func (s *Service) IndexRepair(_ context.Context, req IndexRepairRequest) (projec
 		return errorProjection("index.repair", err), err
 	}
 	endStep(nil)
-	_ = appendEvent(root, "index.repair", "success", map[string]string{"kind": kind, "writes": "true"})
+	appendEventWarned(root, "index.repair", "success", map[string]string{"kind": kind, "writes": "true"})
 	projection = domain.NewProjection("index.repair", "Index projection repaired.")
 	projection.Facts["dry_run"] = "false"
 	projection.Facts["writes"] = "true"
@@ -492,7 +492,7 @@ func (s *Service) RebuildIndex(_ context.Context, req VaultRequest) (projection 
 		return errorProjection("index.rebuild", err), err
 	}
 	endStep(nil)
-	_ = appendEvent(root, "index.rebuild", "success", map[string]string{"notes": fmt.Sprint(counts.Notes)})
+	appendEventWarned(root, "index.rebuild", "success", map[string]string{"notes": fmt.Sprint(counts.Notes)})
 	projection = domain.NewProjection("index.rebuild", "Local index rebuilt.")
 	projection.Facts["notes"] = fmt.Sprint(counts.Notes)
 	projection.Facts["tags"] = fmt.Sprint(counts.Tags)

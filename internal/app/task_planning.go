@@ -86,7 +86,7 @@ func (s *Service) planDailyTaskReview(_ context.Context, root string, capturedAt
 	if err := osWriteFile(path, []byte(updated), 0o644); err != nil {
 		return errorProjection("plan.daily", err), err
 	}
-	_ = appendEvent(root, "plan.daily", "success", map[string]string{"managed_block": dailyTaskReviewBlockName, "target_note": targetRel})
+	appendEventWarned(root, "plan.daily", "success", map[string]string{"managed_block": dailyTaskReviewBlockName, "target_note": targetRel})
 	projection.Summary = "Daily task review updated."
 	projection.Facts["writes"] = "true"
 	projection.Evidence = []string{targetRel, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}

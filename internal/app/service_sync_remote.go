@@ -190,7 +190,9 @@ func (s *Service) SyncAll(ctx context.Context, req SyncRequest) (domain.Projecti
 		}
 		receipt, receiptPath, receiptErr := finishSyncRun(root, receipt, aggregatePlan, receipt.Status, nil, receipt.Actions, req.PathPolicy, time.Now())
 		if receiptErr == nil {
-			_ = writeCurrentSyncState(root, state, receipt, receipt.RevisionID)
+			if err := writeCurrentSyncState(root, state, receipt, receipt.RevisionID); err != nil {
+				warnPersistFailure("sync state", err)
+			}
 			projection.Facts["run_id"] = receipt.RunID
 			projection.Facts["remote_write"] = fmt.Sprint(receipt.RemoteWrite)
 			projection.Evidence = []string{receiptPath}
