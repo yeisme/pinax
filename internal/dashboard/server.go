@@ -50,7 +50,22 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/agent-continuity", s.handleAgentContinuity)
 	mux.HandleFunc("/api/memory-inbox", s.handleMemoryInbox)
 	mux.HandleFunc("/api/trust-metrics", s.handleTrustMetrics)
-	return mux
+	// The dashboard serves vault data without authentication; binding to
+	// loopback is not enough on its own because a DNS-rebinding page resolves
+	// to 127.0.0.1 yet still sends its attacker-controlled Host header.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(r.Host); err == nil {
+			host = h
+		}
+		switch strings.ToLower(strings.TrimSpace(host)) {
+		case "", "localhost", "127.0.0.1", "::1", "[::1]":
+			mux.ServeHTTP(w, r)
+		default:
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("local origin required"))
+		}
+	})
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

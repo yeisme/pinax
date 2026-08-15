@@ -630,6 +630,8 @@ func TestLocalAPIRequestLoggerUsesZapAndRedactsSecrets(t *testing.T) {
 	server := NewServerWithOptions(svc, root, ServerOptions{AuthMode: AuthModeNone, Logger: logger})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities?token=secret-token", nil)
+	req.Host = "127.0.0.1"
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Authorization", "Bearer secret-token")
 	req.RemoteAddr = "127.0.0.1:12345"
 	res := httptest.NewRecorder()
@@ -671,6 +673,7 @@ func TestLocalAPIRPCRequestLoggerIncludesOperationFields(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/rpc", strings.NewReader(`{"id":"call-1","method":"Pinax.Folder.Create","params":{"path":"rpc-logs","purpose":"notes"}}`))
 	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "127.0.0.1"
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
 	assertRESTErrorProjection(t, res, http.StatusBadRequest, "approval_required")

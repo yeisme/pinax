@@ -78,6 +78,7 @@ func TestAuthMiddleware_NoneMode_LoopbackPasses(t *testing.T) {
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "127.0.0.1"
 	s.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected 200 for loopback, got %d: %s", res.Code, res.Body.String())

@@ -106,12 +106,8 @@ func (w *captureWriter) flushTo(dest http.ResponseWriter) {
 		return
 	}
 	w.headerSent = true
-	// Copy headers from capture writer to destination
-	for k, vv := range w.Header() {
-		for _, v := range vv {
-			dest.Header().Add(k, v)
-		}
-	}
+	// captureWriter embeds the same ResponseWriter as dest, so the header map
+	// is shared — copying entries would duplicate every header on the wire.
 	if w.statusCode != 0 {
 		dest.WriteHeader(w.statusCode)
 	}

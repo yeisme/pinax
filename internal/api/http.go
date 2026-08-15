@@ -30,6 +30,9 @@ type Server struct {
 	exposeGroups []string
 	hideGroups   []string
 	tempSecret   string
+	// tokenFileErr is set when --token-file could not be loaded; the server
+	// then refuses every request instead of downgrading to an open temp token.
+	tokenFileErr error
 }
 
 type ServerOptions struct {
@@ -77,8 +80,12 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 	case AuthModeTokenFile:
 		store, err := NewFileTokenStore(options.TokenFile)
 		if err != nil {
-			s.tokenStore = NewMemoryTokenStore()
-			s.authMode = AuthModeTemp
+			// Fail loudly instead of silently downgrading to an unrestricted
+			// temp token: a typo'd --token-file must not produce a wide-open
+			// server. The server carries the error and refuses requests.
+			s.tokenStore = nil
+			s.authMode = AuthModeTokenFile
+			s.tokenFileErr = err
 		} else {
 			s.tokenStore = store
 		}
