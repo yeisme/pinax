@@ -1136,7 +1136,7 @@ func (s *Service) publishDevWatch(ctx context.Context, req PublishRequest) (doma
 	}
 	defer closeWatchers()
 	emitPublishEvent(req.LiveEvents, "watch_started", "running", map[string]string{"profile": strings.TrimSpace(req.Profile), "target": buildReq.Target})
-	batches := publishDevDebounce(ctx, events, 250*time.Millisecond)
+	batches := syncdaemon.DebounceWithCoalescer(ctx, events, 250*time.Millisecond, publishDevCoalesceEvents)
 	rebuilds := 0
 	failures := 0
 	lastError := ""
@@ -1302,48 +1302,6 @@ func publishDevWatchEvents(ctx context.Context, root, rendererDir string) (<-cha
 		}
 	}
 	return events, errorsCh, closeWatchers, nil
-}
-
-func publishDevDebounce(ctx context.Context, in <-chan syncdaemon.WatchEvent, delay time.Duration) <-chan []syncdaemon.WatchEvent {
-	if delay <= 0 {
-		delay = 250 * time.Millisecond
-	}
-	out := make(chan []syncdaemon.WatchEvent, 1)
-	go func() {
-		defer close(out)
-		var batch []syncdaemon.WatchEvent
-		var timer *time.Timer
-		var timerC <-chan time.Time
-		flush := func() {
-			if len(batch) == 0 {
-				return
-			}
-			out <- publishDevCoalesceEvents(batch)
-			batch = nil
-		}
-		for {
-			select {
-			case <-ctx.Done():
-				flush()
-				return
-			case event, ok := <-in:
-				if !ok {
-					flush()
-					return
-				}
-				batch = append(batch, event)
-				if timer != nil {
-					timer.Stop()
-				}
-				timer = time.NewTimer(delay)
-				timerC = timer.C
-			case <-timerC:
-				flush()
-				timerC = nil
-			}
-		}
-	}()
-	return out
 }
 
 func publishDevCoalesceEvents(events []syncdaemon.WatchEvent) []syncdaemon.WatchEvent {

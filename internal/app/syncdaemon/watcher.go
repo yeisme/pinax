@@ -2,7 +2,9 @@ package syncdaemon
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -51,6 +53,20 @@ func (w *fsnotifyWatcher) Events() <-chan WatchEvent { return w.events }
 func (w *fsnotifyWatcher) Errors() <-chan error      { return w.errors }
 func (w *fsnotifyWatcher) Close() error              { return w.w.Close() }
 
+// deliverWatcherError forwards a watcher error without ever blocking: the
+// error channel is intentionally tiny, and a burst of watcher errors must
+// never stall forwarding (which would silently stop all event delivery).
+// Undeliverable errors are dropped with a stderr breadcrumb.
+func deliverWatcherError(ch chan<- error, err error) bool {
+	select {
+	case ch <- err:
+		return true
+	default:
+		fmt.Fprintf(os.Stderr, "pinax: watcher error dropped: %v\n", err)
+		return false
+	}
+}
+
 func (w *fsnotifyWatcher) forward() {
 	defer close(w.events)
 	defer close(w.errors)
@@ -67,12 +83,19 @@ func (w *fsnotifyWatcher) forward() {
 			if !ok {
 				return
 			}
-			w.errors <- err
+			deliverWatcherError(w.errors, err)
 		}
 	}
 }
 
 func Debounce(ctx context.Context, in <-chan WatchEvent, delay time.Duration) <-chan []WatchEvent {
+	return DebounceWithCoalescer(ctx, in, delay, coalesce)
+}
+
+// DebounceWithCoalescer debounces watch events with a caller-supplied
+// coalescing function so non-daemon consumers (for example publish dev watch)
+// can reuse the same debounce loop without duplicating it.
+func DebounceWithCoalescer(ctx context.Context, in <-chan WatchEvent, delay time.Duration, coalesceFn func([]WatchEvent) []WatchEvent) <-chan []WatchEvent {
 	if delay <= 0 {
 		delay = 250 * time.Millisecond
 	}
@@ -86,7 +109,12 @@ func Debounce(ctx context.Context, in <-chan WatchEvent, delay time.Duration) <-
 			if len(batch) == 0 {
 				return
 			}
-			out <- coalesce(batch)
+			select {
+			case out <- coalesceFn(batch):
+			case <-ctx.Done():
+				// The consumer may already have returned; never hang on the
+				// final flush during shutdown.
+			}
 			batch = nil
 		}
 		for {
