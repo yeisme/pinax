@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/publishdocast"
 	"gopkg.in/yaml.v3"
@@ -307,7 +308,16 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 	// 迁移守卫优先于通用包校验：active mapping 指向 Drive file 但 profile 已切到 native-docx 时，
 	// 给出最具体、可操作的迁移错误（unlink 后重发），而不是先被 renderer_mismatch 拦截。
 	// dry-run 同样需要探测迁移阻断，所以守卫放在 dry-run 分支之前。
-	mapping, _ := readPublishDocMapping(root, pkg.NoteID, profile.Target)
+	// Only a genuinely missing mapping counts as "never published"; a corrupt
+	// or unreadable mapping MUST fail the push instead of silently creating a
+	// second remote document and orphaning the first.
+	mapping, mappingReadErr := readPublishDocMapping(root, pkg.NoteID, profile.Target)
+	if mappingReadErr != nil {
+		var cmdErr *domain.CommandError
+		if !errors.As(mappingReadErr, &cmdErr) || cmdErr.Code != "publish_mapping_not_found" {
+			return errorProjection("publish.doc.push", mappingReadErr), mappingReadErr
+		}
+	}
 	if mapping.PublishStatus == domain.PublishDocStatusDetached {
 		mapping = domain.PublishDocMapping{}
 	}
@@ -382,6 +392,14 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 	if result.ID == "" {
 		result.ID = mapping.ExternalObject.ID
 	}
+	// Guard against a provider CLI that succeeded by exit code but returned no
+	// object ID: persisting a mapping without an ID makes the NEXT push create
+	// a duplicate remote document (mirrors the folder-token guard below).
+	if result.ID == "" {
+		cmdErr := &domain.CommandError{Code: "publish_provider_result_invalid", Message: "Provider CLI did not return a document token", Hint: "Rerun the push; if it repeats, inspect the provider CLI output with pinax publish doc doctor"}
+		_ = writePublishDocReceipt(root, "publish.doc.push", pkg.NoteID, pkg.ID, profile.Target, "failed", "")
+		return domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr
+	}
 	if result.URL == "" {
 		result.URL = mapping.ExternalObject.URL
 	}
@@ -394,8 +412,9 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 		return errorProjection("publish.doc.push", err), err
 	}
 	_ = writePublishDocReceipt(root, "publish.doc.push", pkg.NoteID, pkg.ID, profile.Target, "success", result.URL)
+	var indexErr *domain.CommandError
 	if profile.IndexPage {
-		_ = publishDocRebuildIndex(ctx, root, profile)
+		indexErr = publishDocRebuildIndex(ctx, root, profile)
 	}
 	projection := publishDocProjection("publish.doc.push", pkg.NoteID, pkg.ID, profile.Target, domain.PublishDocStatusPublished, result.URL)
 	projection.Facts["external_object_type"] = mapping.ExternalObject.Type
@@ -403,6 +422,13 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 		projection.Facts["renderer"] = string(mapping.Renderer)
 	}
 	projection.Facts["render_warnings"] = fmt.Sprint(len(mapping.RenderWarnings))
+	if indexErr != nil {
+		// The document push itself succeeded; the index rebuild failure must
+		// still be visible instead of silently leaving a stale index page.
+		projection.Facts["index_rebuild"] = "failed"
+		projection.Status = "partial"
+		fmt.Fprintf(os.Stderr, "pinax: publish doc index rebuild failed: %s\n", indexErr.Message)
+	}
 	projection.Data = map[string]any{"mapping": mapping}
 	return projection, nil
 }
@@ -742,6 +768,17 @@ func ensurePublishDocLarkFolder(ctx context.Context, root string, profile domain
 	if mapping, err := readPublishDocFolderMapping(root, profile.Target, remotePath); err == nil && mapping.FolderToken != "" {
 		return mapping.FolderToken, nil
 	}
+	// The read-check-create-write cycle below must be serialized across
+	// processes: two concurrent pushes that both miss the registry both create
+	// the remote folder and the loser's token is orphaned in Drive.
+	lock, lockErr := acquirePublishDocRegistryLockWithRetry(root)
+	if lockErr != nil {
+		return "", &domain.CommandError{Code: "publish_registry_locked", Message: "Another publish operation is updating the folder registry", Hint: "Wait for the concurrent publish to finish and retry"}
+	}
+	defer lock.Release()
+	if mapping, err := readPublishDocFolderMapping(root, profile.Target, remotePath); err == nil && mapping.FolderToken != "" {
+		return mapping.FolderToken, nil
+	}
 	parent := profile.Folder
 	parts := strings.Split(remotePath, "/")
 	for i, part := range parts {
@@ -768,9 +805,30 @@ func ensurePublishDocLarkFolder(ctx context.Context, root string, profile domain
 			parent = result.ID
 		}
 		mapping := domain.PublishDocFolderMapping{SchemaVersion: domain.PublishDocMappingSchemaVersion, Target: profile.Target, Provider: profile.Provider, RemotePath: partial, FolderToken: parent, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
-		_ = writePublishDocFolderMapping(root, mapping)
+		if err := writePublishDocFolderMapping(root, mapping); err != nil {
+			// Losing the token silently would orphan the remote folder on the
+			// next push; surface the persistence failure instead.
+			warnPersistFailure("publish doc folder mapping", err)
+		}
 	}
 	return parent, nil
+}
+
+// acquirePublishDocRegistryLockWithRetry waits briefly for a concurrent
+// registry update instead of failing the whole push outright.
+func acquirePublishDocRegistryLockWithRetry(root string) (syncdaemon.Lock, error) {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lock, err := syncdaemon.AcquirePublishDocRegistryLock(root)
+		if err == nil {
+			return lock, nil
+		}
+		var cmdErr *domain.CommandError
+		if !errors.As(err, &cmdErr) || cmdErr.Code != "lock_held" || time.Now().After(deadline) {
+			return syncdaemon.Lock{}, err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func findPublishDocLarkFolder(ctx context.Context, profile domain.PublishDocProfile, parentToken, name string) string {
@@ -888,7 +946,11 @@ func publishDocRebuildIndex(ctx context.Context, root string, profile domain.Pub
 		indexType := publishDocExternalObjectType(profile, result)
 		profile.IndexObject = &domain.PublishDocExternalObject{Provider: profile.Provider, Target: string(profile.Target), Type: indexType, ID: result.ID, URL: result.URL}
 	}
-	_ = writePublishDocProfile(root, profile)
+	if err := writePublishDocProfile(root, profile); err != nil {
+		// Losing the locally stored index token makes the NEXT push create a
+		// duplicate index page remotely; the caller must surface this.
+		return &domain.CommandError{Code: "publish_index_failed", Message: "Index page was published but its token could not be stored locally", Hint: "Retry the push; if it repeats, inspect .pinax/publish/doc write permissions"}
+	}
 	return nil
 }
 

@@ -2021,10 +2021,9 @@ func pinaxWebRendererPackageDir() (string, error) {
 }
 
 func writePublishFile(path string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, body, 0o644)
+	// Atomic (temp+fsync+rename) so registry/profile/receipt readers never
+	// observe a torn truncate-then-write window.
+	return atomicWriteFile(path, body, 0o644)
 }
 
 func copyPublishAsset(root, outDir, rel string) error {

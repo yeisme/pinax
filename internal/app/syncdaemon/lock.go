@@ -39,6 +39,13 @@ func acquireLock(path, owner string, ttl time.Duration) (Lock, error) {
 	if existing, err := readLock(path); err == nil && !lockStale(existing) {
 		return Lock{}, &domain.CommandError{Code: "lock_held", Message: "sync lock is already held", Hint: "Wait for the running sync operation or inspect sync daemon status"}
 	} else if err == nil {
+		// Stale lock: re-read and only remove if it is still the same stale
+		// payload, otherwise a fresh lock another process just created in the
+		// window between our read and remove would be destroyed (TOCTOU).
+		current, reErr := readLock(path)
+		if reErr != nil || current != existing {
+			return Lock{}, &domain.CommandError{Code: "lock_held", Message: "sync lock is already held", Hint: "Retry after the current sync operation finishes"}
+		}
 		_ = os.Remove(path)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Lock{}, err
@@ -103,3 +110,10 @@ func pidAlive(pid int) bool {
 }
 
 func PIDAlive(pid int) bool { return pidAlive(pid) }
+
+// AcquirePublishDocRegistryLock guards the publish-doc folder/mapping registry
+// (`.pinax/publish/doc`) against concurrent CLI/daemon runs creating duplicate
+// remote folders during the read-check-create-write cycle.
+func AcquirePublishDocRegistryLock(root string) (Lock, error) {
+	return acquireLock(filepath.Join(root, ".pinax", "publish", "doc", "registry.lock"), "publish.doc", 5*time.Minute)
+}
