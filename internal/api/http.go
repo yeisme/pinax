@@ -103,11 +103,6 @@ func (s *Server) Handler() http.Handler {
 		{"/", s.handleRoot, "capabilities"},
 		{"/workbench", s.handleWorkbenchPage, "capabilities"},
 		{"/v1/capabilities", s.handleCapabilities, "capabilities"},
-		{"/v1/kb/review/overview", s.handleKBReviewRemoved, "kb_review"},
-		{"/v1/kb/review/sources", s.handleKBReviewRemoved, "kb_review"},
-		{"/v1/kb/review/evaluation-suites", s.handleKBReviewRemoved, "kb_review"},
-		{"/v1/kb/review/evaluation-suites/", s.handleKBReviewRemoved, "kb_review"},
-		{"/v1/kb/review/runs/", s.handleKBReviewRemoved, "kb_review"},
 		{"/v1/workbench/status", s.handleWorkbenchStatus, "capabilities"},
 		{"/v1/workbench/activity", s.handleWorkbenchActivity, "capabilities"},
 		{"/v1/workbench/activity/", s.handleWorkbenchActivity, "capabilities"},
@@ -415,36 +410,6 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	projection, err := s.service.APIRoutes(r.Context(), app.APIRequest{VaultPath: s.vault})
 	writeProjection(w, projection, err)
-}
-
-func (s *Server) handleKBReviewRemoved(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-		return
-	}
-	command := "kb.review.removed"
-	switch {
-	case r.URL.Path == "/v1/kb/review/overview":
-		command = "kb.review.overview"
-	case r.URL.Path == "/v1/kb/review/sources":
-		command = "kb.review.sources"
-	case r.URL.Path == "/v1/kb/review/evaluation-suites":
-		command = "kb.review.evaluation_suites"
-	case strings.HasPrefix(r.URL.Path, "/v1/kb/review/evaluation-suites/"):
-		command = "kb.review.evaluation_questions"
-	case strings.HasPrefix(r.URL.Path, "/v1/kb/review/runs/"):
-		command = "kb.review.run"
-	}
-	err := &domain.CommandError{
-		Code:    "kb_decoupled",
-		Message: "Pinax no longer exposes vector KB review data",
-		Hint:    "Export Markdown and query the external RAG system",
-	}
-	projection := domain.NewErrorProjection(command, err)
-	projection.Facts["vector_runtime"] = "removed"
-	projection.Facts["rag_owner"] = "external"
-	projection.Actions = []domain.Action{{Name: "export", Command: "pinax export markdown <output-dir> --vault <vault> --json"}}
-	writeProjectionStatus(w, projection, http.StatusGone)
 }
 
 func (s *Server) handleWorkbenchStatus(w http.ResponseWriter, r *http.Request) {

@@ -23,8 +23,8 @@ data for `/v1/kb/review/*`.
 #### Scenario: Review route is retired
 
 - **WHEN** a client requests a former KB review route
-- **THEN** Pinax SHALL return HTTP 410 with `error.code=kb_decoupled` and no
-  generation, citation, provider credential, vector payload, or note body
+- **THEN** Pinax SHALL return HTTP 404 and no generation, citation, provider
+  credential, vector payload, or note body
 
 ## ADDED Requirements
 
@@ -43,25 +43,28 @@ reranking, context, and evaluation.
 
 ### Requirement: Released KB command names SHALL fail closed during migration
 
-Pinax SHALL keep released `pinax kb` names parseable for one release window.
-Each compatibility command SHALL return `error.code=kb_decoupled`,
-`facts.vector_runtime=removed`, and `facts.rag_owner=external`.
+Pinax SHALL remove the `pinax kb` command tree entirely rather than keep a
+fail-closed compatibility stub. Former `pinax kb` invocations SHALL surface
+cobra's unknown-command error.
 
 #### Scenario: Old CLI is safely redirected
 
 - **WHEN** a user runs a former `pinax kb` command
-- **THEN** the command SHALL return migration actions for Markdown export and
-  deterministic local search without invoking vector code
+- **THEN** the command SHALL fail with an unknown-command error without
+  invoking vector code, and `docs/commands/kb.md` SHALL document the Markdown
+  export and deterministic local search replacements
 
-### Requirement: Removed configuration SHALL be rejected explicitly
+### Requirement: Removed configuration SHALL be inert
 
-Pinax SHALL remove `kb.sidecar.*` and `PINAX_KB_*` runtime configuration. A
-`pinax config set kb.*` attempt SHALL return `error.code=config_key_deprecated`.
+Pinax SHALL remove `kb.sidecar.*` and `PINAX_KB_*` runtime configuration and
+SHALL NOT read `kb.*` keys. Leftover `kb.*` keys in existing YAML configs
+SHALL be inert.
 
-#### Scenario: Old setting is rejected
+#### Scenario: Old setting is inert
 
-- **WHEN** a user tries to set `kb.sidecar.executable` or another `kb.*` key
-- **THEN** Pinax SHALL reject the write and SHALL not persist a sidecar setting
+- **WHEN** a vault config still contains a `kb.sidecar.*` key
+- **THEN** Pinax SHALL ignore it, SHALL NOT start any sidecar process, and
+  default configuration SHALL NOT define any `kb.*` key
 
 ### Requirement: Historical vector artifacts SHALL be removed from Pinax-owned workspaces
 

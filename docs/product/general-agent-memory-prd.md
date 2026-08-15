@@ -387,7 +387,7 @@ Runtime-specific installer 属于 adapter 子命令或独立 adapter package，�
 - 不保存完整 conversation transcript 或 chain-of-thought。
 - 不允许 adapter 绕过 proposal/review 直接写 confirmed memory。
 - 不在 MVP 做完整 Notion/Obsidian UI 插件。
-- 不把向量数据库作为 memory truth；vector/semantic index 只是可重建 recall projection。
+- 不把向量数据库作为 memory truth；外部 RAG 检索只是可重建的 recall 投影。
 - 不建设团队 SaaS、组织 ACL 后端和公网 HTTP 服务。
 - 不同时适配所有 Agent；先证明两个异构 runtime 使用同一合同。
 

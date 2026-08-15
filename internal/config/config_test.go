@@ -16,13 +16,6 @@ func TestDefaultConfigOmitsVectorRuntime(t *testing.T) {
 	}
 }
 
-func TestSetValueRejectsRemovedKBSettings(t *testing.T) {
-	err := SetValue(filepath.Join(t.TempDir(), "config.yaml"), "kb.sidecar.executable", "anything")
-	if err == nil || ErrorCode(err) != "config_key_deprecated" {
-		t.Fatalf("removed KB setting error = %v, code=%q", err, ErrorCode(err))
-	}
-}
-
 func TestOutputStyleLoadsFromEnvAndExplicitFlag(t *testing.T) {
 	root := t.TempDir()
 	result, err := Load(LoadOptions{VaultPath: root, Env: mapEnv(map[string]string{"PINAX_OUTPUT_STYLE": "compact"}), ExplicitFlags: map[string]string{}})

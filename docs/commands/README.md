@@ -67,7 +67,6 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Organization and retrieval | [`pinax view`](./view.md) | Save and reuse a set of note filtering criteria. |
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
 | Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target. |
-| RAG handoff | [`pinax kb`](./kb.md) | Deprecated compatibility surface; export Markdown to an external RAG owner. |
 | Organization and retrieval | [`pinax memory`](./memory.md) | Capture cited facts, decisions, events, and tasks for deterministic agent memory with explainable ranking signals. |
 | Organization and retrieval | [`pinax graph`](./graph.md) | Rebuild and query local knowledge graph projections for prompt/content assets. |
 | Organization and retrieval | [`pinax query`](./query.md) | Run controlled Pinax SQL queries against the local note database. |

@@ -49,7 +49,7 @@ Any future `answer` or `synthesis` projection must obey these rules:
 | Evidence first | Every claim must point to note path, memory id, graph edge, query row, receipt id, or provider-safe citation. |
 | Freshness visible | Stale index, old meeting notes, superseded memory records, and unknown provider state must be explicit. |
 | Body exposure preserved | Synthesis may quote only bounded snippets; full body access requires explicit local body mode and must not be sent through MCP by default. |
-| Cost and provider visible | Embedding, rerank, and LLM calls must expose provider/model/source type and never hide paid or network-backed work. |
+| Cost and provider visible | LLM and other paid network calls must expose provider/model/source type and never hide paid or network-backed work. |
 | No silent maintenance | Entity merge, contradiction resolution, memory pruning, and note rewrites generate plans or receipts; they do not run as invisible background edits. |
 | Agent command preview | Next steps are real commands a user can run directly, such as `pinax proof loop run --vault ./my-notes --json`. |
 

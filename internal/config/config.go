@@ -864,9 +864,6 @@ func Value(cfg Config, key string) (string, bool) {
 }
 
 func SetValue(path, key, value string) error {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), "kb.") {
-		return &Error{Code: "config_key_deprecated", Message: "kb.* 配置已移除；Pinax 不再管理向量数据库或 embedding", Err: nil}
-	}
 	if secretLikeKey(key) || secretLikeValue(value) {
 		return &Error{Code: "config_secret_rejected", Message: "配置 key/value 疑似包含 secret"}
 	}
