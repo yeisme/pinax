@@ -49,8 +49,6 @@ func NewServiceWithVersionBackend(backend pinaxversion.VersionBackend) *Service 
 	return &Service{versionBackend: backend, identityAllocator: identity.NewAllocator(), now: func() time.Time { return time.Now().UTC() }}
 }
 
-// WithNowFunc overrides the service clock. It exists for tests that need
-// deterministic timestamps; production code must not call it.
 func (s *Service) WithNowFunc(now func() time.Time) *Service {
 	if now != nil {
 		s.now = now
@@ -58,9 +56,6 @@ func (s *Service) WithNowFunc(now func() time.Time) *Service {
 	return s
 }
 
-// currentTimeUTC is the single clock read for durable timestamps. The former
-// PINAX_TEST_NOW environment override was removed from the shipped binary;
-// tests inject a fixed clock via WithNowFunc instead.
 func (s *Service) currentTimeUTC() time.Time {
 	if s.now == nil {
 		return time.Now().UTC()
@@ -68,8 +63,6 @@ func (s *Service) currentTimeUTC() time.Time {
 	return s.now().UTC()
 }
 
-// noteTemplateResolution carries what note creation needs from an optional
-// template: the parsed document plus projection metadata.
 type noteTemplateResolution struct {
 	doc         templateengine.TemplateDocument
 	pathPattern string
@@ -79,8 +72,6 @@ type noteTemplateResolution struct {
 	hasDefaults bool
 }
 
-// resolveNoteTemplate applies an optional template's defaults onto the
-// request and reports which request fields overrode the template.
 func resolveNoteTemplate(root string, req *CreateNoteRequest) (string, noteTemplateResolution, error) {
 	templateName := strings.TrimSpace(req.Template)
 	res := noteTemplateResolution{}
@@ -125,9 +116,6 @@ func resolveNoteTemplate(root string, req *CreateNoteRequest) (string, noteTempl
 	return templateName, res, nil
 }
 
-// resolveNewNotePath picks the output path: the template's rendered path
-// pattern when the request leaves the location untouched, otherwise the
-// conventional prefix/slug path.
 func resolveNewNotePath(root string, req CreateNoteRequest, templateDoc templateengine.TemplateDocument, templatePathPattern string) (string, error) {
 	if templatePathPattern != "" && req.Dir == "" && req.Folder == "" && req.Slug == "" && req.Project == "" {
 		templateRel, err := renderTemplateOutputPath(templateDoc, req)
@@ -171,383 +159,6 @@ type noteLinkGraph struct {
 	notes    []domain.Note
 	outgoing map[string][]domain.NoteLink
 	incoming map[string][]domain.NoteLink
-}
-
-func buildNoteLinkGraph(root string) (noteLinkGraph, error) {
-	notes, err := scanNotes(root)
-	if err != nil {
-		return noteLinkGraph{}, err
-	}
-	byTitle := map[string]domain.Note{}
-	byPath := map[string]domain.Note{}
-	for _, note := range notes {
-		byTitle[strings.ToLower(note.Title)] = note
-		byPath[note.Path] = note
-	}
-	graph := noteLinkGraph{notes: notes, outgoing: map[string][]domain.NoteLink{}, incoming: map[string][]domain.NoteLink{}}
-	for _, note := range notes {
-		for _, link := range noteGraphLinks(note, byTitle, byPath) {
-			graph.outgoing[note.Path] = append(graph.outgoing[note.Path], link)
-			if link.TargetPath != "" && !link.Broken {
-				graph.incoming[link.TargetPath] = append(graph.incoming[link.TargetPath], link)
-			}
-		}
-	}
-	for path := range graph.outgoing {
-		sortNoteLinks(graph.outgoing[path])
-	}
-	for path := range graph.incoming {
-		sortNoteLinks(graph.incoming[path])
-	}
-	return graph, nil
-}
-
-func noteGraphLinks(note domain.Note, byTitle map[string]domain.Note, byPath map[string]domain.Note) []domain.NoteLink {
-	links := make([]domain.NoteLink, 0)
-	seen := map[string]bool{}
-	for _, rawTarget := range wikiLinksInBody(note.Body) {
-		target := normalizeWikiLinkTarget(rawTarget)
-		if target == "" {
-			continue
-		}
-		resolved := byTitle[strings.ToLower(target)]
-		link := domain.NoteLink{SourcePath: note.Path, SourceTitle: note.Title, Target: target, Kind: "wiki", Broken: resolved.Path == ""}
-		if resolved.Path != "" {
-			link.TargetPath = resolved.Path
-			link.TargetTitle = resolved.Title
-		}
-		key := link.Kind + "\x00" + link.Target
-		if !seen[key] {
-			links = append(links, link)
-			seen[key] = true
-		}
-	}
-	for _, rawTarget := range markdownLinksInBody(note.Body) {
-		target := normalizeMarkdownLinkTarget(rawTarget)
-		if target == "" || !strings.EqualFold(filepath.Ext(target), ".md") {
-			continue
-		}
-		targetPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(note.Path), target)))
-		resolved := byPath[targetPath]
-		link := domain.NoteLink{SourcePath: note.Path, SourceTitle: note.Title, Target: target, TargetPath: targetPath, Kind: "markdown", Broken: resolved.Path == ""}
-		if resolved.Path != "" {
-			link.TargetTitle = resolved.Title
-		}
-		key := link.Kind + "\x00" + link.TargetPath
-		if !seen[key] {
-			links = append(links, link)
-			seen[key] = true
-		}
-	}
-	return links
-}
-
-func markdownLinksInBody(body string) []string {
-	links := make([]string, 0)
-	seen := map[string]bool{}
-	for _, match := range vaultMarkdownLinkPattern.FindAllStringSubmatch(body, -1) {
-		if len(match) < 2 {
-			continue
-		}
-		target := strings.TrimSpace(match[1])
-		if target == "" || seen[target] {
-			continue
-		}
-		seen[target] = true
-		links = append(links, target)
-	}
-	sort.Strings(links)
-	return links
-}
-
-func normalizeWikiLinkTarget(target string) string {
-	target = strings.TrimSpace(target)
-	if before, _, ok := strings.Cut(target, "|"); ok {
-		target = before
-	}
-	if before, _, ok := strings.Cut(target, "#"); ok {
-		target = before
-	}
-	return strings.TrimSpace(target)
-}
-
-func normalizeMarkdownLinkTarget(target string) string {
-	target = strings.TrimSpace(target)
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "mailto:") || strings.HasPrefix(target, "#") {
-		return ""
-	}
-	if before, _, ok := strings.Cut(target, "#"); ok {
-		target = before
-	}
-	if before, _, ok := strings.Cut(target, "?"); ok {
-		target = before
-	}
-	return strings.TrimSpace(target)
-}
-
-func sortNoteLinks(links []domain.NoteLink) {
-	sort.Slice(links, func(i, j int) bool {
-		if links[i].SourcePath == links[j].SourcePath {
-			return links[i].Target < links[j].Target
-		}
-		return links[i].SourcePath < links[j].SourcePath
-	})
-}
-
-func countResolvedLinks(links []domain.NoteLink) int {
-	count := 0
-	for _, link := range links {
-		if !link.Broken {
-			count++
-		}
-	}
-	return count
-}
-
-func countBrokenLinks(links []domain.NoteLink) int {
-	count := 0
-	for _, link := range links {
-		if link.Broken {
-			count++
-		}
-	}
-	return count
-}
-
-func uniqueAttachmentRelWithPlacement(root string, note domain.Note, filename string, placement pinaxassets.AttachmentPlacementPolicy) (string, error) {
-	return pinaxassets.PlaceAttachment(pinaxassets.AttachmentPlacementRequest{Root: root, NoteID: note.ID, NotePath: note.Path, Filename: filename, Policy: placement})
-}
-
-func registeredAttachmentRel(root, source string) (string, error) {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", err
-	}
-	absSource, err := filepath.Abs(source)
-	if err != nil {
-		return "", err
-	}
-	rel, err := filepath.Rel(absRoot, absSource)
-	if err != nil {
-		return "", err
-	}
-	rel = filepath.ToSlash(rel)
-	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") || strings.HasPrefix(rel, ".pinax/") {
-		return "", &domain.CommandError{Code: "asset_outside_vault", Message: "register mode only accepts files inside the vault", Hint: "Use a file inside the vault, or switch to --mode copy"}
-	}
-	if _, err := safeJoin(root, rel); err != nil {
-		return "", err
-	}
-	return rel, nil
-}
-
-func normalizedAttachmentMode(mode string) string {
-	switch strings.TrimSpace(mode) {
-	case "", "copy":
-		return "copy"
-	case "move":
-		return "move"
-	case "register":
-		return "register"
-	default:
-		return ""
-	}
-}
-
-func normalizedAttachmentPlacement(placement string) pinaxassets.AttachmentPlacementPolicy {
-	switch strings.TrimSpace(placement) {
-	case "":
-		return pinaxassets.AttachmentPlacementPerNote
-	default:
-		return pinaxassets.AttachmentPlacementPolicy(strings.TrimSpace(placement))
-	}
-}
-
-func attachmentReference(notePath, attachmentRel, style string, embed bool) (string, string, error) {
-	style = strings.TrimSpace(style)
-	if style == "" || style == "auto" {
-		style = "markdown"
-	}
-	switch style {
-	case "markdown":
-		return style, markdownAttachmentReferenceWithEmbed(notePath, attachmentRel, embed), nil
-	case "wiki":
-		return style, wikiAttachmentReference(attachmentRel, embed), nil
-	default:
-		return "", "", &domain.CommandError{Code: "attachment_link_style_invalid", Message: "Attachment link style is invalid", Hint: "Use --link-style markdown, wiki, or auto"}
-	}
-}
-
-func markdownAttachmentReferenceWithEmbed(notePath, attachmentRel string, embed bool) string {
-	rel, err := filepath.Rel(filepath.Dir(filepath.FromSlash(notePath)), filepath.FromSlash(attachmentRel))
-	if err != nil {
-		rel = filepath.FromSlash(attachmentRel)
-	}
-	rel = filepath.ToSlash(rel)
-	label := filepath.Base(attachmentRel)
-	if embed || attachmentMediaType(attachmentRel) == "image" {
-		return fmt.Sprintf("![%s](%s)", label, rel)
-	}
-	return fmt.Sprintf("[%s](%s)", label, rel)
-}
-
-func wikiAttachmentReference(attachmentRel string, embed bool) string {
-	if embed || attachmentMediaType(attachmentRel) == "image" {
-		return fmt.Sprintf("![[%s]]", attachmentRel)
-	}
-	return fmt.Sprintf("[[%s]]", attachmentRel)
-}
-
-func noteAttachmentsFromBody(root string, note domain.Note) []domain.NoteAttachment {
-	links := pinaxassets.ExtractLinks(pinaxassets.LinkExtractionRequest{SourceNoteID: note.ID, SourcePath: note.Path, Body: note.Body})
-	attachments := make([]domain.NoteAttachment, 0, len(links))
-	for _, link := range links {
-		abs := filepath.Join(root, filepath.FromSlash(link.AssetPath))
-		_, statErr := os.Stat(abs)
-		attachments = append(attachments, domain.NoteAttachment{NotePath: note.Path, ReferenceText: link.RawReference, Path: link.AssetPath, TargetPath: link.AssetPath, MediaType: attachmentMediaType(link.AssetPath), Exists: statErr == nil})
-	}
-	sort.Slice(attachments, func(i, j int) bool { return attachments[i].TargetPath < attachments[j].TargetPath })
-	return attachments
-}
-
-func attachmentMediaType(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg":
-		return "image"
-	case ".pdf", ".doc", ".docx", ".txt":
-		return "document"
-	case ".mp3", ".wav", ".ogg":
-		return "audio"
-	case ".mp4", ".mov", ".webm":
-		return "video"
-	default:
-		return "file"
-	}
-}
-
-func countMissingAttachments(attachments []domain.NoteAttachment) int {
-	count := 0
-	for _, attachment := range attachments {
-		if !attachment.Exists {
-			count++
-		}
-	}
-	return count
-}
-
-func planMarkdownImport(root, source string, req ImportMarkdownRequest) ([]domain.ImportPlan, error) {
-	info, err := os.Stat(source)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, &domain.CommandError{Code: "import_source_missing", Message: "Import source does not exist", Hint: "Check the Markdown file or directory path"}
-	}
-	if err != nil {
-		return nil, err
-	}
-	sources := []string{}
-	if info.IsDir() {
-		if err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() {
-				return nil
-			}
-			if strings.EqualFold(filepath.Ext(path), ".md") {
-				sources = append(sources, path)
-			}
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-	} else if strings.EqualFold(filepath.Ext(source), ".md") {
-		sources = append(sources, source)
-	}
-	sort.Strings(sources)
-	plans := make([]domain.ImportPlan, 0, len(sources))
-	used := map[string]bool{}
-	for _, item := range sources {
-		targetRel, err := importTargetRel(source, item, info.IsDir(), req)
-		if err != nil {
-			return nil, err
-		}
-		plan := domain.ImportPlan{SourcePath: item, TargetPath: targetRel, Status: "write"}
-		if used[targetRel] || fileExistsPath(root, targetRel) {
-			plan.Conflict = "exists"
-			switch strings.TrimSpace(req.Conflict) {
-			case "rename":
-				plan.TargetPath, err = uniqueImportRel(root, targetRel, used)
-				if err != nil {
-					return nil, err
-				}
-				plan.Status = "rename"
-			case "overwrite":
-				plan.Status = "overwrite"
-			case "skip", "":
-				plan.Status = "skip"
-			default:
-				return nil, &domain.CommandError{Code: "invalid_import_conflict", Message: "Unknown import conflict policy", Hint: "Use --conflict skip, rename, or overwrite"}
-			}
-		}
-		used[plan.TargetPath] = true
-		plans = append(plans, plan)
-	}
-	return plans, nil
-}
-
-func importTargetRel(sourceRoot, sourceFile string, sourceIsDir bool, req ImportMarkdownRequest) (string, error) {
-	name := filepath.Base(sourceFile)
-	if sourceIsDir {
-		rel, err := filepath.Rel(sourceRoot, sourceFile)
-		if err != nil {
-			return "", err
-		}
-		name = filepath.ToSlash(rel)
-	}
-	base := "notes"
-	if strings.TrimSpace(req.Group) != "" {
-		base = filepath.ToSlash(filepath.Join(base, strings.TrimSpace(req.Group)))
-	}
-	if strings.TrimSpace(req.Folder) != "" {
-		folder, err := validateOptionalNoteFolder(req.Folder)
-		if err != nil {
-			return "", err
-		}
-		base = filepath.ToSlash(filepath.Join(base, folder))
-	}
-	return validateNoteDir(filepath.ToSlash(filepath.Join(base, name)))
-}
-
-func uniqueImportRel(root, targetRel string, used map[string]bool) (string, error) {
-	dir := filepath.Dir(targetRel)
-	base := filepath.Base(targetRel)
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	ext := filepath.Ext(base)
-	for i := 2; i < 1000; i++ {
-		candidate := filepath.ToSlash(filepath.Join(dir, fmt.Sprintf("%s-%d%s", stem, i, ext)))
-		if !used[candidate] && !fileExistsPath(root, candidate) {
-			return candidate, nil
-		}
-	}
-	return "", &domain.CommandError{Code: "import_name_conflict", Message: "Too many import filename conflicts", Hint: "Choose another target group or filename, then retry"}
-}
-
-func fileExistsPath(root, rel string) bool {
-	path, err := safeJoin(root, rel)
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(path)
-	return err == nil
-}
-
-func countImportPlans(plans []domain.ImportPlan, status string) int {
-	count := 0
-	for _, plan := range plans {
-		if plan.Status == status {
-			count++
-		}
-	}
-	return count
 }
 
 func writeReceipt(root, kind string, payload map[string]any) (string, error) {
@@ -1388,8 +999,11 @@ type renderedNoteBody struct {
 }
 
 var noteQueryFencePattern = regexp.MustCompile("(?ms)^```(pinax-sql|pinax-dataview)(?:[ \\t]+(?:name=)?([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(.*?)\\n```[ \\t]*(?:\\n|$)")
+
 var noteDatabaseViewFencePattern = regexp.MustCompile("(?ms)^```pinax-database-view(?:[ \\t]+([A-Za-z_][A-Za-z0-9_:-]*))?[ \\t]*\\n(?:([A-Za-z_][A-Za-z0-9_:-]*)[ \\t]*\\n)?```[ \\t]*(?:\\n|$)")
+
 var managedRenderBlockPattern = regexp.MustCompile("(?ms)<!-- pinax:render ([A-Za-z_][A-Za-z0-9_:-]*) start -->.*?<!-- pinax:render ([A-Za-z_][A-Za-z0-9_:-]*) end -->")
+
 var managedDataviewBlockPattern = regexp.MustCompile("(?ms)<!-- pinax:managed name=([A-Za-z_][A-Za-z0-9_:-]*) -->.*?<!-- /pinax:managed -->")
 
 func (s *Service) renderNoteQueryBlocks(ctx context.Context, root, body string) (renderedNoteBody, map[string]map[string]string, error) {
@@ -2184,6 +1798,7 @@ func (s *Service) GitSnapshot(ctx context.Context, req SnapshotRequest) (domain.
 	projection.Evidence = []string{".pinax/last_snapshot"}
 	return projection, nil
 }
+
 func appendDailyIndex(root string, note domain.Note, now time.Time) (string, error) {
 	date := now.Format("2006-01-02")
 	root, rel, _, err := ensureJournalNote(root, DailyRequest{Date: date})
@@ -3360,6 +2975,7 @@ func isSystemJournalNote(note domain.Note) bool {
 	}
 	return strings.HasPrefix(path, note.Kind+"/") || strings.HasPrefix(path, "notes/"+note.Kind+"/")
 }
+
 func parseNote(rel, content string) domain.Note {
 	doc, err := markdownnote.ParseFull(rel, []byte(content))
 	if err == nil {
@@ -3445,6 +3061,7 @@ func noteNeedsMetadataInVault(root string, note domain.Note) bool {
 	meta, _ := splitFrontmatter(string(payload))
 	return strings.TrimSpace(meta["schema_version"]) == ""
 }
+
 func ensureFrontmatter(note domain.Note, content string) string {
 	meta, body := splitFrontmatter(content)
 	if meta["schema_version"] == "" {
@@ -3474,8 +3091,6 @@ func ensureFrontmatter(note domain.Note, content string) string {
 	return b.String()
 }
 
-// deterministicShortID returns a short reproducible token for non-identity uses
-// such as fallback slugs, template runs, trash receipts and inferred board items.
 func deterministicShortID(value string) string {
 	sum := sha1.Sum([]byte(filepath.ToSlash(value)))
 	return "note_" + hex.EncodeToString(sum[:])[:12]
@@ -4091,6 +3706,7 @@ func removeTags(existing, remove []string) []string {
 }
 
 var templateVariablePattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_:-]*)\s*\}\}`)
+
 var templateVariableNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_:-]*$`)
 
 func cleanTemplateName(name string) (string, error) {
@@ -4620,15 +4236,10 @@ func ensureEventLog(root string) error {
 	return file.Close()
 }
 
-// warnPersistFailure reports an evidence/event persistence failure on stderr.
-// Persisting evidence must never fail the main command, but a full disk or a
-// read-only vault must not silently swallow the loss either.
 func warnPersistFailure(op string, err error) {
 	fmt.Fprintf(os.Stderr, "pinax: failed to persist %s: %v\n", op, err)
 }
 
-// appendEventWarned appends a vault event, reporting persistence failures on
-// stderr instead of silently discarding them.
 func appendEventWarned(root, eventType, status string, facts map[string]string) {
 	if err := appendEvent(root, eventType, status, facts); err != nil {
 		warnPersistFailure("event "+eventType, err)
