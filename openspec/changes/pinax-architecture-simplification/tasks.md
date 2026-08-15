@@ -2,14 +2,14 @@
 
 ## Bug 修复（P0/P1）
 
-- [ ] B1 修复 syncdaemon watcher forward() 错误通道无守卫阻塞发送，注入双错误测试断言不阻塞。
-- [ ] B2 Debounce flush 改 select 发送防关停泄漏；删 publishDevDebounce 复用 syncdaemon.Debounce（新增 coalesce 参数）。
-- [ ] B3 cloudclient requireVaultID panic 改错误上抛，app 层包 CommandError；清理库代码 Must* 非 Must 用法；空 workspace 配置 sync 命令返回错误封套而非崩溃。
-- [ ] B5 Service 注入 now func() time.Time，删除 PINAX_TEST_NOW 生产读取。
-- [ ] B6 删 capsa_bridge Summary/Error.Message 盲目 ReplaceAll，措辞参数化；capsa fixture 允许更新，cloud 主路径零 diff。
-- [ ] B7 warnPersistFailure 收编 monitor/sync 静默丢弃的证据写入。
-- [ ] B8 share.go http.ErrServerClosed 改 errors.Is。
-- [ ] B4a VersionStatus 使用调用方 ctx；ctx 丢弃清单记入 design.md。
+- [x] B1 修复 syncdaemon watcher forward() 错误通道无守卫阻塞发送，注入双错误测试断言不阻塞。
+- [x] B2 Debounce flush 改 select 发送防关停泄漏；删 publishDevDebounce 复用 syncdaemon.Debounce（新增 coalesce 参数）。
+- [x] B3 cloudclient requireVaultID panic 改错误上抛，app 层包 CommandError；清理库代码 Must* 非 Must 用法；空 workspace 配置 sync 命令返回错误封套而非崩溃。
+- [x] B5 Service 注入 now func() time.Time，删除 PINAX_TEST_NOW 生产读取。
+- [x] B6 删 capsa_bridge Summary/Error.Message 盲目 ReplaceAll，措辞参数化；capsa fixture 允许更新，cloud 主路径零 diff。
+- [x] B7 warnPersistFailure 收编 monitor/sync 静默丢弃的证据写入。
+- [x] B8 share.go http.ErrServerClosed 改 errors.Is。
+- [x] B4a VersionStatus 使用调用方 ctx；ctx 丢弃清单记入 design.md。
 
 ## 架构简化切片
 
