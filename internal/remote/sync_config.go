@@ -294,10 +294,6 @@ func IsSyncConfigError(err error, code string) bool {
 	return false
 }
 
-func SupportedSyncBackendKings(kind string) bool {
-	return SupportedSyncBackendKinds[strings.TrimSpace(kind)]
-}
-
 // plaintextSensitivePattern matches literal token/password/secret values,
 // absolute machine paths and pinax-internal references that must never appear
 // in a portable declaration. Mirrors internal/redaction semantics so the

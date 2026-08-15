@@ -95,10 +95,6 @@ type S3Backend struct {
 	prefix string
 }
 
-func NewS3Backend(ctx context.Context, bucket string, prefix string) (*S3Backend, error) {
-	return NewS3BackendWithOptions(ctx, bucket, prefix, S3BackendOptions{})
-}
-
 func NewS3BackendWithOptions(ctx context.Context, bucket string, prefix string, options S3BackendOptions) (*S3Backend, error) {
 	loadOptions := make([]func(*config.LoadOptions) error, 0, 3)
 	if options.Region != "" {
@@ -235,13 +231,23 @@ func (s *S3Backend) List(ctx context.Context, prefix string) ([]ObjectInfo, erro
 			return nil, err
 		}
 		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
 			key := strings.TrimPrefix(*obj.Key, s.prefix)
-			objects = append(objects, ObjectInfo{
-				Key:          key,
-				Size:         *obj.Size,
-				Revision:     *obj.ETag,
-				LastModified: *obj.LastModified,
-			})
+			info := ObjectInfo{Key: key}
+			// S3-compatible stores (notably Tencent COS) may omit optional
+			// list fields; dereferencing them unguarded panics the sync.
+			if obj.Size != nil {
+				info.Size = *obj.Size
+			}
+			if obj.ETag != nil {
+				info.Revision = *obj.ETag
+			}
+			if obj.LastModified != nil {
+				info.LastModified = *obj.LastModified
+			}
+			objects = append(objects, info)
 		}
 	}
 	return objects, nil
