@@ -1,11 +1,11 @@
 ---
 name: pinax-retrieval-operator
-description: Use when an agent needs bounded Pinax retrieval through index refresh, deterministic search, note links/backlinks/orphans, saved views, folders, database/dataview/query surfaces, or controlled read-only context commands without editing vault state directly.
+description: Use when an agent needs bounded Pinax retrieval through index refresh, search, note links/backlinks/orphans, KB semantic context, saved views, folders, database/dataview/query surfaces, or controlled read-only context commands without editing vault state directly.
 ---
 
 # Pinax Retrieval Operator
 
-Retrieve bounded context from a Pinax vault for agents. Use deterministic index/search and memory; semantic RAG is an external project reached through Markdown export.
+Retrieve bounded context from a Pinax vault for agents. Use deterministic index/search first; use KB semantic context only when fuzzy note-body retrieval is needed.
 
 ## Use When
 
@@ -25,7 +25,7 @@ pinax search "release workflow" --agent
 pinax note links "Release Plan" --agent
 pinax note backlinks "Release Plan" --agent
 pinax note orphans --agent
-pinax export markdown ./temp/rag-export --json
+pinax index doctor --json
 pinax view list --agent
 pinax folder list --agent
 pinax folder show notes/research --agent
@@ -38,11 +38,10 @@ pinax query run "SELECT title, path FROM notes LIMIT 10" --json
 
 1. Check or refresh deterministic projections with `pinax index refresh --json` when search results may be stale. Use `pinax index doctor --json` for structural exceptions or corrupt projections.
 2. Use `pinax search` for keywords, tags, folders, status, links, and ordinary note discovery.
-3. Use `pinax note links`, `pinax note backlinks`, and `pinax note orphans` for graph-like note relationship checks before semantic search.
+3. Use `pinax note links`, `pinax note backlinks`, and `pinax note orphans` for graph-like note relationship checks.
 4. Use `pinax view`, `pinax folder list/show`, `pinax database view`, `pinax dataview`, or `pinax query` only through their controlled Pinax surfaces; do not read SQLite files directly.
 5. Use `pinax memory context` through `pinax-memory-operator` for durable decisions or facts; do not use KB as a decision ledger.
-6. When semantic similarity over larger note bodies is required, export Markdown and hand the path to the external RAG owner.
-7. Prefer `--agent` for low-token facts, context packs, lists, and search results. Use `--json` when another tool needs full structured records or when validating index/KB health.
+7. Prefer `--agent` for low-token facts, context packs, lists, and search results. Use `--json` when another tool needs full structured records or when validating index health.
 8. Keep returned context bounded by `--limit` and cite `path`, `title`, or source facts in the response.
 9. Use `pinax index sync` only when a workflow explicitly requires the record/proof-loop sync semantics; for ordinary stale search recovery, prefer `pinax index refresh`.
 
@@ -56,5 +55,5 @@ pinax query run "SELECT title, path FROM notes LIMIT 10" --json
 ## Validation
 
 - `pinax index refresh --json` returns `status=success` before relying on fresh deterministic search.
-- `pinax export markdown ./temp/rag-export --json` produces the bounded handoff for an external RAG pipeline.
+
 - Retrieved context includes enough source identifiers for the user or agent to verify later.

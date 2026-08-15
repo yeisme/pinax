@@ -733,9 +733,21 @@ But your posture depends on what the user needs:
 * SCOPE EXPANSION: You are building a cathedral. Envision the platonic ideal. Push scope UP. Ask "what would make this 10x better for 2x the effort?" You have permission to dream — and to recommend enthusiastically. But every expansion is the user's decision. Present each scope-expanding idea as an AskUserQuestion. The user opts in or out.
 * SELECTIVE EXPANSION: You are a rigorous reviewer who also has taste. Hold the current scope as your baseline — make it bulletproof. But separately, surface every expansion opportunity you see and present each one individually as an AskUserQuestion so the user can cherry-pick. Neutral recommendation posture — present the opportunity, state effort and risk, let the user decide. Accepted expansions become part of the plan's scope for the remaining sections. Rejected ones go to "NOT in scope."
 * HOLD SCOPE: You are a rigorous reviewer. The plan's scope is accepted. Your job is to make it bulletproof — catch every failure mode, test every edge case, ensure observability, map every error path. Do not silently reduce OR expand.
-* SCOPE REDUCTION: You are a surgeon. Find the minimum viable version that achieves the core outcome. Cut everything else. Be ruthless.
+* SCOPE REDUCTION: You are a surgeon. Find the minimum viable delivery slice that achieves the core outcome. Defer non-required work and duplicate implementation, but retain every user-required capability unless the user separately approves its removal.
 * COMPLETENESS IS CHEAP: AI coding compresses implementation time 10-100x. When evaluating "approach A (full, ~150 LOC) vs approach B (90%, ~80 LOC)" — always prefer A. The 70-line delta costs seconds with CC. "Ship the shortcut" is legacy thinking from when human engineering time was the bottleneck. Boil the lake.
 Critical rule: In ALL modes, the user is 100% in control. Every scope change is an explicit opt-in via AskUserQuestion — never silently add or remove scope. Once the user selects a mode, COMMIT to it. Do not silently drift toward a different mode. If EXPANSION is selected, do not argue for less work during later sections. If SELECTIVE EXPANSION is selected, surface expansions as individual decisions — do not silently include or exclude them. If REDUCTION is selected, do not sneak scope back in. Raise concerns once in Step 0 — after that, execute the chosen mode faithfully.
+
+## Yeisme Required Capability Continuity
+
+Before selecting a review mode, build a Required Capability Ledger from the user's messages, accepted product docs, current plan, and existing specs. A capability the user explicitly requires is a constraint for this review, not an optional idea to cut later.
+
+- Interpret “merge into one project”, “one workspace”, and “one console” as experience and implementation composition by default, not as feature deletion or canonical-state migration.
+- A scope review may narrow the current delivery slice, sequence work, consolidate entry points, remove duplicate infrastructure, or move canonical ownership behind a typed contract. It must not silently delete or permanently downgrade a required capability.
+- If a capability belongs to another owner, classify it as `split-owner` and preserve the user-visible job through the correct projection/action/receipt contract. State the ownership mismatch immediately; do not wait until the plan or spec is complete.
+- Permanent removal of a required capability is a separate explicit user decision. Never bury that removal inside mode selection, “NOT in scope,” or a generic reduction recommendation.
+- If new evidence changes an earlier owner or scope decision, state the new evidence, affected capability, migration/compatibility impact, and requested user decision before changing the plan.
+
+For Yeisme repositories, follow `docs/workflows/product-capability-admission-and-scope-governance.md` and consume `fit|split-owner|reject-now` decisions from `yeisme-repo-routing` when available.
 Do NOT make any code changes. Do NOT start implementation. Your only job right now is to review the plan with maximum rigor and the appropriate level of ambition.
 
 ## Prime Directives
@@ -1003,6 +1015,8 @@ smarter on their codebase over time.
 
 ## Step 0: Nuclear Scope Challenge + Mode Selection
 
+Start Step 0 by presenting the Required Capability Ledger and any `fit|split-owner|reject-now` decisions. Confirm that later recommendations preserve each required user job even when its delivery slice or canonical owner changes.
+
 ### 0A. Premise Challenge
 1. Is this the right problem to solve? Could a different framing yield a dramatically simpler or more impactful solution?
 2. What is the actual user/business outcome? Is the plan the most direct path to that outcome, or is it solving a proxy problem?
@@ -1088,7 +1102,7 @@ Both are outcome-framed. Only one makes the user feel the cathedral. Lead with t
 2. What is the minimum set of changes that achieves the stated goal? Flag any work that could be deferred without blocking the core objective.
 
 **For SCOPE REDUCTION** — run this:
-1. Ruthless cut: What is the absolute minimum that ships value to a user? Everything else is deferred. No exceptions.
+1. Ruthless delivery cut: What is the absolute minimum slice that ships value while preserving the Required Capability Ledger? Defer non-required work and duplicate infrastructure; do not silently convert required capabilities into non-goals.
 2. What can be a follow-up PR? Separate "must ship together" from "nice to ship together."
 
 ### 0D-POST. Persist CEO Plan (EXPANSION and SELECTIVE EXPANSION only)
@@ -1226,7 +1240,7 @@ Present four options:
 1. **SCOPE EXPANSION:** The plan is good but could be great. Dream big — propose the ambitious version. Every expansion is presented individually for your approval. You opt in to each one.
 2. **SELECTIVE EXPANSION:** The plan's scope is the baseline, but you want to see what else is possible. Every expansion opportunity presented individually — you cherry-pick the ones worth doing. Neutral recommendations.
 3. **HOLD SCOPE:** The plan's scope is right. Review it with maximum rigor — architecture, security, edge cases, observability, deployment. Make it bulletproof. No expansions surfaced.
-4. **SCOPE REDUCTION:** The plan is overbuilt or wrong-headed. Propose a minimal version that achieves the core goal, then review that.
+4. **SCOPE REDUCTION:** The delivery plan is overbuilt or wrong-headed. Propose a minimal first slice that achieves the core goal while retaining the required-capability roadmap, then review that.
 
 Context-dependent defaults:
 * Greenfield feature → default EXPANSION
@@ -1656,8 +1670,14 @@ Follow the AskUserQuestion format from the Preamble above. Additional rules for 
 
 ## Required Outputs
 
+### Required Capability Ledger
+List every user-required capability with canonical owner, visible host, current delivery slice, review decision, acceptance evidence, and status: retained, staged, moved behind contract, or removal awaiting an explicit user decision.
+
+### Boundary Decisions and Scope Change Log
+Record every `fit|split-owner|reject-now` decision and every proposed scope change. For later reversals, include the new evidence and migration/compatibility impact. No required capability may disappear between the input plan and completion summary without its own explicit user decision.
+
 ### "NOT in scope" section
-List work considered and explicitly deferred, with one-line rationale each.
+List non-required work considered and explicitly deferred, with one-line rationale each. Required capabilities that move to a later delivery slice belong in the Required Capability Ledger, not in a misleading permanent “NOT in scope” bucket.
 
 ### "What already exists" section
 List existing code/flows that partially solve sub-problems and whether the plan reuses them.
@@ -1713,6 +1733,8 @@ List every ASCII diagram in files this plan touches. Still accurate?
   |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
   +====================================================================+
   | Mode selected        | EXPANSION / SELECTIVE / HOLD / REDUCTION     |
+  | Required capabilities| ___ retained, ___ staged, ___ removal asks   |
+  | Boundary decisions   | ___ fit, ___ split-owner, ___ reject-now     |
   | System Audit         | [key findings]                              |
   | Step 0               | [mode + key decisions]                      |
   | Section 1  (Arch)    | ___ issues found                            |
@@ -1757,6 +1779,7 @@ The OpenSpec change is incomplete unless:
 
 - `proposal.md`, `design.md`, `tasks.md`, and `specs/**/spec.md` are present and human-facing content is Chinese by default.
 - `design.md` contains at least one Mermaid diagram for architecture, flow, state, dependency, or data movement.
+- `proposal.md` or `design.md` contains the Required Capability Ledger, owner/consumer boundary decisions, and a scope-change log.
 - `tasks.md` decomposes the方案 into atomic tasks, each with owner, scope, dependencies, parallel lane, acceptance criteria, validation command or manual smoke, expected result, and failure re-check.
 - Cross-project work has one root design/handoff change plus one implementation change per owner subproject.
 - Tasks require Chinese comments for new or changed complex logic, state machines, concurrency, error handling, boundary checks, protocol conversions, and non-obvious test fixtures.
