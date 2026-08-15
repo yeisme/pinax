@@ -349,14 +349,16 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 }
 
 func (d *RPCDispatcher) ensureWriteAllowed(command string, params map[string]any) (domain.Projection, error) {
-	if boolParam(params, "dry_run") {
-		return domain.Projection{}, nil
-	}
+	// Allow-write applies to dry runs too, mirroring the HTTP gate: a
+	// read-only dispatcher must not run preview-shaped write commands either.
 	if !d.allowWrite {
 		err := &domain.CommandError{Code: "write_disabled", Message: "RPC dispatcher is currently read-only", Hint: "Start the API server in allow-write mode and retry"}
 		projection := domain.NewErrorProjection(command, err)
 		projection.Mode = "json"
 		return projection, err
+	}
+	if boolParam(params, "dry_run") {
+		return domain.Projection{}, nil
 	}
 	if !boolParam(params, "yes") {
 		err := &domain.CommandError{Code: "approval_required", Message: "Remote folder writes require yes=true", Hint: "Preview with dry_run=true first, then append yes=true to confirm"}

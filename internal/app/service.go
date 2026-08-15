@@ -2612,14 +2612,13 @@ func storageProjection(command, summary string, profile domain.StorageProfile) d
 }
 
 func writeJSONAsset(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(b, '\n'), 0o644)
+	// Atomic (temp+fsync+rename) so concurrent readers never observe a torn
+	// truncate-then-write window on monitor runs, plans, and receipts.
+	return atomicWriteFile(path, append(b, '\n'), 0o644)
 }
 
 func ensureVaultAssets(root string) error {

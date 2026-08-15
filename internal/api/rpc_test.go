@@ -227,12 +227,11 @@ func TestLocalRPCMemoryRoutesAndWriteGate(t *testing.T) {
 	}
 	readonly := NewRPCDispatcher(svc, root)
 
-	dryRun, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "predicate": "memory_capture_usage", "object": "Use --body or --subject and --object", "source": "rpc-test", "dry_run": true}})
-	if err != nil || dryRun.Command != "memory.capture" || dryRun.Facts["dry_run"] != "true" {
-		t.Fatalf("memory capture dry-run rpc projection=%#v err=%v", dryRun, err)
-	}
-	if _, statErr := os.Stat(filepath.Join(root, ".pinax", "memory", "ledger.sqlite")); !os.IsNotExist(statErr) {
-		t.Fatalf("memory capture dry-run wrote ledger: stat err=%v", statErr)
+	// Dry runs are gated by allow-write exactly like real writes (mirroring
+	// the REST surface), so a read-only dispatcher refuses them too.
+	dryBlocked, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "predicate": "memory_capture_usage", "object": "Use --body or --subject and --object", "source": "rpc-test", "dry_run": true}})
+	if err == nil || dryBlocked.Error == nil || dryBlocked.Error.Code != "write_disabled" {
+		t.Fatalf("readonly memory capture dry-run should fail with write_disabled: projection=%#v err=%v", dryBlocked, err)
 	}
 
 	blocked, err := readonly.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision", "yes": true}})
@@ -241,6 +240,13 @@ func TestLocalRPCMemoryRoutesAndWriteGate(t *testing.T) {
 	}
 
 	writer := NewRPCDispatcherWithOptions(svc, root, DispatcherOptions{AllowWrite: true})
+	dryRun, err := writer.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "predicate": "memory_capture_usage", "object": "Use --body or --subject and --object", "source": "rpc-test", "dry_run": true}})
+	if err != nil || dryRun.Command != "memory.capture" || dryRun.Facts["dry_run"] != "true" {
+		t.Fatalf("memory capture dry-run rpc projection=%#v err=%v", dryRun, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".pinax", "memory", "ledger.sqlite")); !os.IsNotExist(statErr) {
+		t.Fatalf("memory capture dry-run wrote ledger: stat err=%v", statErr)
+	}
 	approval, err := writer.Call(ctx, RPCRequest{Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "decision", "body": "Persist this decision"}})
 	if err == nil || approval.Error == nil || approval.Error.Code != "approval_required" {
 		t.Fatalf("memory capture without approval should fail: projection=%#v err=%v", approval, err)
