@@ -44,7 +44,7 @@ func TestEnvelopeValidationRejectsPlaintextAndMissingCiphertext(t *testing.T) {
 	}
 }
 func TestManifestConflictDomainTypesRejectPlaintextMetadata(t *testing.T) {
-	manifest := Manifest{SchemaVersion: ManifestSchemaVersion, Entries: []ManifestEntry{{Path: "notes/alpha.md", BlobID: "blob_abcd", PlainSHA256: "sha", Size: 12, UpdatedAt: "2026-06-12T00:00:00Z"}}}
+	manifest := Manifest{SchemaVersion: ManifestSchemaVersion, Entries: []ManifestEntry{{Path: "notes/alpha.md", BlobID: "blob_abcd", SHA256: "sha", Size: 12, UpdatedAt: "2026-06-12T00:00:00Z"}}}
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("valid manifest rejected: %v", err)
 	}

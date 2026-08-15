@@ -5,7 +5,7 @@ import "testing"
 func TestManifestDeleteMarkersValidateAndExposeTrashBlobIDs(t *testing.T) {
 	manifest := Manifest{
 		SchemaVersion: ManifestSchemaVersion,
-		Entries:       []ManifestEntry{{Path: "notes/alpha.md", BlobID: "blob_alpha", PlainSHA256: "sha", Size: 12, UpdatedAt: "2026-06-27T00:00:00Z"}},
+		Entries:       []ManifestEntry{{Path: "notes/alpha.md", BlobID: "blob_alpha", SHA256: "sha", Size: 12, UpdatedAt: "2026-06-27T00:00:00Z"}},
 		Deletes: []ManifestDelete{{
 			PathHash:    "path_abc123",
 			ObjectKind:  "project",

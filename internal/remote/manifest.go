@@ -13,50 +13,25 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yeisme/pinax/internal/syncwire"
 	"github.com/yeisme/pinax/internal/vaultignore"
 )
 
 const (
-	ManifestSchemaVersionV1 = "pinax.cloud.manifest.v1"
-	ManifestSchemaVersionV2 = "pinax.cloud.manifest.v2"
-	ManifestSchemaVersion   = ManifestSchemaVersionV1
+	ManifestSchemaVersionV1 = syncwire.ManifestSchemaVersionV1
+	ManifestSchemaVersionV2 = syncwire.ManifestSchemaVersionV2
+	ManifestSchemaVersion   = syncwire.ManifestSchemaVersion
+)
+
+// Wire types are owned by internal/syncwire; these aliases keep the existing
+// remote.* identifiers working while guaranteeing a single on-wire schema.
+type (
+	Manifest       = syncwire.Manifest
+	ManifestEntry  = syncwire.ManifestEntry
+	ManifestDelete = syncwire.ManifestDelete
 )
 
 const MaxManifestFileBytes = 100 * 1024 * 1024
-
-type Manifest struct {
-	SchemaVersion string           `json:"schema_version"`
-	GeneratedAt   string           `json:"generated_at"`
-	EntryCount    int              `json:"entry_count"`
-	Entries       []ManifestEntry  `json:"entries"`
-	Deletes       []ManifestDelete `json:"deletes,omitempty"`
-}
-
-type ManifestEntry struct {
-	ObjectID   string `json:"object_id,omitempty"`
-	RevisionID string `json:"revision_id,omitempty"`
-	DeviceID   string `json:"device_id,omitempty"`
-	Path       string `json:"path"`
-	PathHash   string `json:"path_hash"`
-	BlobID     string `json:"blob_id"`
-	Size       int64  `json:"size"`
-	SHA256     string `json:"sha256"`
-	ObjectKind string `json:"object_kind,omitempty"`
-	Mode       uint32 `json:"mode,omitempty"`
-	MediaType  string `json:"media_type,omitempty"`
-	UpdatedAt  string `json:"updated_at"`
-}
-
-type ManifestDelete struct {
-	PathHash    string `json:"path_hash"`
-	ObjectKind  string `json:"object_kind"`
-	ObjectID    string `json:"object_id,omitempty"`
-	TombstoneID string `json:"tombstone_id"`
-	DeletedAt   string `json:"deleted_at,omitempty"`
-	TrashBlobID string `json:"trash_blob_id,omitempty"`
-	RevisionID  string `json:"revision_id,omitempty"`
-	DeviceID    string `json:"device_id,omitempty"`
-}
 
 func BuildManifest(root string) (Manifest, error) {
 	root, err := cleanRoot(root)
@@ -300,33 +275,6 @@ func BuildManifestV2(root, deviceID string, identities map[string]ManifestIdenti
 	}
 	manifest.SchemaVersion = ManifestSchemaVersionV2
 	return manifest, manifest.ValidateV2()
-}
-
-func (manifest Manifest) ValidateV2() error {
-	if manifest.SchemaVersion != ManifestSchemaVersionV2 {
-		return fmt.Errorf("invalid_manifest_version")
-	}
-	objectIDs := make(map[string]struct{}, len(manifest.Entries))
-	paths := make(map[string]struct{}, len(manifest.Entries))
-	for _, entry := range manifest.Entries {
-		if strings.TrimSpace(entry.ObjectID) == "" || strings.TrimSpace(entry.ObjectKind) == "" || strings.TrimSpace(entry.Path) == "" || strings.TrimSpace(entry.RevisionID) == "" || strings.TrimSpace(entry.DeviceID) == "" || strings.TrimSpace(entry.UpdatedAt) == "" {
-			return fmt.Errorf("invalid_manifest_v2_entry")
-		}
-		if _, exists := objectIDs[entry.ObjectID]; exists {
-			return fmt.Errorf("duplicate_manifest_object_id")
-		}
-		if _, exists := paths[entry.Path]; exists {
-			return fmt.Errorf("duplicate_manifest_path")
-		}
-		objectIDs[entry.ObjectID] = struct{}{}
-		paths[entry.Path] = struct{}{}
-	}
-	for _, deleteMarker := range manifest.Deletes {
-		if strings.TrimSpace(deleteMarker.ObjectID) == "" || strings.TrimSpace(deleteMarker.ObjectKind) == "" || strings.TrimSpace(deleteMarker.RevisionID) == "" || strings.TrimSpace(deleteMarker.DeviceID) == "" {
-			return fmt.Errorf("invalid_manifest_v2_tombstone")
-		}
-	}
-	return nil
 }
 
 func manifestEntryRevisionID(objectID, contentFact string) string {

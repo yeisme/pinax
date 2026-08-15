@@ -12,10 +12,11 @@ import (
 	"io"
 
 	"github.com/yeisme/pinax/internal/profile"
+	"github.com/yeisme/pinax/internal/syncwire"
 	"golang.org/x/crypto/pbkdf2"
 )
 
-const CryptoEnvelopeSchemaVersion = "pinax.cloud.envelope.v1"
+const CryptoEnvelopeSchemaVersion = syncwire.EnvelopeSchemaVersion
 
 const (
 	keyDerivationSalt       = "capsa-sync-salt-v1"
@@ -29,14 +30,9 @@ type CryptoKey struct {
 	key   []byte
 }
 
-type EncryptedEnvelope struct {
-	SchemaVersion string `json:"schema_version"`
-	Alg           string `json:"alg"`
-	KeyID         string `json:"key_id"`
-	Nonce         string `json:"nonce"`
-	Ciphertext    string `json:"ciphertext"`
-	PlainSHA256   string `json:"plain_sha256"`
-}
+// EncryptedEnvelope is the syncwire envelope; remote aliases it so the
+// encryption helpers and the transport layer share one wire schema.
+type EncryptedEnvelope = syncwire.Envelope
 
 func DeriveKey(secretRef string) (CryptoKey, error) {
 	if secretRef == "" {
