@@ -358,9 +358,14 @@ tasks:
     desc: Run the local Pinax quality gate.
     deps: [fmt-check, lint, test, build, openspec, publish:smoke]
 
+  race:
+    desc: Run the race detector on concurrency-heavy packages (watcher, debounce, monitor, sync).
+    cmds:
+      - go test -race -count=1 ./internal/app/syncdaemon/... ./internal/cloudsync/... ./internal/cloudclient/... ./internal/app -run 'Monitor|Sync|Publish|Watch|Debounce|Forward'
+
   ci:
     desc: Run the CI-equivalent Pinax quality gate.
-    deps: [check, release:check]
+    deps: [check, race, release:check]
 
   clean:
     desc: Remove local build artifacts.
