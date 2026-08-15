@@ -484,11 +484,11 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 		wantCommand string
 	}{
 		"rest.workbench.status":               {method: http.MethodGet, path: "/v1/workbench/status", wantStatus: http.StatusOK, wantCommand: "workbench.status"},
-		"rest.kb.review.overview":             {method: http.MethodGet, path: "/v1/kb/review/overview", wantStatus: http.StatusOK, wantCommand: "kb.review.overview"},
-		"rest.kb.review.sources":              {method: http.MethodGet, path: "/v1/kb/review/sources?limit=10", wantStatus: http.StatusOK, wantCommand: "kb.review.sources"},
-		"rest.kb.review.evaluation_suites":    {method: http.MethodGet, path: "/v1/kb/review/evaluation-suites", wantStatus: http.StatusOK, wantCommand: "kb.review.evaluation_suites"},
-		"rest.kb.review.evaluation_questions": {method: http.MethodGet, path: "/v1/kb/review/evaluation-suites/missing/questions", wantStatus: http.StatusBadRequest, wantCommand: "kb.review.evaluation_questions"},
-		"rest.kb.review.run":                  {method: http.MethodGet, path: "/v1/kb/review/runs/missing", wantStatus: http.StatusBadRequest, wantCommand: "kb.review.run"},
+		"rest.kb.review.overview":             {method: http.MethodGet, path: "/v1/kb/review/overview", wantStatus: http.StatusGone, wantCommand: "kb.review.overview"},
+		"rest.kb.review.sources":              {method: http.MethodGet, path: "/v1/kb/review/sources?limit=10", wantStatus: http.StatusGone, wantCommand: "kb.review.sources"},
+		"rest.kb.review.evaluation_suites":    {method: http.MethodGet, path: "/v1/kb/review/evaluation-suites", wantStatus: http.StatusGone, wantCommand: "kb.review.evaluation_suites"},
+		"rest.kb.review.evaluation_questions": {method: http.MethodGet, path: "/v1/kb/review/evaluation-suites/missing/questions", wantStatus: http.StatusGone, wantCommand: "kb.review.evaluation_questions"},
+		"rest.kb.review.run":                  {method: http.MethodGet, path: "/v1/kb/review/runs/missing", wantStatus: http.StatusGone, wantCommand: "kb.review.run"},
 		"rest.workbench.activity.list":        {method: http.MethodGet, path: "/v1/workbench/activity?limit=1", wantStatus: http.StatusOK, wantCommand: "activity.list"},
 		"rest.workbench.activity.show":        {method: http.MethodGet, path: "/v1/workbench/activity/" + activityEventID, wantStatus: http.StatusOK, wantCommand: "activity.show"},
 		"rest.monitor.list":                   {method: http.MethodGet, path: "/v1/monitor/runs?limit=1", wantStatus: http.StatusOK, wantCommand: "monitor.runs"},

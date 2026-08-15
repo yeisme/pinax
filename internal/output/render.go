@@ -1013,8 +1013,6 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryNamedDataList(w, theme, "Properties", p.Data, []string{"properties"}, []summaryListColumn{{Header: "Property", Path: "name", MaxWidth: 28}, {Header: "Type", Path: "type", MaxWidth: 14}, {Header: "Values", Path: "values", MaxWidth: 36}, {Header: "Updated", Path: "updated_at", MaxWidth: 22}})
 	case "database.schema.show":
 		return renderSummaryDatabaseSchemaShow(w, theme, p)
-	case "kb.provider.list":
-		return renderSummaryNamedDataList(w, theme, "Providers", p.Data, []string{"providers"}, []summaryListColumn{{Header: "Provider", Path: "name", MaxWidth: 16}, {Header: "Model", Path: "default_model", MaxWidth: 28}, {Header: "Configured", Path: "configured", MaxWidth: 12}, {Header: "Credential", Path: "credential_source", MaxWidth: 24}, {Header: "Local only", Path: "local_only", MaxWidth: 12}})
 	case "profile.list":
 		return renderSummaryNamedDataList(w, theme, "Profiles", p.Data, []string{"profiles"}, []summaryListColumn{{Header: "Name", Path: "name", MaxWidth: 24}, {Header: "Endpoint", Path: "endpoint", MaxWidth: 42}, {Header: "Workspace", Path: "workspace", MaxWidth: 18}, {Header: "Device", Path: "device", MaxWidth: 18}, {Header: "Scope", Path: "default_scope", MaxWidth: 20}, {Header: "Default", Path: "default", MaxWidth: 10}})
 	case "profile.show":

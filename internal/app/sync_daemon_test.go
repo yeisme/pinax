@@ -86,7 +86,7 @@ func TestSyncDaemonStateRedaction(t *testing.T) {
 }
 
 func TestSyncDaemonStateIgnoresPinaxRuntimePaths(t *testing.T) {
-	for _, path := range []string{".pinax/sync-daemon/daemon.json", ".pinax/kb/lancedb/index", ".git/index", "temp/run.log"} {
+	for _, path := range []string{".pinax/sync-daemon/daemon.json", ".pinax/rag-cache/index", ".git/index", "temp/run.log"} {
 		if !syncdaemon.IgnoreRuntimePath(path) || syncdaemon.SafeEventPath(path) != "" {
 			t.Fatalf("runtime path not ignored: %s", path)
 		}

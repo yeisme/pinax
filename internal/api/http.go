@@ -103,11 +103,11 @@ func (s *Server) Handler() http.Handler {
 		{"/", s.handleRoot, "capabilities"},
 		{"/workbench", s.handleWorkbenchPage, "capabilities"},
 		{"/v1/capabilities", s.handleCapabilities, "capabilities"},
-		{"/v1/kb/review/overview", s.handleKBReviewOverview, "kb_review"},
-		{"/v1/kb/review/sources", s.handleKBReviewSources, "kb_review"},
-		{"/v1/kb/review/evaluation-suites", s.handleKBReviewEvaluationSuites, "kb_review"},
-		{"/v1/kb/review/evaluation-suites/", s.handleKBReviewEvaluationQuestions, "kb_review"},
-		{"/v1/kb/review/runs/", s.handleKBReviewRun, "kb_review"},
+		{"/v1/kb/review/overview", s.handleKBReviewRemoved, "kb_review"},
+		{"/v1/kb/review/sources", s.handleKBReviewRemoved, "kb_review"},
+		{"/v1/kb/review/evaluation-suites", s.handleKBReviewRemoved, "kb_review"},
+		{"/v1/kb/review/evaluation-suites/", s.handleKBReviewRemoved, "kb_review"},
+		{"/v1/kb/review/runs/", s.handleKBReviewRemoved, "kb_review"},
 		{"/v1/workbench/status", s.handleWorkbenchStatus, "capabilities"},
 		{"/v1/workbench/activity", s.handleWorkbenchActivity, "capabilities"},
 		{"/v1/workbench/activity/", s.handleWorkbenchActivity, "capabilities"},
@@ -417,65 +417,34 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeProjection(w, projection, err)
 }
 
-func (s *Server) handleKBReviewOverview(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleKBReviewRemoved(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
 		return
 	}
-	projection, err := s.service.KBReviewOverview(r.Context(), app.KBReviewRequest{VaultPath: s.vault})
-	writeProjection(w, projection, err)
-}
-
-func (s *Server) handleKBReviewSources(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-		return
+	command := "kb.review.removed"
+	switch {
+	case r.URL.Path == "/v1/kb/review/overview":
+		command = "kb.review.overview"
+	case r.URL.Path == "/v1/kb/review/sources":
+		command = "kb.review.sources"
+	case r.URL.Path == "/v1/kb/review/evaluation-suites":
+		command = "kb.review.evaluation_suites"
+	case strings.HasPrefix(r.URL.Path, "/v1/kb/review/evaluation-suites/"):
+		command = "kb.review.evaluation_questions"
+	case strings.HasPrefix(r.URL.Path, "/v1/kb/review/runs/"):
+		command = "kb.review.run"
 	}
-	projection, err := s.service.KBReviewSources(r.Context(), app.KBReviewRequest{VaultPath: s.vault, Limit: intQuery(r.URL.Query(), "limit")})
-	writeProjection(w, projection, err)
-}
-
-func (s *Server) handleKBReviewEvaluationSuites(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-		return
+	err := &domain.CommandError{
+		Code:    "kb_decoupled",
+		Message: "Pinax no longer exposes vector KB review data",
+		Hint:    "Export Markdown and query the external RAG system",
 	}
-	projection, err := s.service.KBReviewEvaluationSuites(r.Context(), app.KBReviewRequest{VaultPath: s.vault})
-	writeProjection(w, projection, err)
-}
-
-func (s *Server) handleKBReviewEvaluationQuestions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-		return
-	}
-	suffix := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/kb/review/evaluation-suites/"), "/")
-	parts := strings.Split(suffix, "/")
-	if len(parts) != 2 || parts[1] != "questions" {
-		writeProjectionStatus(w, domain.NewErrorProjection("kb.review.evaluation_questions", &domain.CommandError{Code: "kb_evaluation_suite_not_found", Message: "KB evaluation suite was not found", Hint: "Use /v1/kb/review/evaluation-suites/{suite_id}/questions"}), http.StatusNotFound)
-		return
-	}
-	suiteID, err := url.PathUnescape(parts[0])
-	if err != nil {
-		writeProjectionStatus(w, domain.NewErrorProjection("kb.review.evaluation_questions", &domain.CommandError{Code: "kb_evaluation_suite_not_found", Message: "KB evaluation suite was not found", Hint: "Use a URL-safe suite id"}), http.StatusNotFound)
-		return
-	}
-	projection, err := s.service.KBReviewEvaluationQuestions(r.Context(), app.KBReviewRequest{VaultPath: s.vault, SuiteID: suiteID, Limit: intQuery(r.URL.Query(), "limit")})
-	writeProjection(w, projection, err)
-}
-
-func (s *Server) handleKBReviewRun(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeProjectionStatus(w, domain.NewErrorProjection("api.route", &domain.CommandError{Code: "method_not_allowed", Message: "API route does not support this HTTP method"}), http.StatusMethodNotAllowed)
-		return
-	}
-	runID, err := url.PathUnescape(strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/kb/review/runs/"), "/"))
-	if err != nil || runID == "" {
-		writeProjectionStatus(w, domain.NewErrorProjection("kb.review.run", &domain.CommandError{Code: "kb_evaluation_run_not_found", Message: "KB evaluation run was not found", Hint: "Use a URL-safe stable run id"}), http.StatusNotFound)
-		return
-	}
-	projection, err := s.service.KBReviewRun(r.Context(), app.KBReviewRequest{VaultPath: s.vault, RunID: runID})
-	writeProjection(w, projection, err)
+	projection := domain.NewErrorProjection(command, err)
+	projection.Facts["vector_runtime"] = "removed"
+	projection.Facts["rag_owner"] = "external"
+	projection.Actions = []domain.Action{{Name: "export", Command: "pinax export markdown <output-dir> --vault <vault> --json"}}
+	writeProjectionStatus(w, projection, http.StatusGone)
 }
 
 func (s *Server) handleWorkbenchStatus(w http.ResponseWriter, r *http.Request) {

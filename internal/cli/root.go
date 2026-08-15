@@ -229,10 +229,6 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 			if cmd.Name() == "help" || cmd.CommandPath() == "pinax completion" {
 				return nil
 			}
-			// Attach the credentialctl shared credential resolver so the
-			// OpenAI embedding provider can fall back to the shared credential
-			// when OPENAI_API_KEY is unset. No-op when no backend is available.
-			enableSharedCredentials()
 			if err := validateOutputMode(cmd, jsonMode, agentMode, eventsMode, explainMode); err != nil {
 				return err
 			}

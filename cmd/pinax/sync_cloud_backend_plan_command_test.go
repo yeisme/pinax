@@ -243,7 +243,7 @@ func TestBriefingRecipeCLI(t *testing.T) {
 	setOut := runCLI(t, "briefing", "recipe", "set", "--topic", "AI tooling", "--limit", "7", "--source", "fake:ai", "--vault", root, "--json")
 	assertJSONCommandStatus(t, setOut, "briefing.recipe.set", "success")
 	showOut := runCLI(t, "briefing", "recipe", "show", "--vault", root, "--agent")
-	for _, want := range []string{"command=briefing.recipe.show", "fact.topic=\"AI tooling\"fact.limit=7", "fact.sources=2"} {
+	for _, want := range []string{"command=briefing.recipe.show", "fact.topic=\"AI tooling\"", "fact.limit=7", "fact.sources=2"} {
 		if !strings.Contains(showOut, want) {
 			t.Fatalf("recipe show missing %q:\n%s", want, showOut)
 		}
@@ -501,6 +501,10 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 			writeServerJSON(w, http.StatusOK, map[string]any{"blob_id": req.BlobID, "object_key": "vaults/ws_123/" + req.BlobID, "method": "PUT", "url": "https://objects.example.local/" + req.BlobID})
 		case r.Method == http.MethodPut && strings.Contains(workspacePath, "/blobs/"):
 			writeServerJSON(w, http.StatusCreated, map[string]any{"status": "stored"})
+		case r.Method == http.MethodGet && strings.Contains(workspacePath, "/blobs/"):
+			// Durable-commit read-back (GetManifest routes through blob GET) only
+			// needs a decodable blob envelope to consider the manifest observable.
+			writeServerJSON(w, http.StatusOK, map[string]any{"schema_version": "pinax.cloud.blob.v1", "alg": "AES-256-GCM", "ciphertext": "cmVhZC1iYWNr", "plain_sha256": "read-back"})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/revisions"):
 			if got := r.Header.Get("Idempotency-Key"); got == "" {
 				t.Fatalf("server transport missing idempotency key")
@@ -603,7 +607,7 @@ func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
 	runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://127.0.0.1:9000", "--workspace", "ec", "--device", "dev", "--vault", root, "--json")
 	initOut := runCLI(t, "sync", "init", "--vault", root, "--json")
 	assertJSONCommandStatus(t, initOut, "sync.init", "success")
-	for _, want := range []string{"\"backend_kind\":\"s3-direct\"s3://notes/pinax-sync", "\"workspace\":\"ec\"\"device\":\"dev\""} {
+	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "s3://notes/pinax-sync", "\"workspace\":\"ec\"", "\"device\":\"dev\""} {
 		if !strings.Contains(initOut, want) {
 			t.Fatalf("sync init did not reuse cloud config %q:\n%s", want, initOut)
 		}
@@ -680,7 +684,7 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
 	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
-	for _, want := range []string{"\"backend_kind\":\"s3-direct\"s3://notes/pinax-sync", "\"s3\":{", "\"endpoint\":\"http://10.10.1.102:9010\"\"path_style\":true", "personal", "laptop"} {
+	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "s3://notes/pinax-sync", "\"s3\":{", "\"endpoint\":\"http://10.10.1.102:9010\"", "\"path_style\":true", "personal", "laptop"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("cloud backend set s3 missing %q:\n%s", want, out)
 		}
@@ -711,7 +715,7 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 	}
 	doctor := runCLI(t, "capsa", "doctor", "--vault", root, "--json")
 	assertJSONCommandStatus(t, doctor, "capsa.doctor", "success")
-	for _, want := range []string{"\"backend_kind\":\"s3-direct\"\"auth_boundary\":\"provider_credentials\"\"server_audit\":false"} {
+	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "\"auth_boundary\":\"provider_credentials\"", "\"server_audit\":false"} {
 		if !strings.Contains(doctor, want) {
 			t.Fatalf("cloud doctor missing direct boundary %q:\n%s", want, doctor)
 		}
@@ -723,7 +727,7 @@ func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "pinax-note-1322128555", "--region", "ap-guangzhou", "--prefix", "pinax-sync/", "--endpoint", "https://cos.ap-guangzhou.myqcloud.com", "--profile", "tencent-cos-pinax", "--workspace", "yeisme-notes", "--device", "windows-pc", "--vault", root, "--json")
 	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
-	for _, want := range []string{"\"backend_kind\":\"s3-direct\"cos.ap-guangzhou.myqcloud.com", "\"path_style\":\"false\""} {
+	for _, want := range []string{"\"backend_kind\":\"s3-direct\"", "cos.ap-guangzhou.myqcloud.com", "\"path_style\":\"false\""} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("cloud backend set s3 missing %q:\n%s", want, out)
 		}
@@ -756,7 +760,7 @@ func TestCloudBackendSetRcloneCLI(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "rclone", "--remote", "onedrive:PinaxSync", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
 	assertJSONCommandStatus(t, out, "capsa.backend.set", "success")
-	for _, want := range []string{"\"backend_kind\":\"rclone-direct\"rclone://onedrive/PinaxSync", "personal", "laptop"} {
+	for _, want := range []string{"\"backend_kind\":\"rclone-direct\"", "rclone://onedrive/PinaxSync", "personal", "laptop"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("cloud backend set rclone missing %q:\n%s", want, out)
 		}
@@ -897,7 +901,7 @@ func TestSyncConflictNextActionsAppearInSyncJSONAndAgentOutputsCLI(t *testing.T)
 	runCLI(t, "sync", "push", "--target", "cloud", "--yes", "--vault", deviceA, "--json")
 	pullJSON := runCLI(t, "sync", "pull", "--target", "cloud", "--yes", "--vault", deviceB, "--json")
 	assertJSONCommandStatus(t, pullJSON, "sync.pull", "success")
-	for _, want := range []string{"\"conflicts\":\"1\"pinax sync conflicts list --vault " + deviceB + " --json", "pinax sync conflicts diff notes/alpha.", "pinax sync conflicts resolve notes/alpha."} {
+	for _, want := range []string{"\"conflicts\":\"1\"", "pinax sync conflicts list --vault " + deviceB + " --json", "pinax sync conflicts diff notes/alpha.", "pinax sync conflicts resolve notes/alpha."} {
 		if !strings.Contains(pullJSON, want) {
 			t.Fatalf("sync pull json missing conflict action %q:\n%s", want, pullJSON)
 		}

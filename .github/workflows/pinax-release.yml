@@ -71,9 +71,6 @@ jobs:
       - name: task check
         run: task check
 
-      - name: Inferrum sidecar adapter contracts
-        run: task kb:sidecar:test
-
   snapshot:
     name: snapshot build (no release)
     if: github.event_name == 'workflow_dispatch'

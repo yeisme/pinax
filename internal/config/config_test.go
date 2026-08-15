@@ -6,13 +6,20 @@ import (
 	"testing"
 )
 
-func TestDefaultConfigUsesInferrumSidecar(t *testing.T) {
+func TestDefaultConfigOmitsVectorRuntime(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.KB.Sidecar.Executable != "inferrum-lancedb-sidecar" {
-		t.Fatalf("KB sidecar executable = %q, want inferrum-lancedb-sidecar", cfg.KB.Sidecar.Executable)
+	if _, ok := Value(cfg, "kb.sidecar.executable"); ok {
+		t.Fatal("removed KB sidecar setting should not be readable")
 	}
 	if cfg.Output.Style != "table" {
 		t.Fatalf("output style = %q, want table", cfg.Output.Style)
+	}
+}
+
+func TestSetValueRejectsRemovedKBSettings(t *testing.T) {
+	err := SetValue(filepath.Join(t.TempDir(), "config.yaml"), "kb.sidecar.executable", "anything")
+	if err == nil || ErrorCode(err) != "config_key_deprecated" {
+		t.Fatalf("removed KB setting error = %v, code=%q", err, ErrorCode(err))
 	}
 }
 
