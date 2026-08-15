@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/yeisme/pinax/internal/testkit/evidence"
+	"github.com/yeisme/pinax/tools/testkit/evidence"
 )
 
 func main() {

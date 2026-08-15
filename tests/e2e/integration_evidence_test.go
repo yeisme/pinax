@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yeisme/pinax/internal/testkit/evidence"
+	"github.com/yeisme/pinax/tools/testkit/evidence"
 )
 
 // forbiddenEvidenceMarkers are concrete sensitive markers deliberately seeded

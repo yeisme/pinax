@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yeisme/pinax/internal/testkit/evidence"
+	"github.com/yeisme/pinax/tools/testkit/evidence"
 )
 
 const (
@@ -380,7 +380,7 @@ func writeDecisionEvidence(runDir string, summary DecisionSummary, analysis Deci
 	}
 	files := map[string][]byte{
 		"summary.json": mustJSON(summary),
-		"command.txt":  []byte("go run ./internal/testkit/continuitydogfooddecision --cohort-run <cohort-run> --followup-run <follow-up-run>\n"),
+		"command.txt":  []byte("go run ./tools/testkit/continuitydogfooddecision --cohort-run <cohort-run> --followup-run <follow-up-run>\n"),
 		"stdout.log": []byte(evidence.Redact(fmt.Sprintf(
 			"continuity decision run=%s decision=%s maturity=%s task_completion=%d/%d task_reuse=%d/%d\n",
 			summary.RunID, summary.Decision, summary.Maturity,

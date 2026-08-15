@@ -1,6 +1,6 @@
 // Package main writes local integration/e2e evidence for Pinax test runs.
 //
-// 实际证据写入逻辑在 internal/testkit/evidence，本入口只负责拼装 command 和
+// 实际证据写入逻辑在 tools/testkit/evidence，本入口只负责拼装 command 和
 // pass-through stdout/stderr，再把退出码透传给调用方。
 package main
 
@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/yeisme/pinax/internal/testkit/evidence"
+	"github.com/yeisme/pinax/tools/testkit/evidence"
 )
 
 func main() {

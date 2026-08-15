@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yeisme/pinax/internal/testkit/continuitydogfood"
+	"github.com/yeisme/pinax/tools/testkit/continuitydogfood"
 )
 
 func main() {

@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/yeisme/pinax/internal/testkit/evidence"
+	"github.com/yeisme/pinax/tools/testkit/evidence"
 )
 
 const FollowUpSchemaVersion = "yeisme.agent_continuity_followup.v1"
@@ -219,7 +219,7 @@ func writeFollowUpEvidence(runDir string, summary FollowUpSummary, cases []Follo
 	}{SchemaVersion: FollowUpSchemaVersion, Cases: cases}
 	files := map[string][]byte{
 		"summary.json": mustJSON(summary),
-		"command.txt":  []byte("go run ./internal/testkit/continuitydogfoodfollowup --vault <preserved-isolated-vault> --cohort-run <prior-run>\n"),
+		"command.txt":  []byte("go run ./tools/testkit/continuitydogfoodfollowup --vault <preserved-isolated-vault> --cohort-run <prior-run>\n"),
 		"stdout.log":   []byte(evidence.Redact(fmt.Sprintf("continuity follow-up run=%s status=%s tasks=%d reuse=%d sources=%d/%d\n", summary.RunID, summary.Status, summary.TaskSamples, summary.ReuseVerified, summary.SourceResolved, summary.SourceTotal))),
 		"stderr.log":   nil,
 		"env.json": mustJSON(map[string]any{

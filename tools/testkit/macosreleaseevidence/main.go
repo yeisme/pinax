@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yeisme/pinax/internal/testkit/evidence"
+	"github.com/yeisme/pinax/tools/testkit/evidence"
 )
 
 const (
@@ -160,7 +160,7 @@ func runMain(args []string, stdout, stderr io.Writer) int {
 	defer func() { _ = os.Remove(optionsPath) }()
 
 	command := []string{
-		"go", "run", "./internal/testkit/macosreleaseevidence",
+		"go", "run", "./tools/testkit/macosreleaseevidence",
 		"--child", "--run-id", runIDValue, "--options-file", optionsPath,
 	}
 	result, evidenceErr := evidence.Run(evidence.Config{
