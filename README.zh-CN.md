@@ -253,10 +253,10 @@ daemon 是每台设备上的本地进程，通过本地 watcher 发现 vault 变
 
 ```bash
 task check
-task kb:sidecar:test
+task test
 ```
 
-`task check` 使用离线 LanceDB sidecar 协议测试，因此本地验证不依赖 PyPI 是否可用。需要验证真实 Python `lancedb` 安装、rebuild 和 search 路径时，运行 `task kb:sidecar:test`。
+`task check` 覆盖 Pinax 当前本地 vault、索引、同步、API、输出和 OpenSpec 质量门。向量/RAG provider、数据库和模型链路由外部 RAG 项目负责验证。
 
 没有安装 Task 时使用：
 

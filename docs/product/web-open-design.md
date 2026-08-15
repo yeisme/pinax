@@ -25,7 +25,7 @@ pinax api schema export --format openapi --vault ./my-notes --json
 pinax api serve --vault ./my-notes --readonly --port 8787
 ```
 
-Workbench must not directly read or write `.pinax/**`, SQLite/GORM indexes, LanceDB files, provider config, sync state, publish receipts, event logs, or arbitrary vault paths. Mutations must go through Pinax services with proof gates, version snapshots, receipts, and redaction.
+Workbench must not directly read or write `.pinax/**`, SQLite/GORM indexes, external RAG vector files, provider config, sync state, publish receipts, event logs, or arbitrary vault paths. Mutations must go through Pinax services with proof gates, version snapshots, receipts, and redaction.
 
 ## Static Publish Renderer
 

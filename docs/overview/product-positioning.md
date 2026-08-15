@@ -1,8 +1,8 @@
 # 产品定位
 
-Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它让 AI 可以安全地读取、诊断、修复和同步真实本地知识库，同时保证每一次 agent 写入都可审计、可预览、可回滚。
+Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它让 AI 可以安全地读取、诊断、修复和同步真实本地知识库，同时保证每一次 agent 写入都可审计、可预览、可回滚。语义 RAG 的向量存储和模型编排由外部项目负责。
 
-参考 GBrain 这类 “agent brain layer” 项目后，Pinax 的长期定位可以更明确：Pinax 不只是笔记 CLI，而是给 Claude Code、Codex、Cursor、OpenClaw 和本地 MCP client 使用的 **私有知识大脑控制层**。它把 notes、meeting notes、emails/imported markdown、project board、memory ledger、KB projection、link graph、database views 和 proof receipts 组织成 agent 可查询、可引用、可维护的长期上下文。
+参考 GBrain 这类 “agent brain layer” 项目后，Pinax 的长期定位可以更明确：Pinax 不只是笔记 CLI，而是给 Claude Code、Codex、Cursor、OpenClaw 和本地 MCP client 使用的 **私有知识大脑控制层**。它把 notes、meeting notes、emails/imported markdown、project board、memory ledger、link graph、database views 和 proof receipts 组织成 agent 可查询、可引用、可维护的长期上下文；外部 RAG 通过 Markdown export 接入。
 
 一句话定位：**Pinax 让 AI 安全操作你的私有知识库，并把它变成可审计的 agent brain；它不是另一个笔记应用，也不是另一个云端 silo。**
 
@@ -14,7 +14,6 @@ Pinax 的 answer layer 必须比普通搜索更进一步，但不能绕过安全
 pinax import markdown ./source --dry-run --vault ./my-notes --json
 pinax index refresh --vault ./my-notes --json
 pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent
-pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json
 pinax graph query --kind technique --match storyboard --vault ./my-notes --json
 pinax mcp serve --vault ./my-notes
 ```

@@ -82,7 +82,7 @@ Pinax 运行操作不是代码实现时，先走 Pinax agent 路由：
 task check
 ```
 
-`task check` 覆盖 `task fmt-check`、`task lint`、`task test`、`task build`、`task kb:sidecar:protocol` 和 `openspec validate --all`；提交前或 CI 对齐时也可以运行 `task ci`。常用单项命令：
+`task check` 覆盖 `task fmt-check`、`task lint`、`task test`、`task build`、`openspec validate --all`；提交前或 CI 对齐时也可以运行 `task ci`。向量/RAG provider、数据库和 sidecar 验证属于外部 RAG 项目。常用单项命令：
 
 ```bash
 task fmt-check

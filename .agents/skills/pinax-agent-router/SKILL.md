@@ -30,7 +30,7 @@ For Pinax code implementation, use `yeisme-pinax-cli-runtime` plus the normal co
 | User goal or command family | Skill to load | First commands |
 | --- | --- | --- |
 | Set up/select a vault, write/complete/capture notes, inbox, journal, draft, import/export, ordinary note lifecycle | `pinax-vault-operator` | `pinax vault list --agent`, `pinax note add ... --dir index --stdin --json`, `pinax inbox capture ... --stdin --json` |
-| Search notes, refresh indexes, KB context, links/backlinks/orphans, query/dataview/database/view/folder inspection | `pinax-retrieval-operator` | `pinax index refresh --json`, `pinax search "..." --agent`, `pinax kb context "..." --agent` |
+| Search notes, refresh indexes, links/backlinks/orphans, query/dataview/database/view/folder inspection, external RAG handoff | `pinax-retrieval-operator` | `pinax index refresh --json`, `pinax search "..." --agent`, `pinax export markdown ./temp/rag-export --json` |
 | Capture or recall durable facts, decisions, events, and tasks | `pinax-memory-operator` | `pinax memory context "..." --agent`, `pinax memory recall "..." --agent` |
 | Capsa Sync, repository-encrypted S3/COS bootstrap, sync logs/conflicts, storage backend, S3/rclone fallback, backend object diagnostics | `pinax-sync-storage-operator` | `pinax sync status --agent`, `pinax sync repo doctor --json`, `pinax sync diff --target capsa --json` |
 | Proof loop, doctor/stats, metadata/repair/organize apply, snapshot/restore, record ledger, high-risk maintenance | `pinax-proof-maintenance-operator` | `pinax proof loop run --json`, `pinax vault doctor --json`, `pinax version snapshot --message "before maintenance" --json` |

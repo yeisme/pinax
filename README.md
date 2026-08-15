@@ -4,6 +4,15 @@
 
 Pinax is a **personal local knowledge tool for Markdown**. It gives one person a short path to capture notes, clear an inbox, keep a journal, search a vault, manage projects, and create local version evidence. Your Markdown files stay the source of truth.
 
+Provider credentials are configured outside the vault. For local use, prefer
+the user-level `credentialctl` store; environment variables are reserved for
+explicit CI or temporary overrides:
+
+```bash
+credentialctl set openai/personal-default --preset local-ai --json
+credentialctl set gemini/personal-default --preset local-ai --json
+```
+
 The default CLI intentionally shows only the everyday local commands. Existing sync, Capsa, API, Agent, publish, and plugin surfaces remain available for compatibility through `pinax commands`.
 
 ## The everyday loop
@@ -515,10 +524,10 @@ MCP tools and resources are read-only, including `pinax.note.links`, `pinax.note
 task build
 task test
 task check
-task kb:sidecar:test
+task test
 ```
 
-`task check` runs the offline Pinax-to-Inferrum adapter contracts and does not depend on PyPI. The real Python LanceDB sidecar distribution and rebuild/search smoke are owned and released by the Inferrum repository.
+`task check` runs the active Pinax local vault/index/sync/API/OpenSpec gates. Vector/RAG provider, database, and model smoke tests are owned and released by the external RAG project.
 
 When `task` is not installed, use the equivalent commands:
 

@@ -1,6 +1,6 @@
 # memory Command
 
-`pinax memory` manages a non-vector agent memory ledger. It is for durable, cited, lifecycle-aware records such as facts, decisions, events, and tasks. It does not require embeddings, LanceDB, or the KB sidecar.
+`pinax memory` manages a non-vector agent memory ledger. It is for durable, cited, lifecycle-aware records such as facts, decisions, events, and tasks. It does not require an external RAG service or vector backend.
 
 ## Subcommands
 
@@ -76,11 +76,11 @@ Agent output stays compact and low-token. `memory context --agent` emits facts s
 | `expired` | Excluded unless `--include-expired` is used with `list`. |
 | `rejected` | Excluded unless `--include-rejected` is used with `list`. |
 
-## Memory vs KB
+## Memory vs external RAG
 
 - `pinax memory` is deterministic structured memory: facts, decisions, events, tasks, source citations, lifecycle state, and explainable recall reasons.
-- `pinax kb` is semantic search over note chunks through a vector backend such as LanceDB.
-- Use `memory` when the agent needs stable project context or prior decisions. Use `kb` when the agent needs fuzzy semantic retrieval over larger note bodies.
+- Pinax does not provide semantic vector retrieval. Export Markdown to an external RAG owner when fuzzy retrieval over larger note bodies is required.
+- Use `memory` when the agent needs stable project context or prior decisions; use `pinax search` for deterministic local text retrieval.
 
 ## Agent Brain Role
 

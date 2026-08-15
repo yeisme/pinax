@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | Ingest dry-run | `pinax import markdown ./source --dry-run --vault ./my-notes --json` | implemented | Previews import without writing. |
 | Structured memory context | `pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent` | implemented | Returns bounded memory facts and ranking reasons, not full private bodies. |
-| Semantic KB context | `pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json` | implemented | Returns bounded semantic refs and provider metadata. |
+| External RAG handoff | `pinax export markdown ./temp/rag-export --vault ./my-notes --json` | handoff | External owner performs semantic retrieval and returns its own bounded context. |
 | Search context | `pinax search "Alice" --vault ./my-notes --json` | implemented | Returns bounded candidates/snippets through Pinax search. |
 | Link evidence | `pinax note backlinks "Alice" --vault ./my-notes --json` | implemented | Returns relationship evidence without writing. |
 | Graph context | `pinax graph query --kind technique --match storyboard --vault ./my-notes --json` | implemented | Returns bounded graph projection results. |
@@ -32,7 +32,7 @@ The following commands are planned by OpenSpec change `pinax-agent-brain-layer`.
 
 | Planned command | Planned capability | Status | Notes |
 | --- | --- | --- | --- |
-| `pinax brain context <task> --vault ./my-notes --json` | `brain.context.bundle` | planned | Would combine memory, KB, search, graph, query rows, project state, and receipts into one bounded context bundle. |
+| `pinax brain context <task> --vault ./my-notes --json` | `brain.context.bundle` | planned | Would combine memory, search, graph, query rows, project state, receipts, and optional external RAG references into one bounded context bundle. |
 | `pinax brain answer <question> --vault ./my-notes --json` | `brain.answer.preview` | implemented extractive preview | Returns citation-first bounded preview with `claims[]`, `sources[]`, `open_questions[]`, cost metadata, and body exposure. |
 | `pinax brain sources <question> --vault ./my-notes --json` | `brain.sources.list` | planned | Would list evidence refs without synthesis. |
 | `pinax brain maintain --vault ./my-notes --dry-run --json` | `brain.maintenance.plan` | implemented plan-only preview | Produces reviewable maintenance candidates for stale facts, duplicates, and citation repair without writing vault content. |
@@ -50,7 +50,7 @@ Agent Brain projections must remain body-safe and evidence-first:
 ## Related
 
 - [memory](./memory.md)
-- [kb](./kb.md)
+- [kb compatibility and RAG handoff](./kb.md)
 - [search](./search.md)
 - [graph](./graph.md)
 - [mcp](./mcp.md)

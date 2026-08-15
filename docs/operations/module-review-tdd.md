@@ -47,7 +47,7 @@
 | `internal/remote` | Vault、index、sync、remote | `go test ./internal/remote -count=1` |
 | `internal/remoteapi` | Provider、publish、plugin、API | `go test ./internal/remoteapi -count=1` |
 | `internal/search` | Vault、index、sync、remote | `go test ./internal/search ./internal/index -run 'Search' -count=1` |
-| `internal/semantic` | Vault、index、sync、remote | `go test ./internal/semantic ./cmd/pinax -run 'KB|Semantic' -count=1` |
+| External RAG project | Semantic retrieval, embeddings, vector store, rerank | Validate in the external RAG repository; Pinax only validates Markdown export and local text search. |
 | `internal/sync` | Vault、index、sync、remote | `go test ./internal/sync -count=1` |
 | `internal/templateengine` | CLI 和 app 编排 | `go test ./internal/templateengine ./internal/app -run 'Template' -count=1` |
 | `internal/testkit` | 测试、证据、文档、输出 | `go test ./internal/testkit/... -count=1` |

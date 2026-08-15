@@ -7,12 +7,11 @@ task build
 task test
 task test:integration
 task check
-task kb:sidecar:test
 ```
 
 Before changing behavior, read [Module Review And TDD](./module-review-tdd.md). It records the current cross-module review queue and the RED -> GREEN commands expected for profile/vault/config boundaries, remote cache safety, publish approval, provider adapter isolation, and integration evidence redaction.
 
-`task check` runs the offline Pinax-to-Inferrum adapter gate. It validates the JSON protocol, permission, and redaction boundaries without installing Python packages from PyPI. Use `task kb:sidecar:test` before release when changing the Pinax adapter; the real Python LanceDB sidecar distribution and rebuild/search smoke are verified in the Inferrum repository.
+`task check` covers the active Pinax local vault, index, sync, API, output, and OpenSpec gates. Vector/RAG provider and database checks belong to the external RAG project.
 
 If `task` is not installed, use Go and OpenSpec commands directly:
 
