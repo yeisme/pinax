@@ -231,6 +231,21 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 	}
 	results := make([]pushSummary, 0, len(notes))
 	finalCrossDoc := domain.PublishDocCrossDocSummary{}
+	// Second pass exists only to re-render cross-doc links once their targets
+	// exist remotely. Notes whose pass-1 package had no unresolved cross-doc
+	// links gain nothing from a second push, so skip them instead of paying a
+	// second provider round trip (and asset re-insertion) for the whole vault.
+	needsSecondPass := map[string]bool{}
+	fail := func(p domain.Projection, cause error) (domain.Projection, error) {
+		if p.Data == nil {
+			p.Data = map[string]any{}
+		}
+		if data, ok := p.Data.(map[string]any); ok {
+			data["partial"] = true
+			data["results"] = results
+		}
+		return p, cause
+	}
 	for pass := 1; pass <= passes; pass++ {
 		if pass == passes {
 			finalCrossDoc = domain.PublishDocCrossDocSummary{}
@@ -239,13 +254,13 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 			if req.DryRun {
 				pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note)
 				if err != nil {
-					return errorProjection("publish.doc.push", err), err
+					return fail(errorProjection("publish.doc.push", err), err)
 				}
 				if pass == passes && crossDocSummary.Total > 0 {
 					publishDocMergeCrossDocSummary(&finalCrossDoc, crossDocSummary)
 				}
 				if cmdErr := publishDocProviderPreflight(ctx, profile, pkg, note); cmdErr != nil {
-					return domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr
+					return fail(domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr)
 				}
 				if pass == passes {
 					results = append(results, pushSummary{Pass: pass, NoteID: pkg.NoteID, NotePath: pkg.NotePath, PackageID: pkg.ID, Status: string(domain.PublishDocStatusDryRunVerified)})
@@ -254,22 +269,30 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 			}
 			prepareProjection, err := s.PublishDocPrepare(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)})
 			if err != nil {
-				return prepareProjection, err
+				return fail(prepareProjection, err)
 			}
 			pkg, ok := publishDocProjectionPackage(prepareProjection)
 			if !ok {
 				cmdErr := &domain.CommandError{Code: "publish_package_missing", Message: "Prepared package was not returned"}
-				return domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr
+				return fail(domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr)
 			}
-			if pass == passes && pkg.CrossDocLinks != nil {
-				publishDocMergeCrossDocSummary(&finalCrossDoc, *pkg.CrossDocLinks)
+			if pkg.CrossDocLinks != nil {
+				if pass < passes && pkg.CrossDocLinks.Unpublished > 0 {
+					needsSecondPass[pkg.NoteID] = true
+				}
+				if pass == passes {
+					publishDocMergeCrossDocSummary(&finalCrossDoc, *pkg.CrossDocLinks)
+				}
+			}
+			if pass > 1 && !needsSecondPass[pkg.NoteID] {
+				continue
 			}
 			pushProjection, err := s.PublishDocPush(ctx, PublishRequest{VaultPath: root, PackageID: pkg.ID, Target: string(profile.Target), DryRun: req.DryRun})
 			if err != nil {
 				if pushProjection.Error != nil && pushProjection.Error.Code == "publish_object_type_migration_required" {
 					pushProjection.Actions = append(pushProjection.Actions, domain.Action{Name: "unlink_all", Command: fmt.Sprintf("pinax publish doc unlink --all --target %s --vault <vault> --json", shellQuote(string(profile.Target)))})
 				}
-				return pushProjection, err
+				return fail(pushProjection, err)
 			}
 			if pass == passes {
 				results = append(results, pushSummary{Pass: pass, NoteID: pkg.NoteID, NotePath: pkg.NotePath, PackageID: pkg.ID, Status: pushProjection.Facts["publish_status"], ExternalURL: pushProjection.Facts["external_url"]})
@@ -285,8 +308,65 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 		projection.Facts["dry_run"] = "true"
 	}
 	publishDocAddCrossDocFacts(&projection, finalCrossDoc)
+	if !req.DryRun {
+		if pruned := prunePublishDocPackages(root); pruned > 0 {
+			projection.Facts["packages_pruned"] = fmt.Sprint(pruned)
+		}
+	}
 	projection.Data = map[string]any{"results": results, "cross_doc_links": finalCrossDoc}
 	return projection, nil
+}
+
+// prunePublishDocPackages bounds the growth of the prepared-package registry:
+// every prepare/push writes a new timestamped pubdoc_*.json and nothing ever
+// removed them, so repeated vault pushes accumulated unbounded JSON files.
+// Keep the newest few packages per note (history for receipts/inspection) and
+// delete the rest.
+func prunePublishDocPackages(root string) int {
+	const keep = 3
+	dir := filepath.Join(publishDocRoot(root), "packages")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	type pkgFile struct {
+		path    string
+		modTime time.Time
+	}
+	byNote := map[string][]pkgFile{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var pkg domain.PublishDocPackage
+		if err := json.Unmarshal(body, &pkg); err != nil || strings.TrimSpace(pkg.NoteID) == "" {
+			continue
+		}
+		byNote[pkg.NoteID] = append(byNote[pkg.NoteID], pkgFile{path: filepath.Join(dir, entry.Name()), modTime: info.ModTime()})
+	}
+	pruned := 0
+	for _, files := range byNote {
+		if len(files) <= keep {
+			continue
+		}
+		sort.Slice(files, func(i, j int) bool { return files[i].modTime.After(files[j].modTime) })
+		for _, stale := range files[keep:] {
+			if err := os.Remove(stale.path); err != nil {
+				warnPersistFailure("publish doc package prune", err)
+				continue
+			}
+			pruned++
+		}
+	}
+	return pruned
 }
 
 func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domain.Projection, error) {
