@@ -516,32 +516,24 @@ func hasAnyPrefix(value string, prefixes []string) bool {
 	return false
 }
 
+// syncFactLabels labels the sync output view's fact keys.
+var syncFactLabels = map[string]string{
+	"result":           "Sync result",
+	"scope":            "Sync scope",
+	"added":            "Added",
+	"modified":         "Modified",
+	"deleted":          "Deleted",
+	"renamed":          "Renamed",
+	"conflicts":        "Conflicts",
+	"unchanged":        "Unchanged",
+	"total":            "Sync changes",
+	"bytes_uploaded":   "Bytes uploaded",
+	"bytes_downloaded": "Bytes downloaded",
+}
+
 func summaryFactLabel(key string) string {
-	if strings.HasPrefix(key, "sync.") {
-		switch strings.TrimPrefix(key, "sync.") {
-		case "result":
-			return "Sync result"
-		case "scope":
-			return "Sync scope"
-		case "added":
-			return "Added"
-		case "modified":
-			return "Modified"
-		case "deleted":
-			return "Deleted"
-		case "renamed":
-			return "Renamed"
-		case "conflicts":
-			return "Conflicts"
-		case "unchanged":
-			return "Unchanged"
-		case "total":
-			return "Sync changes"
-		case "bytes_uploaded":
-			return "Bytes uploaded"
-		case "bytes_downloaded":
-			return "Bytes downloaded"
-		}
+	if label, ok := syncFactLabels[strings.TrimPrefix(key, "sync.")]; ok && strings.HasPrefix(key, "sync.") {
+		return label
 	}
 	if label, ok := projectListFactLabel(key); ok {
 		return label
