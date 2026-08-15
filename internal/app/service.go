@@ -68,6 +68,91 @@ func (s *Service) currentTimeUTC() time.Time {
 	return s.now().UTC()
 }
 
+// noteTemplateResolution carries what note creation needs from an optional
+// template: the parsed document plus projection metadata.
+type noteTemplateResolution struct {
+	doc         templateengine.TemplateDocument
+	pathPattern string
+	overrides   []string
+	meta        templateengine.Metadata
+	source      string
+	hasDefaults bool
+}
+
+// resolveNoteTemplate applies an optional template's defaults onto the
+// request and reports which request fields overrode the template.
+func resolveNoteTemplate(root string, req *CreateNoteRequest) (string, noteTemplateResolution, error) {
+	templateName := strings.TrimSpace(req.Template)
+	res := noteTemplateResolution{}
+	if templateName == "" {
+		return templateName, res, nil
+	}
+	doc, err := parseTemplateForProjection(root, templateName)
+	if err != nil {
+		return templateName, res, err
+	}
+	if templateDocumentIsDesignDraft(doc) {
+		return templateName, res, &domain.CommandError{Code: "template_design_not_executable", Message: "Template is still a draft and cannot be used for note creation", Hint: "Publish the draft as an executable schema_version: pinax.template.v2 template first"}
+	}
+	res.doc = doc
+	res.meta, res.source = templateProjectionMetadata(root, templateName, doc.Metadata)
+	res.pathPattern = doc.Metadata.Output.PathPattern
+	defaults := doc.Metadata.Defaults
+	res.hasDefaults = len(defaults) > 0
+	if req.Kind == "" && defaults["kind"] != "" {
+		req.Kind = defaults["kind"]
+	} else if req.Kind != "" && defaults["kind"] != "" && req.Kind != defaults["kind"] {
+		res.overrides = append(res.overrides, "kind")
+	}
+	if req.Status == "" && defaults["status"] != "" {
+		req.Status = defaults["status"]
+	} else if req.Status != "" && defaults["status"] != "" && req.Status != defaults["status"] {
+		res.overrides = append(res.overrides, "status")
+	}
+	if req.Dir != "" || req.Folder != "" || req.Slug != "" || req.Project != "" {
+		res.overrides = append(res.overrides, "path")
+	}
+	if len(req.Tags) == 0 && defaults["tags"] != "" {
+		req.Tags = splitCommaValues(defaults["tags"])
+		var tagErr *domain.CommandError
+		req.Tags, tagErr = normalizeTagsForWrite(req.Tags)
+		if tagErr != nil {
+			return templateName, res, tagErr
+		}
+	} else if len(req.Tags) > 0 && defaults["tags"] != "" {
+		res.overrides = append(res.overrides, "tags")
+	}
+	return templateName, res, nil
+}
+
+// resolveNewNotePath picks the output path: the template's rendered path
+// pattern when the request leaves the location untouched, otherwise the
+// conventional prefix/slug path.
+func resolveNewNotePath(root string, req CreateNoteRequest, templateDoc templateengine.TemplateDocument, templatePathPattern string) (string, error) {
+	if templatePathPattern != "" && req.Dir == "" && req.Folder == "" && req.Slug == "" && req.Project == "" {
+		templateRel, err := renderTemplateOutputPath(templateDoc, req)
+		if err != nil {
+			return "", err
+		}
+		return nextNotePath(root, templateRel)
+	}
+	prefix, err := noteCreatePrefix(root, req)
+	if err != nil {
+		return "", err
+	}
+	slug := strings.TrimSpace(req.Slug)
+	if slug == "" {
+		slug = slugify(req.Title)
+	}
+	if slug == "" {
+		slug = deterministicShortID(req.Title)
+	}
+	if err := validateNoteSlug(slug); err != nil {
+		return "", err
+	}
+	return nextNotePath(root, filepath.ToSlash(filepath.Join(prefix, slug+".md")))
+}
+
 func (s *Service) allocateObjectID(kind identity.ObjectKind, root, locator string) (string, error) {
 	if !kind.Valid() {
 		return "", fmt.Errorf("invalid object kind %q", kind)
@@ -884,50 +969,15 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		return domain.NewErrorProjection("note.new", tagErr), tagErr
 	}
 	req.Tags = safeTags
-	templateName := strings.TrimSpace(req.Template)
-	var templateDoc templateengine.TemplateDocument
-	var templatePathPattern string
-	templateDefaults := map[string]string{}
-	templateOverrides := []string{}
-	templateMeta := templateengine.Metadata{}
-	templateSource := ""
-	if templateName != "" {
-		doc, err := parseTemplateForProjection(root, templateName)
-		if err != nil {
-			return errorProjection("note.new", err), err
-		}
-		if templateDocumentIsDesignDraft(doc) {
-			err := &domain.CommandError{Code: "template_design_not_executable", Message: "Template is still a draft and cannot be used for note creation", Hint: "Publish the draft as an executable schema_version: pinax.template.v2 template first"}
-			return domain.NewErrorProjection("note.new", err), err
-		}
-		templateDoc = doc
-		templateMeta, templateSource = templateProjectionMetadata(root, templateName, doc.Metadata)
-		templatePathPattern = doc.Metadata.Output.PathPattern
-		templateDefaults = doc.Metadata.Defaults
-		if req.Kind == "" && templateDefaults["kind"] != "" {
-			req.Kind = templateDefaults["kind"]
-		} else if req.Kind != "" && templateDefaults["kind"] != "" && req.Kind != templateDefaults["kind"] {
-			templateOverrides = append(templateOverrides, "kind")
-		}
-		if req.Status == "" && templateDefaults["status"] != "" {
-			req.Status = templateDefaults["status"]
-		} else if req.Status != "" && templateDefaults["status"] != "" && req.Status != templateDefaults["status"] {
-			templateOverrides = append(templateOverrides, "status")
-		}
-		if req.Dir != "" || req.Folder != "" || req.Slug != "" || req.Project != "" {
-			templateOverrides = append(templateOverrides, "path")
-		}
-		if len(req.Tags) == 0 && templateDefaults["tags"] != "" {
-			req.Tags = splitCommaValues(templateDefaults["tags"])
-			var tagErr *domain.CommandError
-			req.Tags, tagErr = normalizeTagsForWrite(req.Tags)
-			if tagErr != nil {
-				return domain.NewErrorProjection("note.new", tagErr), tagErr
-			}
-		} else if len(req.Tags) > 0 && templateDefaults["tags"] != "" {
-			templateOverrides = append(templateOverrides, "tags")
-		}
+	templateName, template, templateErr := resolveNoteTemplate(root, &req)
+	if templateErr != nil {
+		return errorProjection("note.new", templateErr), templateErr
 	}
+	templateDoc := template.doc
+	templatePathPattern := template.pathPattern
+	templateMeta := template.meta
+	templateSource := template.source
+	templateOverrides := template.overrides
 	body, err := noteBodyFromRequest(req)
 	if err != nil {
 		return errorProjection("note.new", err), err
@@ -937,35 +987,9 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		return errorProjection("note.new", err), err
 	}
 	kind := strings.TrimSpace(req.Kind)
-	var rel string
-	if templatePathPattern != "" && req.Dir == "" && req.Folder == "" && req.Slug == "" && req.Project == "" {
-		templateRel, err := renderTemplateOutputPath(templateDoc, req)
-		if err != nil {
-			return errorProjection("note.new", err), err
-		}
-		rel, err = nextNotePath(root, templateRel)
-		if err != nil {
-			return errorProjection("note.new", err), err
-		}
-	} else {
-		prefix, err := noteCreatePrefix(root, req)
-		if err != nil {
-			return errorProjection("note.new", err), err
-		}
-		slug := strings.TrimSpace(req.Slug)
-		if slug == "" {
-			slug = slugify(req.Title)
-		}
-		if slug == "" {
-			slug = deterministicShortID(req.Title)
-		}
-		if err := validateNoteSlug(slug); err != nil {
-			return errorProjection("note.new", err), err
-		}
-		rel, err = nextNotePath(root, filepath.ToSlash(filepath.Join(prefix, slug+".md")))
-		if err != nil {
-			return errorProjection("note.new", err), err
-		}
+	rel, pathErr := resolveNewNotePath(root, req, templateDoc, templatePathPattern)
+	if pathErr != nil {
+		return errorProjection("note.new", pathErr), pathErr
 	}
 	if body == "" {
 		body = "# " + req.Title + "\n"
@@ -1019,7 +1043,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		if templatePathPattern != "" {
 			projection.Facts["template.path_pattern"] = templatePathPattern
 		}
-		if len(templateDefaults) > 0 {
+		if template.hasDefaults {
 			projection.Facts["template.defaults_source"] = templateName
 		}
 		if len(templateOverrides) > 0 {
