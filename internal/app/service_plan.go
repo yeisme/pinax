@@ -53,7 +53,7 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 		return errorProjection("plan."+string(period), err), err
 	}
 	// 生成 planning snapshot。
-	now := currentTimeUTC()
+	now := s.currentTimeUTC()
 	snapshot := domain.PlanningSnapshot{
 		SchemaVersion: "pinax.planning.snapshot.v1",
 		SnapshotID:    planningSnapshotID(root, string(period), now),
@@ -143,7 +143,7 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 	if err := ensureVaultAssets(root); err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	now := currentTimeUTC()
+	now := s.currentTimeUTC()
 	period := strings.TrimSpace(req.FromPeriod)
 	if period == "" {
 		period = "daily"

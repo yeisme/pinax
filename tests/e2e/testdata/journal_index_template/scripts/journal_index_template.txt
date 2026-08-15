@@ -2,6 +2,7 @@
 exec pinax init vault --title Vault --json
 ! stderr .
 stdout '"command":"vault.init"'
+env PINAX_TEST_MODE=1
 env PINAX_TEST_NOW=2026-06-08
 
 exec pinax journal daily show --date 2026-06-08 --template journal.daily --vault vault --json

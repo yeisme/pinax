@@ -406,6 +406,7 @@ func TestDailyInboxWorkflowCLI(t *testing.T) {
 }
 
 func TestDailyTaskReviewManagedBlockCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_MODE", "1")
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -481,6 +482,7 @@ func TestNoteListPropertyOutputContract(t *testing.T) {
 }
 
 func TestNoteListPeriodFiltersCLI(t *testing.T) {
+	t.Setenv("PINAX_TEST_MODE", "1")
 	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

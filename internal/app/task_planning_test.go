@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPlanDailyTaskReviewRequiresManagedBlockAndYes(t *testing.T) {
-	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 21, 15, 30, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}

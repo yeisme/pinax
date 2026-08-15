@@ -1,4 +1,5 @@
 # Project board workspace through the real CLI.
+env PINAX_TEST_MODE=1
 env PINAX_TEST_NOW=2026-06-21T15:30:00Z
 exec pinax init vault --title Vault --json
 ! stderr .

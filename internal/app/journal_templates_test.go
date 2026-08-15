@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yeisme/pinax/internal/identity"
 )
@@ -13,7 +14,7 @@ import (
 func TestJournalTemplateCreatesDailyAndDoesNotRewriteExisting(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
@@ -46,7 +47,7 @@ func TestJournalTemplateCreatesDailyAndDoesNotRewriteExisting(t *testing.T) {
 func TestIndexPageCreatePreviewAndRefreshManagedBlock(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestIndexPageCreatePreviewAndRefreshManagedBlock(t *testing.T) {
 func TestExistingDailyNotRewritten(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestExistingDailyNotRewritten(t *testing.T) {
 func TestLegacyNotesDailyCompat(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
@@ -137,10 +138,9 @@ func TestLegacyNotesDailyCompat(t *testing.T) {
 }
 
 func TestDailyCaptureManagedBlock(t *testing.T) {
-	t.Setenv("PINAX_TEST_NOW", "2026-06-08")
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}
@@ -161,10 +161,9 @@ func TestDailyCaptureManagedBlock(t *testing.T) {
 }
 
 func TestDailyCaptureLegacyMissingBlock(t *testing.T) {
-	t.Setenv("PINAX_TEST_NOW", "2026-06-08")
 	ctx := context.Background()
 	root := t.TempDir()
-	svc := NewService()
+	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
 	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
 		t.Fatalf("init vault: %v", err)
 	}

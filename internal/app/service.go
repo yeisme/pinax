@@ -37,6 +37,7 @@ import (
 type Service struct {
 	versionBackend    pinaxversion.VersionBackend
 	identityAllocator *identity.Allocator
+	now               func() time.Time
 }
 
 func NewService() *Service { return NewServiceWithVersionBackend(pinaxversion.NewLocalBackend()) }
@@ -45,7 +46,26 @@ func NewServiceWithVersionBackend(backend pinaxversion.VersionBackend) *Service 
 	if backend == nil {
 		backend = pinaxversion.NewLocalBackend()
 	}
-	return &Service{versionBackend: backend, identityAllocator: identity.NewAllocator()}
+	return &Service{versionBackend: backend, identityAllocator: identity.NewAllocator(), now: func() time.Time { return time.Now().UTC() }}
+}
+
+// WithNowFunc overrides the service clock. It exists for tests that need
+// deterministic timestamps; production code must not call it.
+func (s *Service) WithNowFunc(now func() time.Time) *Service {
+	if now != nil {
+		s.now = now
+	}
+	return s
+}
+
+// currentTimeUTC is the single clock read for durable timestamps. The former
+// PINAX_TEST_NOW environment override was removed from the shipped binary;
+// tests inject a fixed clock via WithNowFunc instead.
+func (s *Service) currentTimeUTC() time.Time {
+	if s.now == nil {
+		return time.Now().UTC()
+	}
+	return s.now().UTC()
 }
 
 func (s *Service) allocateObjectID(kind identity.ObjectKind, root, locator string) (string, error) {
@@ -60,19 +80,6 @@ func (s *Service) allocateObjectID(kind identity.ObjectKind, root, locator strin
 		return "", err
 	}
 	return id.String(), nil
-}
-
-func currentTimeUTC() time.Time {
-	value := strings.TrimSpace(os.Getenv("PINAX_TEST_NOW"))
-	if value != "" {
-		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
-			return parsed.UTC()
-		}
-		if parsed, err := time.Parse("2006-01-02", value); err == nil {
-			return parsed.UTC()
-		}
-	}
-	return time.Now().UTC()
 }
 
 type noteLinkGraph struct {
@@ -495,7 +502,7 @@ func (s *Service) ListNotesQuery(_ context.Context, req NoteListRequest) (domain
 	if err != nil {
 		return errorProjection("note.list", err), err
 	}
-	if periodUpdatedAfter, err := noteListPeriodUpdatedAfter(req.Period, req.UpdatedAfter); err != nil {
+	if periodUpdatedAfter, err := noteListPeriodUpdatedAfter(s.currentTimeUTC(), req.Period, req.UpdatedAfter); err != nil {
 		return errorProjection("note.list", err), err
 	} else if periodUpdatedAfter != "" {
 		req.UpdatedAfter = periodUpdatedAfter
@@ -587,7 +594,7 @@ func (s *Service) ListNotesQuery(_ context.Context, req NoteListRequest) (domain
 	return projection, nil
 }
 
-func noteListPeriodUpdatedAfter(period, explicitUpdatedAfter string) (string, error) {
+func noteListPeriodUpdatedAfter(now time.Time, period, explicitUpdatedAfter string) (string, error) {
 	period = strings.TrimSpace(period)
 	if period == "" {
 		return strings.TrimSpace(explicitUpdatedAfter), nil
@@ -595,7 +602,6 @@ func noteListPeriodUpdatedAfter(period, explicitUpdatedAfter string) (string, er
 	if strings.TrimSpace(explicitUpdatedAfter) != "" {
 		return "", &domain.CommandError{Code: "note_list_period_conflict", Message: "--period and --updated-after cannot be used together", Hint: "Use either pinax note list --period daily or pinax note list --updated-after <date>"}
 	}
-	now := currentTimeUTC()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	var boundary time.Time
 	switch period {
@@ -1067,7 +1073,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return errorProjection("note.new", err), err
 	}
-	dailyIndexRel, dailyErr := appendDailyIndex(root, domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status})
+	dailyIndexRel, dailyErr := appendDailyIndex(root, domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status}, s.currentTimeUTC())
 	if dailyErr != nil {
 		if code := templateengine.ErrorCode(dailyErr); strings.HasPrefix(code, "managed_block_") {
 			projection.Status = "partial"
@@ -2162,8 +2168,8 @@ func (s *Service) GitSnapshot(ctx context.Context, req SnapshotRequest) (domain.
 	projection.Evidence = []string{".pinax/last_snapshot"}
 	return projection, nil
 }
-func appendDailyIndex(root string, note domain.Note) (string, error) {
-	date := currentTimeUTC().Format("2006-01-02")
+func appendDailyIndex(root string, note domain.Note, now time.Time) (string, error) {
+	date := now.Format("2006-01-02")
 	root, rel, _, err := ensureJournalNote(root, DailyRequest{Date: date})
 	if err != nil {
 		return "", err
