@@ -164,7 +164,7 @@ Pinax release convergence SHALL NOT be considered complete until project-level v
 
 - **GIVEN** implementation tasks for this change are complete
 - **WHEN** maintainers run `task check` from `cli/pinax`
-- **THEN** formatting, lint, tests, build, sidecar protocol checks, and `openspec validate --all` SHALL pass
+- **THEN** formatting, lint, tests, build, and `openspec validate --all` SHALL pass
 - **AND** failures SHALL be fixed in the owning lane rather than documented around.
 
 #### Scenario: Running OpenSpec strict validation

@@ -63,7 +63,7 @@ Pinax SHALL treat `.pinax/memory/` as a local CLI-authored structured asset and 
 
 ### Requirement: Memory recall SHALL use deterministic multi-signal ranking
 
-Pinax SHALL rank memory recall with deterministic non-vector signals while keeping Memory separate from KB semantic search.
+Pinax SHALL rank memory recall with deterministic non-vector signals while keeping the memory ledger separate from external RAG retrieval.
 
 #### Scenario: Ranking combines query, entity, source, confidence, and freshness
 
