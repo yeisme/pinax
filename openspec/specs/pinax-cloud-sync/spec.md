@@ -136,10 +136,10 @@ Cloud Sync SHALL preserve the distinction between encrypted source content, serv
 
 #### Scenario: Brain projections are rebuilt locally
 
-- **WHEN** Cloud Sync scans a vault with local `.pinax/index.sqlite`, `.pinax/kb/lancedb/`, `.pinax/graph/`, answer cache, or provider cache files
-- **THEN** those files SHALL be treated as local rebuildable projections or cache state
+- **WHEN** Cloud Sync scans a vault with local `.pinax/index.sqlite`, external RAG export/cache material, `.pinax/graph/`, answer cache, or provider cache files
+- **THEN** those files SHALL be treated as local rebuildable projections or cache state, and external RAG material SHALL remain outside Pinax ownership
 - **AND** they SHALL NOT be uploaded as plaintext Cloud Sync content
-- **AND** after pull/import, users MAY rebuild projections with commands such as `pinax index refresh --vault ./my-notes --json`, `pinax kb refresh --vault ./my-notes`, or `pinax graph rebuild --vault ./my-notes --json`.
+- **AND** after pull/import, users MAY rebuild projections with commands such as `pinax index refresh --vault ./my-notes --json`, `pinax export markdown ./temp/rag-export --vault ./my-notes --json`, or `pinax graph rebuild --vault ./my-notes --json`.
 
 #### Scenario: Memory and maintenance evidence require explicit encrypted contract
 
@@ -616,4 +616,3 @@ Cloud Sync SHALL treat encrypted and plaintext env assets, materialized runtime 
 - **WHEN** a vault contains `.env`, `.env.local`, `.pinax/pinax-sync.env.age` and `.pinax/runtime/pinax-sync.env`
 - **THEN** none of these files SHALL be uploaded as ordinary plaintext content entries
 - **AND** sync receipts SHALL report counts and redacted paths only
-

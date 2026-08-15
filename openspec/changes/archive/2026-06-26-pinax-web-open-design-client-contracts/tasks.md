@@ -4,7 +4,7 @@
 
 - Owner: `cli/pinax`。未来 Web/桌面客户端源码必须由独立客户端子项目拥有，本变更只交付 Pinax 侧 CLI/API/projection 合同、测试和文档。
 - 合同策略: 只做 additive change；不得删除、重命名或重定义现有命令、flag、JSON envelope 顶层字段、`--agent` key、API route、RPC method、`.pinax/**` registry key 或 index schema。
-- 写入边界: Markdown note body 可由用户显式编辑；`.pinax/**` structured assets、SQLite/GORM projection、LanceDB projection、events、receipts、sync state、provider config、token/profile metadata 必须由 CLI/application service 写入。
+- 写入边界: Markdown note body 可由用户显式编辑；`.pinax/**` structured assets、SQLite/GORM projection、external RAG vector projection、events、receipts、sync state、provider config、token/profile metadata 必须由 CLI/application service 写入。
 - 脱敏边界: 新增输出、日志、测试 fixture 和运行证据不得包含真实 token、Authorization header、cookie、provider key、raw provider payload、raw prompt、hidden system prompt、private tool arguments、完整 note body 或完整 chain-of-thought。
 - 文档语言: 人类文档、OpenSpec proposal/design/tasks/spec 使用中文；命令名、flag、JSON key、provider id、model id、route id 和 code identifiers 保持英文或既有稳定名称。
 - 集成证据: 新增或扩展 integration/component/e2e 入口时，证据写入 `temp/integration-test-runs/<run-id>/`，至少包含 `summary.json`、`command.txt`、`stdout.log`、`stderr.log`、`env.json` 和 `artifacts/`。
@@ -16,8 +16,8 @@
   - Owner: `cli/pinax`
   - Lane: sequential
   - Depends on: none
-  - Scope: 对齐 `docs/product/web-open-design.md`、已归档的 `pinax-client-cli-parity-realtime-sync`、已归档的 `pinax-unified-vault-workspace-database`、已归档的 `pinax-kb-provider-expansion` 和当前 `pinax api routes`，列出 Web 工作台需要的 capability 是否已存在。
-  - Files: `docs/product/web-open-design.md`、`openspec/changes/archive/2026-06-26-pinax-client-cli-parity-realtime-sync/*`、`openspec/changes/archive/2026-06-26-pinax-unified-vault-workspace-database/*`、`openspec/changes/archive/2026-06-24-pinax-kb-provider-expansion/*`、`openspec/specs/personal-kb/spec.md`、`internal/app/remote.go`、`internal/api/http.go`、`internal/api/rpc.go`。
+  - Scope: 对齐 `docs/product/web-open-design.md`、已归档的 `pinax-client-cli-parity-realtime-sync`、已归档的 `pinax-unified-vault-workspace-database` 和当前 `pinax api routes`，列出 Web 工作台需要的 capability 是否已存在。
+  - Files: `docs/product/web-open-design.md`、`openspec/changes/archive/2026-06-26-pinax-client-cli-parity-realtime-sync/*`、`openspec/changes/archive/2026-06-26-pinax-unified-vault-workspace-database/*`、`openspec/specs/personal-kb/spec.md`、`internal/app/remote.go`、`internal/api/http.go`、`internal/api/rpc.go`。
   - Acceptance: 形成 capability gap matrix，至少覆盖 `workbench.status`、`agent.context`、`provider.status`、`editor.note`、`board.view`、`graph.view`、`search.view`、`canvas.view`、`proof.gate`；每个 gap 标记为 `implemented`、`covered-by-active-change`、`new-task` 或 `future-client-only`。
   - Validation command: `openspec list && openspec validate pinax-web-open-design-client-contracts --strict && openspec validate --all --strict`
   - Expected result: OpenSpec validation 通过；如 active change 尚未完成，gap matrix 明确依赖，不重复实现同一合同。

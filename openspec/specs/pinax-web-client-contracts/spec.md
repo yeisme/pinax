@@ -6,7 +6,7 @@ This spec defines how future Pinax internal UI should consume Pinax bounded proj
 ## Requirements
 ### Requirement: Workbench module consumes bounded projections only
 
-Pinax SHALL expose workbench-facing state through Local REST/RPC, CLI JSON, MCP/dashboard shared projections, or copyable real `pinax ...` commands. The Workbench module SHALL NOT read `.pinax/**`, SQLite, LanceDB, token files, provider config, sync state, receipts, or other structured assets directly.
+Pinax SHALL expose workbench-facing state through Local REST/RPC, CLI JSON, MCP/dashboard shared projections, or copyable real `pinax ...` commands. The Workbench module SHALL NOT read `.pinax/**`, SQLite, external RAG vector files, token files, provider config, sync state, receipts, or other structured assets directly.
 
 #### Scenario: Workbench module discovers capabilities
 - **WHEN** a Workbench module needs to discover Pinax features
@@ -55,4 +55,3 @@ The Local API workbench SHALL provide a browser UI for memory records and capabi
 #### Scenario: Vault dashboard remains read-only
 - **WHEN** a user opens `pinax vault dashboard`
 - **THEN** the dashboard does not expose direct memory write controls
-
