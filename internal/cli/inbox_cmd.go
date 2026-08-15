@@ -242,3 +242,34 @@ func addDimensionRootCommands(root *cobra.Command, ctx commandBuildContext) {
 		root.AddCommand(dimCmd)
 	}
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "inbox list", Method: "Pinax.Inbox.List"})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "inbox show",
+		Method:      "Pinax.Inbox.Show",
+		ArgParams:   []string{"ref"},
+		Flags:       []remoteParamSpec{s("display", "display")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "inbox capture",
+		Method:      "Pinax.Inbox.Capture",
+		ArgParams:   []string{"title"},
+		Flags:       []remoteParamSpec{s("body", "body"), b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "inbox promote",
+		Method:      "Pinax.Inbox.Promote",
+		ArgParams:   []string{"ref"},
+		Flags: []remoteParamSpec{
+			s("to", "to"), s("group", "group"), s("folder", "folder"), s("kind", "kind"),
+			b("dry_run", "dry-run"), b("yes", "yes"),
+		},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "inbox discard",
+		Method:      "Pinax.Inbox.Discard",
+		ArgParams:   []string{"ref"},
+		Flags:       []remoteParamSpec{b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/fsutil"
 	"github.com/yeisme/pinax/internal/identity"
 )
 
@@ -86,7 +87,7 @@ func AddWithOptions(root, source string, opts AddOptions) (Asset, error) {
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return Asset{}, err
 		}
-		if err := copyFile(target, source); err != nil {
+		if err := fsutil.CopyFile(target, source); err != nil {
 			return Asset{}, err
 		}
 		if info, err = os.Stat(target); err != nil {
@@ -379,23 +380,6 @@ func mediaType(path string) string {
 		return strings.Split(mt, ";")[0]
 	}
 	return "application/octet-stream"
-}
-
-func copyFile(target, source string) error {
-	in, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = in.Close() }()
-	out, err := os.Create(target)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
 }
 
 func fileExists(path string) bool {

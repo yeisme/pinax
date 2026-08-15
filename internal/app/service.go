@@ -278,14 +278,6 @@ func normalizedAttachmentPlacement(placement string) pinaxassets.AttachmentPlace
 	}
 }
 
-func copyFile(source, target string) error {
-	b, err := os.ReadFile(source)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(target, b, 0o644)
-}
-
 func attachmentReference(notePath, attachmentRel, style string, embed bool) (string, string, error) {
 	style = strings.TrimSpace(style)
 	if style == "" || style == "auto" {

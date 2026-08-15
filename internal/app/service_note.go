@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/fsutil"
 	noteindex "github.com/yeisme/pinax/internal/index"
 )
 
@@ -188,7 +189,7 @@ func (s *Service) AttachNoteFile(ctx context.Context, req NoteAttachRequest) (do
 		if err := os.MkdirAll(filepath.Dir(attachmentPath), 0o755); err != nil {
 			return errorProjection("note.attach", err), err
 		}
-		if err := copyFile(source, attachmentPath); err != nil {
+		if err := fsutil.CopyFile(attachmentPath, source); err != nil {
 			return errorProjection("note.attach", err), err
 		}
 	}

@@ -109,3 +109,39 @@ func addMemoryFilterFlags(cmd *cobra.Command, typeName, entity *string, limit *i
 	cmd.Flags().IntVar(limit, "limit", 0, "Limit memory records")
 	_ = cmd.RegisterFlagCompletionFunc("type", staticCompletion("type", "fact", "decision", "event", "task"))
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "memory list",
+		Method:      "Pinax.Memory.List",
+		Flags: []remoteParamSpec{
+			s("type", "type"), s("entity", "entity"),
+			b("include_draft", "include-draft"), b("include_superseded", "include-superseded"),
+			b("include_expired", "include-expired"), b("include_rejected", "include-rejected"),
+			i("limit", "limit"),
+		},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "memory capture",
+		Method:      "Pinax.Memory.Capture",
+		Flags: []remoteParamSpec{
+			s("type", "type"), s("subject", "subject"), s("predicate", "predicate"),
+			s("object", "object"), s("body", "body"), s("status", "status"),
+			s("confidence", "confidence"), s("source", "source"), s("source_span", "source-span"),
+			sa("entities", "entity"), b("dry_run", "dry-run"),
+		},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "memory recall",
+		Method:      "Pinax.Memory.Recall",
+		ArgParams:   []string{"query"},
+		Flags:       []remoteParamSpec{s("type", "type"), s("entity", "entity"), i("limit", "limit")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "memory context",
+		Method:      "Pinax.Memory.Context",
+		ArgParams:   []string{"task"},
+		Flags:       []remoteParamSpec{s("type", "type"), s("entity", "entity"), i("limit", "limit")},
+	})
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "memory stats", Method: "Pinax.Memory.Stats"})
+}
