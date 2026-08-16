@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -367,12 +370,12 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 	}
 
 	fixtures := map[string]RPCRequest{
-		"rpc.workbench.status":          {Method: "Pinax.Workbench.Status", Params: map[string]any{}},
+		"rpc.workbench.status":          {Method: "Pinax.Workbench.Status", Params: map[string]any{"workspace": "work"}},
 		"rpc.workbench.activity.list":   {Method: "Pinax.Workbench.Activity.List", Params: map[string]any{"limit": 1}},
 		"rpc.workbench.activity.show":   {Method: "Pinax.Workbench.Activity.Show", Params: map[string]any{"event_id": activityEntries[0].EventID}},
 		"rpc.monitor.list":              {Method: "Pinax.Monitor.List", Params: map[string]any{"limit": 1}},
 		"rpc.monitor.show":              {Method: "Pinax.Monitor.Show", Params: map[string]any{"run_id": monitorRuns[0].RunID}},
-		"rpc.monitor.summary":           {Method: "Pinax.Monitor.Summary", Params: map[string]any{}},
+		"rpc.monitor.summary":           {Method: "Pinax.Monitor.Summary", Params: map[string]any{"workspace": "work"}},
 		"rpc.project.board.show":        {Method: "Pinax.ProjectBoard.Show", Params: map[string]any{"project": "research", "note_display": "card"}},
 		"rpc.project.subproject.list":   {Method: "Pinax.Project.Subproject.List", Params: map[string]any{"project": "research"}},
 		"rpc.project.subproject.show":   {Method: "Pinax.Project.Subproject.Show", Params: map[string]any{"project": "research", "subproject": "stock-learning"}},
@@ -381,29 +384,29 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 		"rpc.note.list":                 {Method: "Pinax.Note.List", Params: map[string]any{"status": "active"}},
 		"rpc.database.view.render":      {Method: "Pinax.DatabaseView.Render", Params: map[string]any{"name": viewName}},
 		"rpc.task.adopt.plan":           {Method: "Pinax.Task.AdoptPlan", Params: map[string]any{"item_id": taskID}},
-		"rpc.graph.summary":             {Method: "Pinax.Graph.Summary", Params: map[string]any{}},
-		"rpc.memory.list":               {Method: "Pinax.Memory.List", Params: map[string]any{}},
+		"rpc.graph.summary":             {Method: "Pinax.Graph.Summary", Params: map[string]any{"workspace": "work"}},
+		"rpc.memory.list":               {Method: "Pinax.Memory.List", Params: map[string]any{"workspace": "work"}},
 		"rpc.memory.capture":            {Method: "Pinax.Memory.Capture", Params: map[string]any{"type": "fact", "subject": "pinax", "object": "rpc memory", "yes": true}},
 		"rpc.memory.recall":             {Method: "Pinax.Memory.Recall", Params: map[string]any{"query": "memory"}},
 		"rpc.memory.context":            {Method: "Pinax.Memory.Context", Params: map[string]any{"task": "memory"}},
-		"rpc.memory.stats":              {Method: "Pinax.Memory.Stats", Params: map[string]any{}},
+		"rpc.memory.stats":              {Method: "Pinax.Memory.Stats", Params: map[string]any{"workspace": "work"}},
 		"rpc.project.item.plan":         {Method: "Pinax.ProjectItem.Plan", Params: map[string]any{"item_id": itemID, "action": "archive"}},
-		"rpc.folder.list":               {Method: "Pinax.Folder.List", Params: map[string]any{}},
+		"rpc.folder.list":               {Method: "Pinax.Folder.List", Params: map[string]any{"workspace": "work"}},
 		"rpc.folder.show":               {Method: "Pinax.Folder.Show", Params: map[string]any{"path": "research"}},
 		"rpc.folder.create":             {Method: "Pinax.Folder.Create", Params: map[string]any{"path": "rpc-created", "yes": true}},
 		"rpc.folder.rename":             {Method: "Pinax.Folder.Rename", Params: map[string]any{"path": "research", "target_path": "research-renamed", "yes": true}},
 		"rpc.folder.move":               {Method: "Pinax.Folder.Move", Params: map[string]any{"path": "research", "target_parent": "api-target", "yes": true}},
 		"rpc.folder.delete":             {Method: "Pinax.Folder.Delete", Params: map[string]any{"path": "research", "empty_only": true, "yes": true}},
 		"rpc.folder.adopt":              {Method: "Pinax.Folder.Adopt", Params: map[string]any{"path": "research", "purpose": "notes", "yes": true}},
-		"rpc.folder.repair":             {Method: "Pinax.Folder.RepairPlan", Params: map[string]any{}},
+		"rpc.folder.repair":             {Method: "Pinax.Folder.RepairPlan", Params: map[string]any{"workspace": "work"}},
 		// Inbox RPC fixtures
-		"rpc.inbox.list":    {Method: "Pinax.Inbox.List", Params: map[string]any{}},
+		"rpc.inbox.list":    {Method: "Pinax.Inbox.List", Params: map[string]any{"workspace": "work"}},
 		"rpc.inbox.show":    {Method: "Pinax.Inbox.Show", Params: map[string]any{"ref": "note_inbox_rpc_1"}},
 		"rpc.inbox.capture": {Method: "Pinax.Inbox.Capture", Params: map[string]any{"title": "RPC Capture", "yes": true}},
 		"rpc.inbox.promote": {Method: "Pinax.Inbox.Promote", Params: map[string]any{"ref": "note_inbox_rpc_1", "to": "active"}},
 		"rpc.inbox.discard": {Method: "Pinax.Inbox.Discard", Params: map[string]any{"ref": "note_inbox_rpc_1"}},
 		// Draft RPC fixtures
-		"rpc.draft.list":    {Method: "Pinax.Draft.List", Params: map[string]any{}},
+		"rpc.draft.list":    {Method: "Pinax.Draft.List", Params: map[string]any{"workspace": "work"}},
 		"rpc.draft.show":    {Method: "Pinax.Draft.Show", Params: map[string]any{"ref": "note_draft_rpc_1"}},
 		"rpc.draft.create":  {Method: "Pinax.Draft.Create", Params: map[string]any{"title": "RPC Draft Create", "yes": true}},
 		"rpc.draft.promote": {Method: "Pinax.Draft.Promote", Params: map[string]any{"ref": "note_draft_rpc_1"}},
@@ -412,6 +415,12 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 		// Sync RPC fixtures
 		"rpc.sync.push": {Method: "Pinax.Sync.Push", Params: map[string]any{"target": "cloud", "yes": true}},
 		"rpc.sync.pull": {Method: "Pinax.Sync.Pull", Params: map[string]any{"target": "cloud", "yes": true}},
+		// Agent runtime RPC fixtures
+		"rpc.agent.context":       {Method: "Pinax.Agent.Context", Params: map[string]any{"workspace": "work"}},
+		"rpc.agent.memory.recall": {Method: "Pinax.Agent.Memory.Recall", Params: map[string]any{"workspace": "work"}},
+		"rpc.agent.continuity":    {Method: "Pinax.Agent.Continuity", Params: map[string]any{"workspace": "work"}},
+		"rpc.agent.inbox":         {Method: "Pinax.Agent.Inbox", Params: map[string]any{"workspace": "work"}},
+		"rpc.agent.trust_center":  {Method: "Pinax.Agent.TrustCenter", Params: map[string]any{"workspace": "work"}},
 	}
 
 	for _, route := range app.RemoteRoutes() {
@@ -526,5 +535,38 @@ func TestRPCNoteReadReturnsCanonicalObjectFacts(t *testing.T) {
 	}
 	if projection.Facts["object_id"] != objectID || projection.Facts["object_kind"] != "note" {
 		t.Fatalf("facts = %#v", projection.Facts)
+	}
+}
+
+// TestAgentRPCMethodsReachableViaV1RPC pins the /v1/rpc reachability of the
+// agent runtime methods that previously only worked through direct dispatcher
+// construction.
+func TestAgentRPCMethodsReachableViaV1RPC(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {
+		t.Fatalf("init vault: %v", err)
+	}
+	server := NewServer(svc, root)
+	for _, method := range []string{
+		"Pinax.Agent.Context",
+		"Pinax.Agent.Memory.Recall",
+		"Pinax.Agent.Continuity",
+		"Pinax.Agent.Inbox",
+		"Pinax.Agent.TrustCenter",
+	} {
+		body, err := json.Marshal(RPCRequest{Method: method, Params: map[string]any{"workspace": "work"}})
+		if err != nil {
+			t.Fatalf("marshal %s: %v", method, err)
+		}
+		res := httptest.NewRecorder()
+		server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/v1/rpc", bytes.NewReader(body)))
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s via /v1/rpc: status=%d body=%s", method, res.Code, res.Body.String())
+		}
+		if strings.Contains(res.Body.String(), "rpc_method_not_found") {
+			t.Fatalf("%s still unreachable via /v1/rpc: %s", method, res.Body.String())
+		}
 	}
 }

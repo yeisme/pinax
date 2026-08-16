@@ -1223,7 +1223,7 @@ func publishDevSmoke(ctx context.Context, url string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(request)
+	resp, err := publishHTTPClient.Do(request)
 	if err != nil {
 		return err
 	}
@@ -1418,7 +1418,12 @@ func (s *Service) PublishServe(ctx context.Context, req PublishRequest) (domain.
 	emitPublishEvent(req.LiveEvents, "serve_ready", "success", map[string]string{"profile": strings.TrimSpace(req.Profile), "host": host, "port": fmt.Sprint(addr.Port), "url": url})
 	served := false
 	if req.Once {
-		resp, err := http.Get(url)
+		request, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			_ = server.Shutdown(ctx)
+			return errorProjection("publish.serve", reqErr), reqErr
+		}
+		resp, err := publishHTTPClient.Do(request)
 		if err != nil {
 			_ = server.Shutdown(ctx)
 			return errorProjection("publish.serve", err), err
@@ -1637,7 +1642,7 @@ func publishDeployHTTP(ctx context.Context, vaultRoot, outDir string, policy pub
 	if token, ok := publishTokenFromSecretRef(policy.SecretRef); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := publishHTTPClient.Do(req)
 	if err != nil {
 		return publishDeployResult{}, err
 	}
@@ -2019,6 +2024,11 @@ func pinaxWebRendererPackageDir() (string, error) {
 	}
 	return "", fmt.Errorf("pinax-web renderer package was not found")
 }
+
+// publishHTTPClient bounds every outbound HTTP request the publish pipeline
+// makes on its own (dev smoke, serve-once check, HTTP deploy target, Feishu
+// webhook): the zero-value DefaultClient never times out.
+var publishHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 func writePublishFile(path string, body []byte) error {
 	// Atomic (temp+fsync+rename) so registry/profile/receipt readers never
