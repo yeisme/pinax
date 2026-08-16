@@ -19,10 +19,22 @@ import (
 const CryptoEnvelopeSchemaVersion = syncwire.EnvelopeSchemaVersion
 
 const (
-	keyDerivationSalt       = "capsa-sync-salt-v1"
-	keyDerivationIterations = 100000
-	keySize                 = 32
-	manifestAssociatedData  = "pinax.cloud.manifest"
+	// keyDerivationSaltLegacy is the historical static global salt. It remains
+	// in use only to derive the legacy read key so envelopes written before the
+	// v2 derivation stay decryptable.
+	keyDerivationSaltLegacy = "capsa-sync-salt-v1"
+	// keyDerivationSaltV2Seed domains-separates the v2 salt derivation. The v2
+	// salt is derived from the shared secret itself (not stored anywhere), so
+	// every device with the same secret derives the same key while each secret
+	// gets its own salt — defeating cross-secret precomputation tables without
+	// any per-vault state to migrate.
+	keyDerivationSaltV2Seed = "capsa-sync-salt-v2"
+	// keyDerivationIterationsLegacy was below current OWASP guidance for
+	// PBKDF2-SHA256; v2 raises it to 600k.
+	keyDerivationIterationsLegacy = 100000
+	keyDerivationIterationsV2     = 600000
+	keySize                       = 32
+	manifestAssociatedData        = "pinax.cloud.manifest"
 )
 
 type CryptoKey struct {
@@ -34,20 +46,95 @@ type CryptoKey struct {
 // encryption helpers and the transport layer share one wire schema.
 type EncryptedEnvelope = syncwire.Envelope
 
+// deriveKeyFrom derives a key identifier and raw key from a derived key
+// using the shared derivation recipe.
+func deriveKeyFrom(resolved string, salt string, iterations int) CryptoKey {
+	key := pbkdf2.Key([]byte(resolved), []byte(salt), iterations, keySize, sha256.New)
+	keyIDHash := sha256.Sum256(append([]byte("capsa-key-id\x00"), key...))
+	return CryptoKey{KeyID: "key_" + hex.EncodeToString(keyIDHash[:])[:16], key: key}
+}
+
+// DeriveKeyV2 derives the active v2 key: 600k PBKDF2-SHA256 iterations over
+// the resolved secret and a salt derived from the secret itself. All devices
+// sharing the secret derive the same key; distinct secrets get distinct
+// salts, so one precomputed table cannot serve multiple users.
+func DeriveKeyV2(secretRef string) (CryptoKey, error) {
+	resolved, err := resolveSyncSecret(secretRef)
+	if err != nil {
+		return CryptoKey{}, err
+	}
+	salt := deriveV2Salt(resolved)
+	return deriveKeyFrom(resolved, salt, keyDerivationIterationsV2), nil
+}
+
+func deriveV2Salt(resolved string) string {
+	digest := sha256.Sum256(append([]byte(keyDerivationSaltV2Seed+"\x00"), []byte(resolved)...))
+	return hex.EncodeToString(digest[:])
+}
+
+// DeriveKeyLegacy derives the pre-v2 key (static global salt, 100k iterations).
+// It exists so envelopes written before the v2 derivation remain readable.
+func DeriveKeyLegacy(secretRef string) (CryptoKey, error) {
+	resolved, err := resolveSyncSecret(secretRef)
+	if err != nil {
+		return CryptoKey{}, err
+	}
+	return deriveKeyFrom(resolved, keyDerivationSaltLegacy, keyDerivationIterationsLegacy), nil
+}
+
+// DeriveKey derives the active v2 key.
 func DeriveKey(secretRef string) (CryptoKey, error) {
+	return DeriveKeyV2(secretRef)
+}
+
+func resolveSyncSecret(secretRef string) (string, error) {
 	if secretRef == "" {
-		return CryptoKey{}, fmt.Errorf("secret reference is required")
+		return "", fmt.Errorf("secret reference is required")
 	}
 	resolved, err := profile.ResolveSecretRef(secretRef)
 	if err != nil {
-		return CryptoKey{}, fmt.Errorf("resolve secret reference: %w", err)
+		return "", fmt.Errorf("resolve secret reference: %w", err)
 	}
 	if resolved == "" {
-		return CryptoKey{}, fmt.Errorf("resolved secret is empty")
+		return "", fmt.Errorf("resolved secret is empty")
 	}
-	key := pbkdf2.Key([]byte(resolved), []byte(keyDerivationSalt), keyDerivationIterations, keySize, sha256.New)
-	keyIDHash := sha256.Sum256(append([]byte("capsa-key-id\x00"), key...))
-	return CryptoKey{KeyID: "key_" + hex.EncodeToString(keyIDHash[:])[:16], key: key}, nil
+	return resolved, nil
+}
+
+// CryptoKeys is the decryption keychain: the active write key plus legacy
+// read keys. Envelopes are decrypted with the key whose KeyID matches the
+// envelope, so a vault migrated to the v2 derivation keeps reading blobs that
+// were written under the legacy derivation until they are re-pushed.
+type CryptoKeys struct {
+	Active CryptoKey
+	Legacy []CryptoKey
+}
+
+// DeriveKeychain derives the active v2 key plus the legacy fallback in one
+// pass.
+func DeriveKeychain(secretRef string) (CryptoKeys, error) {
+	active, err := DeriveKeyV2(secretRef)
+	if err != nil {
+		return CryptoKeys{}, err
+	}
+	keys := CryptoKeys{Active: active}
+	if legacy, legacyErr := DeriveKeyLegacy(secretRef); legacyErr == nil && legacy.KeyID != active.KeyID {
+		keys.Legacy = append(keys.Legacy, legacy)
+	}
+	return keys, nil
+}
+
+// For returns the key matching keyID, preferring the active key.
+func (k CryptoKeys) For(keyID string) (CryptoKey, bool) {
+	if k.Active.KeyID != "" && k.Active.KeyID == keyID {
+		return k.Active, true
+	}
+	for _, legacy := range k.Legacy {
+		if legacy.KeyID == keyID {
+			return legacy, true
+		}
+	}
+	return CryptoKey{}, false
 }
 
 // KeyID resolves the secret reference and returns the stable key identifier for
@@ -64,8 +151,8 @@ func EncryptBlob(key CryptoKey, plaintext, aad []byte) (EncryptedEnvelope, error
 	return encryptBytes(key, plaintext, aad)
 }
 
-func DecryptBlob(key CryptoKey, envelope EncryptedEnvelope, aad []byte) ([]byte, error) {
-	return decryptBytes(key, envelope, aad)
+func DecryptBlob(keys CryptoKeys, envelope EncryptedEnvelope, aad []byte) ([]byte, error) {
+	return decryptBytes(keys, envelope, aad)
 }
 
 func EncryptManifest(key CryptoKey, manifest Manifest) (EncryptedEnvelope, error) {
@@ -76,9 +163,9 @@ func EncryptManifest(key CryptoKey, manifest Manifest) (EncryptedEnvelope, error
 	return encryptBytes(key, payload, []byte(manifestAssociatedData))
 }
 
-func DecryptManifest(key CryptoKey, envelope EncryptedEnvelope) (Manifest, error) {
+func DecryptManifest(keys CryptoKeys, envelope EncryptedEnvelope) (Manifest, error) {
 	var manifest Manifest
-	payload, err := decryptBytes(key, envelope, []byte(manifestAssociatedData))
+	payload, err := decryptBytes(keys, envelope, []byte(manifestAssociatedData))
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -113,12 +200,13 @@ func encryptBytes(key CryptoKey, plaintext, aad []byte) (EncryptedEnvelope, erro
 	}, nil
 }
 
-func decryptBytes(key CryptoKey, envelope EncryptedEnvelope, aad []byte) ([]byte, error) {
+func decryptBytes(keys CryptoKeys, envelope EncryptedEnvelope, aad []byte) ([]byte, error) {
 	if err := validateEnvelope(envelope); err != nil {
 		return nil, err
 	}
-	if envelope.KeyID != key.KeyID {
-		return nil, fmt.Errorf("key ID mismatch: envelope=%s, key=%s", envelope.KeyID, key.KeyID)
+	key, ok := keys.For(envelope.KeyID)
+	if !ok {
+		return nil, fmt.Errorf("key ID mismatch: envelope=%s, active=%s", envelope.KeyID, keys.Active.KeyID)
 	}
 	nonce, err := base64.StdEncoding.DecodeString(envelope.Nonce)
 	if err != nil {

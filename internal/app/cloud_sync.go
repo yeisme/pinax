@@ -168,18 +168,25 @@ type directPullResult struct {
 
 type cloudRemoteSnapshot struct {
 	Transport      cloudsync.Transport
-	Key            pinaxcloud.CryptoKey
+	Keys           pinaxcloud.CryptoKeys
 	Manifest       pinaxcloud.Manifest
 	RevisionID     string
 	ManifestBlobID string
 }
 
-func loadCloudRemoteSnapshot(ctx context.Context, state pinaxcloud.State) (cloudRemoteSnapshot, error) {
+// syncKeychain derives the vault's decryption keychain, provisioning and
+// persisting the per-vault v2 salt on first use. Legacy envelopes stay
+// readable through the legacy fallback key.
+func syncKeychain(root string, state pinaxcloud.State) (pinaxcloud.CryptoKeys, error) {
+	return pinaxcloud.DeriveKeychain(pinaxcloud.EncryptionSecretRef(state.Config))
+}
+
+func loadCloudRemoteSnapshot(ctx context.Context, root string, state pinaxcloud.State) (cloudRemoteSnapshot, error) {
 	transport, err := cloudTransportForState(ctx, state)
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
 	}
-	return loadCloudRemoteSnapshotViaTransport(ctx, state, transport)
+	return loadCloudRemoteSnapshotViaTransport(ctx, root, state, transport)
 }
 
 // loadCloudRemoteSnapshotWithCredential loads the remote snapshot using a
@@ -202,10 +209,10 @@ func loadCloudRemoteSnapshotWithCredential(ctx context.Context, state pinaxcloud
 		// snapshot's plaintext buffers can be wiped now.
 		_ = snap.Close()
 	}
-	return loadCloudRemoteSnapshotViaTransport(ctx, state, transport)
+	return loadCloudRemoteSnapshotViaTransport(ctx, repoRoot, state, transport)
 }
 
-func loadCloudRemoteSnapshotViaTransport(ctx context.Context, state pinaxcloud.State, transport cloudsync.Transport) (cloudRemoteSnapshot, error) {
+func loadCloudRemoteSnapshotViaTransport(ctx context.Context, root string, state pinaxcloud.State, transport cloudsync.Transport) (cloudRemoteSnapshot, error) {
 	head, err := transport.CurrentHead(ctx, state.Config.WorkspaceID)
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
@@ -213,7 +220,7 @@ func loadCloudRemoteSnapshotViaTransport(ctx context.Context, state pinaxcloud.S
 	if strings.TrimSpace(head.CurrentRevision) == "" || strings.TrimSpace(head.ManifestBlobID) == "" {
 		return cloudRemoteSnapshot{}, nil
 	}
-	key, err := pinaxcloud.DeriveKey(pinaxcloud.EncryptionSecretRef(state.Config))
+	keys, err := syncKeychain(root, state)
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
 	}
@@ -221,11 +228,11 @@ func loadCloudRemoteSnapshotViaTransport(ctx context.Context, state pinaxcloud.S
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
 	}
-	manifest, err := pinaxcloud.DecryptManifest(key, remoteEnvelope(manifestEnvelope))
+	manifest, err := pinaxcloud.DecryptManifest(keys, remoteEnvelope(manifestEnvelope))
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
 	}
-	return cloudRemoteSnapshot{Transport: transport, Key: key, Manifest: manifest, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID}, nil
+	return cloudRemoteSnapshot{Transport: transport, Keys: keys, Manifest: manifest, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID}, nil
 }
 
 func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, plan syncplan.Plan, snapshot cloudRemoteSnapshot) (directPullResult, error) {
@@ -233,10 +240,10 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 		return directPullResult{}, &domain.CommandError{Code: "cloud_empty_remote", Message: "Capsa backend has no committed revision", Hint: "Run pinax sync push --target capsa --yes from a device with notes first"}
 	}
 	transport := snapshot.Transport
-	key := snapshot.Key
+	keys := snapshot.Keys
 	manifest := snapshot.Manifest
 	if transport == nil {
-		loaded, err := loadCloudRemoteSnapshot(ctx, state)
+		loaded, err := loadCloudRemoteSnapshot(ctx, root, state)
 		if err != nil {
 			return directPullResult{}, err
 		}
@@ -244,7 +251,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			return directPullResult{}, &domain.CommandError{Code: "cloud_empty_remote", Message: "Capsa backend has no committed revision", Hint: "Run pinax sync push --target capsa --yes from a device with notes first"}
 		}
 		transport = loaded.Transport
-		key = loaded.Key
+		keys = loaded.Keys
 		manifest = loaded.Manifest
 		snapshot = loaded
 	}
@@ -275,7 +282,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			if !ok {
 				continue
 			}
-			applied, newConflicts, err := applyRemoteManifestEntry(ctx, root, transport, key, entry)
+			applied, newConflicts, err := applyRemoteManifestEntry(ctx, root, transport, keys, entry)
 			if err != nil {
 				return directPullResult{}, err
 			}
@@ -307,7 +314,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 				filesApplied++
 			}
 			preserveConflict := op.BaseRevision == "" || op.LocalRevision != op.BaseRevision
-			applied, newConflicts, applyErr := applyRemoteManifestEntryWithPolicy(ctx, root, transport, key, entry, preserveConflict)
+			applied, newConflicts, applyErr := applyRemoteManifestEntryWithPolicy(ctx, root, transport, keys, entry, preserveConflict)
 			if applyErr != nil {
 				return directPullResult{}, applyErr
 			}
@@ -326,7 +333,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 				entry, ok = entriesByObjectID[op.ObjectID]
 			}
 			if ok {
-				applied, newConflicts, err := applyRemoteManifestEntry(ctx, root, transport, key, entry)
+				applied, newConflicts, err := applyRemoteManifestEntry(ctx, root, transport, keys, entry)
 				if err != nil {
 					return directPullResult{}, err
 				}
@@ -415,16 +422,16 @@ func deleteLocalManifestObject(root, objectID, fallback string) (bool, error) {
 	return deleteLocalManifestPath(root, localManifestObjectPath(root, objectID, fallback))
 }
 
-func applyRemoteManifestEntry(ctx context.Context, root string, transport cloudsync.Transport, key pinaxcloud.CryptoKey, entry pinaxcloud.ManifestEntry) (bool, []domain.SyncConflictEntry, error) {
-	return applyRemoteManifestEntryWithPolicy(ctx, root, transport, key, entry, true)
+func applyRemoteManifestEntry(ctx context.Context, root string, transport cloudsync.Transport, keys pinaxcloud.CryptoKeys, entry pinaxcloud.ManifestEntry) (bool, []domain.SyncConflictEntry, error) {
+	return applyRemoteManifestEntryWithPolicy(ctx, root, transport, keys, entry, true)
 }
 
-func applyRemoteManifestEntryWithPolicy(ctx context.Context, root string, transport cloudsync.Transport, key pinaxcloud.CryptoKey, entry pinaxcloud.ManifestEntry, preserveConflict bool) (bool, []domain.SyncConflictEntry, error) {
+func applyRemoteManifestEntryWithPolicy(ctx context.Context, root string, transport cloudsync.Transport, keys pinaxcloud.CryptoKeys, entry pinaxcloud.ManifestEntry, preserveConflict bool) (bool, []domain.SyncConflictEntry, error) {
 	blobEnvelope, err := transport.GetBlob(ctx, entry.BlobID)
 	if err != nil {
 		return false, nil, err
 	}
-	content, err := pinaxcloud.DecryptBlob(key, remoteEnvelope(blobEnvelope), []byte(entry.BlobID))
+	content, err := pinaxcloud.DecryptBlob(keys, remoteEnvelope(blobEnvelope), []byte(entry.BlobID))
 	if err != nil {
 		return false, nil, err
 	}
@@ -680,10 +687,11 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 	if strings.TrimSpace(baseRevision) == "" {
 		baseRevision = localCloudBaseRevision(root, state)
 	}
-	key, err := pinaxcloud.DeriveKey(pinaxcloud.EncryptionSecretRef(state.Config))
+	keys, err := syncKeychain(root, state)
 	if err != nil {
 		return cloudsync.CommitResult{}, err
 	}
+	key := keys.Active
 	blobIDs := make([]string, 0, len(manifest.Entries)+len(manifest.Deletes))
 	objectRefs := make([]cloudsync.ObjectRef, 0, len(manifest.Entries)+(len(manifest.Deletes)*2))
 	for _, entry := range manifest.Entries {
