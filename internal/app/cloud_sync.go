@@ -172,6 +172,9 @@ type cloudRemoteSnapshot struct {
 	Manifest       pinaxcloud.Manifest
 	RevisionID     string
 	ManifestBlobID string
+	// ManifestKeyID is the raw KeyID of the remote manifest envelope before
+	// decryption; `pinax sync keys` classifies the remote derivation from it.
+	ManifestKeyID string
 }
 
 // syncKeychain derives the vault's decryption keychain, provisioning and
@@ -232,7 +235,7 @@ func loadCloudRemoteSnapshotViaTransport(ctx context.Context, root string, state
 	if err != nil {
 		return cloudRemoteSnapshot{}, err
 	}
-	return cloudRemoteSnapshot{Transport: transport, Keys: keys, Manifest: manifest, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID}, nil
+	return cloudRemoteSnapshot{Transport: transport, Keys: keys, Manifest: manifest, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID, ManifestKeyID: manifestEnvelope.KeyID}, nil
 }
 
 func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, plan syncplan.Plan, snapshot cloudRemoteSnapshot) (directPullResult, error) {
@@ -1103,4 +1106,30 @@ func isManifestText(path string) bool {
 	}
 	base := filepath.Base(path)
 	return base == ".gitignore" || base == ".pinaxignore"
+}
+
+// remoteSnapshotFullyUnderKey reports whether every object in the remote
+// snapshot — the manifest envelope and every blob referenced by it — carries
+// the given key id. The up-to-date push fast path uses it so a key-derivation
+// rotation still re-encrypts unchanged content instead of skipping it.
+func remoteSnapshotFullyUnderKey(ctx context.Context, snapshot cloudRemoteSnapshot, keyID string) bool {
+	if snapshot.ManifestKeyID != keyID {
+		return false
+	}
+	for _, entry := range snapshot.Manifest.Entries {
+		matches, err := remoteBlobMatchesKey(ctx, snapshot.Transport, entry.BlobID, keyID)
+		if err != nil || !matches {
+			return false
+		}
+	}
+	for _, deleteMarker := range snapshot.Manifest.Deletes {
+		if !strings.HasPrefix(deleteMarker.TrashBlobID, "blob_") {
+			continue
+		}
+		matches, err := remoteBlobMatchesKey(ctx, snapshot.Transport, deleteMarker.TrashBlobID, keyID)
+		if err != nil || !matches {
+			return false
+		}
+	}
+	return true
 }

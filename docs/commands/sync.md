@@ -252,6 +252,47 @@ The target execution flow is transport-independent:
 
 The daemon uses the same rule. It may call `sync pull` before `sync push` when the remote head is newer, and it stops automatic writes with `conflict_required` if pull creates conflict copies that need user review.
 
+## Key derivation and re-encryption
+
+Sync content is encrypted with an AES-256-GCM envelope whose key is derived
+from the vault's sync secret. Since 2026-08-16 the derivation is v2: PBKDF2
+at 600k iterations with a salt derived from the secret itself. Envelopes
+written by older builds (100k iterations, static salt) remain readable —
+decryption picks the key by each envelope's `key_id` — but every push
+re-encrypts any remote object still under the legacy derivation, even when
+the content is unchanged.
+
+### Checking and re-encrypting a vault
+
+```bash
+pinax sync keys --vault ./my-notes --json
+```
+
+Reports the active v2 key id, the legacy key id, and which derivation the
+remote manifest is encrypted under (`remote_derivation`: `v2`, `legacy`,
+`empty`, or `unknown` for a foreign secret). `reencryption_required=true`
+means the remote still holds legacy-encrypted objects.
+
+To migrate a vault to the v2 derivation:
+
+1. Upgrade `pinax` on this device (older binaries cannot read v2 envelopes).
+2. `pinax sync keys --vault ./my-notes --json` — expect `remote_derivation=legacy`.
+3. `pinax sync pull --target capsa --vault ./my-notes --yes --json` — verifies
+   legacy data is still readable and up to date locally.
+4. `pinax sync push --target capsa --vault ./my-notes --yes --json` — re-encrypts
+   every legacy-keyed object and commits a fresh v2 manifest. Content-equal
+   vaults are NOT skipped: the up-to-date fast path only fires when every
+   remote object already carries the active key id.
+5. `pinax sync keys --vault ./my-notes --json` — expect `remote_derivation=v2`
+   and `reencryption_required=false`.
+6. On every other device: upgrade `pinax`, then repeat steps 3–5. Devices on
+   the old derivation keep working until they upgrade, because new envelopes
+   are v2-only; do not push from an old build once migration started.
+
+Rollback: restore the previous `pinax` binary — it still reads legacy
+envelopes; a v2-encrypted remote requires re-pushing from the upgraded build
+after rollback.
+
 ## Conflict workflow
 
 When pull detects a local edit for a path also changed remotely, Pinax writes the remote trunk to the canonical note path and preserves the local edit next to it, for example `alpha.20260612153000.conflict.md`.

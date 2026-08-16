@@ -388,6 +388,17 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	syncCmd.AddCommand(syncStatusCmd)
 
+	syncKeysCmd := &cobra.Command{
+		Use:   "keys",
+		Short: "Show sync key derivation status and remote envelope key",
+		Long:  "Report the active v2 and legacy key ids, and which derivation the remote manifest envelope is encrypted under. Use it to verify a re-encryption migration: remote_derivation should read v2 after pinax sync push re-encrypts legacy blobs.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.SyncKeysStatus(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	syncCmd.AddCommand(syncKeysCmd)
+
 	syncDiffCmd := &cobra.Command{
 		Use:   "diff",
 		Short: "Generate a sync diff plan",

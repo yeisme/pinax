@@ -194,10 +194,15 @@ func (r *cloudSyncRun) executeCloudPush() (domain.Projection, error) {
 	// the entries and delete markers already match the remote there is nothing
 	// to push, so report up_to_date=true with a remote-aware read-back
 	// (distinguishable from a blocked or failed push) instead of committing a
-	// no-op revision. Any difference (content, mode, or delete marker) falls
-	// through to the normal rebase path so a needed push is never skipped.
+	// no-op revision. Any difference (content, mode, or delete marker) — or any
+	// remote object still encrypted under a previous key derivation, which a
+	// key-rotation push must rewrite even though the content is unchanged —
+	// falls through to the normal rebase path so a needed push is never skipped.
 	upToDateSnapshot, upToDateErr := loadCloudRemoteSnapshotWithCredential(r.ctx, r.state, r.root, r.req.ProjectUnlockSource)
-	if upToDateErr == nil && cloudManifestContentEqual(r.localManifest, upToDateSnapshot.Manifest) {
+	if upToDateErr == nil && cloudManifestContentEqual(r.localManifest, upToDateSnapshot.Manifest) && func() bool {
+		activeKeys, activeErr := syncKeychain(r.root, r.state)
+		return activeErr == nil && remoteSnapshotFullyUnderKey(r.ctx, upToDateSnapshot, activeKeys.Active.KeyID)
+	}() {
 		projection := domain.NewProjection(r.command, "Remote is already up to date; nothing to push.")
 		projection.Actions = []domain.Action{{Name: "diff", Command: fmt.Sprintf("pinax sync diff --target %s --vault %s --json", r.outputTarget, shellQuote(r.root))}}
 		receiptOut, _, receiptErr := finishSyncRun(r.root, r.receipt, r.plan, "success", nil, projection.Actions, r.pathPolicy, r.started)

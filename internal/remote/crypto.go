@@ -247,3 +247,30 @@ func validateEnvelope(envelope EncryptedEnvelope) error {
 	}
 	return nil
 }
+
+// SyncKeyVersions reports the active (v2) and legacy (v1) key identifiers for
+// a secret reference, so `pinax sync keys` can classify a remote envelope as
+// v2, legacy, or foreign without decrypting it.
+func SyncKeyVersions(secretRef string) (active, legacy string, err error) {
+	activeKey, err := DeriveKeyV2(secretRef)
+	if err != nil {
+		return "", "", err
+	}
+	legacyKey, err := DeriveKeyLegacy(secretRef)
+	if err != nil {
+		return "", "", err
+	}
+	return activeKey.KeyID, legacyKey.KeyID, nil
+}
+
+// ClassifyKeyID labels a remote envelope KeyID against the vault's derivations.
+func ClassifyKeyID(keyID, active, legacy string) string {
+	switch keyID {
+	case "", active:
+		return "v2"
+	case legacy:
+		return "legacy"
+	default:
+		return "unknown"
+	}
+}
