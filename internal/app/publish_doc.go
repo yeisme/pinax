@@ -17,6 +17,7 @@ import (
 
 	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/provider"
 	"github.com/yeisme/pinax/internal/publishdocast"
 	"gopkg.in/yaml.v3"
 )
@@ -110,6 +111,10 @@ func (s *Service) PublishDocProviderDoctor(ctx context.Context, req PublishReque
 }
 
 func (s *Service) PublishDocPrepare(ctx context.Context, req PublishRequest) (domain.Projection, error) {
+	return s.publishDocPrepareWithSnapshot(ctx, req, &publishDocSnapshotLoader{})
+}
+
+func (s *Service) publishDocPrepareWithSnapshot(ctx context.Context, req PublishRequest, snapshotLoader *publishDocSnapshotLoader) (domain.Projection, error) {
 	if req.All && strings.TrimSpace(req.Note) != "" {
 		cmdErr := &domain.CommandError{Code: "argument_conflict", Message: "--all cannot be combined with --note", Hint: "Use pinax publish doc prepare --all --target <target> --vault <vault> --json or prepare one --note"}
 		return domain.NewErrorProjection("publish.doc.prepare", cmdErr), cmdErr
@@ -125,7 +130,7 @@ func (s *Service) PublishDocPrepare(ctx context.Context, req PublishRequest) (do
 	if err != nil {
 		return errorProjection("publish.doc.prepare", err), err
 	}
-	pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note)
+	pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note, snapshotLoader)
 	if err != nil {
 		return errorProjection("publish.doc.prepare", err), err
 	}
@@ -164,6 +169,7 @@ func (s *Service) PublishDocPrepareAll(ctx context.Context, req PublishRequest) 
 		return errorProjection("publish.doc.prepare", err), err
 	}
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
+	snapshotLoader := &publishDocSnapshotLoader{}
 	type packageSummary struct {
 		NoteID        string                            `json:"note_id"`
 		NotePath      string                            `json:"note_path"`
@@ -174,7 +180,7 @@ func (s *Service) PublishDocPrepareAll(ctx context.Context, req PublishRequest) 
 	packages := make([]packageSummary, 0, len(notes))
 	summary := domain.PublishDocCrossDocSummary{}
 	for _, note := range notes {
-		projection, err := s.PublishDocPrepare(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)})
+		projection, err := s.publishDocPrepareWithSnapshot(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)}, snapshotLoader)
 		if err != nil {
 			return projection, err
 		}
@@ -217,6 +223,9 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 		return errorProjection("publish.doc.push", err), err
 	}
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
+	// One vault snapshot shared by every package build in this run; without it
+	// cross-doc analysis rescans the whole vault per note.
+	snapshotLoader := &publishDocSnapshotLoader{}
 	passes := 1
 	if !req.DryRun && profile.Target == domain.PublishDocTargetLarkDoc && profile.ResolveDocRenderer() == domain.PublishDocRendererNativeDocx {
 		passes = 2
@@ -252,7 +261,7 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 		}
 		for _, note := range notes {
 			if req.DryRun {
-				pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note)
+				pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note, snapshotLoader)
 				if err != nil {
 					return fail(errorProjection("publish.doc.push", err), err)
 				}
@@ -267,7 +276,7 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 				}
 				continue
 			}
-			prepareProjection, err := s.PublishDocPrepare(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)})
+			prepareProjection, err := s.publishDocPrepareWithSnapshot(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)}, snapshotLoader)
 			if err != nil {
 				return fail(prepareProjection, err)
 			}
@@ -917,7 +926,7 @@ func findPublishDocLarkFolder(ctx context.Context, profile domain.PublishDocProf
 		return ""
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(extractPublishDocJSON(out), &payload); err != nil {
+	if err := json.Unmarshal(provider.ExtractJSON(out), &payload); err != nil {
 		return ""
 	}
 	data, _ := payload["data"].(map[string]any)
@@ -1339,11 +1348,7 @@ func publishDocLarkIdentityReady(body []byte, identity string) bool {
 }
 
 func publishDocLarkArgs(profile domain.PublishDocProfile, args ...string) []string {
-	out := append([]string{}, args...)
-	if profile.As != "" && profile.As != "auto" {
-		out = append(out, "--as", profile.As)
-	}
-	return out
+	return provider.AppendAs(append([]string{}, args...), profile.As)
 }
 
 func publishDocProviderPreflight(ctx context.Context, profile domain.PublishDocProfile, pkg domain.PublishDocPackage, note domain.Note) *domain.CommandError {
@@ -1443,39 +1448,14 @@ func runPublishDocCLIDir(ctx context.Context, dir, name string, args []string, s
 
 func parsePublishDocProviderResult(body []byte, target domain.PublishDocTarget) publishDocProviderResult {
 	var payload map[string]any
-	_ = json.Unmarshal(extractPublishDocJSON(body), &payload)
-	id := firstString(payload, "id", "file_token", "folder_token", "token", "obj_token")
-	url := firstString(payload, "url", "external_url")
-	objType := firstString(payload, "type", "object_type")
+	_ = json.Unmarshal(provider.ExtractJSON(body), &payload)
+	id := provider.FirstString(payload, "id", "file_token", "folder_token", "token", "obj_token")
+	url := provider.FirstString(payload, "url", "external_url")
+	objType := provider.FirstString(payload, "type", "object_type")
 	if url == "" && id != "" && target == domain.PublishDocTargetLarkDoc {
 		url = "https://www.feishu.cn/drive/file/" + id
 	}
 	return publishDocProviderResult{ID: id, URL: url, ObjectType: objType}
-}
-
-func extractPublishDocJSON(body []byte) []byte {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 || trimmed[0] == '{' {
-		return trimmed
-	}
-	if i := bytes.IndexByte(trimmed, '{'); i >= 0 {
-		return trimmed[i:]
-	}
-	return trimmed
-}
-
-func firstString(payload map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value, ok := payload[key].(string); ok && value != "" {
-			return value
-		}
-		if data, ok := payload["data"].(map[string]any); ok {
-			if value, ok := data[key].(string); ok && value != "" {
-				return value
-			}
-		}
-	}
-	return ""
 }
 
 func publishDocProviderErrorCode(stderr string) string {

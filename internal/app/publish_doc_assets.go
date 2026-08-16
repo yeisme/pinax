@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/provider"
 )
 
 // remoteAssetClient 下载远程图片/资产。仅允许 HTTPS，10s 超时，10MB 上限。
@@ -195,14 +196,14 @@ func publishDocInsertAttachmentAsset(ctx context.Context, root string, profile d
 
 func parsePublishDocMediaInsertBlockID(body []byte) string {
 	var payload map[string]any
-	if err := json.Unmarshal(extractPublishDocJSON(body), &payload); err != nil {
+	if err := json.Unmarshal(provider.ExtractJSON(body), &payload); err != nil {
 		return ""
 	}
-	if id := firstString(payload, "block_id"); id != "" {
+	if id := provider.FirstString(payload, "block_id"); id != "" {
 		return id
 	}
 	data, _ := payload["data"].(map[string]any)
-	return firstString(data, "block_id")
+	return provider.FirstString(data, "block_id")
 }
 
 // publishDocReadImageDimensions 读取本地图片的显示宽高（像素），供 media-insert --width/--height。

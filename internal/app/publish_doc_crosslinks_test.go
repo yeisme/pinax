@@ -107,7 +107,7 @@ func TestPublishDocResolveCrossDocLinksSkipsDetachedTarget(t *testing.T) {
 	}
 
 	source := domain.Note{ID: "note_a", Title: "Alpha", Path: "notes/a.md"}
-	result := publishDocAnalyzeCrossDocLinks(root, source, "See [[Beta]].", domain.PublishDocTargetLarkDoc)
+	result := publishDocAnalyzeCrossDocLinks(root, source, "See [[Beta]].", domain.PublishDocTargetLarkDoc, &publishDocSnapshotLoader{})
 	if result.Summary.Rewritten != 0 || result.Summary.Unpublished != 1 {
 		t.Fatalf("detached mapping must be treated as unpublished, summary=%+v body=%q", result.Summary, result.Body)
 	}
@@ -171,7 +171,7 @@ func TestPublishDocAnalyzeCrossDocLinksCountsOccurrencesAndConflicts(t *testing.
 	writeCrossLinkMapping(t, root, "note_b", "https://example.test/docx/b_token")
 
 	source := domain.Note{ID: "note_a", Title: "Alpha", Path: "notes/a.md"}
-	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]] and [[Beta]] and [[Missing]] and [[Draft]]", domain.PublishDocTargetLarkDoc)
+	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]] and [[Beta]] and [[Missing]] and [[Draft]]", domain.PublishDocTargetLarkDoc, &publishDocSnapshotLoader{})
 	if result.Summary.Total != 3 {
 		t.Fatalf("expected three distinct raw links, got %d", result.Summary.Total)
 	}
@@ -199,7 +199,7 @@ func TestPublishDocAnalyzeCrossDocLinksReportsAmbiguous(t *testing.T) {
 	writeCrossLinkNote(t, root, "other/b.md", "note_b2", "Beta", "body")
 
 	source := domain.Note{ID: "note_a", Title: "Alpha", Path: "notes/a.md"}
-	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]]", domain.PublishDocTargetLarkDoc)
+	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]]", domain.PublishDocTargetLarkDoc, &publishDocSnapshotLoader{})
 	if result.Summary.Ambiguous != 1 {
 		t.Fatalf("expected ambiguous link, got summary: %+v", result.Summary)
 	}

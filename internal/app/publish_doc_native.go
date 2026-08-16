@@ -369,7 +369,7 @@ func publishDocFetchLastWhiteboardRef(ctx context.Context, profile domain.Publis
 		return publishDocWhiteboardRef{}
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(extractPublishDocJSON(out), &payload); err != nil {
+	if err := json.Unmarshal(provider.ExtractJSON(out), &payload); err != nil {
 		return publishDocWhiteboardRef{}
 	}
 	data, _ := payload["data"].(map[string]any)
