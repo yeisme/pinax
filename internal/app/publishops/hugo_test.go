@@ -10,6 +10,7 @@ import (
 )
 
 func TestHugoAdapterUsesFakeExecutableAndRedactsStderr(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	fake := filepath.Join(root, "hugo")
 	if err := os.WriteFile(fake, []byte("#!/bin/sh\nif [ \"$1\" = \"version\" ]; then echo 'hugo v0.130.0'; exit 0; fi\necho 'Authorization: Bearer raw-token token=raw path=notes/private.md' >&2\nmkdir -p \"$4\"\nprintf '%s\n' '<html>ok</html>' > \"$4/index.html\"\n"), 0o755); err != nil {
@@ -42,6 +43,7 @@ func TestHugoAdapterUsesFakeExecutableAndRedactsStderr(t *testing.T) {
 }
 
 func TestHugoAdapterFailureMatrixUsesStableRedactedResults(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	missing := filepath.Join(root, "missing-hugo")
 	if result, err := (HugoAdapter{Executable: missing, Timeout: time.Second}).Build(context.Background(), root, filepath.Join(root, "out")); err == nil || result.CallID == "" || result.DurationMS == 0 {

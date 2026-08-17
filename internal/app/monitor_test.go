@@ -10,6 +10,7 @@ import (
 )
 
 func TestMonitorRecordsSearchStepsAndActivitySource(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -61,6 +62,7 @@ func TestMonitorRecordsSearchStepsAndActivitySource(t *testing.T) {
 }
 
 func TestMonitorShowSummaryAndFailedRun(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -90,6 +92,7 @@ func TestMonitorShowSummaryAndFailedRun(t *testing.T) {
 }
 
 func TestMonitorProjectionIncludesFilterFacts(t *testing.T) {
+	t.Parallel()
 	result := monitorQueryResult{
 		Runs:    []MonitorRun{{RunID: "run_1", Command: "note.search", Status: "success"}},
 		Filters: map[string]string{"command": "note.search", "limit": "5", "status": "success", "query": "alpha"},

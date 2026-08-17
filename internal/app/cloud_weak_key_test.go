@@ -91,6 +91,7 @@ func TestExistingEncryptionSecretRefIsReused(t *testing.T) {
 // dedicated --encryption-secret-ref silences the weak-key warning even when the
 // provider credential reference is a profile:// ref.
 func TestWeakKeyWarningSuppressedByDedicatedEncryptionRef(t *testing.T) {
+	t.Parallel()
 	root := newWeakKeyVault(t)
 	svc := NewService()
 	projection, err := svc.CapsaBackendSetS3(context.Background(), CloudBackendSetRequest{
@@ -115,6 +116,7 @@ func TestWeakKeyWarningSuppressedByDedicatedEncryptionRef(t *testing.T) {
 // sourced from env:// (a strong secret manager boundary) does not trigger the
 // weak-key warning.
 func TestWeakKeyWarningSuppressedByEnvSecretRef(t *testing.T) {
+	t.Parallel()
 	root := newWeakKeyVault(t)
 	svc := NewService()
 	projection, err := svc.CapsaBackendSetS3(context.Background(), CloudBackendSetRequest{
@@ -137,6 +139,7 @@ func TestWeakKeyWarningSuppressedByEnvSecretRef(t *testing.T) {
 
 // TestWeakKeyWarningLogic covers the pure helper across the scheme table.
 func TestWeakKeyWarningLogic(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name             string
 		encryptionSecret string
@@ -170,6 +173,7 @@ func TestWeakKeyWarningLogic(t *testing.T) {
 // encryption_key_mismatch warning when the config's current key id differs from
 // the key id recorded during the last sync.
 func TestDoctorEncryptionKeyMismatch(t *testing.T) {
+	t.Parallel()
 	root := newWeakKeyVault(t)
 	svc := NewService()
 	if _, err := svc.CloudLogin(context.Background(), CloudLoginRequest{
@@ -204,6 +208,7 @@ func TestDoctorEncryptionKeyMismatch(t *testing.T) {
 // TestDoctorEncryptionKeyMatchNoWarning verifies that when the recorded key id
 // matches the current config, no mismatch warning is emitted.
 func TestDoctorEncryptionKeyMatchNoWarning(t *testing.T) {
+	t.Parallel()
 	root := newWeakKeyVault(t)
 	svc := NewService()
 	if _, err := svc.CloudLogin(context.Background(), CloudLoginRequest{
@@ -238,6 +243,7 @@ func TestDoctorEncryptionKeyMatchNoWarning(t *testing.T) {
 // TestWriteCurrentSyncStateRecordsKeyID ensures the sync-state persists the key
 // id derived from the active config so future doctor runs can detect rotation.
 func TestWriteCurrentSyncStateRecordsKeyID(t *testing.T) {
+	t.Parallel()
 	root := newWeakKeyVault(t)
 	state := pinaxcloud.State{Config: pinaxcloud.Config{
 		SchemaVersion: pinaxcloud.ConfigSchemaVersion,

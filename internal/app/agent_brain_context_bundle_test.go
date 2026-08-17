@@ -9,6 +9,7 @@ import (
 )
 
 func TestAgentBrainContextBundleUsesBoundedRefsAndRedactsBodies(t *testing.T) {
+	t.Parallel()
 	contexts := []domain.AgentContext{
 		{
 			SchemaVersion: domain.AgentContextSchemaVersion,

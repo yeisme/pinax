@@ -12,6 +12,7 @@ import (
 )
 
 func TestJournalTemplateCreatesDailyAndDoesNotRewriteExisting(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
@@ -45,6 +46,7 @@ func TestJournalTemplateCreatesDailyAndDoesNotRewriteExisting(t *testing.T) {
 }
 
 func TestIndexPageCreatePreviewAndRefreshManagedBlock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
@@ -88,6 +90,7 @@ func TestIndexPageCreatePreviewAndRefreshManagedBlock(t *testing.T) {
 }
 
 func TestExistingDailyNotRewritten(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
@@ -113,6 +116,7 @@ func TestExistingDailyNotRewritten(t *testing.T) {
 }
 
 func TestLegacyNotesDailyCompat(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
@@ -138,6 +142,7 @@ func TestLegacyNotesDailyCompat(t *testing.T) {
 }
 
 func TestDailyCaptureManagedBlock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
@@ -161,6 +166,7 @@ func TestDailyCaptureManagedBlock(t *testing.T) {
 }
 
 func TestDailyCaptureLegacyMissingBlock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 8, 0, 0, 0, 0, time.UTC) })
@@ -186,6 +192,7 @@ func TestDailyCaptureLegacyMissingBlock(t *testing.T) {
 }
 
 func TestEnsureJournalNoteAllocatesCanonicalObjectID(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	_, rel, _, err := ensureJournalNote(root, DailyRequest{Date: "2026-07-10"})
 	if err != nil {

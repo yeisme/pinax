@@ -8,6 +8,7 @@ import (
 )
 
 func TestDebounceFlushExitsWhenConsumerReturned(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	in := make(chan WatchEvent, 4)
 	batches := Debounce(ctx, in, 10*time.Millisecond)
@@ -54,6 +55,7 @@ func TestDebounceFlushExitsWhenConsumerReturned(t *testing.T) {
 }
 
 func TestForwardDropsWatcherErrorBurstWithoutBlocking(t *testing.T) {
+	t.Parallel()
 	// forward() delegates each error to deliverWatcherError, which must never
 	// block: emit a burst of errors into an undrained cap-1 channel and assert
 	// the first is delivered, the rest are dropped, and every call returns.

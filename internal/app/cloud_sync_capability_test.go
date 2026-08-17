@@ -39,6 +39,7 @@ func writeCapabilityDeclaration(t *testing.T, root string, capabilities []string
 // TestSyncCapabilityGateRejectsUnsupportedCapability verifies task 6.8: a
 // declaration requiring a capability this binary does not support fails closed.
 func TestSyncCapabilityGateRejectsUnsupportedCapability(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCapabilityDeclaration(t, root, []string{"repository-encrypted-s3-v1", "unknown-cap-v9"})
 	err := syncCapabilityGate(root)
@@ -50,6 +51,7 @@ func TestSyncCapabilityGateRejectsUnsupportedCapability(t *testing.T) {
 // TestSyncCapabilityGateAllowsSupportedCapabilities verifies the gate passes
 // when every required capability is in the supported set.
 func TestSyncCapabilityGateAllowsSupportedCapabilities(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCapabilityDeclaration(t, root, []string{"repository-encrypted-s3-v1", "capsa-remote-commit-v1", "pull-only-bootstrap-v1"})
 	if err := syncCapabilityGate(root); err != nil {
@@ -60,6 +62,7 @@ func TestSyncCapabilityGateAllowsSupportedCapabilities(t *testing.T) {
 // TestSyncCapabilityGatePassesWithoutDeclaration verifies a device-profile
 // runtime with no portable declaration is not blocked by the capability gate.
 func TestSyncCapabilityGatePassesWithoutDeclaration(t *testing.T) {
+	t.Parallel()
 	if err := syncCapabilityGate(t.TempDir()); err != nil {
 		t.Fatalf("expected no gate error without a declaration, got %v", err)
 	}
@@ -119,6 +122,7 @@ func (f fakeReadBack) GetManifest(_ context.Context, _ string) (cloudsync.Envelo
 // TestVerifyDurableCommitSuccess verifies the read-back confirms a committed
 // revision observable on the remote.
 func TestVerifyDurableCommitSuccess(t *testing.T) {
+	t.Parallel()
 	result := cloudsync.CommitResult{RevisionID: "rev_1", ManifestBlobID: "manifest_1"}
 	rb := fakeReadBack{head: cloudsync.Head{CurrentRevision: "rev_1"}}
 	if !verifyDurableCommit(context.Background(), rb, "ws", result) {
@@ -130,6 +134,7 @@ func TestVerifyDurableCommitSuccess(t *testing.T) {
 // when the read-back head does not match the committed revision the commit is
 // not durable (blob/commit may have succeeded but the revision is unobservable).
 func TestVerifyDurableCommitFailureHeadMismatch(t *testing.T) {
+	t.Parallel()
 	result := cloudsync.CommitResult{RevisionID: "rev_1", ManifestBlobID: "manifest_1"}
 	rb := fakeReadBack{head: cloudsync.Head{CurrentRevision: "rev_other"}}
 	if verifyDurableCommit(context.Background(), rb, "ws", result) {
@@ -140,6 +145,7 @@ func TestVerifyDurableCommitFailureHeadMismatch(t *testing.T) {
 // TestVerifyDurableCommitFailureManifestUnreadable verifies a commit whose
 // manifest cannot be read back is not durable.
 func TestVerifyDurableCommitFailureManifestUnreadable(t *testing.T) {
+	t.Parallel()
 	result := cloudsync.CommitResult{RevisionID: "rev_1", ManifestBlobID: "manifest_1"}
 	rb := fakeReadBack{head: cloudsync.Head{CurrentRevision: "rev_1"}, manifestErr: errors.New("missing manifest")}
 	if verifyDurableCommit(context.Background(), rb, "ws", result) {
@@ -152,6 +158,7 @@ func TestVerifyDurableCommitFailureManifestUnreadable(t *testing.T) {
 // up_to_date=true with remote_checked=true and remote_write=false —
 // distinguishable from a blocked, failed, or dry-run push.
 func TestPushUpToDateFactWhenNoChanges(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, deviceA, _ := cloudPushAutoRebaseIntegrationFixture(t)
 	writeFile(t, filepath.Join(deviceA, "notes", "note.md"), "# Note\n")

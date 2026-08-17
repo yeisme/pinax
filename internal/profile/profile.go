@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -59,7 +60,15 @@ func SecretsPath() string {
 // EnsureStoredSecret returns a stable user-level secret reference, creating the
 // secret once when it does not exist. The secret value never enters project or
 // vault state.
+// secretsMu serializes read-modify-write cycles on the stored secrets file.
+// Without it, concurrent commands (or parallel tests) interleave load and
+// save and lose each other's entries.
+var secretsMu sync.Mutex
+
 func EnsureStoredSecret(name string) (string, error) {
+	secretsMu.Lock()
+	defer secretsMu.Unlock()
+
 	name = strings.TrimSpace(name)
 	if name == "" || strings.ContainsAny(name, `/\\`) {
 		return "", fmt.Errorf("invalid stored secret name")
@@ -87,6 +96,8 @@ func EnsureStoredSecret(name string) (string, error) {
 // plaintext never enters the generated runtime config. The value never enters
 // project or vault state.
 func SetStoredSecret(name, value string) (string, error) {
+	secretsMu.Lock()
+	defer secretsMu.Unlock()
 	name = strings.TrimSpace(name)
 	if name == "" || strings.ContainsAny(name, `/\\`) {
 		return "", fmt.Errorf("invalid stored secret name")

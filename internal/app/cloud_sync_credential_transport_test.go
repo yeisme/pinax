@@ -15,6 +15,7 @@ import (
 // The actual SigV4 signing under the injected provider is verified in the
 // remote-layer test (TestGetStoreWithCredentialProviderSignsWithInjectedCredential).
 func TestCloudTransportForStateWithCredentialResolvesAndInjects(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	store := projectsecrets.NewStore()
 	if _, err := store.Init(repo, ".pinax/project-secrets.yaml", "pinax", "ws-x", "passphrase-v1", []byte(testPassphrase)); err != nil {
@@ -46,6 +47,7 @@ func TestCloudTransportForStateWithCredentialResolvesAndInjects(t *testing.T) {
 // device-profile mode (or nil source) falls back to the default transport and
 // returns a nil snapshot (no credential resolution).
 func TestCloudTransportForStateWithCredentialFallsBackForDeviceProfile(t *testing.T) {
+	t.Parallel()
 	state := pinaxcloud.State{Config: pinaxcloud.Config{
 		Endpoint: "s3://bucket/prefix/", WorkspaceID: "ws-x", BackendKind: "s3-direct",
 		S3: &pinaxcloud.S3Config{Bucket: "bucket", Prefix: "prefix/", CredentialMode: pinaxcloud.CredentialModeDeviceProfile},

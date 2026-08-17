@@ -16,6 +16,7 @@ import (
 // fails closed at credential resolution rather than silently using the
 // device-local profile chain.
 func TestLoadCloudRemoteSnapshotWithCredentialRoutesRepoEncrypted(t *testing.T) {
+	t.Parallel()
 	fake := httptest.NewServer(nil)
 	defer fake.Close()
 	root := t.TempDir()
@@ -35,6 +36,7 @@ func TestLoadCloudRemoteSnapshotWithCredentialRoutesRepoEncrypted(t *testing.T) 
 // transport path (which may then fail at the remote level, but NOT at credential
 // resolution).
 func TestLoadCloudRemoteSnapshotWithCredentialNilSourceFallsBack(t *testing.T) {
+	t.Parallel()
 	state := pinaxcloud.State{Config: pinaxcloud.Config{
 		Endpoint: "s3://nonexistent-bucket-example/prefix/", WorkspaceID: "ws-x", BackendKind: "s3-direct",
 		S3: &pinaxcloud.S3Config{Bucket: "nonexistent-bucket-example", Prefix: "prefix/", CredentialMode: pinaxcloud.CredentialModeDeviceProfile},
@@ -54,6 +56,7 @@ func TestLoadCloudRemoteSnapshotWithCredentialNilSourceFallsBack(t *testing.T) {
 // (the fake returns 404; we only assert no credential-resolution error reached
 // this point — the bundle unlocked).
 func TestLoadCloudRemoteSnapshotWithCredentialResolvesAndReadsHead(t *testing.T) {
+	t.Parallel()
 	fake := httptest.NewServer(nil)
 	defer fake.Close()
 	root := t.TempDir()

@@ -24,6 +24,7 @@ import (
 // sync engine (capsa SDK transport) and is out of scope for this credential-
 // continuity e2e.
 func TestTwoDeviceRepositoryCredentialContinuity(t *testing.T) {
+	t.Parallel()
 	deviceA := t.TempDir()
 	deviceB := t.TempDir()
 
@@ -101,6 +102,7 @@ func TestTwoDeviceRepositoryCredentialContinuity(t *testing.T) {
 // TestTwoDeviceWrongPassphraseFailsOnClone verifies device B cannot unlock the
 // cloned ciphertext with a wrong passphrase (fail-closed, no fallback).
 func TestTwoDeviceWrongPassphraseFailsOnClone(t *testing.T) {
+	t.Parallel()
 	deviceA := t.TempDir()
 	deviceB := t.TempDir()
 	store := projectsecrets.NewStore()

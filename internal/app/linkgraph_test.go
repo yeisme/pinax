@@ -11,6 +11,7 @@ import (
 )
 
 func TestParseNoteLinksWikiBasic(t *testing.T) {
+	t.Parallel()
 	body := "# Title\n\nSee [[Alpha]] and [[Beta|Note B]] for details.\nAlso [[Gamma#Section]].\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 3 {
@@ -28,6 +29,7 @@ func TestParseNoteLinksWikiBasic(t *testing.T) {
 }
 
 func TestParseNoteLinksKeepsDistinctWikiAliasesAndHeadings(t *testing.T) {
+	t.Parallel()
 	body := "[[Alpha|Short]] [[Alpha#Details]] [[Alpha|Short]]\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 2 {
@@ -42,6 +44,7 @@ func TestParseNoteLinksKeepsDistinctWikiAliasesAndHeadings(t *testing.T) {
 }
 
 func TestParseNoteLinksIgnoresWikiMediaEmbeds(t *testing.T) {
+	t.Parallel()
 	body := "![[diagram.png]] [[Alpha]] ![[clips/demo.mp4|Demo]]\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 1 {
@@ -53,6 +56,7 @@ func TestParseNoteLinksIgnoresWikiMediaEmbeds(t *testing.T) {
 }
 
 func TestParseNoteLinksMarkdownRelative(t *testing.T) {
+	t.Parallel()
 	body := "# Title\n\n[link](../other.md) and [another](notes/sub/deep.md)\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 2 {
@@ -67,6 +71,7 @@ func TestParseNoteLinksMarkdownRelative(t *testing.T) {
 }
 
 func TestParseNoteLinksIgnoresExternal(t *testing.T) {
+	t.Parallel()
 	body := "[web](https://example.com) [mail](mailto:a@b) [local](#section)\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 0 {
@@ -75,6 +80,7 @@ func TestParseNoteLinksIgnoresExternal(t *testing.T) {
 }
 
 func TestParseNoteLinksLineNumber(t *testing.T) {
+	t.Parallel()
 	body := "line1\nline2\nSee [[Target]] here\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 1 {
@@ -86,6 +92,7 @@ func TestParseNoteLinksLineNumber(t *testing.T) {
 }
 
 func TestSplitWikiLinkParts(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input, target, alias, heading string
 	}{
@@ -103,6 +110,7 @@ func TestSplitWikiLinkParts(t *testing.T) {
 }
 
 func TestResolverSnapshotResolveByTitle(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_a", Title: "Alpha", Path: "notes/alpha.md"},
 		{ID: "note_b", Title: "Beta", Path: "notes/beta.md"},
@@ -119,6 +127,7 @@ func TestResolverSnapshotResolveByTitle(t *testing.T) {
 }
 
 func TestResolverSnapshotResolveByPath(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_a", Title: "Alpha", Path: "notes/alpha.md"},
 	}
@@ -131,6 +140,7 @@ func TestResolverSnapshotResolveByPath(t *testing.T) {
 }
 
 func TestResolverSnapshotResolveByNoteID(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_abc123", Title: "Alpha", Path: "notes/alpha.md"},
 	}
@@ -146,6 +156,7 @@ func TestResolverSnapshotResolveByNoteID(t *testing.T) {
 }
 
 func TestResolverSnapshotAmbiguousTitle(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_a", Title: "Meeting", Path: "notes/work/meeting-a.md"},
 		{ID: "note_b", Title: "Meeting", Path: "notes/work/meeting-b.md"},
@@ -162,6 +173,7 @@ func TestResolverSnapshotAmbiguousTitle(t *testing.T) {
 }
 
 func TestResolverSnapshotResolveByFrontmatterAlias(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Frontmatter: map[string]string{"aliases": "[One, First Alpha]"}},
 		{ID: "note_source", Title: "Source", Path: "notes/source.md"},
@@ -178,6 +190,7 @@ func TestResolverSnapshotResolveByFrontmatterAlias(t *testing.T) {
 }
 
 func TestResolverSnapshotBrokenLink(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_a", Title: "Alpha", Path: "notes/alpha.md"},
 	}
@@ -193,6 +206,7 @@ func TestResolverSnapshotBrokenLink(t *testing.T) {
 }
 
 func TestBuildEnhancedLinkGraphEndToEnd(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -235,6 +249,7 @@ func TestBuildEnhancedLinkGraphEndToEnd(t *testing.T) {
 }
 
 func TestGraphSummary(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -260,6 +275,7 @@ func TestGraphSummary(t *testing.T) {
 }
 
 func TestLinkGraphCompatibilityMatrixAndRepairPlanFacts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -299,6 +315,7 @@ func TestLinkGraphCompatibilityMatrixAndRepairPlanFacts(t *testing.T) {
 }
 
 func TestQueryOutgoingLinksWithFilters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -331,6 +348,7 @@ func TestQueryOutgoingLinksWithFilters(t *testing.T) {
 }
 
 func TestQueryOrphansModes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -370,6 +388,7 @@ func TestQueryOrphansModes(t *testing.T) {
 }
 
 func TestNoteLinkBackwardCompatibility(t *testing.T) {
+	t.Parallel()
 	// 验证旧代码创建的 NoteLink（只有 Broken 字段）仍然正常工作
 	link := domain.NoteLink{
 		SourcePath:  "notes/a.md",
@@ -388,6 +407,7 @@ func TestNoteLinkBackwardCompatibility(t *testing.T) {
 }
 
 func TestNoteLinksOutputHasEngineAndIndexStatus(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -409,6 +429,7 @@ func TestNoteLinksOutputHasEngineAndIndexStatus(t *testing.T) {
 }
 
 func TestIsExternalOrHeadingLink(t *testing.T) {
+	t.Parallel()
 	for _, target := range []string{"https://example.com", "http://a.b", "mailto:x@y", "#section", "ftp://files"} {
 		if !isExternalOrHeadingLink(target) {
 			t.Fatalf("expected %q to be external/heading", target)
@@ -422,6 +443,7 @@ func TestIsExternalOrHeadingLink(t *testing.T) {
 }
 
 func TestParseNoteLinksDedup(t *testing.T) {
+	t.Parallel()
 	body := "[[A]] some text [[A]] more [[A]]\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 1 {
@@ -430,6 +452,7 @@ func TestParseNoteLinksDedup(t *testing.T) {
 }
 
 func TestParseNoteLinksMarkdownRelativePath(t *testing.T) {
+	t.Parallel()
 	// Markdown relative links to .md files should be detected
 	body := "[doc](../docs/readme.md) and [local](./sub/note.md)\n"
 	links := parseRawLinksFromBody(body)
@@ -443,6 +466,7 @@ func TestParseNoteLinksMarkdownRelativePath(t *testing.T) {
 }
 
 func TestParseNoteLinksIgnoresNonMarkdown(t *testing.T) {
+	t.Parallel()
 	body := "[image](../img/photo.png) [pdf](doc.pdf) [zip](file.zip)\n"
 	links := parseRawLinksFromBody(body)
 	if len(links) != 0 {
@@ -451,6 +475,7 @@ func TestParseNoteLinksIgnoresNonMarkdown(t *testing.T) {
 }
 
 func TestLinksProjectionExposesObjectIdentityWithoutForgingAmbiguousTarget(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
@@ -480,6 +505,7 @@ func TestLinksProjectionExposesObjectIdentityWithoutForgingAmbiguousTarget(t *te
 }
 
 func TestRenameAndMoveBacklinkKeepObjectEdgeAndReturnRewritePlan(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
@@ -530,6 +556,7 @@ func TestRenameAndMoveBacklinkKeepObjectEdgeAndReturnRewritePlan(t *testing.T) {
 }
 
 func TestRenameWithEmptySlugUsesFinalFallbackInRewritePlan(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
 	writeAppFixture(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: 018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101\ntitle: Source\nkind: reference\n---\n\n[[Target]]\n")

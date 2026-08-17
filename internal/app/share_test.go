@@ -10,6 +10,7 @@ import (
 )
 
 func TestSharePublishedScopeHandlerServesStaticAndBoundedAPI(t *testing.T) {
+	t.Parallel()
 	outDir := t.TempDir()
 	writeAppFixture(t, filepath.Join(outDir, "index.html"), "<html>published</html>")
 	writeAppFixture(t, filepath.Join(outDir, "pinax-data", "search-index.json"), `{"entries":[{"id":"note_public","title":"Public","path":"notes/public/","tags":["public"],"kind":"concept","body":"PRIVATE BODY MUST NOT LEAK"}]}`)
@@ -47,6 +48,7 @@ func TestSharePublishedScopeHandlerServesStaticAndBoundedAPI(t *testing.T) {
 }
 
 func TestShareVaultReadonlyScopeRequiresTokenAndReturnsBoundedNotes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "notes", "private.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_private\ntitle: Private\nkind: concept\nstatus: active\ntags: [team]\n---\n\nPRIVATE BODY MUST NOT LEAK")
 	server := httptest.NewServer(shareVaultReadonlyHandler(root, "share-token"))

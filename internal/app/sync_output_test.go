@@ -12,6 +12,7 @@ import (
 )
 
 func TestBuildSyncOutputViewClassifiesGitStyleChanges(t *testing.T) {
+	t.Parallel()
 	base := pinaxcloud.Manifest{Entries: []pinaxcloud.ManifestEntry{
 		{Path: "notes/changed.md", PathHash: "hash:changed", BlobID: "blob-old", Size: 10},
 		{Path: "notes/deleted.md", PathHash: "hash:deleted", BlobID: "blob-deleted", Size: 20},
@@ -64,6 +65,7 @@ func TestBuildSyncOutputViewClassifiesGitStyleChanges(t *testing.T) {
 }
 
 func TestBuildSyncContentDiffIsBoundedAndRedacted(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".pinax", "cloud", "blob-cache"), 0o755); err != nil {
 		t.Fatalf("mkdir blob cache: %v", err)
@@ -97,6 +99,7 @@ func TestBuildSyncContentDiffIsBoundedAndRedacted(t *testing.T) {
 }
 
 func TestBuildSyncOutputViewRedactsPathsAndAppliedState(t *testing.T) {
+	t.Parallel()
 	local := pinaxcloud.Manifest{Entries: []pinaxcloud.ManifestEntry{{Path: "private/alpha.md", PathHash: "hash:alpha", BlobID: "blob-alpha", Size: 4}}}
 	plan := syncplan.Plan{Direction: syncplan.DirectionPush, RemoteRevision: "rev-before", Operations: []syncplan.Operation{{Kind: "upload_blob", Path: "private/alpha.md", Status: "planned"}}}
 	view := buildSyncOutputView(plan, pinaxcloud.Manifest{}, local, pinaxcloud.Manifest{}, syncOutputViewOptions{Scope: "cached", Result: "applied", RemoteAfter: "rev-after", LocalAfter: "rev-after", PathPolicy: "hash"})

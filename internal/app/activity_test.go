@@ -10,6 +10,7 @@ import (
 )
 
 func TestActivityListNormalizesSourcesAndFilters(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeActivityFixture(t, filepath.Join(root, ".pinax", "events.jsonl"), `{"schema_version":"pinax.event.v1","type":"note.new","status":"success","ts":"2026-06-27T10:00:00Z","facts":{"path":"notes/alpha.md","token":"secret-token"}}`+"\n")
 	writeActivityFixture(t, filepath.Join(root, ".pinax", "sync-daemon", "events.jsonl"), `{"schema_version":"pinax.sync_daemon.event.v1","type":"sync_completed","status":"success","target":"cloud","sync_run_id":"sync_1","created_at":"2026-06-27T10:05:00Z"}`+"\n")
@@ -42,6 +43,7 @@ func TestActivityListNormalizesSourcesAndFilters(t *testing.T) {
 }
 
 func TestActivityPartialWarningsAndShow(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeActivityFixture(t, filepath.Join(root, ".pinax", "events.jsonl"), `{"schema_version":"pinax.event.v1","type":"index.refresh","status":"success","ts":"2026-06-27T10:00:00Z","facts":{"path":"notes/index.md"}}`+"\nnot-json\n")
 
@@ -65,6 +67,7 @@ func TestActivityPartialWarningsAndShow(t *testing.T) {
 }
 
 func TestActivityProjectionIncludesFilterFacts(t *testing.T) {
+	t.Parallel()
 	result := activityQueryResult{
 		Entries: []ActivityEntry{{EventID: "evt_1", Source: "vault_events", Kind: "note.created", Status: "success"}},
 		Filters: map[string]string{"source": "vault_events", "limit": "3", "status": "success", "query": "alpha"},

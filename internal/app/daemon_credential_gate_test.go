@@ -7,6 +7,7 @@ import (
 )
 
 func TestDaemonGateDeviceProfileAllowed(t *testing.T) {
+	t.Parallel()
 	r := AssessDaemonCredentialReadiness("device-profile", nil, false)
 	if !r.Allowed {
 		t.Fatalf("device-profile should be allowed without a source: %s", r.Reason)
@@ -17,6 +18,7 @@ func TestDaemonGateDeviceProfileAllowed(t *testing.T) {
 }
 
 func TestDaemonGateRepositoryEncryptedRequiresEnvelope(t *testing.T) {
+	t.Parallel()
 	r := AssessDaemonCredentialReadiness("repository-encrypted", projectsecrets.EnvSource("X"), false)
 	if r.Allowed {
 		t.Fatal("should be degraded when envelope missing")
@@ -27,6 +29,7 @@ func TestDaemonGateRepositoryEncryptedRequiresEnvelope(t *testing.T) {
 }
 
 func TestDaemonGateRepositoryEncryptedRequiresNonInteractiveSource(t *testing.T) {
+	t.Parallel()
 	// envelope present but no source → degraded.
 	r := AssessDaemonCredentialReadiness("repository-encrypted", nil, true)
 	if r.Allowed {
@@ -40,6 +43,7 @@ func TestDaemonGateRepositoryEncryptedRequiresNonInteractiveSource(t *testing.T)
 }
 
 func TestDaemonGateRepositoryEncryptedAllowsNonInteractive(t *testing.T) {
+	t.Parallel()
 	for _, src := range []projectsecrets.UnlockSource{
 		projectsecrets.EnvSource("PINAX_REPO_PASS"),
 		projectsecrets.StaticSource([]byte("x")),
@@ -55,6 +59,7 @@ func TestDaemonGateRepositoryEncryptedAllowsNonInteractive(t *testing.T) {
 }
 
 func TestDaemonGateRejectsUnsupportedMode(t *testing.T) {
+	t.Parallel()
 	r := AssessDaemonCredentialReadiness("unknown-mode", nil, true)
 	if r.Allowed {
 		t.Fatal("unsupported mode should be rejected")
@@ -62,6 +67,7 @@ func TestDaemonGateRejectsUnsupportedMode(t *testing.T) {
 }
 
 func TestDaemonGateEmptyModeDefaultsDeviceProfile(t *testing.T) {
+	t.Parallel()
 	r := AssessDaemonCredentialReadiness("", nil, false)
 	if !r.Allowed || r.Mode != "device-profile" {
 		t.Fatalf("empty mode should default to device-profile allowed: %+v", r)

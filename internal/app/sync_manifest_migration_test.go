@@ -12,6 +12,7 @@ import (
 const manifestMigrationObjectID = "01982d84-2b48-7000-8000-000000000021"
 
 func TestSyncManifestAuditIsReadOnlyAndBlocksMissingIdentity(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "notes", "legacy.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_legacy\ntitle: Legacy\n---\n\n# Legacy\n")
 	svc := NewService()
@@ -28,6 +29,7 @@ func TestSyncManifestAuditIsReadOnlyAndBlocksMissingIdentity(t *testing.T) {
 }
 
 func TestSyncManifestPromotionAndRollbackBeforeRemoteWrite(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+manifestMigrationObjectID+"\ntitle: Alpha\n---\n\n# Alpha\n")
 	svc := NewService()
@@ -59,6 +61,7 @@ func TestSyncManifestPromotionAndRollbackBeforeRemoteWrite(t *testing.T) {
 }
 
 func TestSyncManifestRollbackRejectsAfterV2RemoteWrite(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	state := SyncManifestCapabilityState{SchemaVersion: syncManifestCapabilitySchemaVersion, Status: "promoted", ManifestVersion: pinaxcloud.ManifestSchemaVersionV2, DeviceID: "device-a", FirstV2RemoteRevision: "rev-v2"}
 	if err := writeSyncManifestCapabilityState(root, state); err != nil {
@@ -71,6 +74,7 @@ func TestSyncManifestRollbackRejectsAfterV2RemoteWrite(t *testing.T) {
 }
 
 func TestNegotiateSyncManifestCapabilityRejectsMixedAuthoritativeHeads(t *testing.T) {
+	t.Parallel()
 	v1 := pinaxcloud.Manifest{SchemaVersion: pinaxcloud.ManifestSchemaVersionV1, Entries: []pinaxcloud.ManifestEntry{{Path: "notes/a.md"}}}
 	v2 := pinaxcloud.Manifest{SchemaVersion: pinaxcloud.ManifestSchemaVersionV2, Entries: []pinaxcloud.ManifestEntry{{ObjectID: manifestMigrationObjectID, Path: "notes/a.md"}}}
 	if err := negotiateSyncManifestCapability(v2, v1); err == nil {
@@ -85,6 +89,7 @@ func TestNegotiateSyncManifestCapabilityRejectsMixedAuthoritativeHeads(t *testin
 }
 
 func TestSyncDaemonBlocksRemoteWriteWhileManifestPromotionPending(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+manifestMigrationObjectID+"\ntitle: Alpha\n---\n\n# Alpha\n")
 	svc := NewService()

@@ -22,6 +22,7 @@ func writeEnvelope(t *testing.T, repo string) {
 }
 
 func TestSyncCredentialResolverProducesProvider(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeEnvelope(t, repo)
 	r := NewSyncCredentialResolver("pinax", "yeisme-notes", "tencent-cos-pinax")
@@ -46,6 +47,7 @@ func TestSyncCredentialResolverProducesProvider(t *testing.T) {
 }
 
 func TestSyncCredentialResolverWrongPassphraseFails(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeEnvelope(t, repo)
 	r := NewSyncCredentialResolver("pinax", "yeisme-notes", "tencent-cos-pinax")
@@ -56,6 +58,7 @@ func TestSyncCredentialResolverWrongPassphraseFails(t *testing.T) {
 }
 
 func TestSyncCredentialResolverMissingEnvelope(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	r := NewSyncCredentialResolver("pinax", "yeisme-notes", "tencent-cos-pinax")
 	_, _, err := r.Resolve(context.Background(), repo, projectsecrets.StaticSource([]byte(testPassphrase)))
@@ -65,6 +68,7 @@ func TestSyncCredentialResolverMissingEnvelope(t *testing.T) {
 }
 
 func TestSyncCredentialResolverClosesSnapshot(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	writeEnvelope(t, repo)
 	r := NewSyncCredentialResolver("pinax", "yeisme-notes", "tencent-cos-pinax")

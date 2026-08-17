@@ -23,6 +23,7 @@ import (
 )
 
 func TestAttachmentReferenceParserFeedsNoteAttachmentsFromBody(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
 	writeAppFixture(t, filepath.Join(root, "attachments", "My Spec.pdf"), "pdf")
@@ -57,6 +58,7 @@ func writeAppFixture(t *testing.T, path, content string) {
 }
 
 func TestCommandErrorFromErrorClassifiesMissingRcloneAsTransportUnavailable(t *testing.T) {
+	t.Parallel()
 	got := commandErrorFromError(errors.New(`rclone lsf failed: exec: "rclone": executable file not found in `))
 	if got.Code != "transport_unavailable" {
 		t.Fatalf("code = %q, want transport_unavailable", got.Code)
@@ -76,6 +78,7 @@ func recordLedgerSize(t *testing.T, root string) int64 {
 }
 
 func TestVaultInitValidateSearchAndShow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -136,6 +139,7 @@ func TestVaultInitValidateSearchAndShow(t *testing.T) {
 }
 
 func TestInitVaultRejectsAlreadyInitializedVault(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -158,6 +162,7 @@ func TestInitVaultRejectsAlreadyInitializedVault(t *testing.T) {
 }
 
 func TestVaultIgnoreStatusPlanApplyMaintainsPinaxBlocks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -205,6 +210,7 @@ func TestVaultIgnoreStatusPlanApplyMaintainsPinaxBlocks(t *testing.T) {
 }
 
 func TestSyncDiffReportsManagedContentKinds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -228,6 +234,7 @@ func TestSyncDiffReportsManagedContentKinds(t *testing.T) {
 }
 
 func TestCloudSyncPullPreservesScriptMode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := t.TempDir()
 	deviceA := filepath.Join(t.TempDir(), "device-a")
@@ -244,8 +251,8 @@ func TestCloudSyncPullPreservesScriptMode(t *testing.T) {
 		t.Fatalf("chmod source script: %v", err)
 	}
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -267,6 +274,7 @@ func TestCloudSyncPullPreservesScriptMode(t *testing.T) {
 }
 
 func TestCloudSyncPullDoesNotRestoreLocallyMovedPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := t.TempDir()
 	deviceA := filepath.Join(t.TempDir(), "device-a")
@@ -279,8 +287,8 @@ func TestCloudSyncPullDoesNotRestoreLocallyMovedPath(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(deviceA, "index", "home.md"), "# Home\n\noriginal index note\n")
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -312,6 +320,7 @@ func TestCloudSyncPullDoesNotRestoreLocallyMovedPath(t *testing.T) {
 }
 
 func TestCloudSyncAllPushesLocalMoveAndRemoteDeviceDeletesOldPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := t.TempDir()
 	deviceA := filepath.Join(t.TempDir(), "device-a")
@@ -324,8 +333,8 @@ func TestCloudSyncAllPushesLocalMoveAndRemoteDeviceDeletesOldPath(t *testing.T) 
 	}
 	writeFile(t, filepath.Join(deviceA, "index", "home.md"), "# Home\n\nmove me out of index\n")
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -363,6 +372,7 @@ func TestCloudSyncAllPushesLocalMoveAndRemoteDeviceDeletesOldPath(t *testing.T) 
 }
 
 func TestCloudSyncPullAppliesNoteSoftDeleteMarker(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := t.TempDir()
 	deviceA := filepath.Join(t.TempDir(), "device-a")
@@ -377,8 +387,8 @@ func TestCloudSyncPullAppliesNoteSoftDeleteMarker(t *testing.T) {
 		t.Fatalf("create note: %v", err)
 	}
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -420,6 +430,7 @@ func TestCloudSyncPullAppliesNoteSoftDeleteMarker(t *testing.T) {
 }
 
 func TestCloudSyncPullAppliesProjectDeleteMarker(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := t.TempDir()
 	deviceA := filepath.Join(t.TempDir(), "device-a")
@@ -434,8 +445,8 @@ func TestCloudSyncPullAppliesProjectDeleteMarker(t *testing.T) {
 		}
 	}
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -487,6 +498,7 @@ func TestCloudSyncPullAppliesProjectDeleteMarker(t *testing.T) {
 }
 
 func TestCloudSyncPullDeleteMarkerReportsLocalContentConflict(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := t.TempDir()
 	deviceA := filepath.Join(t.TempDir(), "device-a")
@@ -502,8 +514,8 @@ func TestCloudSyncPullDeleteMarkerReportsLocalContentConflict(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(deviceB, "notes", "history", "local.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_local_history\ntitle: Local History\n---\n\nlocal unsynced edit\n")
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -532,6 +544,7 @@ func TestCloudSyncPullDeleteMarkerReportsLocalContentConflict(t *testing.T) {
 }
 
 func TestNoteProjectionRequiresPinaxNoteFrontmatter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -573,6 +586,7 @@ func TestNoteProjectionRequiresPinaxNoteFrontmatter(t *testing.T) {
 }
 
 func TestProjectRegistryCreateListAndSwitch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -610,6 +624,7 @@ func TestProjectRegistryCreateListAndSwitch(t *testing.T) {
 }
 
 func TestProjectCreateRejectsUnsafePrefixAndConflicts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -628,6 +643,7 @@ func TestProjectCreateRejectsUnsafePrefixAndConflicts(t *testing.T) {
 }
 
 func TestStorageS3ConfigurationAndDoctor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -668,6 +684,7 @@ func TestStorageS3ConfigurationAndDoctor(t *testing.T) {
 }
 
 func TestMetadataApplyRequiresApprovalAndWritesFrontmatter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -700,6 +717,7 @@ func TestMetadataApplyRequiresApprovalAndWritesFrontmatter(t *testing.T) {
 }
 
 func TestOrganizeApplyRequiresSnapshotAndMovesInsideVault(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -732,6 +750,7 @@ func TestOrganizeApplyRequiresSnapshotAndMovesInsideVault(t *testing.T) {
 }
 
 func TestCoreNoteTemplateIndexAndSyncMVP(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -793,10 +812,12 @@ func TestCoreNoteTemplateIndexAndSyncMVP(t *testing.T) {
 }
 
 func TestServerBackedSyncPushRegistersObjectRefMetadataBeforeCommit(t *testing.T) {
+	t.Parallel()
 	assertServerBackedSyncPush(t, "notes/alpha.md", "# Alpha\n\nserver backed push metadata\n")
 }
 
 func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -846,6 +867,7 @@ func TestServerBackedSyncPushUpdatesExistingUploadOnlyMetadata(t *testing.T) {
 }
 
 func TestServerBackedSyncPushAllowsEmptyNoteObjectRef(t *testing.T) {
+	t.Parallel()
 	assertServerBackedSyncPush(t, "notes/empty.md", "")
 }
 
@@ -860,7 +882,7 @@ func assertServerBackedSyncPush(t *testing.T, notePath, body string) {
 	writeFile(t, filepath.Join(root, filepath.FromSlash(notePath)), body)
 	server := mlptest.New(mlptest.Config{VaultID: "personal", SessionToken: "session-token"})
 	defer server.Close()
-	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token"}); err != nil {
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: server.Endpoint(), WorkspaceID: "personal", DeviceID: "dev_laptop", SecretRef: "plain:session-token", EncryptionSecretRef: "plain:session-token"}); err != nil {
 		t.Fatalf("cloud login: %v", err)
 	}
 	push, err := svc.SyncPush(ctx, SyncRequest{VaultPath: root, Target: "cloud", Yes: true})
@@ -930,6 +952,7 @@ func TestRcloneDirectSyncUsesObjectStoreEngineAndLockRecovery(t *testing.T) {
 }
 
 func TestCreateNoteRejectsUnsafeTagsBeforeWriting(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -950,6 +973,7 @@ func TestCreateNoteRejectsUnsafeTagsBeforeWriting(t *testing.T) {
 }
 
 func TestTagNoteRejectsUnsafeTagsBeforeMutation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -984,6 +1008,7 @@ func TestTagNoteRejectsUnsafeTagsBeforeMutation(t *testing.T) {
 }
 
 func TestTagNoteWritesRecordAndRefreshesIndexFacts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1016,6 +1041,7 @@ func TestTagNoteWritesRecordAndRefreshesIndexFacts(t *testing.T) {
 }
 
 func TestImportMarkdownRejectsUnsafeDefaultTagsBeforeWriting(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	source := t.TempDir()
@@ -1032,6 +1058,7 @@ func TestImportMarkdownRejectsUnsafeDefaultTagsBeforeWriting(t *testing.T) {
 }
 
 func TestVaultStatsAndDoctorServices(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1095,6 +1122,7 @@ func hasVaultIssue(issues []domain.VaultIssue, code string) bool {
 }
 
 func TestVaultDoctorAndRepairPlanReportMissingTrashBackup(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1138,6 +1166,7 @@ func TestVaultDoctorAndRepairPlanReportMissingTrashBackup(t *testing.T) {
 }
 
 func TestVaultDoctorAndRepairPlanReviewMissingActiveWorkspace(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1190,6 +1219,7 @@ func hasRepairOperation(ops []domain.RepairOperation, code string) bool {
 }
 
 func TestNoteUXServiceResolverListCreateAndMutate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1258,6 +1288,7 @@ func TestNoteUXServiceResolverListCreateAndMutate(t *testing.T) {
 }
 
 func TestNoteSoftDeleteCreatesCloudDeleteMarker(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1285,6 +1316,7 @@ func TestNoteSoftDeleteCreatesCloudDeleteMarker(t *testing.T) {
 }
 
 func TestNoteHardeningEditorCommandParser(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		input      string
@@ -1313,6 +1345,7 @@ func TestNoteHardeningEditorCommandParser(t *testing.T) {
 }
 
 func TestNoteHardeningCommitKeepsOriginalWhenPrepareFails(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	current := filepath.Join(root, "notes", "current.md")
 	writeFile(t, current, "original")
@@ -1327,6 +1360,7 @@ func TestNoteHardeningCommitKeepsOriginalWhenPrepareFails(t *testing.T) {
 }
 
 func TestNoteHardeningTrashAndRecentSemantics(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1373,6 +1407,7 @@ func TestNoteHardeningTrashAndRecentSemantics(t *testing.T) {
 }
 
 func TestNoteHardeningFrontmatterPatchPreservesUserMetadata(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1402,6 +1437,7 @@ func TestNoteHardeningFrontmatterPatchPreservesUserMetadata(t *testing.T) {
 }
 
 func TestNoteHardeningPatchFrontmatterFields(t *testing.T) {
+	t.Parallel()
 	content := "---\n# keep me\ntitle: Old\nowner: alice\ntags: [inbox]\n---\n\n# Old\n"
 	patched, normalized := patchFrontmatterFields(content, map[string]string{"title": "New", "tags": "[inbox, research]"})
 	if normalized {
@@ -1420,6 +1456,7 @@ func fileExistsApp(path string) bool {
 }
 
 func TestSavedViewRegistryV2Compatibility(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".pinax"), 0o755); err != nil {
 		t.Fatalf("mkdir .pinax: %v", err)
@@ -1453,6 +1490,7 @@ func TestSavedViewRegistryV2Compatibility(t *testing.T) {
 }
 
 func TestSearchLazyIndexRebuildsMissingIndex(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1479,6 +1517,7 @@ func TestSearchLazyIndexRebuildsMissingIndex(t *testing.T) {
 }
 
 func TestTemplateAuthoringCreateRenderValidateDelete(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1573,6 +1612,7 @@ func TestTemplateAuthoringCreateRenderValidateDelete(t *testing.T) {
 }
 
 func TestTemplateDesignDraftIsNotExecutable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1610,6 +1650,7 @@ func TestTemplateDesignDraftIsNotExecutable(t *testing.T) {
 }
 
 func TestTemplateAuthoringGoTemplateIntegration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1659,6 +1700,7 @@ func TestTemplateAuthoringGoTemplateIntegration(t *testing.T) {
 }
 
 func TestTemplatePreviewUsesExampleContextAndExplicitOverrides(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1708,6 +1750,7 @@ func TestTemplatePreviewUsesExampleContextAndExplicitOverrides(t *testing.T) {
 }
 
 func TestTemplateMissingVariableIncludesSafeAction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1737,6 +1780,7 @@ func TestTemplateMissingVariableIncludesSafeAction(t *testing.T) {
 }
 
 func TestTemplateQueryBackedPreviewInspectAndCreate(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -1797,6 +1841,7 @@ func TestTemplateQueryBackedPreviewInspectAndCreate(t *testing.T) {
 }
 
 func TestNoteShowRenderedSourceAndRefreshManagedBlock(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -1862,6 +1907,7 @@ func TestNoteShowRenderedSourceAndRefreshManagedBlock(t *testing.T) {
 }
 
 func TestTemplateAuthoringRejectsUnsafeInput(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1880,6 +1926,7 @@ func TestTemplateAuthoringRejectsUnsafeInput(t *testing.T) {
 }
 
 func TestPlanningActionDraftBuildsLocalActionsSchema(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 6, 7, 8, 30, 0, 0, time.UTC)
 	snapshot := domain.PlanningSnapshot{SnapshotID: "plan_snap_test"}
 	decision := domain.PlanningDecision{
@@ -1915,6 +1962,7 @@ func TestPlanningActionDraftBuildsLocalActionsSchema(t *testing.T) {
 }
 
 func TestActionDraftDryRunDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -1946,6 +1994,7 @@ func TestActionDraftDryRunDoesNotWrite(t *testing.T) {
 }
 
 func TestActionDraftSaveWritesAssetAndReceipt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2071,6 +2120,7 @@ func readFile(t *testing.T, path string) string {
 }
 
 func TestNoteListPropertyStrictProperties(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2093,6 +2143,7 @@ func TestNoteListPropertyStrictProperties(t *testing.T) {
 }
 
 func TestFrontmatterPropertiesAreSelectable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2123,6 +2174,7 @@ func TestFrontmatterPropertiesAreSelectable(t *testing.T) {
 }
 
 func TestAssetListShowPrefersIndexProjectionAndFallsBackToManifest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2162,6 +2214,7 @@ func TestAssetListShowPrefersIndexProjectionAndFallsBackToManifest(t *testing.T)
 }
 
 func TestAssetMovePlanAndSharedRemovePlanAreNoWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2206,6 +2259,7 @@ func TestAssetMovePlanAndSharedRemovePlanAreNoWrite(t *testing.T) {
 	}
 }
 func TestAssetLinkPlanIsNoWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2244,6 +2298,7 @@ func TestAssetLinkPlanIsNoWrite(t *testing.T) {
 }
 
 func TestAssetVerifyReportsUnmanagedAndOrphanFacts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2269,6 +2324,7 @@ func TestAssetVerifyReportsUnmanagedAndOrphanFacts(t *testing.T) {
 	}
 }
 func TestRepairPlanIncludesAssetAndVersionConsistencyOperations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2327,6 +2383,7 @@ func TestRepairPlanIncludesAssetAndVersionConsistencyOperations(t *testing.T) {
 }
 
 func TestIndexRefreshChangedSinceUsesVersionBackendWithoutDeletingUnchangedNotes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	fake := &versiontest.FakeBackend{ChangedSinceResult: []pinaxversion.ChangedPath{{Path: "notes/a.md", ChangeKind: "modified", ObjectKind: domain.VaultObjectKindNote}}}
@@ -2367,6 +2424,7 @@ func TestIndexRefreshChangedSinceUsesVersionBackendWithoutDeletingUnchangedNotes
 }
 
 func TestScanIndexRefreshNotesReturnsStableOrdinaryNotesAndFailedPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "notes", "z.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_z\ntitle: Z\nkind: reference\nstatus: active\n---\n\n# Z\n")
 	writeAppFixture(t, filepath.Join(root, "notes", "a.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_a\ntitle: A\nkind: reference\nstatus: active\n---\n\n# A\n")
@@ -2394,6 +2452,7 @@ func joinedNotePaths(notes []domain.Note) string {
 }
 
 func TestNoteReadPathsUseSharedResolverCandidates(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2432,6 +2491,7 @@ func TestNoteReadPathsUseSharedResolverCandidates(t *testing.T) {
 }
 
 func TestNoteWritePathsUseResolverGuardBeforeWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2486,6 +2546,7 @@ func TestNoteWritePathsUseResolverGuardBeforeWrite(t *testing.T) {
 }
 
 func TestMetadataPlanQueryUsesRegisteredOrAdoptableResolver(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -2514,6 +2575,7 @@ func TestMetadataPlanQueryUsesRegisteredOrAdoptableResolver(t *testing.T) {
 }
 
 func TestVersionApplicationServicesUseInjectedBackend(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	fake := &versiontest.FakeBackend{
@@ -2566,6 +2628,7 @@ func TestVersionApplicationServicesUseInjectedBackend(t *testing.T) {
 }
 
 func TestVersionRestorePlanUsesResolverInputAndDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	fake := &versiontest.FakeBackend{
@@ -2599,6 +2662,7 @@ func TestVersionRestorePlanUsesResolverInputAndDoesNotWrite(t *testing.T) {
 }
 
 func TestVersionRestorePlanRejectsAmbiguousCandidatesBeforeBackendRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	fake := &versiontest.FakeBackend{ReadFileResult: pinaxversion.VersionedFile{Path: "notes/target-a.md", Revision: "rev_1", Backend: "fake"}}

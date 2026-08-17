@@ -37,6 +37,7 @@ func (r *recordingExecutor) Push(context.Context) (string, error) {
 // the daemon enters degraded state, emits a credential_degraded event, and does
 // NOT call Pull or Push (pinax-passphrase-s3-bootstrap task 4.4).
 func TestLoopCredentialGateDeniesAndDegrades(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := Repository{Root: root}
 	exec := &recordingExecutor{}
@@ -80,6 +81,7 @@ func TestLoopCredentialGateDeniesAndDegrades(t *testing.T) {
 // TestLoopCredentialGateAllowedProceeds verifies the loop proceeds normally
 // (pull/push reachable) when the gate allows remote writes.
 func TestLoopCredentialGateAllowedProceeds(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := Repository{Root: root}
 	exec := &recordingExecutor{}
@@ -103,6 +105,7 @@ func TestLoopCredentialGateAllowedProceeds(t *testing.T) {
 // TestLoopNilGatePreservesLegacyBehavior verifies a nil gate (no credential
 // check) keeps the existing loop behavior.
 func TestLoopNilGatePreservesLegacyBehavior(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := Repository{Root: root}
 	exec := &recordingExecutor{}

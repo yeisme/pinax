@@ -213,6 +213,7 @@ func TestSyncRepoMigrateRollbackLeavesNoCorruptDeclaration(t *testing.T) {
 // helper leaves the destination file unchanged when the commit fails, so a
 // declaration write that fails partway cannot corrupt the previous declaration.
 func TestSyncRepoMigrateAtomicWritePreservesDestination(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "decl.yaml")
 	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {

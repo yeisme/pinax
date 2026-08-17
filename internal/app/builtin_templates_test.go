@@ -13,6 +13,7 @@ import (
 )
 
 func TestBuiltInTemplateLegacyAndRecommendedInspect(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -54,6 +55,7 @@ func TestBuiltInTemplateLegacyAndRecommendedInspect(t *testing.T) {
 }
 
 func TestBuiltInDailyTemplateObsidianCompatibilityBlocks(t *testing.T) {
+	t.Parallel()
 	body := builtInTemplates()["journal.daily"]
 	for _, want := range []string{
 		"output:\n  path_pattern: daily/{{ .Date }}.md",
@@ -67,6 +69,7 @@ func TestBuiltInDailyTemplateObsidianCompatibilityBlocks(t *testing.T) {
 }
 
 func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
+	t.Parallel()
 	required := []string{"note.quick", "inbox.capture", "meeting.notes", "decision.record", "project.brief", "learning.video", "learning.book", "learning.term", "learning.source", "learning.practice_log", "learning.weekly_review", "learning.case_review", "learning.stock.term", "learning.stock.indicator", "learning.stock.case_review", "learning.stock.trade_journal", "learning.stock.risk_rule", "learning.stock.weekly_review", "research.topic", "source.github", "person.profile", "idea.research_seed", "idea.drama_watch", "idea.anime_watch", "idea.game_explore", "idea.paper_read", "idea.novel_read", "idea.novel_write", "idea.video_note", "media.drama", "media.anime", "game.playlog", "reading.paper", "reading.novel", "writing.novel", "sticky.capture", "sticky.quote", "sticky.link", "sticky.question", "sticky.term", "sticky.person_signal", "sticky.project_signal"}
 	for _, name := range required {
 		body, ok := builtInTemplates()[name]
@@ -105,6 +108,7 @@ func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
 }
 
 func TestTemplateWorkflowMetadata(t *testing.T) {
+	t.Parallel()
 	meetingBody := builtInTemplates()["meeting.notes"]
 	doc, err := templateengine.ParseDocument("meeting.notes", meetingBody)
 	if err != nil {
@@ -136,6 +140,7 @@ func TestTemplateWorkflowMetadata(t *testing.T) {
 }
 
 func TestTemplatePack(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -185,6 +190,7 @@ func TestTemplatePack(t *testing.T) {
 }
 
 func TestTemplateLifecycle(t *testing.T) {
+	t.Parallel()
 	items := []TemplateCatalogItem{
 		{Name: "meeting.draft", Kind: "note_template", Title: "Draft", Lifecycle: "draft_design", ScenarioID: "meeting-decision", Intents: []string{"meeting"}, Pack: TemplatePack{ID: "local", Source: "vault-local"}},
 		{Name: "meeting.old", Kind: "note_template", Title: "Old", Lifecycle: "deprecated", Replacement: "meeting.notes", ScenarioID: "meeting-decision", Intents: []string{"meeting"}, Pack: TemplatePack{ID: "legacy", Source: "builtin"}},
@@ -209,6 +215,7 @@ func TestTemplateLifecycle(t *testing.T) {
 }
 
 func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -280,6 +287,7 @@ func TestBuiltInNoteTemplateMetadataAppliesToCreateNote(t *testing.T) {
 }
 
 func TestDurableSourceCandidateDetection(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -309,6 +317,7 @@ func TestDurableSourceCandidateDetection(t *testing.T) {
 }
 
 func TestMetadataPlanSuggestsDurableSourceFields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -341,6 +350,7 @@ func TestMetadataPlanSuggestsDurableSourceFields(t *testing.T) {
 }
 
 func TestOrganizePlanSuggestsDurableSourceLayout(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -397,6 +407,7 @@ func findPlanOperation(ops []domain.PlanOperation, kind string) *domain.PlanOper
 }
 
 func TestBuiltInIndexTemplatesCatalogMetadata(t *testing.T) {
+	t.Parallel()
 	required := []string{"index.decisions", "index.learning", "index.meetings", "index.research"}
 	for _, name := range required {
 		body, ok := builtInTemplates()[name]
@@ -426,6 +437,7 @@ func TestBuiltInIndexTemplatesCatalogMetadata(t *testing.T) {
 }
 
 func TestIndexDecisionsLearningMeetingsResearchPreview(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -452,6 +464,7 @@ func TestIndexDecisionsLearningMeetingsResearchPreview(t *testing.T) {
 }
 
 func TestSystemIndexNoteIndexPageExcludedFromOrdinaryResults(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -481,6 +494,7 @@ func TestSystemIndexNoteIndexPageExcludedFromOrdinaryResults(t *testing.T) {
 }
 
 func TestTemplateInspectUseCasesManagedBlocks(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -504,6 +518,7 @@ func TestTemplateInspectUseCasesManagedBlocks(t *testing.T) {
 }
 
 func TestTemplatePreviewJournal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -521,6 +536,7 @@ func TestTemplatePreviewJournal(t *testing.T) {
 }
 
 func TestTemplatePreviewIndexQuery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -553,6 +569,7 @@ func TestTemplatePreviewIndexQuery(t *testing.T) {
 }
 
 func TestTemplatePreviewQueryBackedMissingIndexIsReadOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -575,6 +592,7 @@ func TestTemplatePreviewQueryBackedMissingIndexIsReadOnly(t *testing.T) {
 }
 
 func TestTemplateNextAction(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -594,6 +612,7 @@ func TestTemplateNextAction(t *testing.T) {
 }
 
 func TestTemplateListPackTemplateListUseCaseTemplateRecommendTemplateRecommendFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()

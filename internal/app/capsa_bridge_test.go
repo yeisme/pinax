@@ -8,6 +8,7 @@ import (
 )
 
 func TestRewriteProjectionCommandsPreservesLegitCloudText(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("cloud.status", "Cloud backend status read. Vault: Cloud Notes at s3://cloud-storage-bucket")
 	projection.Error = &domain.CommandError{Message: "provider said cloud token scope insufficient"}
 	rewriteProjectionCommands(&projection, syncTargetCloud, syncTargetCapsa)

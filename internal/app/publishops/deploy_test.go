@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseDeployPolicyRejectsUnsafeTargets(t *testing.T) {
+	t.Parallel()
 	vaultRoot := t.TempDir()
 	profile := domain.NewDefaultPublishProfile("pages", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 	profile.Deploy.Mode = domain.PublishDeployModeGit
@@ -37,6 +38,7 @@ func TestParseDeployPolicyRejectsUnsafeTargets(t *testing.T) {
 }
 
 func TestParseDeployPolicyNormalizesGitPolicy(t *testing.T) {
+	t.Parallel()
 	vaultRoot := t.TempDir()
 	repo := filepath.Join(t.TempDir(), "pages-repo")
 	profile := domain.NewDefaultPublishProfile("pages", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)

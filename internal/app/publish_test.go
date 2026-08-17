@@ -14,6 +14,7 @@ import (
 )
 
 func TestPublishProfileFacadeWritesAndValidatesProfile(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -48,6 +49,7 @@ func TestPublishProfileFacadeWritesAndValidatesProfile(t *testing.T) {
 }
 
 func TestPublishProfileValidateExposesLegacyRendererMigrationPlan(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -80,6 +82,7 @@ func TestPublishProfileValidateExposesLegacyRendererMigrationPlan(t *testing.T) 
 }
 
 func TestPublishPlanFacadeSelectsAndBlocksNotes(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -103,6 +106,7 @@ func TestPublishPlanFacadeSelectsAndBlocksNotes(t *testing.T) {
 }
 
 func TestPublishPlanFacadeClassifiesLinkedAssets(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -126,6 +130,7 @@ func TestPublishPlanFacadeClassifiesLinkedAssets(t *testing.T) {
 }
 
 func TestPublishGitErrorRedactionCoversCredentialsAndPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	raw := "fatal: https://user:raw-token@example.invalid/repo.git Authorization: Bearer raw-token token=raw " + root + "/dist"
 	redacted := publishRedactGitOutput(raw, root)
@@ -142,6 +147,7 @@ func TestPublishGitErrorRedactionCoversCredentialsAndPaths(t *testing.T) {
 }
 
 func TestPublishDeployFacadeExposesStableMissingProfileError(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	req := PublishRequest{VaultPath: t.TempDir(), Profile: "public", Target: "github-pages", Renderer: "hugo"}
@@ -175,6 +181,7 @@ func TestPublishDeployFacadeExposesStableMissingProfileError(t *testing.T) {
 }
 
 func TestPublishDevWatchOnceRebuildsAfterVaultMarkdownChange(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")

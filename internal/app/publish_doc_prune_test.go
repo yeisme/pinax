@@ -11,6 +11,7 @@ import (
 )
 
 func TestPrunePublishDocPackagesKeepsNewestPerNote(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	dir := filepath.Join(publishDocRoot(root), "packages")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

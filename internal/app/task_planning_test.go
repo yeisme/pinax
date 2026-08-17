@@ -9,6 +9,7 @@ import (
 )
 
 func TestPlanDailyTaskReviewRequiresManagedBlockAndYes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService().WithNowFunc(func() time.Time { return time.Date(2026, 6, 21, 15, 30, 0, 0, time.UTC) })

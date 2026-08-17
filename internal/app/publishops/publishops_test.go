@@ -10,6 +10,7 @@ import (
 )
 
 func TestValidateProfileRejectsUnsafeValues(t *testing.T) {
+	t.Parallel()
 	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 	profile.Output.Path = "../site"
 	profile.Safety.BlockSecrets = false
@@ -24,6 +25,7 @@ func TestValidateProfileRejectsUnsafeValues(t *testing.T) {
 }
 
 func TestValidateProfileRejectsUnknownEnums(t *testing.T) {
+	t.Parallel()
 	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 	profile.Target = domain.PublishTarget("ftp")
 	profile.Renderer = domain.PublishRenderer("jekyll")
@@ -38,6 +40,7 @@ func TestValidateProfileRejectsUnknownEnums(t *testing.T) {
 }
 
 func TestValidateProfileRejectsThemeContractMismatch(t *testing.T) {
+	t.Parallel()
 	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 	profile.Site.Theme.ContractVersion = "pinax.publish_theme.v0"
 	issues := ValidateProfile(profile)
@@ -47,6 +50,7 @@ func TestValidateProfileRejectsThemeContractMismatch(t *testing.T) {
 }
 
 func TestValidateProfileRejectsUnsafeLocalThemePath(t *testing.T) {
+	t.Parallel()
 	for _, value := range []string{"local:../theme", "local:.pinax/theme", "local:/tmp/theme", "remote:https://example.invalid/theme"} {
 		profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 		profile.Site.Theme.Value = value
@@ -58,6 +62,7 @@ func TestValidateProfileRejectsUnsafeLocalThemePath(t *testing.T) {
 }
 
 func TestClassifyNoteEligibilityUsesSafeDefaults(t *testing.T) {
+	t.Parallel()
 	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 
 	selected := ClassifyNoteEligibility(profile, domain.Note{Title: "Public", Status: "active", Kind: "concept", Frontmatter: map[string]string{"publish": "public"}})
@@ -78,6 +83,7 @@ func TestClassifyNoteEligibilityUsesSafeDefaults(t *testing.T) {
 }
 
 func TestClassifyNoteViolationsCoversPublishSafetyClasses(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		body string
@@ -104,6 +110,7 @@ func TestClassifyNoteViolationsCoversPublishSafetyClasses(t *testing.T) {
 }
 
 func TestScanPublishTreeFindsLeaksWithoutEchoingSensitiveContent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishOpsFile(t, root, "public/index.html", "Authorization: Bearer RAW_TOKEN_SENTINEL\nCookie: session=RAW_COOKIE_SENTINEL\nwebhook https://hooks.example.invalid/raw\nprovider_payload: RAW_PROVIDER_SENTINEL\nraw_body: RAW_BODY_SENTINEL\nprivate body RAW_PRIVATE_BODY_SENTINEL\n/home/alice/private.md\n")
 	writePublishOpsFile(t, root, "public/.pinax/events.jsonl", "safe text\n")
@@ -132,6 +139,7 @@ func TestScanPublishTreeFindsLeaksWithoutEchoingSensitiveContent(t *testing.T) {
 }
 
 func TestPublishBundleScanFindsNestedJSONAndHTMLLeaks(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishOpsFile(t, root, "bundle/notes.json", `{"notes":[{"body":"token=RAW_JSON_TOKEN","nested":{"payload":"provider_payload RAW_PROVIDER_PAYLOAD"}}]}`)
 	writePublishOpsFile(t, root, "bundle/index.html", "<p>Authorization: Bearer RAW_HTML_TOKEN</p><p>private body RAW_PRIVATE_BODY</p>")
@@ -154,6 +162,7 @@ func TestPublishBundleScanFindsNestedJSONAndHTMLLeaks(t *testing.T) {
 }
 
 func TestWriteRedactedEvidenceCoversPublishSurfaces(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishOpsFile(t, root, "staging/content/index.md", "token=RAW_STAGING_TOKEN\n")
 	writePublishOpsFile(t, root, "pages/index.html", "Authorization: Bearer RAW_PAGES_TOKEN\n")
@@ -190,6 +199,7 @@ func TestWriteRedactedEvidenceCoversPublishSurfaces(t *testing.T) {
 }
 
 func TestWritePublishReceiptCreatesStructuredRunReceipt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	receipt := domain.PublishReceipt{
 		RunID:            "run-1",

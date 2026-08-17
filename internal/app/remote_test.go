@@ -9,6 +9,7 @@ import (
 )
 
 func TestRemoteCapabilitiesExposeProjectionCommandsAndGates(t *testing.T) {
+	t.Parallel()
 	caps := RemoteCapabilities()
 	byID := map[string]string{}
 	for _, cap := range caps {
@@ -26,6 +27,7 @@ func TestRemoteCapabilitiesExposeProjectionCommandsAndGates(t *testing.T) {
 }
 
 func TestRemoteCapabilitiesExposeWebFacingMetadata(t *testing.T) {
+	t.Parallel()
 	caps := RemoteCapabilities()
 	byID := map[string]any{}
 	for _, cap := range caps {
@@ -72,6 +74,7 @@ func TestRemoteCapabilitiesExposeWebFacingMetadata(t *testing.T) {
 }
 
 func TestRemoteCapabilitiesExposePlannedBrainDiscoveryWithoutRoutes(t *testing.T) {
+	t.Parallel()
 	caps := RemoteCapabilities()
 	byID := map[string]domain.RemoteCapability{}
 	for _, cap := range caps {
@@ -121,6 +124,7 @@ func TestRemoteCapabilitiesExposePlannedBrainDiscoveryWithoutRoutes(t *testing.T
 }
 
 func TestFindRemoteRPCMethodReturnsRegisteredRPCOnly(t *testing.T) {
+	t.Parallel()
 	route, ok := FindRemoteRPCMethod("Pinax.Folder.List")
 	if !ok {
 		t.Fatalf("expected registered RPC method")
@@ -138,6 +142,7 @@ func TestFindRemoteRPCMethodReturnsRegisteredRPCOnly(t *testing.T) {
 }
 
 func TestAPISchemaExportUsesRegisteredRESTMethods(t *testing.T) {
+	t.Parallel()
 	projection, err := NewService().APISchemaExport(context.Background(), APIRequest{Format: "openapi"})
 	if err != nil {
 		t.Fatalf("export schema: %v", err)
@@ -157,6 +162,7 @@ func TestAPISchemaExportUsesRegisteredRESTMethods(t *testing.T) {
 }
 
 func TestAPISchemaExportMatchesRemoteRouteRegistry(t *testing.T) {
+	t.Parallel()
 	projection, err := NewService().APISchemaExport(context.Background(), APIRequest{Format: "openapi"})
 	if err != nil {
 		t.Fatalf("export schema: %v", err)
@@ -203,6 +209,7 @@ func TestAPISchemaExportMatchesRemoteRouteRegistry(t *testing.T) {
 // agents can discover, and that CLI-local proof-loop capabilities remain
 // discoverable metadata without fabricated REST paths.
 func TestReleaseCoreCapabilitiesCoverProofLoop(t *testing.T) {
+	t.Parallel()
 	caps := RemoteCapabilities()
 	capByID := map[string]domain.RemoteCapability{}
 	for _, cap := range caps {
@@ -273,6 +280,7 @@ func TestReleaseCoreCapabilitiesCoverProofLoop(t *testing.T) {
 // release_core flag from their backing capability, so the registry stays the
 // single source of release surface truth across CLI, API, and schema export.
 func TestReleaseCoreRoutesPropagatedToRegistry(t *testing.T) {
+	t.Parallel()
 	releaseCoreCap := map[string]bool{}
 	for _, cap := range RemoteCapabilities() {
 		if cap.ReleaseCore {

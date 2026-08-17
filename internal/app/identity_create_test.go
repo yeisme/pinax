@@ -13,6 +13,7 @@ import (
 )
 
 func TestCreateNoteUsesOneCanonicalIdentityAcrossPreviewFileProjectionAndLedger(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	service := NewService()
 	req := CreateNoteRequest{VaultPath: root, Title: "Identity Contract", Body: "body", DryRun: true}
@@ -73,6 +74,7 @@ func TestCreateNoteUsesOneCanonicalIdentityAcrossPreviewFileProjectionAndLedger(
 }
 
 func TestRecordAdoptAllocatesCanonicalIdentityOnceForNoteWithoutID(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "notes", "legacy.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

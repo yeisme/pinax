@@ -12,6 +12,7 @@ import (
 )
 
 func TestProjectBoardShowBuildsColumnsWarningsAndCards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -60,6 +61,7 @@ func TestProjectBoardShowBuildsColumnsWarningsAndCards(t *testing.T) {
 }
 
 func TestShowNoteProjectionDisplayProfilesGateBody(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -105,6 +107,7 @@ func TestShowNoteProjectionDisplayProfilesGateBody(t *testing.T) {
 }
 
 func TestPlanWeeklyIncludesSavedProjectBoardSnapshot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -144,6 +147,7 @@ func TestPlanWeeklyIncludesSavedProjectBoardSnapshot(t *testing.T) {
 }
 
 func TestProjectItemArchiveRequiresVersionSnapshot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -181,6 +185,7 @@ func TestProjectItemArchiveRequiresVersionSnapshot(t *testing.T) {
 }
 
 func TestProjectItemMoveDoneRequiresApprovalAndVersionSnapshot(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -221,6 +226,7 @@ func TestProjectItemMoveDoneRequiresApprovalAndVersionSnapshot(t *testing.T) {
 }
 
 func TestValidateVaultChecksProjectBoardAssets(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -261,6 +267,7 @@ func TestValidateVaultChecksProjectBoardAssets(t *testing.T) {
 }
 
 func TestConfiguredProjectBoardColumnsDriveItemsAndProjection(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -308,6 +315,7 @@ func TestConfiguredProjectBoardColumnsDriveItemsAndProjection(t *testing.T) {
 }
 
 func TestProjectLearningInitCreatesReusableStockLearningPack(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -348,6 +356,7 @@ func TestProjectLearningInitCreatesReusableStockLearningPack(t *testing.T) {
 }
 
 func TestProjectItemMoveRefusesUnmanagedNote(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -363,6 +372,7 @@ func TestProjectItemMoveRefusesUnmanagedNote(t *testing.T) {
 }
 
 func TestProjectBoardInferredChecklistTasksRequireAdoption(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()

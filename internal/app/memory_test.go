@@ -6,6 +6,7 @@ import (
 )
 
 func TestMemoryServiceCaptureAndContext(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	svc := NewService()
 	if _, err := svc.InitVault(context.Background(), InitVaultRequest{VaultPath: root, Title: "Vault"}); err != nil {

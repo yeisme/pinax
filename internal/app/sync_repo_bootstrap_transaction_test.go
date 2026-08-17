@@ -158,6 +158,7 @@ func TestBootstrapTransactionVerifiesCredentialAndEmitsReceipt(t *testing.T) {
 // before-compile property: a wrong passphrase fails with sync_repo_unlock_failed
 // before any runtime config is compiled or written.
 func TestBootstrapTransactionFailsClosedOnWrongPassphrase(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
 		t.Fatalf("mkdir notes: %v", err)
@@ -186,6 +187,7 @@ func TestBootstrapTransactionFailsClosedOnWrongPassphrase(t *testing.T) {
 // staged unlock-verify only runs for repository-encrypted mode; device-profile
 // keeps the legacy compile-only path.
 func TestBootstrapTransactionSkipsUnlockVerifyForDeviceProfile(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, "notes"), 0o755); err != nil {
 		t.Fatalf("mkdir notes: %v", err)

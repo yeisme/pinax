@@ -57,6 +57,7 @@ func newS3NotFoundFake(t *testing.T) *httptest.Server {
 // transport MUST fail closed with sync_repo_unlock_required instead of falling
 // back to the device-local shared AWS profile / default credential chain.
 func TestCloudTransportFailsClosedRepoEncryptedWithoutSource(t *testing.T) {
+	t.Parallel()
 	state := pinaxcloud.State{Config: pinaxcloud.Config{
 		Endpoint: "s3://bucket/prefix/", WorkspaceID: "ws-x", BackendKind: "s3-direct",
 		S3: &pinaxcloud.S3Config{Bucket: "bucket", Prefix: "prefix/", Endpoint: "https://cos.example.com", Region: "us-east-1", CredentialMode: pinaxcloud.CredentialModeRepositoryEncrypted},

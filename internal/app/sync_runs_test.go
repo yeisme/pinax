@@ -10,6 +10,7 @@ import (
 )
 
 func TestSyncLogsListAndTailIncludeLimitFacts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	svc := NewService()
 
@@ -35,6 +36,7 @@ func TestSyncLogsListAndTailIncludeLimitFacts(t *testing.T) {
 }
 
 func TestSyncRunTimelineIncludesSanitizedFileOperations(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	receipt := SyncRunReceipt{
 		RunID:       "sync_files_1",
@@ -79,6 +81,7 @@ func TestSyncRunTimelineIncludesSanitizedFileOperations(t *testing.T) {
 }
 
 func TestSyncLogsFollowEmitsInitialAndAppendedEvents(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := appendEvent(root, "sync.run", "success", map[string]string{"run_id": "sync_1", "direction": "push"}); err != nil {
 		t.Fatalf("append initial event: %v", err)

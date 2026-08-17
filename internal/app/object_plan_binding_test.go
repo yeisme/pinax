@@ -15,6 +15,7 @@ const (
 )
 
 func TestOrganizePlanObjectBindingSafelyRebasesMovedObject(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	oldPath := "notes/alpha.md"
 	newPath := "projects/alpha.md"
@@ -42,6 +43,7 @@ func TestOrganizePlanObjectBindingSafelyRebasesMovedObject(t *testing.T) {
 }
 
 func TestOrganizePlanObjectBindingRejectsObservedPathReuse(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	oldPath := "notes/alpha.md"
 	newPath := "projects/alpha.md"
@@ -63,6 +65,7 @@ func TestOrganizePlanObjectBindingRejectsObservedPathReuse(t *testing.T) {
 }
 
 func TestRepairPlanObjectBindingRejectsRevisionDrift(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := "notes/alpha.md"
 	writeAppFixture(t, filepath.Join(root, filepath.FromSlash(path)), boundNoteFixture(boundObjectID, "Alpha"))

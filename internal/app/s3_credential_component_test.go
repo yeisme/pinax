@@ -23,6 +23,7 @@ import (
 // before any response. A wrong credential produces a header signed under a
 // different AccessKeyId.
 func TestS3CredentialComponentRepositoryEncryptedSigning(t *testing.T) {
+	t.Parallel()
 	// Fake "S3" endpoint: record the Authorization header of every request.
 	var gotAuth string
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +67,7 @@ func TestS3CredentialComponentRepositoryEncryptedSigning(t *testing.T) {
 // different (wrong) credential produces a signature under a different
 // AccessKeyId — proving the provider is authoritative, not a static fallback.
 func TestS3CredentialComponentWrongCredentialSignsDifferently(t *testing.T) {
+	t.Parallel()
 	var gotAuth string
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
