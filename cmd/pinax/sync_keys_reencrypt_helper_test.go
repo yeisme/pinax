@@ -46,8 +46,8 @@ func reencryptRemoteManifestLegacy(t *testing.T, root, objectRoot, workspace str
 	if err := json.Unmarshal(envelopeBody, &envelope); err != nil {
 		t.Fatalf("unmarshal envelope: %v", err)
 	}
-	// The encryption secret is generated at login (stored://capsa-sync-<ws>)
-	// and lives in the vault's cloud config, not the login secret.
+	// The encryption secret ref recorded by this test's login is the explicit
+	// plain: ref (kept out of the user-level stored:// secrets file).
 	configBody, err := os.ReadFile(filepath.Join(root, ".pinax", "cloud", "config.yaml"))
 	if err != nil {
 		t.Fatalf("read cloud config: %v", err)

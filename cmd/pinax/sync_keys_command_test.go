@@ -10,7 +10,7 @@ func TestSyncKeysReportsDerivationAndMigrationHint(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, root+"/notes/alpha.md", "# Alpha\n")
 	objectRoot := t.TempDir()
-	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "w_keys", "--device", "dev", "--secret-ref", "plain:secret-k", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "w_keys", "--device", "dev", "--secret-ref", "plain:secret-k", "--encryption-secret-ref", "plain:secret-k", "--vault", root, "--json")
 
 	keysBefore := runCLI(t, "sync", "keys", "--vault", root, "--json")
 	assertJSONCommandStatus(t, keysBefore, "sync.keys", "success")
@@ -38,7 +38,7 @@ func TestSyncKeysDetectsLegacyRemoteAndReencrypts(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, root+"/notes/alpha.md", "# Alpha legacy\n")
 	objectRoot := t.TempDir()
-	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "w_legacy", "--device", "dev", "--secret-ref", "plain:secret-k", "--vault", root, "--json")
+	runCLI(t, "capsa", "login", "--endpoint", "file://"+objectRoot, "--workspace", "w_legacy", "--device", "dev", "--secret-ref", "plain:secret-k", "--encryption-secret-ref", "plain:secret-k", "--vault", root, "--json")
 	runCLI(t, "sync", "push", "--target", "capsa", "--yes", "--vault", root, "--json")
 
 	// Rewrite the remote manifest envelope under the legacy derivation.
