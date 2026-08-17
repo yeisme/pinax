@@ -6,6 +6,7 @@ import (
 )
 
 func TestSyncKeysReportsDerivationAndMigrationHint(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, root+"/notes/alpha.md", "# Alpha\n")
@@ -34,6 +35,7 @@ func TestSyncKeysReportsDerivationAndMigrationHint(t *testing.T) {
 // a manifest envelope encrypted with the legacy derivation must be flagged,
 // then one push re-encrypts it and keys reports v2.
 func TestSyncKeysDetectsLegacyRemoteAndReencrypts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, root+"/notes/alpha.md", "# Alpha legacy\n")

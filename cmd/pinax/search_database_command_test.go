@@ -11,6 +11,7 @@ import (
 )
 
 func TestSearchDefaultOutputShowsResultPathAndSnippet(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Demo Note", "--body", "这个 demo 片段应该直接出现在搜索结果里。", "--slug", "demo-note", "--vault", root, "--json")
@@ -24,6 +25,7 @@ func TestSearchDefaultOutputShowsResultPathAndSnippet(t *testing.T) {
 }
 
 func TestDatabaseSchemaAndViewRegistryV2CLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "A", "--body", "priority:: 2", "--status", "active", "--vault", root, "--json")
@@ -91,6 +93,7 @@ func TestDatabaseSchemaAndViewRegistryV2CLI(t *testing.T) {
 }
 
 func TestDatabaseViewV3DataviewRenderCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--vault", root, "--json")
@@ -111,6 +114,7 @@ func TestDatabaseViewV3DataviewRenderCLI(t *testing.T) {
 }
 
 func TestDatabaseViewDisplayRenderCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active", "--body", "due:: 2026-06-21", "--status", "active", "--vault", root, "--json")
@@ -157,6 +161,7 @@ func TestDatabaseViewDisplayRenderCLI(t *testing.T) {
 }
 
 func TestQueryRunOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--vault", root, "--json")
@@ -179,6 +184,7 @@ func TestQueryRunOutputContract(t *testing.T) {
 }
 
 func TestDataviewRunOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--vault", root, "--json")
@@ -197,6 +203,7 @@ func TestDataviewRunOutputContract(t *testing.T) {
 }
 
 func TestDataviewExplainOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "dataview", "explain", `LIST FROM #pinax LIMIT 5`, "--vault", root, "--agent")
@@ -208,6 +215,7 @@ func TestDataviewExplainOutputContract(t *testing.T) {
 }
 
 func TestQueryExplainOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "query", "explain", `SELECT title, status FROM notes WHERE status = "active" LIMIT 10`, "--vault", root, "--json")
@@ -228,6 +236,7 @@ func TestQueryExplainOutputContract(t *testing.T) {
 }
 
 func TestDatabaseViewQueryCompletionAndHelp(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active Note", "--body", "body", "--tags", "pinax", "--kind", "reference", "--status", "active", "--vault", root, "--json")
@@ -279,6 +288,7 @@ func TestDatabaseViewQueryCompletionAndHelp(t *testing.T) {
 }
 
 func TestSavedViewsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "work", "--name", "工作", "--notes-prefix", "notes/work", "--vault", root, "--json")
@@ -397,6 +407,7 @@ func TestSavedViewsCLI(t *testing.T) {
 }
 
 func TestSearchLinkTargetCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alpha\ntitle: Alpha\nkind: reference\n---\n\n# Alpha\n\nSource mentions [[Beta]] and [[Missing Target]].\n")
@@ -423,6 +434,7 @@ func TestSearchLinkTargetCLI(t *testing.T) {
 }
 
 func TestSearchLinkTargetAmbiguousCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "Source.md"), pinaxNoteFixture("note_source", "Source", "Source links to [[Shared]].\n"))
@@ -436,6 +448,7 @@ func TestSearchLinkTargetAmbiguousCLI(t *testing.T) {
 }
 
 func TestIndexSearchDatabaseAndFiltersCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "work", "--name", "工作", "--notes-prefix", "notes/work", "--vault", root, "--json")
@@ -561,6 +574,7 @@ func TestIndexSearchDatabaseAndFiltersCLI(t *testing.T) {
 }
 
 func TestSearchEngineNativeAndLazyIndexOffCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "native.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_native\ntitle: Native Search\ntags: [search]\nkind: reference\nstatus: active\n---\n\n# Native Search\n\nNeedle appears in body.\n")
@@ -583,6 +597,7 @@ func TestSearchEngineNativeAndLazyIndexOffCLI(t *testing.T) {
 }
 
 func TestSearchEngineIndexRejectsMissingIndexCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "index-only.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_index_only\ntitle: Index Only\n---\n\n# Index Only\n\nbody\n")
@@ -597,6 +612,7 @@ func TestSearchEngineIndexRejectsMissingIndexCLI(t *testing.T) {
 }
 
 func TestIndexLookupContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "yeisme.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_yeisme\ntitle: Yeisme Note\ntags: []\n---\n\n# Yeisme Note\n")
@@ -650,6 +666,7 @@ func TestIndexLookupContractsCLI(t *testing.T) {
 }
 
 func TestIndexDefaultSummaryAndMachineContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Index Test", "--body", "body", "--slug", "index-contract", "--vault", root, "--json")
@@ -714,6 +731,7 @@ func TestIndexDefaultSummaryAndMachineContractsCLI(t *testing.T) {
 }
 
 func TestIndexRefreshContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Managed Note", "--body", "managed body", "--slug", "managed", "--vault", root, "--json")
@@ -801,6 +819,7 @@ func TestIndexRefreshContractsCLI(t *testing.T) {
 }
 
 func TestIndexExplainCommandCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Explain Note", "--body", "explain body", "--slug", "explain", "--vault", root, "--json")
@@ -825,6 +844,7 @@ func TestIndexExplainCommandCLI(t *testing.T) {
 }
 
 func TestIndexDoctorContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -892,6 +912,7 @@ func TestIndexDoctorContractsCLI(t *testing.T) {
 }
 
 func TestIndexRepairContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Repair Note", "--body", "repair body", "--slug", "repair", "--vault", root, "--json")
@@ -945,6 +966,7 @@ func TestIndexRepairContractsCLI(t *testing.T) {
 }
 
 func TestIndexMachineOutputContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Machine Note", "--body", "machine body", "--slug", "machine", "--vault", root, "--json")

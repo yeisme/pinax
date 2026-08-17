@@ -29,6 +29,7 @@ func runCLIWithStdin(t *testing.T, stdin string, args ...string) (string, string
 }
 
 func TestSyncPullHelpIncludesUnifiedUnlockFlags(t *testing.T) {
+	t.Parallel()
 	out, _, err := runCLIWithStdin(t, "", "sync", "pull", "--help")
 	if err != nil {
 		t.Fatalf("sync pull help: %v", err)
@@ -41,6 +42,7 @@ func TestSyncPullHelpIncludesUnifiedUnlockFlags(t *testing.T) {
 }
 
 func TestDefaultRepositoryKeychainRefFallsBackToRuntimeWorkspace(t *testing.T) {
+	t.Parallel()
 	root := mustInitVault(t)
 	if _, err := pinaxremote.Login(root, pinaxremote.LoginRequest{
 		Endpoint: "s3://bucket/prefix", WorkspaceID: "ws-keychain", DeviceID: "mac1", BackendKind: "s3-direct",

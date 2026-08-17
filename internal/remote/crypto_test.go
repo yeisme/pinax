@@ -8,6 +8,7 @@ import (
 )
 
 func TestCryptoEnvelopeRoundTripAndDoesNotLeakPlaintext(t *testing.T) {
+	t.Parallel()
 	keys, err := DeriveKeychain("op://pinax/cloud-token")
 	if err != nil {
 		t.Fatalf("derive key: %v", err)
@@ -36,6 +37,7 @@ func TestCryptoEnvelopeRoundTripAndDoesNotLeakPlaintext(t *testing.T) {
 }
 
 func TestCryptoManifestEnvelope(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeManifestFixture(t, root+"/notes/alpha.md", "# Alpha\nsecret local body\n")
 	manifest, err := BuildManifest(root)
@@ -119,6 +121,7 @@ func TestDeriveKeyFailsClosedOnUnresolvableRef(t *testing.T) {
 }
 
 func TestDeriveKeyBareStringStillResolves(t *testing.T) {
+	t.Parallel()
 	// A bare string (no scheme) is returned as-is by ResolveSecretRef, so legacy
 	// callers passing a raw secret still derive a key.
 	key, err := DeriveKey("legacy-raw-secret")
@@ -150,6 +153,7 @@ func TestKeyIDMatchesDeriveKeyAndEmptyOnError(t *testing.T) {
 // written under the pre-v2 derivation stay readable through the keychain even
 // after the vault provisions a per-vault v2 salt.
 func TestKeychainDecryptsLegacyEnvelopes(t *testing.T) {
+	t.Parallel()
 	writeDeriveKeyCredentialsFixture(t)
 	legacy, err := DeriveKeyLegacy("op://pinax/cloud-token")
 	if err != nil {

@@ -133,6 +133,7 @@ func TestVaultRemoteRefreshCacheCompletionCLI(t *testing.T) {
 }
 
 func TestLocalVaultCLIJSONAndSafety(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "Inbox Note.md"), "# Inbox Note\n\nbody\n")
@@ -156,6 +157,7 @@ func TestLocalVaultCLIJSONAndSafety(t *testing.T) {
 }
 
 func TestInitCommandRejectsAlreadyInitializedVault(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -182,6 +184,7 @@ func TestInitCommandRejectsAlreadyInitializedVault(t *testing.T) {
 }
 
 func TestProjectAndStorageCLIJSON(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -240,6 +243,7 @@ func TestProjectAndStorageCLIJSON(t *testing.T) {
 }
 
 func TestProjectBoardAndNoteDisplayCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "research", "--name", "研究", "--notes-prefix", "research", "--vault", root, "--json")
@@ -365,6 +369,7 @@ func TestProjectBoardAndNoteDisplayCLI(t *testing.T) {
 }
 
 func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "notes/research", "--vault", root, "--json")
@@ -479,6 +484,7 @@ func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
 }
 
 func TestTaskAdoptCLIPlansAndWritesLedger(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "notes/research", "--vault", root, "--json")
@@ -527,6 +533,7 @@ func TestTaskAdoptCLIPlansAndWritesLedger(t *testing.T) {
 }
 
 func TestProjectBoardViewSaveAndShowCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "research", "--name", "Research", "--notes-prefix", "notes/research", "--vault", root, "--json")
@@ -561,6 +568,7 @@ func TestProjectBoardViewSaveAndShowCLI(t *testing.T) {
 }
 
 func TestProjectLearningInitCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -605,6 +613,7 @@ func TestProjectLearningInitCLI(t *testing.T) {
 }
 
 func TestStorageSetS3RequiresBucketAndRegion(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault")
 	out, err := runCLIExpectError("storage", "set", "s3", "--bucket", "notes", "--vault", root, "--json")
@@ -635,6 +644,7 @@ func TestStorageSetS3RequiresBucketAndRegion(t *testing.T) {
 }
 
 func TestVaultStatsDoctorAndDashboardCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "active.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_active\ntitle: Active\ntags: [pinax]\n---\n\n# Active\n\nbody\n")

@@ -8,6 +8,7 @@ import (
 )
 
 func TestManifestDeleteMarkersAreAdditiveAndRedacted(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeManifestFixture(t, filepath.Join(root, "notes", "active.md"), "# Active\n")
 	writeManifestFixture(t, filepath.Join(root, ".pinax", "records", "tombstones.json"), `{"project/history":{"object_kind":"project","object_id":"project/history","tombstone_id":"trash_project_history","trash_path":".pinax/trash/20260627/projects/history/registry.json","deleted_at":"2026-06-27T00:00:00Z","source_command":"project.delete"}}`)

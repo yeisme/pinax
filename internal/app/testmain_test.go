@@ -13,7 +13,7 @@ import (
 func TestMain(m *testing.M) {
 	if os.Getenv("XDG_CONFIG_HOME") == "" {
 		if dir, err := os.MkdirTemp("", "pinax-app-test-xdg-"); err == nil {
-			os.Setenv("XDG_CONFIG_HOME", dir)
+			_ = os.Setenv("XDG_CONFIG_HOME", dir)
 			defer func() { _ = os.RemoveAll(dir) }()
 		}
 	}

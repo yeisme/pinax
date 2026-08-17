@@ -9,6 +9,7 @@ import (
 )
 
 func TestPromptImportSearchShowResolveCommands(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	assetFile := writePromptAssetFixture(t, root, "novel_character_portrait_v1")
 
@@ -71,6 +72,7 @@ func TestPromptImportSearchShowResolveCommands(t *testing.T) {
 }
 
 func TestPromptCreateCommandImportsFixture(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	assetFile := writePromptAssetFixture(t, root, "novel_character_portrait_v2")
 
@@ -85,6 +87,7 @@ func TestPromptCreateCommandImportsFixture(t *testing.T) {
 }
 
 func TestPromptImportRejectsInvalidSchema(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	badFile := filepath.Join(root, "bad.yaml")
 	if err := os.WriteFile(badFile, []byte("schema_version: yeisme.prompt_asset.v1\nid: bad\ndomain: visual_generation\nvariables: {}\n"), 0o644); err != nil {
@@ -98,6 +101,7 @@ func TestPromptImportRejectsInvalidSchema(t *testing.T) {
 }
 
 func TestPromptShowRejectsUnknownAsset(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out, err := runCLIExpectError("prompt", "show", "missing_prompt", "--vault", root, "--json")
 	if err == nil || !strings.Contains(out, "prompt_asset_not_found") {
@@ -106,6 +110,7 @@ func TestPromptShowRejectsUnknownAsset(t *testing.T) {
 }
 
 func TestPromptLifecycleAndFeedbackCommands(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	assetFile := writePromptAssetFixture(t, root, "novel_character_portrait_v3")
 	runCLI(t, "prompt", "import", "--from", assetFile, "--vault", root, "--json")

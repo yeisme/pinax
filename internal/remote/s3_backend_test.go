@@ -3,6 +3,7 @@ package remote
 import "testing"
 
 func TestParseS3EndpointOptionsFromURI(t *testing.T) {
+	t.Parallel()
 	bucket, prefix, options, err := parseS3Endpoint("s3://pinax-test/prefix/path?endpoint=http%3A%2F%2F10.10.1.102%3A9010&region=us-east-1&path_style=true&profile=minio")
 	if err != nil {
 		t.Fatalf("parse endpoint: %v", err)
@@ -16,6 +17,7 @@ func TestParseS3EndpointOptionsFromURI(t *testing.T) {
 }
 
 func TestParseS3EndpointDefaultsToPathStyleForCustomEndpoint(t *testing.T) {
+	t.Parallel()
 	_, _, options, err := parseS3Endpoint("s3://pinax-test/prefix?endpoint=http%3A%2F%2F10.10.1.102%3A9010")
 	if err != nil {
 		t.Fatalf("parse endpoint: %v", err)
@@ -26,6 +28,7 @@ func TestParseS3EndpointDefaultsToPathStyleForCustomEndpoint(t *testing.T) {
 }
 
 func TestParseS3EndpointUsesVirtualHostedForTencentCOS(t *testing.T) {
+	t.Parallel()
 	_, _, options, err := parseS3Endpoint("s3://pinax-note-1322128555/pinax-sync?endpoint=https%3A%2F%2Fcos.ap-guangzhou.myqcloud.com&region=ap-guangzhou&profile=tencent-cos-pinax")
 	if err != nil {
 		t.Fatalf("parse endpoint: %v", err)
@@ -36,6 +39,7 @@ func TestParseS3EndpointUsesVirtualHostedForTencentCOS(t *testing.T) {
 }
 
 func TestParseS3EndpointAllowsExplicitVirtualHostedStyle(t *testing.T) {
+	t.Parallel()
 	_, _, options, err := parseS3Endpoint("s3://pinax-test/prefix?endpoint=http%3A%2F%2F10.10.1.102%3A9010&addressing_style=virtual-hosted")
 	if err != nil {
 		t.Fatalf("parse endpoint: %v", err)

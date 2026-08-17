@@ -8,6 +8,7 @@ import (
 )
 
 func TestRPCAgentContinuityRoute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := app.NewService()
@@ -35,6 +36,7 @@ func TestRPCAgentContinuityRoute(t *testing.T) {
 }
 
 func TestRPCAgentInboxRoute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := app.NewService()
@@ -59,6 +61,7 @@ func TestRPCAgentInboxRoute(t *testing.T) {
 }
 
 func TestRPCAgentTrustCenterRoute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := app.NewService()
@@ -83,6 +86,7 @@ func TestRPCAgentTrustCenterRoute(t *testing.T) {
 }
 
 func TestRPCAgentContinuityRoute_NoOldRouteChanged(t *testing.T) {
+	t.Parallel()
 	// 验证新 RPC 路由不影响旧路由
 	ctx := context.Background()
 	vault := t.TempDir()

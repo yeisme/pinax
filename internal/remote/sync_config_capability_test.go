@@ -9,6 +9,7 @@ import (
 // carrying requires.capabilities round-trips through YAML parse + Validate so a
 // migrated repository can declare the capabilities a binary must support.
 func TestSyncConfigCapabilityRequiresRoundTrip(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	decl := "schema_version: \"" + SyncConfigSchemaVersion + "\"\n" +
 		"backend:\n  kind: s3-direct\n  endpoint: s3://bucket/main/\n" +
@@ -44,6 +45,7 @@ func TestSyncConfigCapabilityRequiresRoundTrip(t *testing.T) {
 // rejection remains active: a typo'd requires key is rejected so an old binary
 // cannot silently ignore a capability it does not understand.
 func TestSyncConfigCapabilityUnknownFieldRejected(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	decl := "schema_version: \"" + SyncConfigSchemaVersion + "\"\n" +
 		"backend:\n  kind: s3-direct\n  endpoint: s3://bucket/main/\n" +

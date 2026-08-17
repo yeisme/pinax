@@ -6,6 +6,7 @@ import (
 )
 
 func TestKBCommandsAreRemoved(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 

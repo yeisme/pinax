@@ -9,6 +9,7 @@ import (
 )
 
 func TestSyncEnvCommandTree(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "V", "--json")
 

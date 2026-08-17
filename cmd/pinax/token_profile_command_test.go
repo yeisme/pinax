@@ -8,6 +8,7 @@ import (
 )
 
 func TestTokenCLICreateListRevoke(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -78,6 +79,7 @@ func TestTokenCLICreateListRevoke(t *testing.T) {
 }
 
 func TestTokenCLICreateWithExpiry(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -88,6 +90,7 @@ func TestTokenCLICreateWithExpiry(t *testing.T) {
 }
 
 func TestTokenCLIMachineModesUseProjectionAndDoNotPrintSecret(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"--json", "--agent"} {
 		root := t.TempDir()
 		runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -110,6 +113,7 @@ func TestTokenCLIMachineModesUseProjectionAndDoNotPrintSecret(t *testing.T) {
 }
 
 func TestTokenCLIRotate(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -213,6 +217,7 @@ func TestProfileCLIAddListRemove(t *testing.T) {
 }
 
 func TestProfileCLIAddRequiresEndpoint(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 

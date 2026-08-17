@@ -12,6 +12,7 @@ import (
 )
 
 func TestSyncSubcommandsDefaultToCapsaCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -38,6 +39,7 @@ func TestSyncSubcommandsDefaultToCapsaCLI(t *testing.T) {
 }
 
 func TestBackendProviderCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -201,6 +203,7 @@ func TestBackendProviderCLI(t *testing.T) {
 }
 
 func TestBackendDoctorIssueOutputCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, ".pinax", "backends.json"), `{"schema_version":"pinax.backends.v1","default_backend":"broken-s3","backends":[{"name":"broken-s3","kind":"s3","bucket":"notes","capabilities":["doctor"]}]}`)
@@ -220,6 +223,7 @@ func TestBackendDoctorIssueOutputCLI(t *testing.T) {
 }
 
 func TestFeishuDeliveryCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "briefing", "deliver", "feishu", "--webhook", "https://open.feishu.cn/open-apis/bot/v2/hook/raw-token", "--secret-ref", "env://FEISHU_WEBHOOK", "--title", "Daily briefing", "--text", "AI tooling update", "--dry-run", "--vault", root, "--json")
@@ -233,6 +237,7 @@ func TestFeishuDeliveryCLI(t *testing.T) {
 }
 
 func TestBriefingRecipeCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	initOut := runCLI(t, "briefing", "recipe", "init", "--vault", root, "--json")
@@ -251,6 +256,7 @@ func TestBriefingRecipeCLI(t *testing.T) {
 }
 
 func TestCloudOutputContractModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nsecret-token body\n")
@@ -278,6 +284,7 @@ func TestCloudOutputContractModes(t *testing.T) {
 }
 
 func TestSyncRunReceiptsLogsStatusAndRedactionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectRoot := t.TempDir()
 	rawPath := "notes/raw-secret-path.md"
@@ -367,6 +374,7 @@ func TestSyncRunReceiptsLogsStatusAndRedactionCLI(t *testing.T) {
 }
 
 func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nbody\n")
@@ -417,6 +425,7 @@ func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
 }
 
 func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		policy      string
 		wantPath    bool
@@ -596,6 +605,7 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 }
 
 func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	targetCompletion := runCLI(t, "__complete", "sync", "pull", "--target", "")
@@ -615,6 +625,7 @@ func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
 }
 
 func TestCloudStateCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	missing, err := runCLIExpectError("capsa", "status", "--vault", root, "--json")
@@ -643,6 +654,7 @@ func TestCloudStateCLI(t *testing.T) {
 }
 
 func TestCapsaStateCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	missing, err := runCLIExpectError("capsa", "status", "--vault", root, "--json")
@@ -680,6 +692,7 @@ func TestCapsaStateCLI(t *testing.T) {
 }
 
 func TestCloudBackendSetS3CLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
@@ -723,6 +736,7 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 }
 
 func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "pinax-note-1322128555", "--region", "ap-guangzhou", "--prefix", "pinax-sync/", "--endpoint", "https://cos.ap-guangzhou.myqcloud.com", "--profile", "tencent-cos-pinax", "--workspace", "yeisme-notes", "--device", "windows-pc", "--vault", root, "--json")
@@ -742,6 +756,7 @@ func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
 }
 
 func TestCloudBackendSetS3ExplicitVirtualHostedStyleCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--addressing-style", "virtual-hosted", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
@@ -756,6 +771,7 @@ func TestCloudBackendSetS3ExplicitVirtualHostedStyleCLI(t *testing.T) {
 }
 
 func TestCloudBackendSetRcloneCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "rclone", "--remote", "onedrive:PinaxSync", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
@@ -819,6 +835,7 @@ func TestDirectCloudPushPullCLI(t *testing.T) {
 }
 
 func TestSyncConflictsCommandsUseProjectionOutputModesAndReceiptsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	mainRel := filepath.ToSlash(filepath.Join("notes", "alpha.md"))
@@ -919,6 +936,7 @@ func TestSyncConflictNextActionsAppearInSyncJSONAndAgentOutputsCLI(t *testing.T)
 }
 
 func TestSyncConflictsCobraLayerDoesNotResolveFilesDirectlyCLI(t *testing.T) {
+	t.Parallel()
 	source := readCLIFile(t, filepath.Join("..", "..", "internal", "cli", "sync_conflicts_cmd.go"))
 	for _, forbidden := range []string{"os.Rename", "os.Remove", "fmt.Println", "fmt.Printf"} {
 		if strings.Contains(source, forbidden) {
@@ -928,6 +946,7 @@ func TestSyncConflictsCobraLayerDoesNotResolveFilesDirectlyCLI(t *testing.T) {
 }
 
 func TestBackendLegacyStorageProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	// Use primary storage set s3 command
@@ -945,6 +964,7 @@ func TestBackendLegacyStorageProjection(t *testing.T) {
 }
 
 func TestPlanningWorkflowsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -1053,6 +1073,7 @@ func TestPlanningWorkflowsCLI(t *testing.T) {
 }
 
 func TestBackendObjectListAndStatCommandsReadLocalBlobStore(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	backendRoot := filepath.Join(root, "backend-store")
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -1084,6 +1105,7 @@ func TestBackendObjectListAndStatCommandsReadLocalBlobStore(t *testing.T) {
 }
 
 func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	backendRoot := filepath.Join(root, "backend-store")
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -1179,6 +1201,7 @@ func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
 }
 
 func TestSyncLogsTailFollowFlagAndJSONGuardCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	help := runCLI(t, "sync", "logs", "tail", "--help")
@@ -1192,6 +1215,7 @@ func TestSyncLogsTailFollowFlagAndJSONGuardCLI(t *testing.T) {
 }
 
 func TestSyncLogsTailShowsSyncedFilesInAllMachineSurfacesCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectRoot := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

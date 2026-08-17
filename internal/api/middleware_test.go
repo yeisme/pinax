@@ -26,6 +26,7 @@ func newAuthTestServer(t *testing.T, mode AuthMode) (*Server, string) {
 }
 
 func TestAuthMiddleware_ZeroMode_PassesThrough(t *testing.T) {
+	t.Parallel()
 	s, _ := newAuthTestServer(t, 0)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -36,6 +37,7 @@ func TestAuthMiddleware_ZeroMode_PassesThrough(t *testing.T) {
 }
 
 func TestAuthMiddleware_TempMode_RequiresToken(t *testing.T) {
+	t.Parallel()
 	s, _ := newAuthTestServer(t, AuthModeTemp)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -49,6 +51,7 @@ func TestAuthMiddleware_TempMode_RequiresToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_TempMode_ValidToken(t *testing.T) {
+	t.Parallel()
 	s, secret := newAuthTestServer(t, AuthModeTemp)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -60,6 +63,7 @@ func TestAuthMiddleware_TempMode_ValidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_TempMode_InvalidToken(t *testing.T) {
+	t.Parallel()
 	s, _ := newAuthTestServer(t, AuthModeTemp)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -74,6 +78,7 @@ func TestAuthMiddleware_TempMode_InvalidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_NoneMode_LoopbackPasses(t *testing.T) {
+	t.Parallel()
 	s, _ := newAuthTestServer(t, AuthModeNone)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -86,6 +91,7 @@ func TestAuthMiddleware_NoneMode_LoopbackPasses(t *testing.T) {
 }
 
 func TestAuthMiddleware_NoneMode_NonLoopbackBlocked(t *testing.T) {
+	t.Parallel()
 	s, _ := newAuthTestServer(t, AuthModeNone)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -100,6 +106,7 @@ func TestAuthMiddleware_NoneMode_NonLoopbackBlocked(t *testing.T) {
 }
 
 func TestAuthMiddleware_ScopeCheck_ReadScopeAllowsGET(t *testing.T) {
+	t.Parallel()
 	s, secret := newAuthTestServer(t, AuthModeTemp)
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
@@ -111,6 +118,7 @@ func TestAuthMiddleware_ScopeCheck_ReadScopeAllowsGET(t *testing.T) {
 }
 
 func TestAuthMiddleware_ReadOnlyPOSTUsesRouteReadonlyMetadata(t *testing.T) {
+	t.Parallel()
 	s, _ := newAuthTestServer(t, AuthModeTemp)
 	store := NewMemoryTokenStore()
 	rec, secret := GenerateTokenRecord("read-only", map[TokenScope]ScopeTarget{ScopeRead: {}}, "", "test")
@@ -128,6 +136,7 @@ func TestAuthMiddleware_ReadOnlyPOSTUsesRouteReadonlyMetadata(t *testing.T) {
 	}
 }
 func TestAuthMiddleware_ReadScopeAllowsInboxAndDraftItemGET(t *testing.T) {
+	t.Parallel()
 	ctx := backgroundContext(t)
 	root := t.TempDir()
 	svc := app.NewService()
@@ -159,6 +168,7 @@ func TestAuthMiddleware_ReadScopeAllowsInboxAndDraftItemGET(t *testing.T) {
 }
 
 func TestAuthMiddleware_ActionScopeRestrictsRoutes(t *testing.T) {
+	t.Parallel()
 	ctx := backgroundContext(t)
 	root := t.TempDir()
 	svc := app.NewService()
@@ -183,6 +193,7 @@ func TestAuthMiddleware_ActionScopeRestrictsRoutes(t *testing.T) {
 }
 
 func TestAuthMiddleware_HiddenRouteReturnsNotFoundBeforeAuth(t *testing.T) {
+	t.Parallel()
 	ctx := backgroundContext(t)
 	root := t.TempDir()
 	svc := app.NewService()
@@ -200,6 +211,7 @@ func TestAuthMiddleware_HiddenRouteReturnsNotFoundBeforeAuth(t *testing.T) {
 }
 
 func TestAuthMiddleware_GroupVisibility(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		opts ServerOptions
@@ -235,6 +247,7 @@ func TestAuthMiddleware_GroupVisibility(t *testing.T) {
 }
 
 func TestExtractBearerToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		header string
@@ -260,6 +273,7 @@ func TestExtractBearerToken(t *testing.T) {
 }
 
 func TestIsLoopback(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		remote string
 		want   bool
@@ -282,6 +296,7 @@ func TestIsLoopback(t *testing.T) {
 }
 
 func TestLookupRouteGroup(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path string
 		want string
@@ -310,6 +325,7 @@ func TestLookupRouteGroup(t *testing.T) {
 }
 
 func TestRequiredScopeForMethod(t *testing.T) {
+	t.Parallel()
 	if requiredScopeForMethod(http.MethodGet) != ScopeRead {
 		t.Fatal("GET should require read scope")
 	}

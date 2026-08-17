@@ -9,6 +9,7 @@ import (
 // the same symmetric unlock flags as `pinax sync pull` so a repository-encrypted
 // vault can be unlocked for a remote-aware diff.
 func TestSyncDiffUnlockFlagsPresent(t *testing.T) {
+	t.Parallel()
 	out, _, err := runCLIWithStdin(t, "", "sync", "diff", "--help")
 	if err != nil {
 		t.Fatalf("sync diff help: %v", err)
@@ -24,6 +25,7 @@ func TestSyncDiffUnlockFlagsPresent(t *testing.T) {
 // the symmetric unlock flags so a repository-encrypted vault can be unlocked
 // for a remote commit without falling back to the device-local profile chain.
 func TestSyncPushUnlockFlagsPresent(t *testing.T) {
+	t.Parallel()
 	out, _, err := runCLIWithStdin(t, "", "sync", "push", "--help")
 	if err != nil {
 		t.Fatalf("sync push help: %v", err)

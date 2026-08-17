@@ -10,6 +10,7 @@ import (
 )
 
 func TestCLITreeHelpSmoke(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args   []string
 		want   []string
@@ -38,6 +39,7 @@ func TestCLITreeHelpSmoke(t *testing.T) {
 }
 
 func TestCLICommandCatalogOutputModes(t *testing.T) {
+	t.Parallel()
 	human := runCLI(t, "commands")
 	for _, want := range []string{"Complete command catalog", "init", "note", "sync", "capsa", "core", "advanced"} {
 		if !strings.Contains(human, want) {
@@ -87,6 +89,7 @@ func TestCLICommandCatalogOutputModes(t *testing.T) {
 }
 
 func TestCLIAdvancedCommandsRemainExecutableWhenHiddenFromRootHelp(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		command string
 		want    string
@@ -107,6 +110,7 @@ func TestCLIAdvancedCommandsRemainExecutableWhenHiddenFromRootHelp(t *testing.T)
 }
 
 func TestCLITreePrimaryPathAliases(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -140,6 +144,7 @@ func TestCLITreePrimaryPathAliases(t *testing.T) {
 }
 
 func TestCLIRemoteModeForwardsSupportedCommands(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/rpc" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected remote request %s %s", r.Method, r.URL.Path)
@@ -166,6 +171,7 @@ func TestCLIRemoteModeForwardsSupportedCommands(t *testing.T) {
 }
 
 func TestCLIRemoteModeForwardsDatabaseViewRender(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/rpc" || r.Method != http.MethodPost {
 			t.Fatalf("unexpected remote request %s %s", r.Method, r.URL.Path)
@@ -216,6 +222,7 @@ func TestCLIRemoteModeEnvironmentAndAgentOutput(t *testing.T) {
 }
 
 func TestCLIRemoteModeRejectsVaultConflictAndUnsupportedCommand(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatalf("remote server should not be called for invalid remote mode command")
 	}))
@@ -238,6 +245,7 @@ func TestCLIRemoteModeRejectsVaultConflictAndUnsupportedCommand(t *testing.T) {
 }
 
 func TestCLIRemoteModeTokenSourcesStayRedacted(t *testing.T) {
+	t.Parallel()
 	const secret = "pinax-remote-secret"
 	tokenFile := filepath.Join(t.TempDir(), "token.txt")
 	writeCLIFixture(t, tokenFile, secret+"\n")
@@ -260,6 +268,7 @@ func TestCLIRemoteModeTokenSourcesStayRedacted(t *testing.T) {
 }
 
 func TestAgentOutputMode(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out := runCLI(t, "init", root, "--title", "Vault", "--agent")
 	for _, want := range []string{"spec_version=1.0", "mode=agent", "command=vault.init", "status=success"} {
@@ -270,6 +279,7 @@ func TestAgentOutputMode(t *testing.T) {
 }
 
 func TestMissingRequiredArgReturnsHelpfulProjection(t *testing.T) {
+	t.Parallel()
 	out, err := runCLIExpectError("note", "show", "--json")
 	if err == nil {
 		t.Fatalf("note show without arg succeeded: %s", out)
@@ -291,6 +301,7 @@ func TestMissingRequiredArgReturnsHelpfulProjection(t *testing.T) {
 }
 
 func TestFlagErrorReturnsHelpfulProjection(t *testing.T) {
+	t.Parallel()
 	out, err := runCLIExpectError("validate", "--json", "--bogus")
 	if err == nil {
 		t.Fatalf("unknown flag succeeded: %s", out)
@@ -309,6 +320,7 @@ func TestFlagErrorReturnsHelpfulProjection(t *testing.T) {
 }
 
 func TestOutputModesAreMutuallyExclusive(t *testing.T) {
+	t.Parallel()
 	out, err := runCLIExpectError("version", "--json", "--agent")
 	if err == nil {
 		t.Fatalf("conflicting output modes succeeded: %s", out)
@@ -330,6 +342,7 @@ func TestOutputModesAreMutuallyExclusive(t *testing.T) {
 }
 
 func TestApplyHelpDocumentsSafetyFlags(t *testing.T) {
+	t.Parallel()
 	out := runCLI(t, "organize", "apply", "--help")
 	for _, want := range []string{"--yes", "--snapshot-message", "saved and reviewed plan from pinax organize plan --save", "version snapshot"} {
 		if !strings.Contains(out, want) {
@@ -339,6 +352,7 @@ func TestApplyHelpDocumentsSafetyFlags(t *testing.T) {
 }
 
 func TestProofLoopRunHelpDocumentsPrimaryPath(t *testing.T) {
+	t.Parallel()
 	out := runCLI(t, "proof", "loop", "run", "--help")
 	for _, want := range []string{
 		"pinax proof loop run --vault ./my-notes --json",
@@ -352,6 +366,7 @@ func TestProofLoopRunHelpDocumentsPrimaryPath(t *testing.T) {
 }
 
 func TestEventsAndExplainOutputModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	events := runCLI(t, "init", root, "--events")
 	lines := strings.Split(strings.TrimSpace(events), "\n")
@@ -380,6 +395,7 @@ func TestEventsAndExplainOutputModes(t *testing.T) {
 }
 
 func TestHumanOutputIsPolishedForNotebookViewsAndHelp(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "work", "--name", "Work", "--notes-prefix", "notes/work", "--vault", root, "--json")

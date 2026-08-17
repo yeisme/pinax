@@ -15,6 +15,7 @@ import (
 )
 
 func TestLocalRPCProjectBoardNoteAndProjectItemPlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -81,6 +82,7 @@ func TestLocalRPCProjectBoardNoteAndProjectItemPlan(t *testing.T) {
 }
 
 func TestLocalRPCWorkbenchActivity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -101,6 +103,7 @@ func TestLocalRPCWorkbenchActivity(t *testing.T) {
 }
 
 func TestLocalRPCNoteListSupportsCLIQueryFilters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -128,6 +131,7 @@ func TestLocalRPCNoteListSupportsCLIQueryFilters(t *testing.T) {
 }
 
 func TestLocalRPCDatabaseTaskAndGraphCapabilities(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
 	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
@@ -158,6 +162,7 @@ func TestLocalRPCDatabaseTaskAndGraphCapabilities(t *testing.T) {
 }
 
 func TestLocalRPCFolderRoutesAndWriteGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -196,6 +201,7 @@ func TestLocalRPCFolderRoutesAndWriteGate(t *testing.T) {
 	}
 }
 func TestLocalRPCCreateDryRunDoesNotWriteNotes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -222,6 +228,7 @@ func TestLocalRPCCreateDryRunDoesNotWriteNotes(t *testing.T) {
 }
 
 func TestLocalRPCMemoryRoutesAndWriteGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -277,6 +284,7 @@ func TestLocalRPCMemoryRoutesAndWriteGate(t *testing.T) {
 }
 
 func TestLocalRPCProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -341,6 +349,7 @@ func TestLocalRPCSyncPushPullUsesWriteGateAndService(t *testing.T) {
 }
 
 func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, itemID, noteRef := newAPITestVault(t, ctx)
 	// Add inbox and draft fixtures
@@ -445,6 +454,7 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 }
 
 func TestLocalRPCUnknownMethodReturnsStableProjection(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
 	rpc := NewRPCDispatcher(svc, root)
@@ -459,6 +469,7 @@ func TestLocalRPCUnknownMethodReturnsStableProjection(t *testing.T) {
 }
 
 func TestLocalRPCRemoteWriteGateResponsesStayRedacted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, itemID, _ := newAPITestVault(t, ctx)
 	rpc := NewRPCDispatcher(svc, root)
@@ -472,6 +483,7 @@ func TestLocalRPCRemoteWriteGateResponsesStayRedacted(t *testing.T) {
 }
 
 func TestLocalRPCAndRESTCapabilityMetadataStaysAligned(t *testing.T) {
+	t.Parallel()
 	routesByCapability := map[string][]string{}
 	routes := app.RemoteRoutes()
 	for _, route := range routes {
@@ -520,6 +532,7 @@ func containsSurface(surfaces []string, want string) bool {
 }
 
 func TestRPCNoteReadReturnsCanonicalObjectFacts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectID := "01982d84-2b48-7000-8000-000000000061"
 	notePath := filepath.Join(root, "notes", "object.md")
@@ -542,6 +555,7 @@ func TestRPCNoteReadReturnsCanonicalObjectFacts(t *testing.T) {
 // agent runtime methods that previously only worked through direct dispatcher
 // construction.
 func TestAgentRPCMethodsReachableViaV1RPC(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()

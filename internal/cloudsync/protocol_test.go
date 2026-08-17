@@ -9,6 +9,7 @@ import (
 )
 
 func TestObjectKeysNeverContainPlaintextPath(t *testing.T) {
+	t.Parallel()
 	layout := Layout{Prefix: "pinax-sync/", WorkspaceID: "personal", VaultID: "vault_abc"}
 	blobKey := layout.BlobKey("blob_7af3deadbeef")
 	manifestKey := layout.ManifestKey("manifest_429cdeadbeef")
@@ -28,6 +29,7 @@ func TestObjectKeysNeverContainPlaintextPath(t *testing.T) {
 }
 
 func TestEnvelopeValidationRejectsPlaintextAndMissingCiphertext(t *testing.T) {
+	t.Parallel()
 	valid := Envelope{SchemaVersion: EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", Ciphertext: "cipher", PlainSHA256: "sha"}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid envelope rejected: %v", err)
@@ -44,6 +46,7 @@ func TestEnvelopeValidationRejectsPlaintextAndMissingCiphertext(t *testing.T) {
 	}
 }
 func TestManifestConflictDomainTypesRejectPlaintextMetadata(t *testing.T) {
+	t.Parallel()
 	manifest := Manifest{SchemaVersion: ManifestSchemaVersion, Entries: []ManifestEntry{{Path: "notes/alpha.md", BlobID: "blob_abcd", SHA256: "sha", Size: 12, UpdatedAt: "2026-06-12T00:00:00Z"}}}
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("valid manifest rejected: %v", err)
@@ -67,6 +70,7 @@ func TestManifestConflictDomainTypesRejectPlaintextMetadata(t *testing.T) {
 }
 
 func TestMemoryTransportCommitRevisionUsesCAS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	transport := NewMemoryTransport(Layout{WorkspaceID: "personal", VaultID: "vault_abc"})
 	envelope := Envelope{SchemaVersion: EnvelopeSchemaVersion, Alg: "AES-256-GCM", KeyID: "key_1", Nonce: "nonce", Ciphertext: "cipher", PlainSHA256: "sha"}
@@ -97,6 +101,7 @@ func TestMemoryTransportCommitRevisionUsesCAS(t *testing.T) {
 }
 
 func TestCommitLockExpiresAndCanBeReacquired(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	transport := NewMemoryTransport(Layout{WorkspaceID: "personal", VaultID: "vault_abc"})
 	now := time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC)

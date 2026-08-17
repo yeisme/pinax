@@ -9,6 +9,7 @@ import (
 )
 
 func TestIndexDiagnoseClassifiesStatusAndIssues(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"}}
 
 	missing, err := Diagnose(t.TempDir(), notes)

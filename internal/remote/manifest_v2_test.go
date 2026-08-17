@@ -7,6 +7,7 @@ import (
 )
 
 func TestBuildManifestV2RequiresCanonicalIdentityForEveryEntry(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
 		t.Fatal(err)
@@ -21,6 +22,7 @@ func TestBuildManifestV2RequiresCanonicalIdentityForEveryEntry(t *testing.T) {
 }
 
 func TestBuildManifestV2DecoratesObjectIdentityAndRevision(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
 		t.Fatal(err)

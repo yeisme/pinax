@@ -10,6 +10,7 @@ import (
 )
 
 func TestTemplateAuthoringCLIJSON(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -86,6 +87,7 @@ func TestTemplateAuthoringCLIJSON(t *testing.T) {
 }
 
 func TestTemplateInspectPreviewOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "template", "create", "go-meeting", "--engine", "go-template", "--body", "# {{ .Title | upper }}\n客户: {{ .Vars.client }}\n", "--vault", root, "--json")
@@ -128,6 +130,7 @@ func TestTemplateInspectPreviewOutputContract(t *testing.T) {
 }
 
 func TestPreviewSummaryShowsBodyAndTags(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "template", "create", "brief", "--body", "# {{title}}\nPreview body", "--vault", root, "--json")
@@ -164,6 +167,7 @@ func TestPreviewSummaryShowsBodyAndTags(t *testing.T) {
 }
 
 func TestTemplateQueryBackedCLIOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "A", "--body", "priority:: 1\n", "--status", "active", "--vault", root, "--json")
@@ -221,6 +225,7 @@ func TestTemplateQueryBackedCLIOutputContract(t *testing.T) {
 }
 
 func TestRenderRunSnapshotAndPruneCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "template", "create", "study", "--engine", "go-template", "--body", "# {{ .Title }}\nURL: {{ .Vars.url }}\n", "--vault", root, "--json")
@@ -292,6 +297,7 @@ func TestRenderRunSnapshotAndPruneCLI(t *testing.T) {
 }
 
 func TestTemplateAuthoringCLIRejectsBadInput(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out, err := runCLIExpectError("template", "create", "../bad", "--body", "x", "--vault", root, "--json")
@@ -305,6 +311,7 @@ func TestTemplateAuthoringCLIRejectsBadInput(t *testing.T) {
 }
 
 func TestTemplateListPackTemplateListUseCaseTemplateRecommendTemplateRecommendFallbackCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -355,6 +362,7 @@ func TestTemplateListPackTemplateListUseCaseTemplateRecommendTemplateRecommendFa
 }
 
 func TestTemplateRecommendWorkflowFields(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -394,6 +402,7 @@ func TestTemplateRecommendWorkflowFields(t *testing.T) {
 }
 
 func TestTemplateInspectWorkflowFields(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -421,6 +430,7 @@ func TestTemplateInspectWorkflowFields(t *testing.T) {
 }
 
 func TestTemplatePreviewWorkflowFields(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -450,6 +460,7 @@ func TestTemplatePreviewWorkflowFields(t *testing.T) {
 }
 
 func TestTemplatePackAndLifecycleCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -474,6 +485,7 @@ func TestTemplatePackAndLifecycleCLI(t *testing.T) {
 }
 
 func TestTemplateUseEvidence(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -538,6 +550,7 @@ func listVaultFilesForTemplateTest(t *testing.T, root string) []string {
 }
 
 func TestTemplateCompletionJournalTemplateCompletionIndexTemplateCompletionNoteTemplateCompletion(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	inspect := runCLI(t, "__complete", "template", "inspect", "--vault", root, "")
@@ -565,6 +578,7 @@ func TestTemplateCompletionJournalTemplateCompletionIndexTemplateCompletionNoteT
 }
 
 func TestTemplateFlagCompletionTemplateVarCompletionTemplateRunCompletion(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	engine := runCLI(t, "__complete", "template", "create", "demo", "--engine", "")

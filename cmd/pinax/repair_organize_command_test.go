@@ -9,6 +9,7 @@ import (
 )
 
 func TestRepairPlanJSONIsReadonlyAndSaveWritesPlanAsset(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "No Tags.md")
@@ -61,6 +62,7 @@ func TestRepairPlanJSONIsReadonlyAndSaveWritesPlanAsset(t *testing.T) {
 }
 
 func TestDoctorRepairAndOrganizeUseLinkEvidence(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	sourcePath := filepath.Join(root, "Source.md")
@@ -135,6 +137,7 @@ func TestDoctorRepairAndOrganizeUseLinkEvidence(t *testing.T) {
 }
 
 func TestRepairApplyRequiresApprovalAndSnapshot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "No Tags.md"), pinaxNoteFixture("note_no_tags", "No Tags", "body\n"))
@@ -168,6 +171,7 @@ func TestRepairApplyRequiresApprovalAndSnapshot(t *testing.T) {
 }
 
 func TestRepairApplyProjectionOnlyPlanDoesNotRequireSnapshot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	savedOut := runCLI(t, "repair", "plan", "--vault", root, "--save", "--json")
@@ -189,6 +193,7 @@ func TestRepairApplyProjectionOnlyPlanDoesNotRequireSnapshot(t *testing.T) {
 }
 
 func TestRepairApplyLowRiskOperationsAndRejectsStalePlan(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "No Tags.md")
@@ -232,6 +237,7 @@ func TestRepairApplyLowRiskOperationsAndRejectsStalePlan(t *testing.T) {
 }
 
 func TestOrganizeSuggestCreatesReviewableAgentPlan(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "Research Idea.md"), pinaxNoteFixture("note_research_idea", "Research Idea", "body #research [[Missing Target]]\n\n![Missing](missing.png)\n"))
@@ -332,6 +338,7 @@ func TestOrganizeSuggestCreatesReviewableAgentPlan(t *testing.T) {
 }
 
 func TestOrganizeListEmptyGuidesSaveWorkflow(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -344,6 +351,7 @@ func TestOrganizeListEmptyGuidesSaveWorkflow(t *testing.T) {
 }
 
 func TestOrganizeApplySavedPlanRejectsStaleAndMoves(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	source := filepath.Join(root, "Research Idea.md")

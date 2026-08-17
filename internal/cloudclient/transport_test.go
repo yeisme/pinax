@@ -9,10 +9,12 @@ import (
 )
 
 func TestServerTransportImplementsCloudsyncTransport(t *testing.T) {
+	t.Parallel()
 	var _ cloudsync.Transport = (*Transport)(nil)
 }
 
 func TestServerTransportMapsCloudsyncOperations(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_abc", SessionToken: "secret"})
 	defer server.Close()
 
@@ -74,6 +76,7 @@ func TestServerTransportMapsCloudsyncOperations(t *testing.T) {
 // TestServerTransportNeverRemoteWriteBeforeCommit 是 remote_write gate 的 RED 守卫：
 // 在 CAS commit 之前，CurrentHead/BatchCheck/PutBlob/GetBlob 都不能让 RemoteWrite 变 true。
 func TestServerTransportNeverRemoteWriteBeforeCommit(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_gate", SessionToken: "secret"})
 	defer server.Close()
 

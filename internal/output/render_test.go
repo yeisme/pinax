@@ -44,6 +44,7 @@ func TestSummaryColorModes(t *testing.T) {
 }
 
 func TestSyncViewRendersTableAgentAndJSONProjection(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("sync.push", "Sync push completed.")
 	projection.Facts["sync.result"] = "applied"
 	projection.Facts["sync.scope"] = "remote-aware"
@@ -107,6 +108,7 @@ func TestMachineOutputsNeverUseANSI(t *testing.T) {
 }
 
 func TestSummaryRendersEnglishFactKeysAndCommonValues(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("note.links", "Link check completed.")
 	projection.Status = "partial"
 	projection.Facts["notes"] = "2"
@@ -147,6 +149,7 @@ func TestSummaryRendersEnglishFactKeysAndCommonValues(t *testing.T) {
 }
 
 func TestSummaryRendersProjectListAsTable(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("project.list", "Project list read.")
 	projection.Facts["current_project"] = "history"
 	projection.Facts["projects"] = "1"
@@ -174,6 +177,7 @@ func TestSummaryRendersProjectListAsTable(t *testing.T) {
 }
 
 func TestFactKeyRenderingUsesNaturalNumericOrder(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("test.summary", "Project subprojects listed.")
 	projection.Facts["subprojects"] = "10"
 	projection.Facts["subproject.10"] = "ten"
@@ -205,6 +209,7 @@ func TestFactKeyRenderingUsesNaturalNumericOrder(t *testing.T) {
 }
 
 func TestSummaryRendersGenericListData(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("template.list", "Template list read.")
 	projection.Facts["templates"] = "2"
 	projection.Data = map[string]any{"templates": []map[string]any{
@@ -225,6 +230,7 @@ func TestSummaryRendersGenericListData(t *testing.T) {
 }
 
 func TestAgentExpandsListDataItems(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("activity.list", "Activity entries listed.")
 	projection.Facts["entries"] = "1"
 	projection.Data = map[string]any{"entries": []map[string]any{{
@@ -244,6 +250,7 @@ func TestAgentExpandsListDataItems(t *testing.T) {
 }
 
 func TestAgentExpandsNoteAndSearchResultItems(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("note.search", "Search completed.")
 	projection.Facts["returned"] = "1"
 	projection.Data = map[string]any{"results": []map[string]any{{
@@ -264,6 +271,7 @@ func TestAgentExpandsNoteAndSearchResultItems(t *testing.T) {
 }
 
 func TestSyncLogsTailRendersEventItems(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("sync.logs.tail", "Sync event timeline read.")
 	projection.Facts["events"] = "1"
 	projection.Data = map[string]any{"events": []map[string]any{{"type": "sync.file", "seq": 1, "run_id": "sync_1", "direction": "push", "kind": "upload_blob", "path": "notes/demo.md", "status": "success", "backend_kind": "server", "ts": "2026-06-27T10:00:00Z"}}}
@@ -300,6 +308,7 @@ func TestSyncLogsTailRendersEventItems(t *testing.T) {
 }
 
 func TestNoteTagRecordFactsRenderInAllModes(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("note.tag", "Note tags updated.")
 	projection.Facts["record_event"] = "note.metadata_updated"
 	projection.Facts["ledger_seq"] = "2"
@@ -359,6 +368,7 @@ func TestNoteTagRecordFactsRenderInAllModes(t *testing.T) {
 }
 
 func TestSummaryOmitsSuccessExecutionStatus(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("asset.show", "Asset loaded.")
 	projection.Facts["asset_path"] = "assets/diagram.png"
 	var success bytes.Buffer
@@ -404,6 +414,7 @@ func TestRenderWithOptionsColorModeOverridesEnvironment(t *testing.T) {
 }
 
 func TestRenderWithOptionsMachineOutputsIgnoreHumanTheme(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("test.machine", "Machine output test.")
 	projection.Facts["notes"] = "2"
 
@@ -419,6 +430,7 @@ func TestRenderWithOptionsMachineOutputsIgnoreHumanTheme(t *testing.T) {
 }
 
 func TestSummaryMarkdownRenderingForNoteBody(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("note.show", "Local note loaded.")
 	projection.Data = map[string]any{"note": domain.Note{Title: "Demo", Path: "notes/demo.md"}, "body": "# Heading\n\n- item\n"}
 
@@ -433,6 +445,7 @@ func TestSummaryMarkdownRenderingForNoteBody(t *testing.T) {
 }
 
 func TestSummaryMarkdownDisabledKeepsPlainBody(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("template.render", "Template rendered.")
 	projection.Data = map[string]any{"body": "# Heading\n\n- item\n"}
 
@@ -446,6 +459,7 @@ func TestSummaryMarkdownDisabledKeepsPlainBody(t *testing.T) {
 }
 
 func TestSummaryDimensionListRendersVisualShare(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("tag.list", "Organization view listed.")
 	projection.Facts["dimension"] = "tag"
 	projection.Facts["dimensions"] = "2"
@@ -479,6 +493,7 @@ func TestSummaryDimensionListRendersVisualShare(t *testing.T) {
 }
 
 func TestRenderWithOptionsCustomThemeFallsBackToPinaxRoles(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("test.summary", "Custom theme test.")
 	projection.Status = "failed"
 
@@ -496,6 +511,7 @@ func TestRenderWithOptionsCustomThemeFallsBackToPinaxRoles(t *testing.T) {
 }
 
 func TestMarkdownRenderingDoesNotChangeJSONBody(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("note.show", "Local note loaded.")
 	projection.Data = map[string]any{"body": "# Heading\n\n- item\n"}
 
@@ -510,6 +526,7 @@ func TestMarkdownRenderingDoesNotChangeJSONBody(t *testing.T) {
 }
 
 func TestTemplateInspectAgentOutputContract(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("template.inspect", "Template inspection complete.")
 	projection.Facts["template"] = "meeting.notes"
 	projection.Facts["use_cases"] = "meeting,sync"
@@ -531,6 +548,7 @@ func TestTemplateInspectAgentOutputContract(t *testing.T) {
 }
 
 func TestProjectionActionsAgentActionsJSONActions(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("template.inspect", "Template inspection complete.")
 	projection.Actions = []domain.Action{{Name: "primary", Command: "pinax template preview journal.daily --vault ./my-notes --json"}}
 	var summary bytes.Buffer
@@ -566,6 +584,7 @@ func TestProjectionActionsAgentActionsJSONActions(t *testing.T) {
 }
 
 func TestSummaryAndAgentRenderProjectItemDetails(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("project.item.show", "Project item read.")
 	projection.Facts["item_id"] = "item_123"
 	projection.Facts["column"] = "next"
@@ -603,6 +622,7 @@ func TestSummaryAndAgentRenderProjectItemDetails(t *testing.T) {
 }
 
 func TestSummaryAndAgentRenderFolderPlanEffects(t *testing.T) {
+	t.Parallel()
 	projection := domain.NewProjection("folder.create", "Folder create plan generated.")
 	projection.Facts["folder_path"] = "spaces/research"
 	projection.Facts["dry_run"] = "true"

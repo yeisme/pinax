@@ -10,6 +10,7 @@ import (
 )
 
 func TestSyncLogFollowEmitterRendersSafeStreamingModes(t *testing.T) {
+	t.Parallel()
 	event := map[string]any{"seq": 2, "type": "sync.file", "run_id": "sync_1", "direction": "push", "kind": "upload_blob", "path": "notes/live.md", "status": "success", "backend_kind": "embedded", "ts": "2026-07-14T03:00:00Z"}
 
 	var summary bytes.Buffer

@@ -18,6 +18,7 @@ import (
 // device-local shared profile chain. The SigV4 Authorization header carries the
 // injected AccessKeyId.
 func TestGetStoreWithCredentialProviderSignsWithInjectedCredential(t *testing.T) {
+	t.Parallel()
 	var gotAuth string
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
@@ -53,6 +54,7 @@ func TestGetStoreWithCredentialProviderSignsWithInjectedCredential(t *testing.T)
 // TestGetStoreWithCredentialProviderNilFallsBack verifies that a nil provider
 // (device-profile mode) falls back to the default endpoint-based store path.
 func TestGetStoreWithCredentialProviderNilFallsBack(t *testing.T) {
+	t.Parallel()
 	state := State{Config: Config{
 		Endpoint:    "s3://bucket/prefix/",
 		WorkspaceID: "ws-x",
@@ -71,6 +73,7 @@ func TestGetStoreWithCredentialProviderNilFallsBack(t *testing.T) {
 // state has no S3 config (e.g. server backend), the provider is ignored and the
 // endpoint-based store is used.
 func TestGetStoreWithCredentialProviderNoS3ConfigFallsBack(t *testing.T) {
+	t.Parallel()
 	state := State{Config: Config{Endpoint: "s3://bucket/prefix/", WorkspaceID: "ws-x"}}
 	store, err := state.GetStoreWithCredentialProvider(context.Background(), credentials.NewStaticCredentialsProvider("a", "b", ""))
 	if err != nil {

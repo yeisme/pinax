@@ -6,6 +6,7 @@ import "testing"
 // keys that today's summaries render. The label map may be reorganized, but
 // these key→label pairs must not change without a CLI output contract review.
 func TestSummaryFactLabelGolden(t *testing.T) {
+	t.Parallel()
 	golden := map[string]string{
 		"run_id":                "Run ID",
 		"note_id":               "Note ID",

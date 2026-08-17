@@ -10,6 +10,7 @@ import (
 )
 
 func TestJournalPagerNavigation(t *testing.T) {
+	t.Parallel()
 	loaded := []int{}
 	loader := func(direction int, current domain.Projection) (domain.Projection, error) {
 		loaded = append(loaded, direction)

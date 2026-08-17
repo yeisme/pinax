@@ -9,6 +9,7 @@ import (
 )
 
 func TestBrainAnswerPreviewIsEvidenceFirstAndBodySafe(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alice.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alice\ntitle: Alice Meeting\nkind: reference\n---\n\n# Alice Meeting\n\nAlice needs the roadmap update and budget status before Friday.\n\nSECRET_BODY_SENTINEL should not appear in answer preview.\n")
@@ -60,6 +61,7 @@ func TestBrainAnswerPreviewIsEvidenceFirstAndBodySafe(t *testing.T) {
 }
 
 func TestBrainMaintainPlanOnlyAndSavePlanEvidence(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\n\nCitation candidate. SECRET_BODY_SENTINEL Authorization: Bearer token\n")

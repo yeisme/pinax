@@ -17,6 +17,7 @@ type commandStub struct {
 // drift: every registered command path must resolve to a real command in the
 // root tree, and every registered flag must exist on that command.
 func TestRemoteCommandRegistryMatchesCommandTree(t *testing.T) {
+	t.Parallel()
 	root := NewRootCommand("test")
 	commands := map[string]commandStub{}
 	collectCommandStub(root, "", commands)
@@ -40,6 +41,7 @@ func TestRemoteCommandRegistryMatchesCommandTree(t *testing.T) {
 // TestRemoteSupportedRPCMethodsDerivesFromRegistry ensures the coverage map and
 // the dispatch registry cannot disagree.
 func TestRemoteSupportedRPCMethodsDerivesFromRegistry(t *testing.T) {
+	t.Parallel()
 	methods := remoteSupportedRPCMethods()
 	if len(methods) != len(remoteCommandRegistry) {
 		t.Fatalf("methods map has %d entries, registry has %d", len(methods), len(remoteCommandRegistry))

@@ -7,6 +7,7 @@ import (
 )
 
 func TestSchemaV2UsesObjectIDForNotesAndRelationshipProjections(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	note := domain.Note{ID: objectID, Title: "Alpha", Path: "notes/alpha.md", Tags: []string{"project/alpha"}, Body: "priority:: 2\n- [ ] Task\n[[Alpha]]"}
@@ -57,6 +58,7 @@ func TestSchemaV2UsesObjectIDForNotesAndRelationshipProjections(t *testing.T) {
 }
 
 func TestSchemaV2RejectsTwoActivePathsForOneObject(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	_, err := Rebuild(root, []domain.Note{

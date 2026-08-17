@@ -13,6 +13,7 @@ import (
 )
 
 func TestNewRootCommandFactoryIsolatedState(t *testing.T) {
+	t.Parallel()
 	first := NewRootCommand("test-one")
 	var firstOut bytes.Buffer
 	first.SetOut(&firstOut)
@@ -373,6 +374,7 @@ func TestConfiguredRemoteModeRejectsUnsupportedBusinessCommand(t *testing.T) {
 }
 
 func TestRemoteCommandCoverageClassifiesEveryVisibleRunnableCommand(t *testing.T) {
+	t.Parallel()
 	coverage := RemoteCommandCoverage(NewRootCommand("test"))
 	if len(coverage) == 0 {
 		t.Fatalf("expected command coverage entries")

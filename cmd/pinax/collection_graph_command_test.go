@@ -9,6 +9,7 @@ import (
 )
 
 func TestCollectionImportDiffDoctorExportAndGraphCommands(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	bundle := writeContentBundleFixture(t, root)
 

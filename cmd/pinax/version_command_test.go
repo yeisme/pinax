@@ -10,6 +10,7 @@ import (
 )
 
 func TestVersionCommand(t *testing.T) {
+	t.Parallel()
 	cmd := newRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -24,6 +25,7 @@ func TestVersionCommand(t *testing.T) {
 }
 
 func TestVersionWorkflowContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "version.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_version\ntitle: Version\n---\n\n# Version\n")
@@ -79,6 +81,7 @@ func TestVersionWorkflowContractsCLI(t *testing.T) {
 }
 
 func TestVersionExtendedCommandsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "version.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_version\ntitle: Version\n---\n\n# Version\n")
@@ -137,6 +140,7 @@ func TestVersionExtendedCommandsCLI(t *testing.T) {
 // 全程 local_write=true / remote_write=false，且不带 --yes 时拒绝写入。
 
 func TestVersionRestoreApplyRevertsBadLocalApply(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "notes", "alpha.md")
@@ -197,6 +201,7 @@ func TestVersionRestoreApplyRevertsBadLocalApply(t *testing.T) {
 }
 
 func TestVersionRestoreApplyUsesLocalSnapshotWithoutGitCommit(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	noteRel := "notes/local-only.md"
@@ -231,6 +236,7 @@ func TestVersionRestoreApplyUsesLocalSnapshotWithoutGitCommit(t *testing.T) {
 // TestVersionRestoreApplyRefusesStalePlan 证明 vault 在 plan 生成后被改动时 apply 拒绝执行。
 
 func TestVersionRestoreApplyRefusesStalePlan(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "notes", "beta.md")
@@ -252,6 +258,7 @@ func TestVersionRestoreApplyRefusesStalePlan(t *testing.T) {
 }
 
 func TestAssetVersionProviderRedactionContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	payload := "pinax-binary raw-diff secret-token provider-payload"

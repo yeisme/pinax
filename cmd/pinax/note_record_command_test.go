@@ -11,6 +11,7 @@ import (
 )
 
 func TestNoteTagUnsafeValuesRejectedCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	unsafeNew, err := runCLIExpectError("note", "new", "Unsafe", "--tags", "bad]", "--vault", root, "--json")
@@ -38,6 +39,7 @@ func TestNoteTagUnsafeValuesRejectedCLI(t *testing.T) {
 }
 
 func TestNoteTagRecordFactsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	created := runCLI(t, "note", "new", "Taggable", "--tags", "safe", "--vault", root, "--json")
@@ -71,6 +73,7 @@ func TestNoteTagRecordFactsCLI(t *testing.T) {
 }
 
 func TestNoteAddCommandRegistersOnlyPinaxNotes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "raw.md"), "# Raw Markdown\n\nraw-only marker\n")
@@ -103,6 +106,7 @@ func TestNoteAddCommandRegistersOnlyPinaxNotes(t *testing.T) {
 }
 
 func TestNoteShowRenderedAndRefreshCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "A", "--body", "priority:: 1\n", "--status", "active", "--vault", root, "--json")
@@ -146,6 +150,7 @@ func TestNoteShowRenderedAndRefreshCLI(t *testing.T) {
 }
 
 func TestDataviewManagedBlockPreviewAndRefreshCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active", "--body", "priority:: 2", "--status", "active", "--tags", "pinax", "--slug", "active", "--vault", root, "--json")
@@ -184,6 +189,7 @@ func TestDataviewManagedBlockPreviewAndRefreshCLI(t *testing.T) {
 }
 
 func TestNoteRenderedDatabaseViewTabsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Active", "--body", "due:: 2026-06-21", "--status", "active", "--vault", root, "--json")
@@ -240,6 +246,7 @@ func TestNoteRenderedDatabaseViewTabsCLI(t *testing.T) {
 }
 
 func TestNoteDimensionPrimaryPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Dim", "--tags", "research", "--kind", "reference", "--folder", "work", "--vault", root, "--json")
@@ -267,6 +274,7 @@ func TestNoteDimensionPrimaryPaths(t *testing.T) {
 }
 
 func TestDailyInboxWorkflowCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "work", "--name", "工作", "--notes-prefix", "notes/work", "--vault", root, "--json")
@@ -464,6 +472,7 @@ func TestDailyTaskReviewManagedBlockCLI(t *testing.T) {
 }
 
 func TestNoteListPropertyOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "A", "--body", "priority:: 2", "--status", "active", "--vault", root, "--json")
@@ -543,6 +552,7 @@ func assertNoteListFacts(t *testing.T, out string, wants map[string]string) {
 }
 
 func TestJournalDateCompletionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "daily", "2026-06-04.md"), "# Daily 2026-06-04\n")
@@ -591,6 +601,7 @@ func TestJournalDateCompletionCLI(t *testing.T) {
 }
 
 func TestNotebookOrganizationViewsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "work", "--name", "工作", "--notes-prefix", "notes/work", "--vault", root, "--json")
@@ -643,6 +654,7 @@ func TestNotebookOrganizationViewsCLI(t *testing.T) {
 }
 
 func TestNoteLinkGraphCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alpha\ntitle: Alpha\nkind: reference\n---\n\n# Alpha\n\nSee [[Beta]] and [[Missing Target]].\n")
@@ -693,6 +705,7 @@ func TestNoteLinkGraphCLI(t *testing.T) {
 }
 
 func TestNoteLinksAllWikiConflictFiltersCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_source\ntitle: Source\nkind: reference\n---\n\n# Source\n\nSee [[Shared]] and [[Missing]].\n")
@@ -730,6 +743,7 @@ func TestNoteLinksAllWikiConflictFiltersCLI(t *testing.T) {
 }
 
 func TestLinkOutputContractModes(t *testing.T) {
+	t.Parallel()
 	root := linkOutputFixture(t)
 	out := runCLI(t, "note", "links", "Alpha", "--vault", root, "--json")
 	assertMachineOutputClean(t, out)
@@ -747,6 +761,7 @@ func TestLinkOutputContractModes(t *testing.T) {
 }
 
 func TestBacklinkOutputContractAgent(t *testing.T) {
+	t.Parallel()
 	root := linkOutputFixture(t)
 	out := runCLI(t, "note", "backlinks", "Beta", "--vault", root, "--agent")
 	assertMachineOutputClean(t, out)
@@ -761,6 +776,7 @@ func TestBacklinkOutputContractAgent(t *testing.T) {
 }
 
 func TestOrphanOutputContractEvents(t *testing.T) {
+	t.Parallel()
 	root := linkOutputFixture(t)
 	out := runCLI(t, "note", "orphans", "--vault", root, "--events")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -783,6 +799,7 @@ func TestOrphanOutputContractEvents(t *testing.T) {
 }
 
 func TestGraphExplainOutputContract(t *testing.T) {
+	t.Parallel()
 	root := linkOutputFixture(t)
 	out := runCLI(t, "note", "links", "Alpha", "--vault", root, "--explain")
 	for _, want := range []string{"Conclusion:", "Evidence:", "Confidence:", "Recommended next step:"} {
@@ -796,6 +813,7 @@ func TestGraphExplainOutputContract(t *testing.T) {
 }
 
 func TestStdoutStderrLinkOutputContract(t *testing.T) {
+	t.Parallel()
 	root := linkOutputFixture(t)
 	stdout, stderr, err := runCLISeparate("note", "links", "Alpha", "--vault", root, "--json")
 	if err != nil || stderr != "" {
@@ -819,6 +837,7 @@ func TestStdoutStderrLinkOutputContract(t *testing.T) {
 }
 
 func TestNoteAttachPlacementLinkStyleAndModesCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alpha\ntitle: Alpha\nkind: reference\n---\n\n# Alpha\n\nBody.\n")
@@ -867,6 +886,7 @@ func TestNoteAttachPlacementLinkStyleAndModesCLI(t *testing.T) {
 }
 
 func TestImportExportMarkdownCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "research", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: existing_alpha\ntitle: Existing Alpha\ntags: [imported]\nproject: research\n---\n\n# Existing Alpha\n")
@@ -940,6 +960,7 @@ func TestImportExportMarkdownCLI(t *testing.T) {
 }
 
 func TestNoteCreateBuildsNotebookInformationArchitecture(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "work", "--name", "工作", "--notes-prefix", "notes/work", "--vault", root, "--json")
@@ -979,6 +1000,7 @@ func TestNoteCreateBuildsNotebookInformationArchitecture(t *testing.T) {
 }
 
 func TestNoteShowStemAndMetadataPlanQueryResolverContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "stem-target.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_stem\ntitle: Different Title\ntags: []\n---\n\n# Different Title\n")
@@ -1036,6 +1058,7 @@ func TestNoteShowStemAndMetadataPlanQueryResolverContractsCLI(t *testing.T) {
 }
 
 func TestRecordAdoptQueryPlanContractsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "yeisme.md"), "# Yeisme\n\nunmanaged markdown\n")
@@ -1100,6 +1123,7 @@ func TestRecordAdoptQueryPlanContractsCLI(t *testing.T) {
 }
 
 func TestRecordHistoryUsesResolverInputCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "History Note", "--body", "history body", "--slug", "history-note", "--vault", root, "--json")
@@ -1277,6 +1301,7 @@ func TestNoteCommandUXCLI(t *testing.T) {
 }
 
 func TestNotePropertyPreservesObsidianPluginFrontmatterCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	notePath := filepath.Join(root, "notes", "obsidian.md")
@@ -1324,6 +1349,7 @@ func TestNotePropertyPreservesObsidianPluginFrontmatterCLI(t *testing.T) {
 }
 
 func TestNoteTagBulkManagementCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Alpha", "--tags", "old,keep", "--vault", root, "--json")
@@ -1363,6 +1389,7 @@ func TestNoteTagBulkManagementCLI(t *testing.T) {
 }
 
 func TestNoteFolderBulkManagementCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Alpha", "--folder", "inbox", "--slug", "alpha", "--vault", root, "--json")
@@ -1404,6 +1431,7 @@ func TestNoteFolderBulkManagementCLI(t *testing.T) {
 }
 
 func TestFolderCreateListShowCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -1478,6 +1506,7 @@ func TestFolderCreateListShowCLI(t *testing.T) {
 }
 
 func TestFolderListHumanOutputShowsDetailedRowsAndSubtreeFilterCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "folder", "create", "spaces/research", "--purpose", "notes", "--vault", root, "--json")
@@ -1510,6 +1539,7 @@ func TestFolderListHumanOutputShowsDetailedRowsAndSubtreeFilterCLI(t *testing.T)
 }
 
 func TestFolderShowIncludesChildrenAndCountsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "folder", "create", "spaces/research", "--purpose", "notes", "--vault", root, "--json")
@@ -1540,6 +1570,7 @@ func TestFolderShowIncludesChildrenAndCountsCLI(t *testing.T) {
 }
 
 func TestFolderMutationManagementCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "folder", "create", "spaces/research", "--purpose", "notes", "--vault", root, "--json")
@@ -1612,6 +1643,7 @@ func TestFolderMutationManagementCLI(t *testing.T) {
 }
 
 func TestFolderRenameUpdatesContainedNoteMetadataCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Moved Note", "--folder", "spaces/research", "--slug", "moved", "--vault", root, "--json")
@@ -1633,6 +1665,7 @@ func TestFolderRenameUpdatesContainedNoteMetadataCLI(t *testing.T) {
 }
 
 func TestNoteDeletePromptsInHumanModeCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	created := runCLI(t, "note", "new", "Prompt Delete", "--body", "body", "--vault", root, "--json")
@@ -1683,6 +1716,7 @@ func TestNoteDeletePromptsInHumanModeCLI(t *testing.T) {
 }
 
 func TestNoteCommandHardeningEditorAndOpenCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Editable", "--body", "body", "--vault", root, "--json")
@@ -1735,6 +1769,7 @@ func TestNoteCommandHardeningEditorAndOpenCLI(t *testing.T) {
 }
 
 func TestNotebookCoreOutputContractAndHelp(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "new", "Contract Note", "--body", "body", "--tags", "contract", "--vault", root, "--json")

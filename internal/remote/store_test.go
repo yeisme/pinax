@@ -9,6 +9,7 @@ import (
 )
 
 func TestUnimplementedTransportsDoNotReturnNoopStores(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, endpoint := range []string{"https://cloud.example.test"} {
 		store, err := NewStore(ctx, endpoint)
@@ -21,6 +22,7 @@ func TestUnimplementedTransportsDoNotReturnNoopStores(t *testing.T) {
 }
 
 func TestFileBackendConflict(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	backend, err := NewFileBackend(filepath.Join(dir, "store"))
 	if err != nil {
@@ -66,6 +68,7 @@ func TestFileBackendConflict(t *testing.T) {
 }
 
 func TestFileBackendRejectsKeysOutsideBaseDir(t *testing.T) {
+	t.Parallel()
 	base := filepath.Join(t.TempDir(), "store")
 	backend, err := NewFileBackend(base)
 	if err != nil {

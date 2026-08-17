@@ -12,6 +12,7 @@ import (
 // are preserved. No Capsa content key rotation, no remote revision deletion.
 // (pinax-passphrase-s3-bootstrap task 5.4)
 func TestCredentialModeProfileRollbackSmoke(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	// Declaration with repository-encrypted mode.
 	repoEnc := "credential_mode: repository-encrypted\n"

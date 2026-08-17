@@ -11,6 +11,7 @@ import (
 )
 
 func TestObjectStoreTransportCommitsHeadWithCAS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store, err := remote.NewFileBackend(t.TempDir())
 	if err != nil {
@@ -44,6 +45,7 @@ func TestObjectStoreTransportCommitsHeadWithCAS(t *testing.T) {
 	}
 }
 func TestObjectStoreTransportRejectsConcurrentFirstCommits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store, err := remote.NewFileBackend(t.TempDir())
 	if err != nil {
@@ -69,6 +71,7 @@ func TestObjectStoreTransportRejectsConcurrentFirstCommits(t *testing.T) {
 }
 
 func TestObjectStoreTransportRejectsDuplicateRevisionID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store, err := remote.NewFileBackend(t.TempDir())
 	if err != nil {
@@ -91,6 +94,7 @@ func TestObjectStoreTransportRejectsDuplicateRevisionID(t *testing.T) {
 }
 
 func TestObjectStoreTransportLockFallbackRejectsConcurrentFirstHeadCreation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newNonConditionalStore(t)
 	first := NewObjectStoreTransport(store, Layout{Prefix: "pinax-sync", WorkspaceID: "personal", VaultID: "vault_abc"})
@@ -103,6 +107,7 @@ func TestObjectStoreTransportLockFallbackRejectsConcurrentFirstHeadCreation(t *t
 }
 
 func TestObjectStoreTransportLockFallbackRejectsSameBaseConcurrentUpdate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newNonConditionalStore(t)
 	base := NewObjectStoreTransport(store, Layout{Prefix: "pinax-sync", WorkspaceID: "personal", VaultID: "vault_abc"})
@@ -120,6 +125,7 @@ func TestObjectStoreTransportLockFallbackRejectsSameBaseConcurrentUpdate(t *test
 }
 
 func TestObjectStoreTransportLockFallbackRecoversExpiredLock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newNonConditionalStore(t)
 	transport := NewObjectStoreTransport(store, Layout{Prefix: "pinax-sync", WorkspaceID: "personal", VaultID: "vault_abc"})
@@ -138,6 +144,7 @@ func TestObjectStoreTransportLockFallbackRecoversExpiredLock(t *testing.T) {
 }
 
 func TestObjectStoreTransportLockFallbackReturnsLockHeld(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newNonConditionalStore(t)
 	transport := NewObjectStoreTransport(store, Layout{Prefix: "pinax-sync", WorkspaceID: "personal", VaultID: "vault_abc"})
@@ -153,6 +160,7 @@ func TestObjectStoreTransportLockFallbackReturnsLockHeld(t *testing.T) {
 }
 
 func TestObjectStoreTransportUnknownConditionalCapabilityUsesLockFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	store := newUnknownConditionalStore(t)
 	transport := NewObjectStoreTransport(store, Layout{Prefix: "pinax-sync", WorkspaceID: "personal", VaultID: "vault_abc"})

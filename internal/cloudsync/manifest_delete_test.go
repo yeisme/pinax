@@ -3,6 +3,7 @@ package cloudsync
 import "testing"
 
 func TestManifestDeleteMarkersValidateAndExposeTrashBlobIDs(t *testing.T) {
+	t.Parallel()
 	manifest := Manifest{
 		SchemaVersion: ManifestSchemaVersion,
 		Entries:       []ManifestEntry{{Path: "notes/alpha.md", BlobID: "blob_alpha", SHA256: "sha", Size: 12, UpdatedAt: "2026-06-27T00:00:00Z"}},

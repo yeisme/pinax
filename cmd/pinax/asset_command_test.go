@@ -9,6 +9,7 @@ import (
 )
 
 func TestAssetLinkCommandCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
@@ -47,6 +48,7 @@ func TestAssetLinkCommandCLI(t *testing.T) {
 }
 
 func TestAssetRelationshipCommandsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
@@ -96,6 +98,7 @@ func TestAssetRelationshipCommandsCLI(t *testing.T) {
 }
 
 func TestAssetMoveRemovePlanCommandsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
@@ -134,6 +137,7 @@ func TestAssetMoveRemovePlanCommandsCLI(t *testing.T) {
 }
 
 func TestAssetApplyLikeCommandsRequirePlanCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	assetPath := filepath.Join(root, "assets", "diagram.png")
@@ -162,6 +166,7 @@ func TestAssetApplyLikeCommandsRequirePlanCLI(t *testing.T) {
 }
 
 func TestAssetPreviewOutputContractCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	specSource := filepath.Join(root, "spec-source.md")
@@ -189,6 +194,7 @@ func TestAssetPreviewOutputContractCLI(t *testing.T) {
 }
 
 func TestRenderedNoteAttachmentPreviewCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "spec.md"), "# Spec\n\nInline spec body")
@@ -218,6 +224,7 @@ func TestRenderedNoteAttachmentPreviewCLI(t *testing.T) {
 }
 
 func TestAttachmentPathStyleCommandsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
@@ -249,6 +256,7 @@ func TestAttachmentPathStyleCommandsCLI(t *testing.T) {
 }
 
 func TestAssetCompletionUsesIndexedAttachmentCandidatesCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
@@ -282,6 +290,7 @@ func TestAssetCompletionUsesIndexedAttachmentCandidatesCLI(t *testing.T) {
 }
 
 func TestAssetCommandContractsCLI(t *testing.T) {
+	t.Parallel()
 
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -368,6 +377,7 @@ func TestAssetCommandContractsCLI(t *testing.T) {
 }
 
 func TestNoteAttachmentCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 

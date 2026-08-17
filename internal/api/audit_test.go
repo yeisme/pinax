@@ -12,6 +12,7 @@ import (
 )
 
 func TestAuditLogger_CreateAndLog(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.jsonl")
 	logger, err := NewAuditLogger(path)
@@ -69,6 +70,7 @@ func TestAuditLogger_CreateAndLog(t *testing.T) {
 }
 
 func TestAuditLogger_MultipleEntries(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.jsonl")
 	logger, err := NewAuditLogger(path)
@@ -99,6 +101,7 @@ func TestAuditLogger_MultipleEntries(t *testing.T) {
 }
 
 func TestAuditLogger_CustomTimestamp(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit.jsonl")
 	logger, _ := NewAuditLogger(path)
@@ -116,6 +119,7 @@ func TestAuditLogger_CustomTimestamp(t *testing.T) {
 }
 
 func TestAuditLogger_CreatesParentDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "deep", "nested", "audit.jsonl")
 	logger, err := NewAuditLogger(path)
@@ -130,12 +134,14 @@ func TestAuditLogger_CreatesParentDir(t *testing.T) {
 }
 
 func TestServer_WriteAudit_NilLogger(t *testing.T) {
+	t.Parallel()
 	s := &Server{auditLogger: nil}
 	// Should not panic
 	s.writeAudit("id", "GET", "/v1/test", "read", "test", 200)
 }
 
 func TestAuthMiddlewareAuditsFinalHandlerStatus(t *testing.T) {
+	t.Parallel()
 	s, secret := newAuthTestServer(t, AuthModeTemp)
 	path := filepath.Join(t.TempDir(), "audit.jsonl")
 	logger, err := NewAuditLogger(path)

@@ -13,6 +13,7 @@ import (
 // configured vault (PINAX_PROBE_VAULT=<vault path>): it classifies every
 // remote object's envelope KeyID as active-v2 / legacy / other.
 func TestProbeRemoteBlobKeyIDs(t *testing.T) {
+	t.Parallel()
 	root := os.Getenv("PINAX_PROBE_VAULT")
 	if root == "" {
 		t.Skip("PINAX_PROBE_VAULT not set")

@@ -87,6 +87,7 @@ func truncate(s string, n int) string {
 // JSON envelope from the shared projection boundary, and that no nested field
 // leaks the note body sentinel.
 func TestProofLoopJSONProjections(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Proof Contract", "--body", proofBodySentinel+" extra padding text", "--vault", root, "--json")
@@ -123,6 +124,7 @@ func TestProofLoopJSONProjections(t *testing.T) {
 // TestProofLoopAgentProjections proves every proof loop command renders stable
 // agent key=value lines from the same shared projection, without leaking body.
 func TestProofLoopAgentProjections(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Proof Contract", "--body", proofBodySentinel+" extra padding text", "--vault", root, "--json")
@@ -168,6 +170,7 @@ func TestProofLoopAgentProjections(t *testing.T) {
 // event streams with start/end markers from the shared projection boundary, and
 // that no event leaks the note body sentinel.
 func TestProofLoopEventsProjections(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Proof Contract", "--body", proofBodySentinel+" extra padding text", "--vault", root, "--json")
@@ -214,6 +217,7 @@ func TestProofLoopEventsProjections(t *testing.T) {
 // TestProofLoopDefaultSummaryNoBodyLeak proves the default human-readable summary
 // mode also stays bounded: no sentinel body marker in stdout.
 func TestProofLoopDefaultSummaryNoBodyLeak(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Proof Contract", "--body", proofBodySentinel+" extra padding text", "--vault", root, "--json")
@@ -233,6 +237,7 @@ func TestProofLoopDefaultSummaryNoBodyLeak(t *testing.T) {
 // 四种模式都产出稳定共享投影，携带 proof_loop_run_id，且不泄漏 note body sentinel。
 // 它是 proof loop run 作为单一 agent 主入口的契约守卫。
 func TestProofLoopRunContractAcrossModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Proof Contract", "--body", proofBodySentinel+" extra padding text", "--vault", root, "--json")
@@ -297,6 +302,7 @@ func TestProofLoopRunContractAcrossModes(t *testing.T) {
 // 模式产出稳定投影且不泄漏 token/Authorization/body。每个模式生成 fresh plan（apply 会改
 // vault hash，复用同一 plan 会触发 stale 校验）。
 func TestVersionRestoreApplyContractAcrossModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	noteRel := "notes/contract.md"

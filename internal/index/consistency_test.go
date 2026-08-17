@@ -13,6 +13,7 @@ import (
 )
 
 func TestIncrementalMatchesFullRebuild(t *testing.T) {
+	t.Parallel()
 	initial := []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n[[B]] [[C]]\n", Tags: []string{"start"}},
 		{ID: "note_b", Title: "B", Path: "notes/b.md", Body: "# B\nold body\n", Tags: []string{"keep"}},
@@ -52,6 +53,7 @@ func TestIncrementalMatchesFullRebuild(t *testing.T) {
 }
 
 func TestRebuildProjectsEnhancedWikiLinkMetadata(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	notes := []domain.Note{
 		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alpha|Short]] [[Alpha#Details]] ![[diagram.png]] [[Meeting]]\n"},
@@ -88,6 +90,7 @@ func TestRebuildProjectsEnhancedWikiLinkMetadata(t *testing.T) {
 }
 
 func TestSearchUsesTokenIndexForBodyMatches(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	notes := []domain.Note{
 		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Body: "searchable token lives in the body", Tags: []string{"work"}},
@@ -117,6 +120,7 @@ func TestSearchUsesTokenIndexForBodyMatches(t *testing.T) {
 }
 
 func TestSearchUsesTokenIndexForUnicodeSubstringMatches(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	notes := []domain.Note{
 		{ID: "note_title", Title: "认证方案", Path: "notes/title.md", Body: "OAuth login", Tags: []string{"auth"}},
@@ -136,6 +140,7 @@ func TestSearchUsesTokenIndexForUnicodeSubstringMatches(t *testing.T) {
 }
 
 func TestExtractLinkRowsUsesEnhancedWikiParser(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_source", Title: "Source", Path: "notes/source.md", Body: "[[Alias Target]] [[Alpha|Short]]\n"},
 		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Frontmatter: map[string]string{"alias": "Alias Target"}},

@@ -6,6 +6,7 @@ import (
 )
 
 func TestParseS3CredentialsRoundTrip(t *testing.T) {
+	t.Parallel()
 	payload := []byte(`{"access_key_id":"AKID123","secret_access_key":"SK456","session_token":"tok"}`)
 	got, err := ParseS3Credentials(payload)
 	if err != nil {
@@ -17,6 +18,7 @@ func TestParseS3CredentialsRoundTrip(t *testing.T) {
 }
 
 func TestParseS3CredentialsOptionalSessionToken(t *testing.T) {
+	t.Parallel()
 	got, err := ParseS3Credentials([]byte(`{"access_key_id":"AKID","secret_access_key":"SK"}`))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -27,6 +29,7 @@ func TestParseS3CredentialsOptionalSessionToken(t *testing.T) {
 }
 
 func TestParseS3CredentialsRejectsUnknownField(t *testing.T) {
+	t.Parallel()
 	_, err := ParseS3Credentials([]byte(`{"access_key_id":"AKID","secret_access_key":"SK","extra":"leak"}`))
 	if err == nil {
 		t.Fatal("unknown field accepted")
@@ -34,6 +37,7 @@ func TestParseS3CredentialsRejectsUnknownField(t *testing.T) {
 }
 
 func TestParseS3CredentialsRejectsMissingRequired(t *testing.T) {
+	t.Parallel()
 	cases := [][]byte{
 		[]byte(`{"secret_access_key":"SK"}`),
 		[]byte(`{"access_key_id":"AKID"}`),
@@ -48,6 +52,7 @@ func TestParseS3CredentialsRejectsMissingRequired(t *testing.T) {
 }
 
 func TestParseS3CredentialsRejectsDuplicateKey(t *testing.T) {
+	t.Parallel()
 	_, err := ParseS3Credentials([]byte(`{"access_key_id":"AKID","access_key_id":"x","secret_access_key":"SK"}`))
 	if err == nil {
 		t.Fatal("duplicate key accepted")
@@ -55,6 +60,7 @@ func TestParseS3CredentialsRejectsDuplicateKey(t *testing.T) {
 }
 
 func TestParseS3CredentialsRejectsNonObject(t *testing.T) {
+	t.Parallel()
 	for _, c := range [][]byte{
 		[]byte(`[]`),
 		[]byte(`"string"`),
@@ -69,6 +75,7 @@ func TestParseS3CredentialsRejectsNonObject(t *testing.T) {
 }
 
 func TestParseS3CredentialsRejectsMalformed(t *testing.T) {
+	t.Parallel()
 	_, err := ParseS3Credentials([]byte(`{not json`))
 	if err == nil {
 		t.Fatal("malformed accepted")
@@ -76,6 +83,7 @@ func TestParseS3CredentialsRejectsMalformed(t *testing.T) {
 }
 
 func TestParseS3CredentialsErrorsNeverLeakValue(t *testing.T) {
+	t.Parallel()
 	secret := "SUPERSECRET_VALUE_42"
 	payload := []byte(`{"access_key_id":"` + secret + `","secret_access_key":"` + secret + `","bogus":1}`)
 	_, err := ParseS3Credentials(payload)

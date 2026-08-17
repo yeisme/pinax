@@ -8,6 +8,7 @@ import (
 )
 
 func TestCLIPersonalBackupFacade(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "backup.md"), "# Backup\n\nlocal knowledge\n")

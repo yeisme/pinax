@@ -9,6 +9,7 @@ import (
 )
 
 func TestParseDotenv_AcceptsSafeSubset(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"bare":        "KEY=value\n",
 		"equals":      `KEY=a=b=c`,
@@ -33,6 +34,7 @@ func TestParseDotenv_AcceptsSafeSubset(t *testing.T) {
 }
 
 func TestParseDotenv_RejectsShellVectors(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"commandSub":    `KEY=$(whoami)`,
 		"backtick":      "KEY=`whoami`",
@@ -78,6 +80,7 @@ func TestParseDotenv_RejectsShellVectors(t *testing.T) {
 }
 
 func TestParseDotenv_ErrorReportsLineAndKey(t *testing.T) {
+	t.Parallel()
 	_, err := ParseDotenv([]byte("A=1\nB=2\nB=3\n"))
 	var derr *DotenvError
 	if !errors.As(err, &derr) {
@@ -95,6 +98,7 @@ func TestParseDotenv_ErrorReportsLineAndKey(t *testing.T) {
 }
 
 func TestFormatDotenv_RoundTrip(t *testing.T) {
+	t.Parallel()
 	original := map[string]string{
 		"Z_KEY":   "last",
 		"A_KEY":   "first",
@@ -120,6 +124,7 @@ func TestFormatDotenv_RoundTrip(t *testing.T) {
 }
 
 func TestEnvDocumentDigest_Stable(t *testing.T) {
+	t.Parallel()
 	d1 := EnvDocumentDigest([]byte("A=1\nB=2\n"))
 	d2 := EnvDocumentDigest([]byte("A=1\nB=2\n"))
 	if d1 != d2 {
@@ -132,6 +137,7 @@ func TestEnvDocumentDigest_Stable(t *testing.T) {
 }
 
 func TestSaveLoadEnvAsset_RoundTrip(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	asset := EnvAsset{
 		Provider:   "fake",
@@ -163,6 +169,7 @@ func TestSaveLoadEnvAsset_RoundTrip(t *testing.T) {
 }
 
 func TestLoadEnvAsset_Missing(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	_, err := LoadEnvAsset(tmp)
 	if !errors.Is(err, ErrEnvAssetMissing) {
@@ -171,6 +178,7 @@ func TestLoadEnvAsset_Missing(t *testing.T) {
 }
 
 func TestSaveEnvAsset_RejectsMissingFields(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	cases := []struct {
 		name  string
@@ -195,6 +203,7 @@ func TestSaveEnvAsset_RejectsMissingFields(t *testing.T) {
 }
 
 func TestLoadEnvAsset_UnsupportedSchema(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	path := EnvAssetPath(tmp)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

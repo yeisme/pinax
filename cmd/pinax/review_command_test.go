@@ -10,6 +10,7 @@ import (
 // intent facade exposes English help text describing the read-only inbox and
 // its action/--yes flags.
 func TestReviewCommand_HelpExists(t *testing.T) {
+	t.Parallel()
 	help := runCLI(t, "review", "--help")
 	for _, want := range []string{
 		"Aggregate pending proposals",
@@ -31,6 +32,7 @@ func TestReviewCommand_HelpExists(t *testing.T) {
 // TestReviewCommand_InCommandTree verifies the complete command catalog
 // retains the additive `review` entry point.
 func TestReviewCommand_InCommandTree(t *testing.T) {
+	t.Parallel()
 	catalog := runCLI(t, "commands")
 	if !strings.Contains(catalog, "review") {
 		t.Fatalf("command catalog should list review:\n%s", catalog)
@@ -41,6 +43,7 @@ func TestReviewCommand_InCommandTree(t *testing.T) {
 // defaults to the read-only list mode and emits a success projection with the
 // aggregated inbox facts surface.
 func TestReviewCommand_DefaultReadOnly(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -69,6 +72,7 @@ func TestReviewCommand_DefaultReadOnly(t *testing.T) {
 // TestReviewCommand_ApproveRequiresYes verifies that the write action approve
 // is blocked without the explicit --yes confirmation, regardless of item.
 func TestReviewCommand_ApproveRequiresYes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -84,6 +88,7 @@ func TestReviewCommand_ApproveRequiresYes(t *testing.T) {
 // TestReviewCommand_RejectRequiresYes verifies that the write action reject is
 // blocked without the explicit --yes confirmation, regardless of item.
 func TestReviewCommand_RejectRequiresYes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -101,6 +106,7 @@ func TestReviewCommand_RejectRequiresYes(t *testing.T) {
 // reports the item is absent rather than demanding confirmation, which proves
 // show bypasses the approve/reject write gate.
 func TestReviewCommand_ShowNoYesNeeded(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 

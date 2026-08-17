@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -454,10 +455,17 @@ func groupedCommandHelp(cmd *cobra.Command) []helpCommandGroup {
 	return result
 }
 
+// helpTemplateFuncsOnce guards cobra.AddTemplateFunc: it mutates a package
+// global template-func map, so concurrent root-command construction (parallel
+// tests, in-process API servers) crashes with concurrent map writes.
+var helpTemplateFuncsOnce sync.Once
+
 func applyHelpTemplate(cmd *cobra.Command) {
-	cobra.AddTemplateFunc("groupedCommandHelp", groupedCommandHelp)
-	cobra.AddTemplateFunc("helpLocalFlagUsages", helpLocalFlagUsages)
-	cobra.AddTemplateFunc("helpInheritedFlagUsages", helpInheritedFlagUsages)
+	helpTemplateFuncsOnce.Do(func() {
+		cobra.AddTemplateFunc("groupedCommandHelp", groupedCommandHelp)
+		cobra.AddTemplateFunc("helpLocalFlagUsages", helpLocalFlagUsages)
+		cobra.AddTemplateFunc("helpInheritedFlagUsages", helpInheritedFlagUsages)
+	})
 	applyHelpTemplateRecursive(cmd)
 }
 

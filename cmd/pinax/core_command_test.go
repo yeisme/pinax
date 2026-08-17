@@ -7,6 +7,7 @@ import (
 )
 
 func TestCoreMVPCLIJSON(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "research", "--name", "研究", "--notes-prefix", "notes/research", "--vault", root, "--json")

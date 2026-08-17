@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 // fail if any file that is not a _test.go references the setter outside
 // internal/remote/crypto.go (its definition site).
 func TestKeyDerivationOverrideIsTestOnly(t *testing.T) {
+	t.Parallel()
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

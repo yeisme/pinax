@@ -8,6 +8,7 @@ import (
 )
 
 func TestCacheMiddleware_GETReturnsCacheControl(t *testing.T) {
+	t.Parallel()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -31,6 +32,7 @@ func TestCacheMiddleware_GETReturnsCacheControl(t *testing.T) {
 }
 
 func TestCacheMiddleware_GETReturnsETag(t *testing.T) {
+	t.Parallel()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -54,6 +56,7 @@ func TestCacheMiddleware_GETReturnsETag(t *testing.T) {
 }
 
 func TestCacheMiddleware_ConditionalRequestReturns304(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -86,6 +89,7 @@ func TestCacheMiddleware_ConditionalRequestReturns304(t *testing.T) {
 }
 
 func TestCacheMiddleware_POSTNotCached(t *testing.T) {
+	t.Parallel()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -110,6 +114,7 @@ func TestCacheMiddleware_POSTNotCached(t *testing.T) {
 }
 
 func TestCacheMiddleware_NonJSONNotCached(t *testing.T) {
+	t.Parallel()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
@@ -130,6 +135,7 @@ func TestCacheMiddleware_NonJSONNotCached(t *testing.T) {
 }
 
 func TestLookupCachePolicy(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		path    string
 		wantAge int
@@ -160,6 +166,7 @@ func TestLookupCachePolicy(t *testing.T) {
 }
 
 func TestItoa(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		n    int
 		want string

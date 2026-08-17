@@ -13,7 +13,6 @@ import (
 )
 
 func TestPublishDocDownloadRemoteAssetSVG(t *testing.T) {
-	t.Parallel()
 	svc := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")
 		_, _ = w.Write([]byte("<svg><rect/></svg>"))
@@ -31,7 +30,6 @@ func TestPublishDocDownloadRemoteAssetSVG(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteAssetRejectsNonSVG(t *testing.T) {
-	t.Parallel()
 	svc := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte("PNGDATA"))
@@ -45,7 +43,6 @@ func TestPublishDocDownloadRemoteAssetRejectsNonSVG(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteAssetToFile(t *testing.T) {
-	t.Parallel()
 	svc := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte("PNGDATA"))
@@ -104,7 +101,6 @@ func TestPublishDocDownloadRemoteRejectsResolvedPrivateTargets(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteRejectsRedirectToUnsafeTarget(t *testing.T) {
-	t.Parallel()
 	svc := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://127.0.0.1/private.png", http.StatusFound)
 	}))
@@ -117,7 +113,6 @@ func TestPublishDocDownloadRemoteRejectsRedirectToUnsafeTarget(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteAllowsSafeHTTPSTestServer(t *testing.T) {
-	t.Parallel()
 	svc := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte("PNGDATA"))

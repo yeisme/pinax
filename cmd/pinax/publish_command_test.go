@@ -15,6 +15,7 @@ import (
 )
 
 func TestPublishProfileInitValidateShowListCommands(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 
 	initOut := runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "hugo", "--title", "Knowledge Base", "--base-url", "https://example.github.io/kb/", "--theme", "builtin:pinax-encyclopedia", "--vault", root, "--json")
@@ -62,6 +63,7 @@ func TestPublishProfileInitValidateShowListCommands(t *testing.T) {
 }
 
 func TestPublishProfileInitAcceptsPinaxWebRenderer(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 
 	initOut := runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
@@ -80,6 +82,7 @@ func TestPublishProfileInitAcceptsPinaxWebRenderer(t *testing.T) {
 }
 
 func TestPublishProfileInitAcceptsStaticPlatformTargets(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 
 	for _, target := range []string{"local", "github-pages", "vercel", "cloudflare-pages"} {
@@ -148,6 +151,7 @@ func TestPublishGistTargetBuildsMarkdownAndDeploysThroughGh(t *testing.T) {
 }
 
 func TestPublishHTTPDeployPostsScannedOutputToEndpoint(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	var receivedPath string
 	var receivedBody string
@@ -174,6 +178,7 @@ func TestPublishHTTPDeployPostsScannedOutputToEndpoint(t *testing.T) {
 }
 
 func TestPublishServePreviewsBuiltOutputOnLoopback(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	runCLI(t, "publish", "profile", "init", "wiki", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
 	outDir := filepath.Join(root, "dist", "wiki")
@@ -191,6 +196,7 @@ func TestPublishServePreviewsBuiltOutputOnLoopback(t *testing.T) {
 }
 
 func TestPublishServeLoopbackPinaxWebStaticSite(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
 	outDir := filepath.Join(root, "dist", "site")
@@ -208,6 +214,7 @@ func TestPublishServeLoopbackPinaxWebStaticSite(t *testing.T) {
 }
 
 func TestPublishServeDefaultsToLoopbackAndRejectsPublicHost(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
 	outDir := filepath.Join(root, "dist", "site")
@@ -233,6 +240,7 @@ func TestPublishServeDefaultsToLoopbackAndRejectsPublicHost(t *testing.T) {
 }
 
 func TestPublishDevBuildsAndServesOnce(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	outDir := filepath.Join(root, "dist", "site")
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
@@ -252,6 +260,7 @@ func TestPublishDevBuildsAndServesOnce(t *testing.T) {
 }
 
 func TestPublishDevRejectsPublicHost(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	outDir := filepath.Join(root, "dist", "site")
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
@@ -266,6 +275,7 @@ func TestPublishDevRejectsPublicHost(t *testing.T) {
 }
 
 func TestPublishPreviewCommandsEmitLiveEvents(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	outDir := filepath.Join(root, "dist", "site")
 	initEventsOut := runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--events")
@@ -321,6 +331,7 @@ func TestPublishPreviewCommandsEmitLiveEvents(t *testing.T) {
 }
 
 func TestPublishPreviewHumanLogsUseStderrAndMachineModesStayPure(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	outDir := filepath.Join(root, "dist", "site")
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
@@ -373,6 +384,7 @@ func publishEventsContainLoopbackURL(events []map[string]any) bool {
 }
 
 func TestPublishPreviewApproveWritesReceipt(t *testing.T) {
+	t.Parallel()
 	root := publishVaultFixture(t)
 	outDir := filepath.Join(root, "dist", "site")
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
@@ -399,6 +411,7 @@ func TestPublishPreviewApproveWritesReceipt(t *testing.T) {
 }
 
 func TestPublishThemeListAndEjectCommands(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	listOut := runCLI(t, "publish", "theme", "list", "--vault", root, "--json")
 	listEnvelope := parsePublishEnvelope(t, listOut)
@@ -454,6 +467,7 @@ func TestPublishThemeListAndEjectCommands(t *testing.T) {
 }
 
 func TestPublishThemeAndDeployOutputModesExposeStableProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	jsonOut := runCLI(t, "publish", "theme", "list", "--vault", root, "--json")
 	if parsePublishEnvelope(t, jsonOut)["command"] != "publish.theme.list" {
@@ -482,6 +496,7 @@ func TestPublishThemeAndDeployOutputModesExposeStableProjection(t *testing.T) {
 }
 
 func TestPublishProfileAgentOutputIsStableAndClean(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
 
@@ -510,6 +525,7 @@ func TestPublishProfileAgentOutputIsStableAndClean(t *testing.T) {
 }
 
 func TestPublishProfileValidateRejectsUnsafeHandWrittenProfile(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	profileDir := filepath.Join(root, ".pinax", "publish", "profiles")
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
@@ -543,6 +559,7 @@ func TestPublishProfileValidateRejectsUnsafeHandWrittenProfile(t *testing.T) {
 }
 
 func TestPublishProfileValidateRejectsUnknownFieldsWithStableCode(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	profileDir := filepath.Join(root, ".pinax", "publish", "profiles")
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
@@ -565,6 +582,7 @@ func TestPublishProfileValidateRejectsUnknownFieldsWithStableCode(t *testing.T) 
 }
 
 func TestPublishPlanSelectsSkipsAndBlocksWithoutBodyLeak(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "hugo", "--vault", root, "--json")
 	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public Note", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n\nAllowed body with ![Diagram](../assets/diagram.png).\n")
@@ -601,6 +619,7 @@ func TestPublishPlanSelectsSkipsAndBlocksWithoutBodyLeak(t *testing.T) {
 }
 
 func TestPublishPlanClassifiesLinkedAssets(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "hugo", "--vault", root, "--json")
 	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Asset Note", "kind": "concept", "status": "active", "publish": "public"}, "# Asset Note\n\n![Diagram](../assets/diagram.png)\n![Raw](../assets/raw.exe)\n![Missing](../assets/missing.pdf)\n")
@@ -628,6 +647,7 @@ func TestPublishPlanClassifiesLinkedAssets(t *testing.T) {
 }
 
 func TestPublishPlanOutputModesExposeStableProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "hugo", "--vault", root, "--json")
 	writePublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Output Modes", "kind": "concept", "status": "active", "publish": "public"}, "# Output Modes\n")
@@ -667,6 +687,7 @@ func TestPublishPlanOutputModesExposeStableProjection(t *testing.T) {
 }
 
 func TestPublishPlanIncludesSourceInfoAndLinkGraph(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "hugo", "--vault", root, "--json")
 	writePublishNoteFixture(t, root, "notes/alpha.md", map[string]string{"note_id": "note_alpha", "title": "Alpha", "kind": "concept", "status": "active", "publish": "public"}, "# Alpha\n\nSee [[Beta]] and [[Missing]].\nPRIVATE_LINK_BODY_SENTINEL\n")
@@ -691,6 +712,7 @@ func TestPublishPlanIncludesSourceInfoAndLinkGraph(t *testing.T) {
 }
 
 func TestPublishBuildGitHubWikiWritesMarkdownManifestAndReceipt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "wiki")
 	runCLI(t, "publish", "profile", "init", "wiki", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
@@ -732,6 +754,7 @@ func TestPublishBuildGitHubWikiWritesMarkdownManifestAndReceipt(t *testing.T) {
 }
 
 func TestPublishBuildPinaxWebStaticSite(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--title", "Knowledge", "--vault", root, "--json")
@@ -781,6 +804,7 @@ func TestPublishBuildPinaxWebStaticSite(t *testing.T) {
 }
 
 func TestPublishBuildPinaxWebBlocksPlanViolations(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
 	runCLI(t, "publish", "profile", "init", "public", "--target", "github-pages", "--renderer", "pinax-web", "--vault", root, "--json")
@@ -839,6 +863,7 @@ func TestPublishBuildGitHubPagesUsesFakeHugoAndScansOutput(t *testing.T) {
 }
 
 func TestPublishBuildGitHubWikiBlocksDisallowedLinkedAsset(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "wiki")
 	runCLI(t, "publish", "profile", "init", "wiki", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
@@ -858,6 +883,7 @@ func TestPublishBuildGitHubWikiBlocksDisallowedLinkedAsset(t *testing.T) {
 }
 
 func TestPublishBuildGitHubWikiFailsWhenOutputScanFindsLeak(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "wiki")
 	runCLI(t, "publish", "profile", "init", "wiki", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
@@ -877,6 +903,7 @@ func TestPublishBuildGitHubWikiFailsWhenOutputScanFindsLeak(t *testing.T) {
 }
 
 func TestPublishBuildRejectsPinaxInternalOutputDirectory(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "publish", "profile", "init", "wiki", "--target", "github-wiki", "--renderer", "none", "--vault", root, "--json")
@@ -918,6 +945,7 @@ func TestPublishBuildGitHubPagesFailsWhenFakeHugoOutputLeaks(t *testing.T) {
 }
 
 func TestPublishBuildGitHubPagesRealHugoSmokeWhenAvailable(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("hugo"); err != nil {
 		t.Skip("hugo executable not available; skipping optional real Hugo smoke")
 	}
@@ -1112,6 +1140,7 @@ func preparePinaxWebPublishApproval(t *testing.T, root, outDir string) {
 }
 
 func TestPublishDeployRequiresReceiptAndCleanScan(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git executable not available")
 	}
@@ -1131,6 +1160,7 @@ func TestPublishDeployRequiresReceiptAndCleanScan(t *testing.T) {
 }
 
 func TestPublishDeployMatrixCoversWikiVaultRootAndRemoteRedaction(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git executable not available")
 	}
@@ -1217,6 +1247,7 @@ func TestPublishDoctorIssueOutputCLI(t *testing.T) {
 }
 
 func TestPublishProfileValidateIssueOutputCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, ".pinax", "publish", "profiles", "bad.yaml"), "schema_version: pinax.publish_profile.v1\nname: bad\ntarget: github-pages\nrenderer: unknown\n")

@@ -10,6 +10,7 @@ import (
 )
 
 func TestPromptAssetModelsAutoMigrate(t *testing.T) {
+	t.Parallel()
 	db, err := gorm.Open(sqlite.Open(t.TempDir()+"/index.sqlite"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatalf("open temp db: %v", err)
@@ -42,6 +43,7 @@ func TestPromptAssetModelsAutoMigrate(t *testing.T) {
 }
 
 func TestPromptAssetModelsAreRegisteredForGormGen(t *testing.T) {
+	t.Parallel()
 	want := map[string]bool{
 		"*model.PromptAssetRecord":          false,
 		"*model.PromptAssetVersionRecord":   false,

@@ -14,6 +14,7 @@ import (
 // 全程走 HTTP server transport，不替换为 direct file transport。
 
 func TestServerTransportAllowsManifestOnlyCommitAfterManifestUpload(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_manifest_only", SessionToken: "secret"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_manifest_only", DeviceID: "laptop", Token: server.Token()})
@@ -36,6 +37,7 @@ func TestServerTransportAllowsManifestOnlyCommitAfterManifestUpload(t *testing.T
 }
 
 func TestServerTransportPutManifestSignsUploadPlan(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_manifest_plan", SessionToken: "secret"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_manifest_plan", DeviceID: "laptop", Token: server.Token()})
@@ -50,6 +52,7 @@ func TestServerTransportPutManifestSignsUploadPlan(t *testing.T) {
 }
 
 func TestServerTransportTwoDeviceConvergence(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_conv", SessionToken: "conv-token"})
 	defer server.Close()
 	ctx := context.Background()
@@ -139,6 +142,7 @@ func TestServerTransportTwoDeviceConvergence(t *testing.T) {
 // 两个设备从同一 base revision 提交，只有一个成功；失败方拿到 REVISION_CONFLICT，
 // 且不能让后写者静默覆盖先写者。
 func TestServerTransportConflictPreservesBothSides(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_conflict", SessionToken: "conflict-token"})
 	defer server.Close()
 	ctx := context.Background()
@@ -220,6 +224,7 @@ func TestServerTransportConflictPreservesBothSides(t *testing.T) {
 // TestServerTransportUnavailablePreservesLocalState 证明后端不可用时本地不被破坏：
 // transport_error 不能让 RemoteWrite 变 true，且错误可识别为可重试。
 func TestServerTransportUnavailablePreservesLocalState(t *testing.T) {
+	t.Parallel()
 	// 直接构造一个指向不存在的 endpoint 的 client。
 	client, err := New(Config{Endpoint: "http://127.0.0.1:0", VaultID: "vault_down", DeviceID: "laptop", Token: "x"})
 	if err != nil {

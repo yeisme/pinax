@@ -17,6 +17,7 @@ import (
 )
 
 func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
+	t.Parallel()
 	var gotAuth, gotDevice, gotRequestID string
 	var gotCommit CommitRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +54,7 @@ func TestClientSendsAuthDeviceAndRequestHeaders(t *testing.T) {
 }
 
 func TestClientBootstrapPrincipalAndVaultLifecycle(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{BootstrapToken: "boot-secret", SessionToken: "session-token"})
 	defer server.Close()
 
@@ -85,6 +87,7 @@ func TestClientBootstrapPrincipalAndVaultLifecycle(t *testing.T) {
 }
 
 func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
 	defer server.Close()
 
@@ -166,6 +169,7 @@ func TestClientChangesBatchCheckSignUploadAndBlobTransfer(t *testing.T) {
 }
 
 func TestClientSignUploadRejectsReplanMismatchAndPreservesOriginalUpload(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_replan", SessionToken: "secret-token"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_replan", DeviceID: "dev_laptop", Token: server.Token()})
@@ -201,6 +205,7 @@ func TestClientSignUploadRejectsReplanMismatchAndPreservesOriginalUpload(t *test
 }
 
 func TestClientSignUploadRejectsPendingReplanMismatch(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_pending_replan", SessionToken: "secret-token"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_pending_replan", DeviceID: "dev_laptop", Token: server.Token()})
@@ -225,6 +230,7 @@ func TestClientSignUploadRejectsPendingReplanMismatch(t *testing.T) {
 }
 
 func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_plan", SessionToken: "secret-token"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_plan", DeviceID: "dev_laptop", Token: server.Token()})
@@ -251,6 +257,7 @@ func TestClientUploadBlobRequiresPlannedHashSizeAndExpiry(t *testing.T) {
 }
 
 func TestClientUploadBlobRejectsMalformedEnvelopeAndPlaintextPathHash(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_validation", SessionToken: "secret-token"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_validation", DeviceID: "dev_laptop", Token: server.Token()})
@@ -348,6 +355,7 @@ func compactBlobEnvelopeSize(t *testing.T, envelope BlobEnvelope) int {
 }
 
 func TestClientSignUploadRejectsNegativeSize(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: server.Token()})
@@ -365,6 +373,7 @@ func TestClientSignUploadRejectsNegativeSize(t *testing.T) {
 }
 
 func TestClientRevisionCASConflictReturnsStableError(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "secret-token"})
 	defer server.Close()
 
@@ -396,6 +405,7 @@ func TestClientRevisionCASConflictReturnsStableError(t *testing.T) {
 }
 
 func TestClientRejectsMissingAuth(t *testing.T) {
+	t.Parallel()
 	server := mlptest.New(mlptest.Config{VaultID: "vault_1", SessionToken: "session-token"})
 	defer server.Close()
 	client, err := New(Config{Endpoint: server.URL, VaultID: "vault_1", DeviceID: "dev_laptop", Token: "wrong-token"})
@@ -413,6 +423,7 @@ func TestClientRejectsMissingAuth(t *testing.T) {
 }
 
 func TestContractFixtureCoversMinimumCloudAPI(t *testing.T) {
+	t.Parallel()
 	payload, err := os.ReadFile("testdata/cloud_contract.json")
 	if err != nil {
 		t.Fatalf("read contract fixture: %v", err)
@@ -496,6 +507,7 @@ func writeJSON(t *testing.T, w http.ResponseWriter, status int, value any) {
 }
 
 func TestVaultScopedMethodsRejectEmptyVaultIDWithoutPanic(t *testing.T) {
+	t.Parallel()
 	client, cErr := New(Config{Endpoint: "https://cloud.example.test", VaultID: "", DeviceID: "dev", Token: "tok"})
 	if cErr != nil {
 		t.Fatalf("construct client: %v", cErr)

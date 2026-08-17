@@ -8,6 +8,7 @@ import (
 )
 
 func TestRPCAgentContextRoute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := app.NewService()
@@ -32,6 +33,7 @@ func TestRPCAgentContextRoute(t *testing.T) {
 }
 
 func TestRPCAgentMemoryRecallRoute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := app.NewService()
@@ -56,6 +58,7 @@ func TestRPCAgentMemoryRecallRoute(t *testing.T) {
 }
 
 func TestRPCAgentCapabilityDiscoveryVisible(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := app.NewService()

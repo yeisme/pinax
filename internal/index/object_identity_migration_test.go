@@ -32,6 +32,7 @@ type legacyPropertyValueRecord struct {
 func (legacyPropertyValueRecord) TableName() string { return "property_value_records" }
 
 func TestSchemaV2BackfillsObjectIdentityFromV1Projection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	db, err := open(root)
 	if err != nil {
@@ -74,6 +75,7 @@ func TestSchemaV2BackfillsObjectIdentityFromV1Projection(t *testing.T) {
 }
 
 func TestObjectIdentityConsistencyMarksIndexStale(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	notes := []domain.Note{{ID: objectID, Title: "A", Path: "notes/a.md", Tags: []string{"alpha"}}}
