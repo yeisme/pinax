@@ -10,6 +10,7 @@ import (
 )
 
 func TestIdentityFirstRealSyncSmoke(t *testing.T) {
+	t.Parallel()
 	endpoint := os.Getenv("PINAX_SYNC_REAL_ENDPOINT")
 	if endpoint == "" {
 		t.Skip("PINAX_SYNC_REAL_ENDPOINT is required for real sync smoke")

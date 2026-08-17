@@ -35,6 +35,7 @@ var forbiddenEvidenceClasses = []string{
 // evidence directory with the required schema fields even when the command
 // output contains seeded sensitive markers.
 func TestIntegrationEvidenceSuccess(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	result, err := evidence.Run(evidence.Config{
 		RunID:     "evidence-success",
@@ -63,6 +64,7 @@ func TestIntegrationEvidenceSuccess(t *testing.T) {
 // writes full evidence, preserves the original non-zero exit code, captures stderr,
 // and redacts seeded markers from every surface.
 func TestIntegrationEvidenceFailurePreservesExitCode(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	result, err := evidence.Run(evidence.Config{
 		RunID:     "evidence-failure",
@@ -98,6 +100,7 @@ func TestIntegrationEvidenceFailurePreservesExitCode(t *testing.T) {
 // TestIntegrationEvidenceArgvRedaction proves sensitive markers passed as argv
 // are redacted in command.txt and summary.json.
 func TestIntegrationEvidenceArgvRedaction(t *testing.T) {
+	t.Parallel()
 	parent := t.TempDir()
 	result, err := evidence.Run(evidence.Config{
 		RunID:     "evidence-argv",
@@ -186,6 +189,7 @@ func assertEvidenceDirClean(t *testing.T, runDir string) {
 
 // TestEvidenceRedactUnit proves the Redact function scrubs every forbidden class.
 func TestEvidenceRedactUnit(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"Authorization: Bearer abc123":         "contains redacted bearer",
 		"token=secret_value":                   "token redacted",

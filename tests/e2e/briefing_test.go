@@ -8,6 +8,7 @@ import (
 )
 
 func TestBriefing(t *testing.T) {
+	t.Parallel()
 	feishu := newFakeHTTPServer(t)
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/briefing/scripts",

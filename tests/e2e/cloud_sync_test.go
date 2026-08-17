@@ -10,6 +10,7 @@ import (
 )
 
 func TestCloud(t *testing.T) {
+	t.Parallel()
 	fake := mlptest.New(mlptest.Config{VaultID: "ws_123", SessionToken: "fake-token"})
 	t.Cleanup(fake.Close)
 	testscript.Run(t, testscript.Params{
@@ -22,6 +23,7 @@ func TestCloud(t *testing.T) {
 }
 
 func TestSyncDaemon(t *testing.T) {
+	t.Parallel()
 	fake := mlptest.New(mlptest.Config{VaultID: "ws_123", SessionToken: "fake-token"})
 	t.Cleanup(fake.Close)
 	testscript.Run(t, testscript.Params{

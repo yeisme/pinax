@@ -8,6 +8,7 @@ import (
 )
 
 func TestVersionAssetLookup(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/version_asset_lookup/scripts",
 		Setup: func(env *testscript.Env) error {

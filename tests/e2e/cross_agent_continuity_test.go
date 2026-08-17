@@ -18,6 +18,7 @@ import (
 // Agent B 获得 approved decision、blocker、commitment 和 resolvable sources，
 // 不获得完整 transcript。
 func TestCrossAgentContinuity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "continuity-e2e"}
@@ -136,6 +137,7 @@ func TestCrossAgentContinuity(t *testing.T) {
 
 // TestAgentContinuityFixture 验证 fixture vault 的确定性。
 func TestAgentContinuityFixture(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "fixture-test"}

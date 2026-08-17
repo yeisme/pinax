@@ -8,6 +8,7 @@ import (
 // real CLI binary: init → capture → index → search → links → doctor → plan →
 // snapshot → apply, plus deterministic fixture coverage and redaction gates.
 func TestProofLoop(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/proof_loop/scripts", nil)
 }
 
@@ -17,5 +18,6 @@ func TestProofLoop(t *testing.T) {
 // and restore using only the installed pinax binary — no provider credentials,
 // Cloud Sync, daemon, MCP, dashboard, or source checkout required.
 func TestProofLoopReleaseCoreFiveMinute(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/proof_loop/scripts", nil)
 }

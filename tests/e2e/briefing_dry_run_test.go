@@ -8,6 +8,7 @@ import (
 )
 
 func TestBriefingDryRun(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/briefing_dry_run/scripts",
 		Setup: func(env *testscript.Env) error {

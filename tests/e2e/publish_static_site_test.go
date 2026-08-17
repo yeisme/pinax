@@ -8,6 +8,7 @@ import (
 )
 
 func TestPublishStaticSite(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/publish_static_site/scripts", func(env *testscript.Env) error {
 		repoRoot, err := filepath.Abs("../..")
 		if err != nil {

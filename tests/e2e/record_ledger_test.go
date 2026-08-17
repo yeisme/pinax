@@ -7,6 +7,7 @@ import (
 )
 
 func TestRecordLedger(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/records/scripts", func(env *testscript.Env) error {
 		env.Vars = append(env.Vars, "NO_COLOR=")
 		return nil
