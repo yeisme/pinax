@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"github.com/yeisme/pinax/internal/profile"
 	"github.com/yeisme/pinax/internal/syncwire"
@@ -36,6 +37,34 @@ const (
 	keySize                       = 32
 	manifestAssociatedData        = "pinax.cloud.manifest"
 )
+
+// kdfIterationsOverride lets tests shrink PBKDF2 iteration counts; zero
+// keeps the production constants. Atomic so -race stays clean when parallel
+// tests derive keys while a TestMain sets it once.
+var kdfIterationsOverride atomic.Int64
+
+// kdfIterations returns the iteration count for a derivation, honoring the
+// test-only override.
+func kdfIterations(productionDefault int) int {
+	if override := int(kdfIterationsOverride.Load()); override > 0 {
+		return override
+	}
+	return productionDefault
+}
+
+// SetKeyDerivationIterationsForTesting is TEST-ONLY: it overrides the
+// PBKDF2-SHA256 iteration counts for both the v2 and legacy derivations in
+// this process. Never call it from non-test code — it would silently weaken
+// every key derived here. Legitimate callers are _test.go files and TestMain
+// functions only; TestKeyDerivationOverrideIsTestOnly enforces this by
+// walking the module and failing if any production file references it.
+func SetKeyDerivationIterationsForTesting(iterations int) {
+	if iterations <= 0 {
+		kdfIterationsOverride.Store(0)
+		return
+	}
+	kdfIterationsOverride.Store(int64(iterations))
+}
 
 type CryptoKey struct {
 	KeyID string
@@ -64,7 +93,7 @@ func DeriveKeyV2(secretRef string) (CryptoKey, error) {
 		return CryptoKey{}, err
 	}
 	salt := deriveV2Salt(resolved)
-	return deriveKeyFrom(resolved, salt, keyDerivationIterationsV2), nil
+	return deriveKeyFrom(resolved, salt, kdfIterations(keyDerivationIterationsV2)), nil
 }
 
 func deriveV2Salt(resolved string) string {
@@ -79,7 +108,7 @@ func DeriveKeyLegacy(secretRef string) (CryptoKey, error) {
 	if err != nil {
 		return CryptoKey{}, err
 	}
-	return deriveKeyFrom(resolved, keyDerivationSaltLegacy, keyDerivationIterationsLegacy), nil
+	return deriveKeyFrom(resolved, keyDerivationSaltLegacy, kdfIterations(keyDerivationIterationsLegacy)), nil
 }
 
 // DeriveKey derives the active v2 key.

@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/remote"
 )
 
 // TestMain redirects the pinax profile config dir to a scratch directory so
@@ -15,5 +17,6 @@ func TestMain(m *testing.M) {
 			defer func() { _ = os.RemoveAll(dir) }()
 		}
 	}
+	remote.SetKeyDerivationIterationsForTesting(1000)
 	os.Exit(m.Run())
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/remote"
 )
 
 // TestMain redirects the pinax profile config dir (XDG_CONFIG_HOME) to a
@@ -19,5 +21,6 @@ func TestMain(m *testing.M) {
 		}
 	}
 	_ = filepath.Separator
+	remote.SetKeyDerivationIterationsForTesting(1000)
 	os.Exit(m.Run())
 }
