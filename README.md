@@ -75,12 +75,12 @@ Install from source:
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-Download a prebuilt archive from GitHub Releases (current stable tag: `v0.1.8`):
+Download a prebuilt archive from GitHub Releases (current stable tag: `v0.2.0`):
 
 ```bash
 # linux x86_64 (adjust os/arch for your platform: darwin, windows; x86_64, aarch64)
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.8/pinax_0.1.8_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.8/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.2.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version

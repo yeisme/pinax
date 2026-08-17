@@ -25,8 +25,8 @@ go install github.com/yeisme/pinax/cmd/pinax@latest
 
 ```bash
 # 示例：Linux x86_64
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.1.8/pinax_0.1.8_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.1.8/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.2.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz pinax
 chmod +x pinax
