@@ -28,7 +28,7 @@ tasks:
   test:
     desc: Run Go tests.
     cmds:
-      - go test ./...
+      - go test -timeout={{default "10m" .GO_TEST_TIMEOUT}} ./...
 
   test:integration:
     desc: Run integration/e2e tests and write local evidence.
@@ -361,7 +361,7 @@ tasks:
   race:
     desc: Run the race detector on concurrency-heavy packages (watcher, debounce, monitor, sync).
     cmds:
-      - go test -race -count=1 ./internal/app/syncdaemon/... ./internal/cloudsync/... ./internal/cloudclient/... ./internal/app -run 'Monitor|Sync|Publish|Watch|Debounce|Forward'
+      - go test -race -count=1 -shuffle=on -timeout={{default "30m" .GO_TEST_TIMEOUT}} ./internal/app/syncdaemon/... ./internal/cloudsync/... ./internal/cloudclient/... ./internal/app -run 'Monitor|Sync|Publish|Watch|Debounce|Forward'
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.
