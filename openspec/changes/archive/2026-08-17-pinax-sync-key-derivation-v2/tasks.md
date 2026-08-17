@@ -15,3 +15,11 @@
 go test ./internal/remote ./internal/app ./cmd/pinax -count=1
 task check
 ```
+
+## 真实 vault 迁移证据（2026-08-17）
+
+- vault: data/yeisme-notes → Tencent COS pinax-note-1322128555（backup local-20260817T110752，178 files）
+- 迁移前 `sync keys`: remote_derivation=legacy（远端 manifest KeyID 与本地 legacy 计算一致）
+- `sync pull --yes`: 0 冲突（legacy 读兼容验证）；`sync push --yes`: rev_20260817110953，探针证实 178/178 blob+manifest 全 v2
+- 二次 push up_to_date=true；`sync keys` v2 / reencryption_required=false；52 笔记前后一致、index fresh
+- push up-to-date 快路径补 remoteSnapshotFullyUnderKey 守卫（否则重加密会被跳过）；收据补计重加密分支上传（cloudUploadStats）
