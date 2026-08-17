@@ -8,6 +8,7 @@ import (
 )
 
 func TestIndexSync(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/index_sync/scripts",
 		Setup: func(env *testscript.Env) error {

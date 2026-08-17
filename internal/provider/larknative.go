@@ -261,3 +261,25 @@ func firstString(payload map[string]any, keys ...string) string {
 	}
 	return ""
 }
+
+// ExtractJSON returns the first JSON object found in CLI output, tolerating
+// leading non-JSON noise. Shared with the app-layer provider call sites.
+func ExtractJSON(body []byte) []byte {
+	return extractJSON(body)
+}
+
+// FirstString resolves the first non-empty string among keys, looking in both
+// the payload root and its nested "data" object. Shared with the app-layer
+// provider result parsing.
+func FirstString(payload map[string]any, keys ...string) string {
+	return firstString(payload, keys...)
+}
+
+// AppendAs appends the profile's --as identity argument when it is set and
+// not "auto". Shared with the app-layer lark argument builder.
+func AppendAs(args []string, as string) []string {
+	if as != "" && as != "auto" {
+		args = append(args, "--as", as)
+	}
+	return args
+}

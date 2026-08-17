@@ -7,6 +7,7 @@ import (
 )
 
 func TestExecuteQueryAggregatesGroupsAndPages(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{Title: "A", Path: "notes/a.md", Status: "active", Body: "priority:: 2\ndue:: 2026-06-20\nSECRET_BODY"},
 		{Title: "B", Path: "notes/b.md", Status: "active", Body: "priority:: 5\ndue:: 2026-06-21\nSECRET_BODY"},
@@ -36,6 +37,7 @@ func TestExecuteQueryAggregatesGroupsAndPages(t *testing.T) {
 }
 
 func TestExecuteQueryTypedFiltersAndEmptyChecks(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{Title: "A", Path: "notes/a.md", Status: "active", Body: "priority:: 2\npublished:: true\ndue:: 2026-06-20"},
 		{Title: "B", Path: "notes/b.md", Status: "done", Body: "priority:: 1\npublished:: false"},
@@ -52,6 +54,7 @@ func TestExecuteQueryTypedFiltersAndEmptyChecks(t *testing.T) {
 }
 
 func TestParseDataviewLowersSupportedSubset(t *testing.T) {
+	t.Parallel()
 	ast, err := ParseDataview(`TABLE title, status FROM #pinax WHERE contains(tags, "project") SORT updated_at DESC GROUP BY status LIMIT 5`)
 	if err != nil {
 		t.Fatalf("parse dataview table: %v", err)
@@ -84,6 +87,7 @@ func TestParseDataviewLowersSupportedSubset(t *testing.T) {
 }
 
 func TestParseDataviewAcceptsMultilineClauses(t *testing.T) {
+	t.Parallel()
 	ast, err := ParseDataview(`TABLE title, status
 FROM #pinax
 WHERE contains(tags, "project")
@@ -116,6 +120,7 @@ LIMIT 3`)
 }
 
 func TestParseDataviewRejectsUnsupportedAndForbiddenSyntax(t *testing.T) {
+	t.Parallel()
 	for _, query := range []string{`DATAVIEWJS console.log("x")`, `TABLE env(secret) FROM #pinax`, `TABLE title FROM #pinax FLATTEN tags`} {
 		if _, err := ParseDataview(query); err == nil {
 			t.Fatalf("expected dataview error for %q", query)
@@ -124,6 +129,7 @@ func TestParseDataviewRejectsUnsupportedAndForbiddenSyntax(t *testing.T) {
 }
 
 func TestExecuteTaskSourceFromMarkdownTasks(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/projects/a.md", Folder: "projects", Body: "- [ ] Draft plan #pinax due:: 2026-06-20 priority:: high ^task-a\n- [x] Done item #pinax"},
 		{ID: "note_b", Title: "B", Path: "notes/other/b.md", Folder: "other", Body: "- [ ] Other task #pinax"},
@@ -147,6 +153,7 @@ func TestExecuteTaskSourceFromMarkdownTasks(t *testing.T) {
 }
 
 func TestExecuteLinkBacklinkAndAssetSources(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Body: "See [[Beta]] and ![Diagram](../assets/diagram.png)."},
 		{ID: "note_beta", Title: "Beta", Path: "notes/beta.md", Body: "Target note."},
@@ -181,6 +188,7 @@ func TestExecuteLinkBacklinkAndAssetSources(t *testing.T) {
 }
 
 func TestExecuteRelationSourceAndRollupLiteAggregates(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Status: "active", UpdatedAt: "2026-06-21", Body: "See [[Target]], [[Missing]], and [[Dup]]. SECRET_BODY"},
 		{ID: "note_target", Title: "Target", Path: "notes/target.md", Status: "active", UpdatedAt: "2026-06-22", Body: "Target body."},

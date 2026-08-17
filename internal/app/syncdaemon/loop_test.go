@@ -7,6 +7,7 @@ import (
 )
 
 func TestErrorCodeClassifiesKeyIDMismatch(t *testing.T) {
+	t.Parallel()
 	err := errors.New("key ID mismatch: envelope=key_old, key=key_new")
 	if got := errorCode(err); got != "encryption_key_mismatch" {
 		t.Fatalf("errorCode = %q", got)

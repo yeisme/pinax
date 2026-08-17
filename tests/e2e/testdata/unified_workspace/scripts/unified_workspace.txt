@@ -1,4 +1,5 @@
 # Unified workspace smoke flow across workspace, tasks, database tabs, graph, assets, API discovery, MCP, and publish plan.
+env PINAX_TEST_MODE=1
 env PINAX_TEST_NOW=2026-06-25T10:00:00Z
 
 exec mkdir -p vault/notes vault/assets vault/daily

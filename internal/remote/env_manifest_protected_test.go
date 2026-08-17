@@ -12,6 +12,7 @@ import (
 // even when the user attempts to re-include them in .pinaxignore. Only the
 // non-sensitive .env.example template may sync.
 func TestManifestExcludesEnvSecretsByHardDeny(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeManifestFixture(t, filepath.Join(root, "notes", "a.md"), "content\n")
 	writeManifestFixture(t, filepath.Join(root, ".env"), "SECRET=plaintext\n")

@@ -42,9 +42,12 @@ Appearance settings for CLI output use existing Pinax config keys:
 ```
 pinax config set output.theme high-contrast --scope user
 pinax config set output.color auto --scope user
+pinax config set output.style table --scope user
 pinax config set output.markdown.style dark --scope user
 pinax config set themes.custom.accent cyan --scope user
 ```
+
+`output.style` defaults to `table` and accepts `table` or `compact`; `PINAX_OUTPUT_STYLE` and the per-command `--output-style` flag are equivalent overrides for human output only.
 
 Keymap settings are a future Web-client preference surface. Pinax CLI currently exposes only `editor.command` for external editor integration:
 

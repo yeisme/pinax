@@ -13,6 +13,7 @@ import (
 // TestAgentMemoryTransportParity 验证 CLI app service、MCP server 和 Go SDK
 // 对同一 vault + scope 返回语义一致的 context pack 核心字段。
 func TestAgentMemoryTransportParity(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "default"}

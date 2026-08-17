@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -245,7 +246,7 @@ func shareServeOnce(ctx context.Context, listener net.Listener, handler http.Han
 	server := &http.Server{Handler: handler}
 	errCh := make(chan error, 1)
 	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
 		}

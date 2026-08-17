@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 func TestPublishProfileFacadeWritesAndValidatesProfile(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -47,6 +49,7 @@ func TestPublishProfileFacadeWritesAndValidatesProfile(t *testing.T) {
 }
 
 func TestPublishProfileValidateExposesLegacyRendererMigrationPlan(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -79,6 +82,7 @@ func TestPublishProfileValidateExposesLegacyRendererMigrationPlan(t *testing.T) 
 }
 
 func TestPublishPlanFacadeSelectsAndBlocksNotes(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -102,6 +106,7 @@ func TestPublishPlanFacadeSelectsAndBlocksNotes(t *testing.T) {
 }
 
 func TestPublishPlanFacadeClassifiesLinkedAssets(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -125,6 +130,7 @@ func TestPublishPlanFacadeClassifiesLinkedAssets(t *testing.T) {
 }
 
 func TestPublishGitErrorRedactionCoversCredentialsAndPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	raw := "fatal: https://user:raw-token@example.invalid/repo.git Authorization: Bearer raw-token token=raw " + root + "/dist"
 	redacted := publishRedactGitOutput(raw, root)
@@ -141,6 +147,7 @@ func TestPublishGitErrorRedactionCoversCredentialsAndPaths(t *testing.T) {
 }
 
 func TestPublishDeployFacadeExposesStableMissingProfileError(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	ctx := context.Background()
 	req := PublishRequest{VaultPath: t.TempDir(), Profile: "public", Target: "github-pages", Renderer: "hugo"}
@@ -174,6 +181,7 @@ func TestPublishDeployFacadeExposesStableMissingProfileError(t *testing.T) {
 }
 
 func TestPublishDevWatchOnceRebuildsAfterVaultMarkdownChange(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
@@ -186,14 +194,28 @@ func TestPublishDevWatchOnceRebuildsAfterVaultMarkdownChange(t *testing.T) {
 
 	result := make(chan domain.Projection, 1)
 	errs := make(chan error, 1)
+	// watch_started is emitted after the fsnotify watchers are armed; waiting
+	// for it (instead of a fixed sleep) removes both the latency and the flake
+	// window where a change lands before watching begins.
+	watchStarted := make(chan struct{}, 1)
+	var watchOnce sync.Once
+	events := func(event PublishEvent) {
+		if event.Type == "watch_started" {
+			watchOnce.Do(func() { close(watchStarted) })
+		}
+	}
 	go func() {
-		projection, err := svc.PublishDev(ctx, PublishRequest{VaultPath: root, Profile: "public", Out: outDir, Host: "127.0.0.1", Port: 0, Watch: true, Once: true})
+		projection, err := svc.PublishDev(ctx, PublishRequest{VaultPath: root, Profile: "public", Out: outDir, Host: "127.0.0.1", Port: 0, Watch: true, Once: true, LiveEvents: events})
 		result <- projection
 		errs <- err
 	}()
 
 	waitForFile(t, filepath.Join(outDir, "index.html"), 10*time.Second)
-	time.Sleep(300 * time.Millisecond)
+	select {
+	case <-watchStarted:
+	case <-ctx.Done():
+		t.Fatalf("publish dev watch never started watching: %v", ctx.Err())
+	}
 	writeAppPublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n\nSecond body.\n")
 
 	select {

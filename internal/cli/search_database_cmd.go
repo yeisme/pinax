@@ -232,3 +232,11 @@ func addImportExportCommands(root *cobra.Command, ctx commandBuildContext) {
 	exportCmd.AddCommand(exportMarkdownCmd)
 	root.AddCommand(exportCmd)
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "database view render",
+		Method:      "Pinax.DatabaseView.Render",
+		ArgParams:   []string{"name"},
+	})
+}

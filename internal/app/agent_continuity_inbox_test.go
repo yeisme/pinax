@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/agentprotocol"
 )
 
 func TestAgentContinuity_OK(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "continuity-app-test"}
@@ -38,7 +40,47 @@ func TestAgentContinuity_OK(t *testing.T) {
 	}
 }
 
+func TestAgentContinuityResolvesNoteSourcesAgainstVault(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	vault := t.TempDir()
+	writeAppFixture(t, filepath.Join(vault, "notes", "source.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_continuity_source\ntitle: Continuity Source\n---\n\n# Continuity Source\n")
+	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "continuity-source-resolution"}
+	svc := NewAgentMemoryService()
+	defer func() { _ = svc.Close() }()
+
+	from := adapterPrincipal()
+	from.Capabilities = append(from.Capabilities, agentprotocol.CapabilityHandoff)
+	_, err := svc.AgentHandoffCreate(ctx, AgentHandoffCreateRequest{
+		VaultPath: vault,
+		From:      from,
+		To:        agentprotocol.DefaultAdapterPrincipal("agent-b", "codex"),
+		Scope:     scope,
+		Objective: "Continue with verified sources",
+		Sources: agentprotocol.SourceRefList{
+			{Kind: "note", Ref: "note_continuity_source"},
+			{Kind: "note", Ref: "note_missing_source"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create handoff: %v", err)
+	}
+
+	pack, err := svc.AgentContinuity(ctx, ContinuityRequest{
+		VaultPath: vault,
+		Principal: agentprotocol.DefaultAdapterPrincipal("agent-b", "codex"),
+		Scope:     scope,
+	})
+	if err != nil {
+		t.Fatalf("compile continuity: %v", err)
+	}
+	if pack.SourceCoverage.Total != 2 || pack.SourceCoverage.Resolved != 1 || pack.SourceCoverage.Missing != 1 {
+		t.Fatalf("source coverage = %+v, want total=2 resolved=1 missing=1", pack.SourceCoverage)
+	}
+}
+
 func TestAgentContinuity_InvalidPrincipal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := NewAgentMemoryService()
@@ -55,6 +97,7 @@ func TestAgentContinuity_InvalidPrincipal(t *testing.T) {
 }
 
 func TestMemoryInbox_OK(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "inbox-app-test"}
@@ -80,6 +123,7 @@ func TestMemoryInbox_OK(t *testing.T) {
 }
 
 func TestMemoryInbox_InvalidScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := NewAgentMemoryService()
@@ -95,6 +139,7 @@ func TestMemoryInbox_InvalidScope(t *testing.T) {
 }
 
 func TestMemoryInboxItemDetail_ReturnsAggregatedProposal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, vault := testAgentMemoryService(t)
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "inbox-detail"}
@@ -129,6 +174,7 @@ func TestMemoryInboxItemDetail_ReturnsAggregatedProposal(t *testing.T) {
 }
 
 func TestMemoryInboxItemDetail_ReturnsNotFound(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, vault := testAgentMemoryService(t)
 

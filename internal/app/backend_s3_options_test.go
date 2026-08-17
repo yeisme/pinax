@@ -7,6 +7,7 @@ import (
 )
 
 func TestBackendS3OptionsUseProfileFields(t *testing.T) {
+	t.Parallel()
 	profile := domain.BackendProfile{
 		Kind:     domain.BackendS3,
 		Bucket:   "notes",
@@ -22,6 +23,7 @@ func TestBackendS3OptionsUseProfileFields(t *testing.T) {
 }
 
 func TestBackendS3OptionsUseVirtualHostStyleForTencentCOS(t *testing.T) {
+	t.Parallel()
 	profile := domain.BackendProfile{
 		Kind:     domain.BackendS3,
 		Bucket:   "notes",

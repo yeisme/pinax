@@ -8,6 +8,7 @@ import (
 )
 
 func TestMemoryCaptureListRecallAndContext(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	source := filepath.Join(root, "docs", "operations", "release-packaging.md")
@@ -72,6 +73,7 @@ func TestMemoryCaptureListRecallAndContext(t *testing.T) {
 }
 
 func TestMemoryRecallRankingSignalsAndRedaction(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "memory", "capture", "--type", "fact", "--subject", "pinax", "--predicate", "release_workflow", "--object", "release uses checks", "--body", "Authorization: Bearer raw-prompt provider-payload SECRET_SENTINEL", "--source", "openspec/changes/release/design.md", "--vault", root, "--json")
@@ -104,6 +106,7 @@ func TestMemoryRecallRankingSignalsAndRedaction(t *testing.T) {
 }
 
 func TestMemoryDryRunDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -122,6 +125,7 @@ func TestMemoryDryRunDoesNotWrite(t *testing.T) {
 }
 
 func TestMemoryRecallExcludesDraftSupersededExpiredAndRejected(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	for _, status := range []string{"draft", "confirmed", "superseded", "expired", "rejected"} {
@@ -148,6 +152,7 @@ func TestMemoryRecallExcludesDraftSupersededExpiredAndRejected(t *testing.T) {
 }
 
 func TestMemoryRejectsInvalidRecord(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out, err := runCLIExpectError("memory", "capture", "--type", "unknown", "--subject", "pinax", "--object", "bad", "--vault", root, "--json")

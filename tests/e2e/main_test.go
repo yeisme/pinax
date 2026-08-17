@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yeisme/pinax/internal/remote"
+
 	"github.com/rogpeppe/go-internal/testscript"
 )
 
@@ -60,6 +62,9 @@ func TestMain(m *testing.M) {
 	}
 
 	// 6. Run all tests in the package
+	// Shrinks PBKDF2 for the in-process portions of the e2e binary; the
+	// exec'd pinax binary still uses production iterations by design.
+	remote.SetKeyDerivationIterationsForTesting(1000)
 	code := m.Run()
 
 	os.Exit(code)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestConfigRendering(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/config/scripts", func(env *testscript.Env) error {
 		env.Vars = append(env.Vars, "XDG_CONFIG_HOME="+filepath.Join(env.WorkDir, "xdg"), "NO_COLOR=")
 		return nil

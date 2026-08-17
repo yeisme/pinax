@@ -8,6 +8,7 @@ import (
 )
 
 func TestSanitizeOperationsRedactsObjectMovePaths(t *testing.T) {
+	t.Parallel()
 	operations := SanitizeOperations([]syncplan.Operation{{Kind: "move", Path: "notes/current.md", FromPath: "notes/old.md", ToPath: "projects/new.md"}}, "hash")
 	if len(operations) != 1 {
 		t.Fatalf("operations = %#v", operations)

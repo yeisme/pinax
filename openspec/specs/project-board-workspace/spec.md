@@ -5,13 +5,13 @@ Define Pinax local project board workspace behavior: bounded board and note proj
 ## Requirements
 ### Requirement: Pinax exposes local project board projections
 
-Pinax SHALL render project board views from local project metadata, Markdown notes, typed index/query projections, planning snapshots, and optional TaskBridge facts without requiring remote provider credentials.
+Pinax SHALL render project board views from local project metadata, Markdown notes, typed index/query projections, and planning snapshots without requiring remote provider credentials.
 
 #### Scenario: Showing a project board
 - **GIVEN** a Pinax vault has a project `research` and notes tagged or frontmatter-linked to that project
 - **WHEN** the user runs `pinax project board show research --vault ./my-notes --json`
 - **THEN** stdout SHALL contain one JSON envelope with `command=project.board.show`, project facts, board columns, item counts, warnings, index status, and next actions
-- **AND** no Markdown file, `.pinax` asset, Git state, TaskBridge state, provider state, or remote service SHALL be modified.
+- **AND** no Markdown file, `.pinax` asset, Git state, provider state, or remote service SHALL be modified.
 
 #### Scenario: Default human board summary
 - **GIVEN** a project board can be built
@@ -110,7 +110,7 @@ Pinax SHALL keep project board write operations explicit and recoverable.
 - **GIVEN** a managed item exists
 - **WHEN** the user runs `pinax project item archive item_abc123 --vault ./my-notes --json`
 - **THEN** Pinax SHALL fail with `approval_required`
-- **AND** no Markdown file, `.pinax` asset, Git state, TaskBridge state, provider state, or remote service SHALL be modified.
+- **AND** no Markdown file, `.pinax` asset, Git state, provider state, or remote service SHALL be modified.
 
 #### Scenario: Snapshot required for high-risk move
 - **GIVEN** an item move would archive, delete, batch-change, or rewrite managed Markdown
@@ -126,7 +126,7 @@ Pinax SHALL keep project board write operations explicit and recoverable.
 
 ### Requirement: Project board integrates with planning without becoming Todo storage
 
-Pinax SHALL let planning workflows consume project board snapshots and facts while keeping TaskBridge as the execution control plane.
+Pinax SHALL let planning workflows consume local project board snapshots and facts without becoming a remote task store.
 
 #### Scenario: Saving a board planning snapshot
 - **GIVEN** a project board can be generated
@@ -137,15 +137,15 @@ Pinax SHALL let planning workflows consume project board snapshots and facts whi
 
 #### Scenario: Planning reads board facts
 - **GIVEN** a saved board snapshot exists for project `research`
-- **WHEN** the user runs `pinax plan weekly --vault ./my-notes --taskbridge --dry-run --json`
+- **WHEN** the user runs `pinax plan weekly --vault ./my-notes --dry-run --json`
 - **THEN** the planning decision MAY include board facts such as blocked count, next count, overdue project items, and evidence refs
 - **AND** it SHALL NOT automatically create or modify remote Todo tasks.
 
-#### Scenario: TaskBridge remains optional
-- **GIVEN** TaskBridge is unavailable
+#### Scenario: planning remains local
+- **GIVEN** no external task runtime is configured
 - **WHEN** the user runs `pinax project board show research --vault ./my-notes --json`
 - **THEN** local board projection SHALL still work from Markdown vault and index facts
-- **AND** TaskBridge unavailability SHALL be reported only as a warning when TaskBridge facts were requested.
+- **AND** no external-runtime warning SHALL be required.
 
 ### Requirement: Project board follows the AI-native CLI output contract
 
@@ -184,7 +184,7 @@ Pinax SHALL expose project board context through readonly dashboard and MCP surf
 - **GIVEN** dashboard is running for a Pinax vault
 - **WHEN** a user requests the project board endpoint for `research`
 - **THEN** it SHALL return bounded board facts and next actions
-- **AND** write-like HTTP methods SHALL be rejected without modifying Markdown, `.pinax`, Git, TaskBridge, provider, or remote state.
+- **AND** write-like HTTP methods SHALL be rejected without modifying Markdown, `.pinax`, Git, provider, or remote state.
 
 #### Scenario: Dashboard note drilldown is bounded
 - **GIVEN** dashboard shows a project board item linked to `note_123`
@@ -278,7 +278,7 @@ Pinax SHALL keep REST and RPC write-capable operations behind the same dry-run, 
 - **GIVEN** moving or archiving an item would rewrite managed Markdown
 - **WHEN** a REST or RPC client requests the write without recent snapshot evidence
 - **THEN** Pinax SHALL return `snapshot_required`
-- **AND** no Markdown file, `.pinax` asset, Git state, TaskBridge state, provider state, or remote service SHALL be modified.
+- **AND** no Markdown file, `.pinax` asset, Git state, provider state, or remote service SHALL be modified.
 
 #### Scenario: Remote server is localhost-only by default
 - **GIVEN** a user starts the local API server
@@ -296,13 +296,13 @@ Pinax SHALL keep REST and RPC write-capable operations behind the same dry-run, 
 
 ### Requirement: Project board implementation has fixture-first tests
 
-Project board workflows SHALL be testable without real Todo provider credentials, real TaskBridge stores, remote networks, or the user's vault.
+Project board workflows SHALL be testable without real Todo provider credentials, external task stores, remote networks, or the user's vault.
 
 #### Scenario: Testing board workflows
 - **GIVEN** project board commands are implemented
 - **WHEN** tests are added
 - **THEN** command e2e tests SHOULD use `github.com/rogpeppe/go-internal/testscript`
-- **AND** tests SHALL use fixture vaults, temporary Git repositories, fake TaskBridge executables when needed, and redaction assertions
+- **AND** tests SHALL use fixture vaults, temporary Git repositories, and redaction assertions
 - **AND** tests SHALL cover readonly projection, save snapshot, configure columns, item add/move/archive, note display card/detail/context/body, approval gate, snapshot guard, stdout/stderr separation, unsupported source handling, dashboard readonly behavior, MCP readonly behavior, and body exposure gating.
 
 #### Scenario: Testing REST and RPC contracts with evidence
@@ -313,7 +313,7 @@ Project board workflows SHALL be testable without real Todo provider credentials
 - **AND** tests SHALL cover capabilities, board endpoint, note display endpoint, RPC board method, dry-run write behavior, approval and snapshot errors, transport status mapping, stdout/stderr separation, and redaction.
 
 #### Scenario: Requiring comments for non-obvious logic
-- **GIVEN** future implementation touches column mapping, source normalization, TaskBridge protocol conversion, managed Markdown patching, approval/snapshot decisions, or non-obvious fixtures
+- **GIVEN** future implementation touches column mapping, source normalization, managed Markdown patching, approval/snapshot decisions, or non-obvious fixtures
 - **WHEN** code is added or changed
 - **THEN** implementation tasks SHALL require succinct Chinese comments explaining the non-obvious decision or recovery boundary.
 
@@ -759,4 +759,3 @@ Task inference SHALL identify its source by object ID plus a stable source ancho
 #### Scenario: Source note moves before task adoption
 - **WHEN** an inferred checklist task is previewed, its source note moves, and the user later applies adoption
 - **THEN** Pinax SHALL resolve the current source by object ID, detect stale source anchors and either adopt the intended task or require a refreshed plan without creating a duplicate task identity.
-

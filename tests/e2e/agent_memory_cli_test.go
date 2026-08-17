@@ -11,6 +11,7 @@ import (
 // TestAgentMemoryCLI exercises the experimental `pinax agent` command tree
 // via testscript: propose → approve → recall → context → handoff → feedback.
 func TestAgentMemoryCLI(t *testing.T) {
+	t.Parallel()
 	repoRoot, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatalf("locate repo root: %v", err)

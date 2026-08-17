@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/yeisme/pinax/internal/app"
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	pinaxconfig "github.com/yeisme/pinax/internal/config"
@@ -29,7 +31,12 @@ type Deps struct {
 	Version string
 }
 
-const rootHelpGroupAnnotation = "pinax.help.group"
+const (
+	rootHelpGroupAnnotation      = "pinax.help.group"
+	rootHelpVisibilityAnnotation = "pinax.help.visibility"
+	rootHelpVisibilityCore       = "core"
+	rootHelpVisibilityAdvanced   = "advanced"
+)
 
 type helpCommandGroup struct {
 	Title    string
@@ -49,16 +56,18 @@ const pinaxHelpTemplate = `{{with (or .Long .Short)}}Summary
 {{end}}{{else}}Available Commands
 {{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}  {{rpad .Name .NamePadding }} {{.Short}}
 {{end}}{{end}}
-{{end}}{{end}}{{if .HasAvailableLocalFlags}}Flags
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+{{end}}{{end}}{{with helpLocalFlagUsages .}}Flags
+{{. | trimTrailingWhitespaces}}
 
-{{end}}{{if .HasAvailableInheritedFlags}}Global Flags
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}
+{{end}}{{with helpInheritedFlagUsages .}}Global Flags
+{{. | trimTrailingWhitespaces}}
 
 {{end}}{{if .HasExample}}Examples
 {{.Example}}
 
 {{end}}{{if .HasSubCommands}}Use "{{.CommandPath}} [command] --help" for more information about a command.
+{{if eq .CommandPath "pinax"}}Run "pinax commands" to see the complete command catalog.
+{{end}}
 {{end}}`
 
 func NewRootCommand(version string) *cobra.Command {
@@ -84,6 +93,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var apiToken string
 	var apiTokenFile string
 	var colorMode string
+	var outputStyle string
 	var themeName string
 	var renderWidth int
 	var markdownStyle string
@@ -163,6 +173,11 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var syncDryRun bool
 	var syncBaseRevision string
 	var syncRemoteRevision string
+	var syncPreview string
+	var syncLimit int
+	var syncLimitSet bool
+	var syncContentDiff bool
+	var syncProgress string
 	var cloudEndpoint string
 	var cloudWorkspace string
 	var cloudDevice string
@@ -190,7 +205,6 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var backendRoot string
 	var backendRemote string
 	var planFromPeriod string
-	var planWithTaskBridge bool
 	var planTaskReview bool
 	var planDryRun bool
 	var planSave bool
@@ -204,22 +218,18 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var feishuText string
 	var deliveryDryRun bool
 
-	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, s3AddressingStyle: &s3AddressingStyle, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseViewLanguage: &databaseViewLanguage, databaseViewDisplay: &databaseViewDisplay, databaseViewGroupBy: &databaseViewGroupBy, databaseViewCalendar: &databaseViewCalendar, databaseViewBoardColumn: &databaseViewBoardColumn, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchEngine: &searchEngine, searchLazyIndex: &searchLazyIndex, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, planFromPeriod: &planFromPeriod, planWithTaskBridge: &planWithTaskBridge, planTaskReview: &planTaskReview, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
+	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, outputStyle: &outputStyle, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, s3AddressingStyle: &s3AddressingStyle, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseViewLanguage: &databaseViewLanguage, databaseViewDisplay: &databaseViewDisplay, databaseViewGroupBy: &databaseViewGroupBy, databaseViewCalendar: &databaseViewCalendar, databaseViewBoardColumn: &databaseViewBoardColumn, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, syncPreview: &syncPreview, syncLimit: &syncLimit, syncLimitSet: &syncLimitSet, syncContentDiff: &syncContentDiff, syncProgress: &syncProgress, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchEngine: &searchEngine, searchLazyIndex: &searchLazyIndex, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, planFromPeriod: &planFromPeriod, planTaskReview: &planTaskReview, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
 
 	cmd := &cobra.Command{
 		Use:           "pinax",
-		Short:         "Local-first Markdown vault notes CLI",
-		Long:          "Pinax manages local Markdown vault notes, index projections, version evidence, and the local dashboard.",
+		Short:         "Personal local knowledge CLI for Markdown",
+		Long:          "Pinax helps one person capture, find, organize, and protect a local Markdown knowledge base. Run pinax commands when you need optional advanced integrations.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Name() == "help" || cmd.CommandPath() == "pinax completion" {
 				return nil
 			}
-			// Attach the credentialctl shared credential resolver so the
-			// OpenAI embedding provider can fall back to the shared credential
-			// when OPENAI_API_KEY is unset. No-op when no backend is available.
-			enableSharedCredentials()
 			if err := validateOutputMode(cmd, jsonMode, agentMode, eventsMode, explainMode); err != nil {
 				return err
 			}
@@ -240,10 +250,12 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&apiToken, "api-token", "", "Remote Pinax API bearer token; prefer PINAX_API_TOKEN or --api-token-file")
 	cmd.PersistentFlags().StringVar(&apiTokenFile, "api-token-file", "", "Read remote Pinax API bearer token from a file")
 	cmd.PersistentFlags().StringVar(&colorMode, "color", "", "Human output color mode: auto, always, or never")
+	cmd.PersistentFlags().StringVar(&outputStyle, "output-style", "", "Human output layout: table or compact")
 	cmd.PersistentFlags().StringVar(&themeName, "theme", "", "Human output theme: pinax, mono, high-contrast, or custom")
 	cmd.PersistentFlags().IntVar(&renderWidth, "width", 0, "Human output width; 0 uses the configured default")
 	cmd.PersistentFlags().StringVar(&markdownStyle, "markdown-style", "", "Markdown render style: auto, ascii, dark, light, or notty")
 	_ = cmd.RegisterFlagCompletionFunc("color", staticCompletion("color", "auto", "always", "never"))
+	_ = cmd.RegisterFlagCompletionFunc("output-style", staticCompletion("output-style", "table", "compact"))
 	_ = cmd.RegisterFlagCompletionFunc("theme", staticCompletion("theme", "pinax", "mono", "high-contrast", "custom"))
 	_ = cmd.RegisterFlagCompletionFunc("markdown-style", staticCompletion("markdown-style", "auto", "ascii", "dark", "light", "notty"))
 	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
@@ -253,6 +265,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addConfigCommands(cmd, ctx)
 
 	addVersionCommands(cmd, ctx)
+	addBackupCommands(cmd, ctx)
 	addAssetCommands(cmd, ctx)
 	addPromptCommands(cmd, ctx)
 	addCollectionCommands(cmd, ctx)
@@ -277,7 +290,6 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addNoteCommands(cmd, ctx)
 
 	addSearchCommand(cmd, ctx)
-	addKBCommands(cmd, ctx)
 	addMemoryCommands(cmd, ctx)
 	addBrainCommands(cmd, ctx)
 	addAgentCommands(cmd, ctx)
@@ -313,32 +325,33 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addBackendCommands(cmd, ctx)
 
 	addMCPCommands(cmd, ctx)
+	addCommandsCommand(cmd, ctx)
 
 	installRemoteMode(cmd, ctx)
 
 	annotateRootHelpGroups(cmd)
+	annotateRootHelpVisibility(cmd)
 	applyHelpTemplate(cmd)
 	return cmd
 }
 
 func annotateRootHelpGroups(cmd *cobra.Command) {
 	groups := map[string]string{
-		"init":       "Local vault",
-		"vault":      "Local vault",
-		"project":    "Local vault",
+		"init":       "Start here",
+		"vault":      "Start here",
+		"project":    "Find and organize",
 		"trash":      "Local vault",
 		"task":       "Local vault",
 		"record":     "Local vault",
 		"activity":   "Configuration and maintenance",
-		"note":       "Note workflows",
-		"journal":    "Note workflows",
-		"inbox":      "Note workflows",
+		"note":       "Capture and write",
+		"journal":    "Capture and write",
+		"inbox":      "Capture and write",
 		"draft":      "Note workflows",
 		"template":   "Note workflows",
 		"import":     "Note workflows",
 		"export":     "Note workflows",
-		"search":     "Organization and search",
-		"kb":         "Organization and search",
+		"search":     "Find and organize",
 		"memory":     "Organization and search",
 		"brain":      "Organization and search",
 		"agent":      "Organization and search",
@@ -375,7 +388,9 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"storage":    "Configuration and maintenance",
 		"index":      "Configuration and maintenance",
 		"asset":      "Configuration and maintenance",
+		"backup":     "Local safety",
 		"version":    "Configuration and maintenance",
+		"commands":   "More commands",
 		"completion": "Configuration and maintenance",
 	}
 	for _, child := range cmd.Commands() {
@@ -390,14 +405,31 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 	}
 }
 
+func annotateRootHelpVisibility(cmd *cobra.Command) {
+	core := map[string]bool{
+		"init": true, "vault": true, "note": true, "inbox": true, "journal": true,
+		"search": true, "project": true, "backup": true, "commands": true,
+	}
+	for _, child := range cmd.Commands() {
+		if child.Annotations == nil {
+			child.Annotations = map[string]string{}
+		}
+		visibility := rootHelpVisibilityAdvanced
+		if core[child.Name()] {
+			visibility = rootHelpVisibilityCore
+		}
+		child.Annotations[rootHelpVisibilityAnnotation] = visibility
+	}
+}
+
 func groupedCommandHelp(cmd *cobra.Command) []helpCommandGroup {
 	if cmd.CommandPath() != "pinax" {
 		return nil
 	}
-	order := []string{"Local vault", "Note workflows", "Organization and search", "Automation and integrations", "Configuration and maintenance"}
+	order := []string{"Start here", "Capture and write", "Find and organize", "Local safety", "More commands"}
 	groups := make(map[string][]*cobra.Command, len(order))
 	for _, child := range cmd.Commands() {
-		if !child.IsAvailableCommand() {
+		if !child.IsAvailableCommand() || child.Annotations[rootHelpVisibilityAnnotation] != rootHelpVisibilityCore {
 			continue
 		}
 		group := child.Annotations[rootHelpGroupAnnotation]
@@ -423,9 +455,58 @@ func groupedCommandHelp(cmd *cobra.Command) []helpCommandGroup {
 	return result
 }
 
+// helpTemplateFuncsOnce guards cobra.AddTemplateFunc: it mutates a package
+// global template-func map, so concurrent root-command construction (parallel
+// tests, in-process API servers) crashes with concurrent map writes.
+var helpTemplateFuncsOnce sync.Once
+
 func applyHelpTemplate(cmd *cobra.Command) {
-	cobra.AddTemplateFunc("groupedCommandHelp", groupedCommandHelp)
+	helpTemplateFuncsOnce.Do(func() {
+		cobra.AddTemplateFunc("groupedCommandHelp", groupedCommandHelp)
+		cobra.AddTemplateFunc("helpLocalFlagUsages", helpLocalFlagUsages)
+		cobra.AddTemplateFunc("helpInheritedFlagUsages", helpInheritedFlagUsages)
+	})
 	applyHelpTemplateRecursive(cmd)
+}
+
+func helpLocalFlagUsages(cmd *cobra.Command) string {
+	flags := cmd.LocalFlags()
+	if cmd.CommandPath() == "pinax" {
+		return personalFlagUsages(flags)
+	}
+	return flags.FlagUsages()
+}
+
+func helpInheritedFlagUsages(cmd *cobra.Command) string {
+	flags := cmd.InheritedFlags()
+	if isPersonalHelpCommand(cmd) {
+		return personalFlagUsages(flags)
+	}
+	return flags.FlagUsages()
+}
+
+func isPersonalHelpCommand(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.CommandPath() == "pinax" {
+		return true
+	}
+	top := cmd
+	for top.Parent() != nil && top.Parent() != cmd.Root() {
+		top = top.Parent()
+	}
+	return top.Annotations[rootHelpVisibilityAnnotation] == rootHelpVisibilityCore
+}
+
+func personalFlagUsages(flags *pflag.FlagSet) string {
+	allowed := map[string]bool{
+		"agent": true, "events": true, "explain": true, "help": true, "json": true, "output-style": true, "vault": true,
+	}
+	filtered := pflag.NewFlagSet("personal-help", pflag.ContinueOnError)
+	flags.VisitAll(func(flag *pflag.Flag) {
+		if allowed[flag.Name] {
+			filtered.AddFlag(flag)
+		}
+	})
+	return filtered.FlagUsages()
 }
 
 func applyHelpTemplateRecursive(cmd *cobra.Command) {
@@ -470,7 +551,11 @@ func loadCommandConfig(cmd *cobra.Command, ctx *commandBuildContext) error {
 	if result.Config.Vault != "" {
 		*ctx.vaultPath = result.Config.Vault
 	}
-	*ctx.renderOptions = output.RenderOptions{ColorMode: result.Config.Output.Color, ThemeName: result.Config.Output.Theme, ThemeRoles: result.Config.Themes.Custom, Width: result.Config.Output.Width, Markdown: output.MarkdownOptions{Enabled: result.Config.Output.Markdown.Enabled, Style: result.Config.Output.Markdown.Style, Pager: result.Config.Output.Markdown.Pager}, IsTerminal: isTerminalIO(cmd)}
+	syncPreview := strings.TrimSpace(*ctx.syncPreview)
+	if syncPreview == "" {
+		syncPreview = "status"
+	}
+	*ctx.renderOptions = output.RenderOptions{Style: result.Config.Output.Style, ColorMode: result.Config.Output.Color, ThemeName: result.Config.Output.Theme, ThemeRoles: result.Config.Themes.Custom, Width: result.Config.Output.Width, Markdown: output.MarkdownOptions{Enabled: result.Config.Output.Markdown.Enabled, Style: result.Config.Output.Markdown.Style, Pager: result.Config.Output.Markdown.Pager}, IsTerminal: isTerminalIO(cmd), SyncPreview: syncPreview, SyncLimit: *ctx.syncLimit, SyncLimitSet: *ctx.syncLimitSet, ContentDiff: *ctx.syncContentDiff}
 	return nil
 }
 
@@ -488,6 +573,7 @@ func explicitConfigFlags(cmd *cobra.Command) map[string]string {
 	add("vault", "vault")
 	add("api-url", "remote.api_url")
 	add("color", "output.color")
+	add("output-style", "output.style")
 	if cmd.CommandPath() != "pinax publish profile init" {
 		add("theme", "output.theme")
 	}
@@ -661,14 +747,14 @@ func remoteModeLocalCommand(cmd *cobra.Command, source string) bool {
 		return true
 	}
 	root, _, _ := strings.Cut(path, " ")
-	if root == "capsa" || root == "sync" {
+	if root == "backup" || root == "capsa" || root == "sync" || root == "commands" {
 		return true
 	}
 	if source != "config" {
 		return false
 	}
 	switch root {
-	case "api", "config", "token", "profile", "vault", "completion", "help":
+	case "api", "backup", "commands", "config", "token", "profile", "vault", "completion", "help":
 		return true
 	default:
 		return false
@@ -708,57 +794,12 @@ func classifyRemoteCommand(commandPath string) RemoteCommandCoverageEntry {
 	}
 	root, _, _ := strings.Cut(rel, " ")
 	switch root {
-	case "api", "config", "token", "profile", "vault", "completion", "help":
+	case "api", "backup", "commands", "config", "token", "profile", "vault", "completion", "help":
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "local_runtime_or_configuration"}
 	case "cloud", "sync":
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "cloud_sync_runs_locally"}
 	default:
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "unsupported", Reason: "not_in_remote_capability_registry"}
-	}
-}
-
-func remoteSupportedRPCMethods() map[string]string {
-	return map[string]string{
-		"activity list":             "Pinax.Workbench.Activity.List",
-		"activity show":             "Pinax.Workbench.Activity.Show",
-		"monitor runs":              "Pinax.Monitor.List",
-		"monitor show":              "Pinax.Monitor.Show",
-		"monitor summary":           "Pinax.Monitor.Summary",
-		"memory list":               "Pinax.Memory.List",
-		"memory capture":            "Pinax.Memory.Capture",
-		"memory recall":             "Pinax.Memory.Recall",
-		"memory context":            "Pinax.Memory.Context",
-		"memory stats":              "Pinax.Memory.Stats",
-		"folder list":               "Pinax.Folder.List",
-		"folder show":               "Pinax.Folder.Show",
-		"folder create":             "Pinax.Folder.Create",
-		"folder rename":             "Pinax.Folder.Rename",
-		"folder move":               "Pinax.Folder.Move",
-		"folder delete":             "Pinax.Folder.Delete",
-		"folder adopt":              "Pinax.Folder.Adopt",
-		"folder repair":             "Pinax.Folder.RepairPlan",
-		"inbox list":                "Pinax.Inbox.List",
-		"inbox show":                "Pinax.Inbox.Show",
-		"inbox capture":             "Pinax.Inbox.Capture",
-		"inbox promote":             "Pinax.Inbox.Promote",
-		"inbox discard":             "Pinax.Inbox.Discard",
-		"draft list":                "Pinax.Draft.List",
-		"draft show":                "Pinax.Draft.Show",
-		"draft create":              "Pinax.Draft.Create",
-		"draft promote":             "Pinax.Draft.Promote",
-		"draft archive":             "Pinax.Draft.Archive",
-		"draft discard":             "Pinax.Draft.Discard",
-		"note list":                 "Pinax.Note.List",
-		"note show":                 "Pinax.Note.Read",
-		"note read":                 "Pinax.Note.Read",
-		"note preview":              "Pinax.Note.Read",
-		"database view render":      "Pinax.DatabaseView.Render",
-		"project board show":        "Pinax.ProjectBoard.Show",
-		"project subproject list":   "Pinax.Project.Subproject.List",
-		"project subproject show":   "Pinax.Project.Subproject.Show",
-		"project subproject create": "Pinax.Project.Subproject.Create",
-		"project item move":         "Pinax.ProjectItem.Plan",
-		"project item archive":      "Pinax.ProjectItem.Plan",
 	}
 }
 
@@ -803,316 +844,6 @@ func readRemoteAPITokenFile(path string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(content)), nil
-}
-
-func remoteRPCRequestForCommand(cmd *cobra.Command, args []string) (remoteapi.RPCRequest, bool) {
-	params := map[string]any{}
-	switch strings.TrimPrefix(cmd.CommandPath(), "pinax ") {
-	case "activity list":
-		params["source"] = stringFlag(cmd, "source")
-		params["query"] = stringFlag(cmd, "query")
-		params["status"] = stringFlag(cmd, "status")
-		params["object"] = stringFlag(cmd, "object")
-		params["since"] = stringFlag(cmd, "since")
-		params["until"] = stringFlag(cmd, "until")
-		params["limit"] = intFlag(cmd, "limit")
-		return remoteapi.RPCRequest{Method: "Pinax.Workbench.Activity.List", Params: params}, true
-	case "activity show":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["event_id"] = args[0]
-		return remoteapi.RPCRequest{Method: "Pinax.Workbench.Activity.Show", Params: params}, true
-	case "monitor runs":
-		params["command"] = stringFlag(cmd, "command")
-		params["query"] = stringFlag(cmd, "query")
-		params["status"] = stringFlag(cmd, "status")
-		params["since"] = stringFlag(cmd, "since")
-		params["until"] = stringFlag(cmd, "until")
-		params["limit"] = intFlag(cmd, "limit")
-		return remoteapi.RPCRequest{Method: "Pinax.Monitor.List", Params: params}, true
-	case "monitor show":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["run_id"] = args[0]
-		return remoteapi.RPCRequest{Method: "Pinax.Monitor.Show", Params: params}, true
-	case "monitor summary":
-		params["command"] = stringFlag(cmd, "command")
-		params["query"] = stringFlag(cmd, "query")
-		params["status"] = stringFlag(cmd, "status")
-		params["since"] = stringFlag(cmd, "since")
-		params["until"] = stringFlag(cmd, "until")
-		params["limit"] = intFlag(cmd, "limit")
-		return remoteapi.RPCRequest{Method: "Pinax.Monitor.Summary", Params: params}, true
-	case "memory list":
-		params["type"] = stringFlag(cmd, "type")
-		params["entity"] = stringFlag(cmd, "entity")
-		params["include_draft"] = boolFlag(cmd, "include-draft")
-		params["include_superseded"] = boolFlag(cmd, "include-superseded")
-		params["include_expired"] = boolFlag(cmd, "include-expired")
-		params["include_rejected"] = boolFlag(cmd, "include-rejected")
-		params["limit"] = intFlag(cmd, "limit")
-		return remoteapi.RPCRequest{Method: "Pinax.Memory.List", Params: params}, true
-	case "memory capture":
-		params["type"] = stringFlag(cmd, "type")
-		params["subject"] = stringFlag(cmd, "subject")
-		params["predicate"] = stringFlag(cmd, "predicate")
-		params["object"] = stringFlag(cmd, "object")
-		params["body"] = stringFlag(cmd, "body")
-		params["status"] = stringFlag(cmd, "status")
-		params["confidence"] = stringFlag(cmd, "confidence")
-		params["source"] = stringFlag(cmd, "source")
-		params["source_span"] = stringFlag(cmd, "source-span")
-		params["entities"] = stringArrayFlag(cmd, "entity")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		return remoteapi.RPCRequest{Method: "Pinax.Memory.Capture", Params: params}, true
-	case "memory recall":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["query"] = args[0]
-		params["type"] = stringFlag(cmd, "type")
-		params["entity"] = stringFlag(cmd, "entity")
-		params["limit"] = intFlag(cmd, "limit")
-		return remoteapi.RPCRequest{Method: "Pinax.Memory.Recall", Params: params}, true
-	case "memory context":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["task"] = args[0]
-		params["type"] = stringFlag(cmd, "type")
-		params["entity"] = stringFlag(cmd, "entity")
-		params["limit"] = intFlag(cmd, "limit")
-		return remoteapi.RPCRequest{Method: "Pinax.Memory.Context", Params: params}, true
-	case "memory stats":
-		return remoteapi.RPCRequest{Method: "Pinax.Memory.Stats", Params: params}, true
-	case "folder list":
-		params["purpose"] = stringFlag(cmd, "purpose")
-		params["under"] = stringFlag(cmd, "under")
-		params["include_empty"] = boolFlag(cmd, "include-empty")
-		params["depth"] = intFlag(cmd, "depth")
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.List", Params: params}, true
-	case "folder show":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["path"] = args[0]
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.Show", Params: params}, true
-	case "folder create":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["path"] = args[0]
-		params["purpose"] = stringFlag(cmd, "purpose")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.Create", Params: params}, true
-	case "folder rename":
-		if len(args) != 2 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["path"] = args[0]
-		params["target_path"] = args[1]
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.Rename", Params: params}, true
-	case "folder move":
-		if len(args) != 2 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["path"] = args[0]
-		params["target_parent"] = args[1]
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.Move", Params: params}, true
-	case "folder delete":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["path"] = args[0]
-		params["empty_only"] = boolFlag(cmd, "empty-only")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.Delete", Params: params}, true
-	case "folder adopt":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["path"] = args[0]
-		params["purpose"] = stringFlag(cmd, "purpose")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.Adopt", Params: params}, true
-	case "folder repair":
-		return remoteapi.RPCRequest{Method: "Pinax.Folder.RepairPlan", Params: params}, true
-	case "inbox list":
-		return remoteapi.RPCRequest{Method: "Pinax.Inbox.List", Params: params}, true
-	case "inbox show":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["display"] = stringFlag(cmd, "display")
-		return remoteapi.RPCRequest{Method: "Pinax.Inbox.Show", Params: params}, true
-	case "inbox capture":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["title"] = args[0]
-		params["body"] = stringFlag(cmd, "body")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Inbox.Capture", Params: params}, true
-	case "inbox promote":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["to"] = stringFlag(cmd, "to")
-		params["group"] = stringFlag(cmd, "group")
-		params["folder"] = stringFlag(cmd, "folder")
-		params["kind"] = stringFlag(cmd, "kind")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Inbox.Promote", Params: params}, true
-	case "inbox discard":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Inbox.Discard", Params: params}, true
-	case "draft list":
-		return remoteapi.RPCRequest{Method: "Pinax.Draft.List", Params: params}, true
-	case "draft show":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["display"] = stringFlag(cmd, "display")
-		return remoteapi.RPCRequest{Method: "Pinax.Draft.Show", Params: params}, true
-	case "draft create":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["title"] = args[0]
-		params["body"] = stringFlag(cmd, "body")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Draft.Create", Params: params}, true
-	case "draft promote":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["status"] = stringFlag(cmd, "status")
-		params["folder"] = stringFlag(cmd, "folder")
-		params["kind"] = stringFlag(cmd, "kind")
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Draft.Promote", Params: params}, true
-	case "draft archive":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Draft.Archive", Params: params}, true
-	case "draft discard":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["dry_run"] = boolFlag(cmd, "dry-run")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Draft.Discard", Params: params}, true
-	case "note list":
-		params["tags"] = splitCSV(stringFlag(cmd, "tag"))
-		params["project"] = stringFlag(cmd, "project")
-		group := stringFlag(cmd, "group")
-		if group == "" {
-			group = stringFlag(cmd, "project")
-		}
-		params["group"] = group
-		params["folder"] = stringFlag(cmd, "folder")
-		params["kind"] = stringFlag(cmd, "kind")
-		params["status"] = stringFlag(cmd, "status")
-		params["created_after"] = stringFlag(cmd, "created-after")
-		params["updated_before"] = stringFlag(cmd, "updated-before")
-		params["recent"] = boolFlag(cmd, "recent")
-		params["limit"] = intFlag(cmd, "limit")
-		params["sort"] = stringFlag(cmd, "sort")
-		params["path_prefix"] = stringFlag(cmd, "path-prefix")
-		params["properties"] = stringArrayFlag(cmd, "property")
-		params["strict_properties"] = boolFlag(cmd, "strict-properties")
-		return remoteapi.RPCRequest{Method: "Pinax.Note.List", Params: params}, true
-	case "note show", "note read", "note preview":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["ref"] = args[0]
-		params["display"] = stringFlag(cmd, "display")
-		return remoteapi.RPCRequest{Method: "Pinax.Note.Read", Params: params}, true
-	case "database view render":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["name"] = args[0]
-		return remoteapi.RPCRequest{Method: "Pinax.DatabaseView.Render", Params: params}, true
-	case "project board show":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["project"] = args[0]
-		params["subproject"] = stringFlag(cmd, "subproject")
-		params["note_display"] = stringFlag(cmd, "note-display")
-		return remoteapi.RPCRequest{Method: "Pinax.ProjectBoard.Show", Params: params}, true
-	case "project subproject list":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["project"] = args[0]
-		return remoteapi.RPCRequest{Method: "Pinax.Project.Subproject.List", Params: params}, true
-	case "project subproject show":
-		if len(args) != 2 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["project"] = args[0]
-		params["subproject"] = args[1]
-		return remoteapi.RPCRequest{Method: "Pinax.Project.Subproject.Show", Params: params}, true
-	case "project subproject create":
-		if len(args) != 2 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["project"] = args[0]
-		params["subproject"] = args[1]
-		params["title"] = stringFlag(cmd, "title")
-		params["template"] = stringFlag(cmd, "template")
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.Project.Subproject.Create", Params: params}, true
-	case "project item move":
-		if len(args) != 2 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["item_id"] = args[0]
-		params["column"] = args[1]
-		params["action"] = "move"
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.ProjectItem.Plan", Params: params}, true
-	case "project item archive":
-		if len(args) != 1 {
-			return remoteapi.RPCRequest{}, false
-		}
-		params["item_id"] = args[0]
-		params["action"] = "archive"
-		params["yes"] = boolFlag(cmd, "yes")
-		return remoteapi.RPCRequest{Method: "Pinax.ProjectItem.Plan", Params: params}, true
-	default:
-		return remoteapi.RPCRequest{}, false
-	}
 }
 
 func stringFlag(cmd *cobra.Command, name string) string {

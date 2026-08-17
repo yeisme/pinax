@@ -53,8 +53,8 @@ func TestIdentityFirstTwoDeviceKernel(t *testing.T) {
 		t.Fatalf("backlinks=%#v err=%v", backlinks, err)
 	}
 
-	loginA := app.CloudLoginRequest{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "identity-kernel", DeviceID: "device-a", SecretRef: "test-secret"}
-	loginB := app.CloudLoginRequest{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "identity-kernel", DeviceID: "device-b", SecretRef: "test-secret"}
+	loginA := app.CloudLoginRequest{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "identity-kernel", DeviceID: "device-a", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"}
+	loginB := app.CloudLoginRequest{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "identity-kernel", DeviceID: "device-b", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"}
 	if _, err := svc.CloudLogin(ctx, loginA); err != nil {
 		t.Fatal(err)
 	}

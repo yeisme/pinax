@@ -5,21 +5,21 @@ TBD - created by archiving change pinax-agent-brain-layer. Update Purpose after 
 ## Requirements
 ### Requirement: Pinax SHALL expose an agent brain context bundle from bounded projections
 
-Pinax SHALL provide an Agent Brain context model that combines local memory, semantic KB context, search results, graph evidence, query/database rows, project state, and proof receipts without exposing full private note bodies by default.
+Pinax SHALL provide an Agent Brain context model that combines local memory, deterministic search results, graph evidence, query/database rows, project state, and proof receipts without exposing full private note bodies by default. External RAG context MAY be attached through an explicit integration contract but is not owned by Pinax.
 
 #### Scenario: Agent asks for meeting preparation context
 
 - **WHEN** an agent requests context for `prepare for Alice meeting`
-- **THEN** Pinax SHALL compose bounded references from `pinax memory context`, `pinax kb context`, `pinax search`, backlinks/link graph, and relevant receipts when available
+- **THEN** Pinax SHALL compose bounded references from `pinax memory context`, `pinax search`, backlinks/link graph, and relevant receipts when available
 - **AND** the context bundle schema SHALL be `pinax.agent_brain.context_bundle.v1`
-- **AND** the context SHALL include `task`, `entities`, `memory_refs`, `semantic_refs`, `graph_refs`, `query_refs`, `receipts`, `freshness`, `body_exposure`, and `next_actions`
+- **AND** the context SHALL include `task`, `entities`, `memory_refs`, `graph_refs`, `query_refs`, `receipts`, `freshness`, `body_exposure`, and `next_actions`
 - **AND** the context SHALL include source references, freshness, confidence or ranking reasons, open tasks, and next actions
 - **AND** it SHALL NOT include full note bodies, raw prompts, hidden system prompts, provider payloads, Authorization headers, cookies, tokens, private tool arguments, or complete chain-of-thought.
 
 #### Scenario: Context bundle exposes real next commands
 
-- **WHEN** an index is stale, KB projection is missing, provider credentials are missing, or proof review is required
-- **THEN** the context bundle SHALL include real commands such as `pinax index refresh --vault ./my-notes --json`, `pinax kb provider doctor openai --vault ./my-notes --json`, or `pinax proof loop run --vault ./my-notes --json`
+- **WHEN** an index is stale, an external RAG export is missing, or proof review is required
+- **THEN** the context bundle SHALL include real commands such as `pinax index refresh --vault ./my-notes --json`, `pinax export markdown ./temp/rag-export --vault ./my-notes --json`, or `pinax proof loop run --vault ./my-notes --json`
 - **AND** it SHALL NOT expose local execution wrappers, shell aliases, raw tool arguments, or agent-only prefixes.
 
 ### Requirement: Answer synthesis SHALL be citation-first and body-safe
@@ -35,24 +35,24 @@ Pinax SHALL treat answer synthesis as a bounded projection over evidence, not as
 
 #### Scenario: Synthesis preserves body exposure
 
-- **WHEN** the answer is generated from notes or KB chunks
+- **WHEN** the answer is generated from notes or external RAG references
 - **THEN** the output SHALL quote only bounded snippets unless the user explicitly requests local body exposure through an approved command
 - **AND** MCP, Local API, Web, and `--agent` output SHALL NOT default to full body exposure.
 
 ### Requirement: Agent Brain SHALL keep provider and cost state visible
 
-Pinax SHALL expose provider/model/source type and cost class for embedding, rerank, and synthesis workflows without revealing credentials or raw provider payloads.
+Pinax SHALL expose provider/model/source type and cost class for any provider-backed Pinax workflow without revealing credentials or raw provider payloads. External RAG provider state remains outside Pinax.
 
 #### Scenario: Missing provider credential returns doctor action
 
-- **WHEN** answer synthesis, KB rebuild, semantic context, or rerank needs a provider that is not configured
-- **THEN** Pinax SHALL return a stable diagnostic with credential source type and a concrete next action such as `pinax kb provider doctor openai --vault ./my-notes --json`
+- **WHEN** a future Pinax provider-backed operation needs a provider that is not configured
+- **THEN** Pinax SHALL return a stable diagnostic with credential source type; external RAG provider diagnostics SHALL be owned by that project
 - **AND** stdout, stderr, events, MCP payloads, fixtures, screenshots, and evidence SHALL NOT include raw credential values.
 
 #### Scenario: Local provider is distinguished from metered provider
 
-- **WHEN** a provider is local-only, such as Ollama
-- **THEN** Pinax SHALL mark it as local-only or local-service-backed
+- **WHEN** an external RAG provider is local-only
+- **THEN** the external RAG contract SHALL mark it as local-only or local-service-backed
 - **AND** when a provider may incur network or usage cost, Pinax SHALL expose a bounded cost class such as `low`, `metered`, or `unknown` rather than silently calling it.
 
 ### Requirement: MCP and Local API brain surfaces SHALL default to readonly and scoped projections
@@ -63,7 +63,7 @@ Pinax SHALL expose Agent Brain surfaces through local MCP and Local REST/RPC as 
 
 - **WHEN** an MCP client lists or calls Agent Brain tools such as brain context, brain answer, sources, or maintenance plan
 - **THEN** those tools SHALL return bounded projections by default
-- **AND** they SHALL NOT write Markdown, `.pinax/**`, SQLite/GORM, LanceDB, provider state, sync state, Git state, or remote services.
+- **AND** they SHALL NOT write Markdown, `.pinax/**`, SQLite/GORM, external RAG vector state, provider state, sync state, Git state, or remote services.
 
 
 ### Requirement: Ingest sources SHALL enter the vault through service-owned receipts
@@ -85,11 +85,11 @@ Pinax SHALL support Agent Brain maintenance as a reviewable planning workflow, n
 
 - **WHEN** Pinax detects duplicate entities, broken citations, stale facts, superseded memories, contradictions, or compression candidates
 - **THEN** it SHALL emit a maintenance plan with operation kind, risk, evidence, affected sources, and next action
-- **AND** it SHALL NOT modify note bodies, memory records, graph projections, KB projections, or structured assets unless the user explicitly applies an approved plan through a service-owned command.
+- **AND** it SHALL NOT modify note bodies, memory records, graph projections, external RAG projections, or structured assets unless the user explicitly applies an approved plan through a service-owned command.
 
 #### Scenario: Apply requires proof loop protections
 
-- **WHEN** a maintenance operation would write Markdown, `.pinax/**`, memory ledger, graph projection, KB projection, provider state, sync state, or receipts
+- **WHEN** a maintenance operation would write Markdown, `.pinax/**`, memory ledger, graph projection, external RAG handoff state, provider state, sync state, or receipts
 - **THEN** Pinax SHALL require approval, snapshot or equivalent restore evidence, receipt, and restore hint
 - **AND** high-risk rewrites, deletions, entity merges, and contradiction resolutions SHALL remain manual review items until a dedicated apply contract exists.
 
@@ -97,10 +97,10 @@ Pinax SHALL support Agent Brain maintenance as a reviewable planning workflow, n
 
 Pinax SHALL classify each Agent Brain data product as source of truth, receipt evidence, or rebuildable local projection.
 
-#### Scenario: Semantic and graph projections are rebuildable
+#### Scenario: External RAG and graph projections are rebuildable
 
-- **WHEN** Cloud Sync or export considers `.pinax/kb/`, graph projection files, answer caches, or derived indexes
-- **THEN** Pinax SHALL treat them as local rebuildable projections unless a later encrypted sync contract explicitly says otherwise
+- **WHEN** Cloud Sync or export considers external RAG artifacts, graph projection files, answer caches, or derived indexes
+- **THEN** Pinax SHALL treat external RAG artifacts as outside Pinax ownership and graph/index artifacts as local rebuildable projections
 - **AND** Cloud Sync SHALL NOT upload plaintext vectors, raw note bodies, raw provider payloads, or provider credentials.
 
 #### Scenario: Brain projection authority is explicit
@@ -108,8 +108,8 @@ Pinax SHALL classify each Agent Brain data product as source of truth, receipt e
 - **WHEN** Agent Brain context, answer, maintenance, export, or Cloud Sync logic classifies data products
 - **THEN** Markdown notes and user assets SHALL be treated as local source-of-truth content
 - **AND** import/proof/sync/maintenance receipts SHALL be treated as service-owned evidence with redaction boundaries
-- **AND** SQLite/GORM indexes, KB/LanceDB vectors, graph projections, and answer caches SHALL be treated as rebuildable local projections
-- **AND** each next action SHALL use real commands such as `pinax index refresh --vault ./my-notes --json`, `pinax kb refresh --vault ./my-notes`, or `pinax graph rebuild --vault ./my-notes --json`.
+- **AND** SQLite/GORM indexes, graph projections, and answer caches SHALL be treated as rebuildable local projections; external vectors SHALL remain external
+- **AND** each next action SHALL use real commands such as `pinax index refresh --vault ./my-notes --json`, `pinax export markdown ./temp/rag-export --vault ./my-notes --json`, or `pinax graph rebuild --vault ./my-notes --json`.
 
 #### Scenario: Planned answer cache is not synced as private model state
 
@@ -131,6 +131,5 @@ Future local clients SHALL consume Pinax Agent Brain projections rather than dup
 
 - **WHEN** a future client needs Agent Brain capabilities
 - **THEN** it SHALL discover supported commands/routes/tools through `pinax api routes --vault ./my-notes --json`, OpenAPI export, MCP tools list, or documented CLI command projections
-- **AND** it SHALL NOT read `.pinax/**`, SQLite/GORM databases, LanceDB files, provider config, token files, sync state, or receipts directly.
-
+- **AND** it SHALL NOT read `.pinax/**`, SQLite/GORM databases, external RAG vector files, provider config, token files, sync state, or receipts directly.
 

@@ -10,6 +10,7 @@ import (
 // intent facade exposes English help text describing the bounded continuity
 // pack and its flags.
 func TestContinueCommand_HelpExists(t *testing.T) {
+	t.Parallel()
 	help := runCLI(t, "continue", "--help")
 	for _, want := range []string{
 		"Compile a bounded, permission-first continuity pack",
@@ -28,12 +29,13 @@ func TestContinueCommand_HelpExists(t *testing.T) {
 	}
 }
 
-// TestContinueCommand_InCommandTree verifies the root help lists the additive
-// `continue` entry point alongside the existing command tree.
+// TestContinueCommand_InCommandTree verifies the complete command catalog
+// retains the additive `continue` entry point.
 func TestContinueCommand_InCommandTree(t *testing.T) {
-	rootHelp := runCLI(t, "--help")
-	if !strings.Contains(rootHelp, "  continue") {
-		t.Fatalf("root --help should list continue:\n%s", rootHelp)
+	t.Parallel()
+	catalog := runCLI(t, "commands")
+	if !strings.Contains(catalog, "continue") {
+		t.Fatalf("command catalog should list continue:\n%s", catalog)
 	}
 }
 
@@ -41,6 +43,7 @@ func TestContinueCommand_InCommandTree(t *testing.T) {
 // well-formed agent-protocol projection envelope with the expected command,
 // status, mode and the continuity facts surface.
 func TestContinueCommand_JSONOutput(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -76,6 +79,7 @@ func TestContinueCommand_JSONOutput(t *testing.T) {
 // explicitly tagged experimental=true so machine consumers can gate on the
 // additive, not-yet-stable surface.
 func TestContinueCommand_ExperimentalFlag(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -90,10 +94,11 @@ func TestContinueCommand_ExperimentalFlag(t *testing.T) {
 // facade is purely additive: the pre-existing agent, memory, and brain entry
 // points remain registered and their help trees are unchanged.
 func TestContinueCommand_NoOldCommandChange(t *testing.T) {
-	rootHelp := runCLI(t, "--help")
+	t.Parallel()
+	catalog := runCLI(t, "commands")
 	for _, cmd := range []string{"agent", "memory", "brain"} {
-		if !strings.Contains(rootHelp, "  "+cmd) {
-			t.Fatalf("root --help should still list %q:\n%s", cmd, rootHelp)
+		if !strings.Contains(catalog, cmd) {
+			t.Fatalf("command catalog should still list %q:\n%s", cmd, catalog)
 		}
 	}
 

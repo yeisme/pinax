@@ -9,6 +9,7 @@ import (
 )
 
 func TestTrashServiceRestorePurgeDryRunAndPathBoundary(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -71,6 +72,7 @@ func TestTrashServiceRestorePurgeDryRunAndPathBoundary(t *testing.T) {
 }
 
 func TestTrashRestoreNoteKeepsObjectIDAndOriginalPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()

@@ -9,6 +9,7 @@ import (
 )
 
 func TestFolderProjectionFromRebuildAndRefresh(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeIndexFixture(t, filepath.Join(root, "spaces", "research", "note.md"), "# Note")
 	writeIndexFixture(t, filepath.Join(root, "assets", "images", "diagram.png"), "png")

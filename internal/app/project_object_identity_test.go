@@ -10,6 +10,7 @@ import (
 )
 
 func TestProjectSubprojectBoardAndTaskAdoptUseStableObjectIDs(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -81,6 +82,7 @@ func TestProjectSubprojectBoardAndTaskAdoptUseStableObjectIDs(t *testing.T) {
 }
 
 func TestInlineTaskIDSurvivesSourceNoteMove(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101", Path: "notes/a.md", Body: "- [ ] Stable task ^stable"}
 	first := checklistBoardItems(note, nil, defaultBoardColumns, nil)[0]
 	note.Path = "notes/archive/a.md"

@@ -68,7 +68,7 @@ func (s *Service) BriefingRun(_ context.Context, req BriefingRunRequest) (domain
 		if err := writeBriefingCandidates(root, queue, candidates); err != nil {
 			return errorProjection("briefing.run", err), err
 		}
-		_ = appendEvent(root, "briefing.run", "success", map[string]string{"candidates": fmt.Sprint(len(candidates)), "writes": "true"})
+		appendEventWarned(root, "briefing.run", "success", map[string]string{"candidates": fmt.Sprint(len(candidates)), "writes": "true"})
 	}
 	projection := domain.NewProjection("briefing.run", "Briefing candidates generated.")
 	if req.DryRun {
@@ -186,7 +186,13 @@ func (s *Service) SyncDiff(ctx context.Context, req SyncRequest) (domain.Project
 	projection.Facts["notes"] = fmt.Sprint(len(notes))
 	projection.Facts["backend_required"] = "false"
 	plan := syncPlanData(target, profile)
-	projection.Data = map[string]any{"target": target, "plan": plan, "remote_write": false}
+	data := map[string]any{"target": target, "plan": plan, "remote_write": false}
+	view := buildSyncOutputView(syncplan.Plan{Direction: syncplan.DirectionDiff, Target: target}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, syncOutputViewOptions{Scope: "cached", Result: "planned", PathPolicy: req.PathPolicy})
+	attachSyncOutputView(projection.Facts, data, view)
+	if strings.EqualFold(strings.TrimSpace(req.Preview), "diff") {
+		data["metadata_diff"] = buildSyncMetadataDiff(view)
+	}
+	projection.Data = data
 	projection.Actions = []domain.Action{{Name: "push", Command: fmt.Sprintf("pinax sync push --target %s --vault %s --yes", target, shellQuote(root))}}
 	return projection, nil
 }
@@ -225,7 +231,7 @@ func (s *Service) syncTransfer(ctx context.Context, req SyncRequest, direction s
 		err := &domain.CommandError{Code: "approval_required", Message: fmt.Sprintf("sync %s requires --yes", verb), Hint: "Review the plan first with pinax sync diff, then add --yes after confirming"}
 		return domain.NewErrorProjection(command, err), err
 	}
-	return writeSyncState(root, target, verb)
+	return writeSyncState(root, target, verb, req.LiveEvents)
 }
 
 // Sync request normalization and sync-state projection helpers.
@@ -263,7 +269,8 @@ func syncPlanData(target string, profile domain.StorageProfile) map[string]any {
 	return plan
 }
 
-func writeSyncState(root, target, direction string) (domain.Projection, error) {
+func writeSyncState(root, target, direction string, sink SyncEventSink) (domain.Projection, error) {
+	emitSyncEvent(sink, SyncEvent{Type: "progress", Phase: "scan", Direction: direction, Status: "running"})
 	state := map[string]any{
 		"schema_version": "pinax.sync_state.v1",
 		"target":         target,
@@ -275,12 +282,15 @@ func writeSyncState(root, target, direction string) (domain.Projection, error) {
 	if err := writeJSONAsset(filepath.Join(root, ".pinax", "sync-state.json"), state); err != nil {
 		return errorProjection("sync."+direction, err), err
 	}
-	_ = appendEvent(root, "sync."+direction, "partial", map[string]string{"target": target, "remote_write": "false"})
+	appendEventWarned(root, "sync."+direction, "partial", map[string]string{"target": target, "remote_write": "false"})
+	emitSyncEvent(sink, SyncEvent{Type: "progress", Phase: "done", Direction: direction, Status: "partial", RemoteWrite: false})
 	projection := domain.NewProjection("sync."+direction, "Sync status recorded; remote writes have not executed.")
 	projection.Status = "partial"
 	projection.Facts["target"] = target
 	projection.Facts["remote_write"] = "false"
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "sync-state.json"))}
-	projection.Data = state
+	data := state
+	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(syncplan.Plan{Direction: syncplan.Direction(direction), Target: target}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, syncOutputViewOptions{Scope: "cached", Result: "planned"}))
+	projection.Data = data
 	return projection, nil
 }

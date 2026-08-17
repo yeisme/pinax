@@ -55,3 +55,19 @@ func addActivityCommands(root *cobra.Command, ctx commandBuildContext) {
 	activityCmd.AddCommand(sourcesCmd, listCmd, showCmd, tailCmd, manageCmd)
 	root.AddCommand(activityCmd)
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "activity list",
+		Method:      "Pinax.Workbench.Activity.List",
+		Flags: []remoteParamSpec{
+			s("source", "source"), s("query", "query"), s("status", "status"),
+			s("object", "object"), s("since", "since"), s("until", "until"), i("limit", "limit"),
+		},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "activity show",
+		Method:      "Pinax.Workbench.Activity.Show",
+		ArgParams:   []string{"event_id"},
+	})
+}

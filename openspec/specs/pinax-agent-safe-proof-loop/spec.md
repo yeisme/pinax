@@ -64,7 +64,7 @@ Pinax SHALL provide a first-user proof loop path that can be completed from an i
 - **WHEN** the user runs `pinax version`, `pinax init ./my-notes --title "My Knowledge Base"`, `pinax note add "First Note" --body "My first Pinax note." --vault ./my-notes`, and `pinax proof loop run --vault ./my-notes --json`
 - **THEN** stdout SHALL contain valid machine-readable output for each machine mode command
 - **AND** the proof loop preview SHALL include a `proof_loop_run_id`, stage facts, and a safe next action
-- **AND** it SHALL NOT require Cloud Sync, TaskBridge, provider credentials, MCP, dashboard, or a background daemon.
+- **AND** it SHALL NOT require Cloud Sync, provider credentials, MCP, dashboard, or a background daemon.
 
 #### Scenario: Proof loop write path is explicitly protected
 
@@ -110,7 +110,7 @@ Pinax SHALL present the first-user proof loop before advanced workflows in READM
 #### Scenario: Advanced workflows are secondary
 
 - **WHEN** a user reads README or command documentation
-- **THEN** Cloud Sync, plugins, publish, KB, Memory, TaskBridge planning, and provider automation SHALL be presented as advanced or separate workflows
+- **THEN** Cloud Sync, plugins, publish, KB, Memory, and provider automation SHALL be presented as advanced or separate workflows
 - **AND** they SHALL NOT be required to understand or run the first-user proof loop.
 
 ### Requirement: Agent plans bind mutations to canonical object identities
@@ -130,4 +130,3 @@ Successful Agent writes SHALL emit redacted receipts containing command, object 
 #### Scenario: Approved Tag update completes
 - **WHEN** an Agent applies an approved Tag change to a managed note
 - **THEN** the receipt SHALL identify the note by canonical object ID, show the current path and record version, and provide a real next command for sync or restore where applicable.
-

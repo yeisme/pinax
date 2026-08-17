@@ -74,7 +74,7 @@ local watcher + remote head poller
   -> local state/events under .pinax/sync-daemon/
 ```
 
-The daemon runs one startup pull-before-push cycle before waiting for the next timer or file event. Remote changes are detected by polling `CurrentHead` in the first release. Local changes are detected by a vault watcher with scan fallback. `.git/`, `.pinax/`, LanceDB projections, provider caches, and daemon runtime files are ignored so generated state does not trigger sync loops.
+The daemon runs one startup pull-before-push cycle before waiting for the next timer or file event. Remote changes are detected by polling `CurrentHead` in the first release. Local changes are detected by a vault watcher with scan fallback. `.git/`, `.pinax/`, external RAG artifacts, provider caches, and daemon runtime files are ignored so generated state does not trigger sync loops.
 
 The daemon must acquire a per-vault runner lock and the shared sync operation lock. It must pause with `conflict_required` when pull creates conflict copies, and it must not emit `remote_write=true` unless the underlying push path completed the durable revision commit and local sync-state receipt.
 
@@ -260,7 +260,7 @@ Capsa Sync does not turn Agent Brain projections into shared plaintext state. Th
 | Import/proof/sync receipts | Service-owned evidence, subject to each feature's redaction contract | May be synced only through explicit encrypted content/evidence contracts. |
 | Memory ledger | Local service-owned memory evidence | Do not upload raw `.pinax/memory/` as plaintext Cloud data; future cross-device memory sync needs a dedicated encrypted contract. |
 | SQLite/GORM index | Rebuildable projection | Excluded from manifests; rebuild with `pinax index refresh --vault ./my-notes --json`. |
-| KB/LanceDB vectors | Rebuildable projection | Excluded from manifests; rebuild or refresh with `pinax kb refresh --vault ./my-notes`; never upload plaintext vectors or provider payloads. |
+| External RAG vectors | External rebuildable projection | Outside Pinax manifests and vault ownership; export Markdown and let the external RAG owner ingest it. Never upload plaintext vectors or provider payloads through Pinax Sync. |
 | Graph projections | Rebuildable projection | Excluded from manifests; rebuild with `pinax graph rebuild --vault ./my-notes --json`. |
 | Answer cache | Planned rebuildable cache | No current Capsa Sync behavior; future cache sync must not store raw prompts, provider payloads, or full note bodies. |
 | Maintenance plan | Reviewable service-owned plan evidence | Saved plans require redacted receipts and proof-loop apply gates; they are not background rewrites. |

@@ -91,7 +91,7 @@ pinax database view save active-table --display table --query 'SELECT title, sta
 pinax database view render active-table --vault ./my-notes --json
 ```
 
-项目和 database view 仍以本地 Markdown 和 CLI-authored metadata 为真源，不把 TaskBridge、provider 或远端平台当作主数据源。
+项目和 database view 仍以本地 Markdown 和 CLI-authored metadata 为真源，不把 provider 或远端平台当作主数据源。
 
 ## 5. 本地 API 和 MCP 只读投影
 

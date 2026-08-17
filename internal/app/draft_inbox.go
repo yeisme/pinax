@@ -179,7 +179,7 @@ func (s *Service) transitionNoteLifecycle(ctx context.Context, vaultPath string,
 	}
 
 	// Append event and metadata evidence
-	_ = appendEvent(root, command, "success", map[string]string{
+	appendEventWarned(root, command, "success", map[string]string{
 		"from":   note.Path,
 		"to":     targetRel,
 		"status": toStatus,

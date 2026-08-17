@@ -15,13 +15,13 @@ Briefing recipe SHALL 由 CLI service 创建和修改；agent 不直接手写 re
 - **WHEN** 用户运行 `pinax briefing recipe show`
 - **THEN** CLI SHALL 输出当前 recipe 配置摘要
 
-### Requirement: Hermes 作为外部服务配置
+### Requirement: legacy connector runtime 作为外部服务配置
 
-Research adapter SHALL 通过外部服务配置与 Hermes 交互；本地开发使用 fake harness fixture。
+Research adapter SHALL 通过外部服务配置与 legacy connector runtime 交互；本地开发使用 fake harness fixture。
 
-#### Scenario: Hermes 不可用
+#### Scenario: legacy connector runtime 不可用
 
-- **WHEN** Hermes endpoint 不可达或未配置
+- **WHEN** legacy connector runtime endpoint 不可达或未配置
 - **THEN** research adapter SHALL 使用 fake harness fixture 进行本地开发
 - **AND** 不阻塞 briefing 流程其它阶段
 

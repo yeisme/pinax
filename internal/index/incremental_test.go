@@ -8,6 +8,7 @@ import (
 )
 
 func TestHashSkip(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	note := domain.Note{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n", Tags: []string{"work"}}
 	if _, err := Rebuild(root, []domain.Note{note}); err != nil {
@@ -24,6 +25,7 @@ func TestHashSkip(t *testing.T) {
 }
 
 func TestIncrementalNoteChangedUpdatesOnlyThatProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	notes := []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\nold body\n", Tags: []string{"old"}},
@@ -59,6 +61,7 @@ func TestIncrementalNoteChangedUpdatesOnlyThatProjection(t *testing.T) {
 }
 
 func TestNoUnrelatedScan(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Init(root); err != nil {
 		t.Fatalf("init: %v", err)
@@ -74,6 +77,7 @@ func TestNoUnrelatedScan(t *testing.T) {
 }
 
 func TestAffectedLinkEdges(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Rebuild(root, []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n[[B]]\n"},
@@ -93,6 +97,7 @@ func TestAffectedLinkEdges(t *testing.T) {
 }
 
 func TestMovedNoteIncremental(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Rebuild(root, []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n[[B]]\n"},
@@ -115,6 +120,7 @@ func TestMovedNoteIncremental(t *testing.T) {
 }
 
 func TestDeletedNoteBacklinks(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Rebuild(root, []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n[[B]]\n"},
@@ -166,6 +172,7 @@ func linksForNote(t *testing.T, root, path string) []LinkRecord {
 }
 
 func TestIndexSyncClassifiesCreatedChangedMovedDeletedAndSkipped(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	initial := []domain.Note{
 		{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"},
@@ -198,6 +205,7 @@ func TestIndexSyncClassifiesCreatedChangedMovedDeletedAndSkipped(t *testing.T) {
 }
 
 func TestIndexSyncDeletesMissingRows(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Rebuild(root, []domain.Note{{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"}}); err != nil {
 		t.Fatalf("rebuild: %v", err)
@@ -215,6 +223,7 @@ func TestIndexSyncDeletesMissingRows(t *testing.T) {
 }
 
 func TestIndexRefreshCreatesMissingAndSkipsUnchanged(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	notes := []domain.Note{{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"}}
 
@@ -236,6 +245,7 @@ func TestIndexRefreshCreatesMissingAndSkipsUnchanged(t *testing.T) {
 }
 
 func TestRefreshChangedDeletesRemovedNoteProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	keep := domain.Note{ID: "note_b", Title: "B", Path: "notes/b.md", Body: "# B\nkeep\n"}
 	removed := domain.Note{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\nremove\n"}

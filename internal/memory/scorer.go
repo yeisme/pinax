@@ -223,7 +223,7 @@ func taskFitness(record Record, terms []string) int {
 	if len(terms) == 0 {
 		return 0
 	}
-	topics := map[string]bool{"release": true, "test": true, "provider": true, "cloud": true, "kb": true, "memory": true}
+	topics := map[string]bool{"release": true, "test": true, "provider": true, "cloud": true, "memory": true}
 	haystack := strings.ToLower(strings.Join([]string{record.Type, record.Subject, record.Predicate, record.Object, record.Body, record.SourceURI}, " "))
 	for _, term := range terms {
 		if topics[term] && strings.Contains(haystack, term) {

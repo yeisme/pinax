@@ -51,6 +51,7 @@ func TestHighValueCompletionCoverageCLI(t *testing.T) {
 }
 
 func TestNoteOperationReferenceCompletionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Alpha Note", "--body", "body", "--vault", root, "--json")
@@ -79,6 +80,7 @@ func TestNoteOperationReferenceCompletionCLI(t *testing.T) {
 }
 
 func TestInboxDraftReferenceAndFlagCompletionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "inbox", "capture", "Inbox Alpha", "--body", "body", "--vault", root, "--json")
@@ -109,6 +111,7 @@ func TestInboxDraftReferenceAndFlagCompletionCLI(t *testing.T) {
 }
 
 func TestAssetNoteFlagCompletionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "Asset Context", "--body", "body", "--vault", root, "--json")
@@ -121,13 +124,20 @@ func TestAssetNoteFlagCompletionCLI(t *testing.T) {
 }
 
 func TestRootHelpGroupsCurrentTopLevelCommandsCLI(t *testing.T) {
+	t.Parallel()
 	help := runCLI(t, "--help")
 	if strings.Contains(help, "Other\n") {
 		t.Fatalf("root help should not leave current product commands in Other:\n%s", help)
 	}
-	for _, want := range []string{"  draft", "  graph", "  monitor", "  prompt", "  proof", "  api", "  token", "  profile"} {
+	for _, want := range []string{"Start here", "Capture and write", "Find and organize", "Local safety", "More commands"} {
 		if !strings.Contains(help, want) {
-			t.Fatalf("root help missing grouped command %q:\n%s", want, help)
+			t.Fatalf("root help missing core group %q:\n%s", want, help)
+		}
+	}
+	catalog := runCLI(t, "commands")
+	for _, want := range []string{"draft", "graph", "monitor", "prompt", "proof", "api", "token", "profile"} {
+		if !strings.Contains(catalog, want) {
+			t.Fatalf("command catalog missing advanced command %q:\n%s", want, catalog)
 		}
 	}
 }

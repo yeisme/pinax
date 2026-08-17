@@ -7,6 +7,7 @@ import (
 )
 
 func TestShareStartPublishedLoopbackProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
 	writeCLIFixture(t, filepath.Join(outDir, "index.html"), "<html>published</html>")
@@ -23,6 +24,7 @@ func TestShareStartPublishedLoopbackProjection(t *testing.T) {
 }
 
 func TestSharePublishedScopeStartServesOnce(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
 	writeCLIFixture(t, filepath.Join(outDir, "index.html"), "<html>published</html>")
@@ -42,6 +44,7 @@ func TestSharePublishedScopeStartServesOnce(t *testing.T) {
 }
 
 func TestShareStartSecurityGates(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outDir := filepath.Join(root, "dist", "site")
 	writeCLIFixture(t, filepath.Join(outDir, "index.html"), "<html>published</html>")
@@ -61,6 +64,7 @@ func TestShareStartSecurityGates(t *testing.T) {
 }
 
 func TestShareVaultReadonlyScopeStartsWithTokenFileOnce(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishNoteFixture(t, root, "notes/private.md", map[string]string{"note_id": "note_private", "title": "Private", "kind": "concept", "status": "active", "tags": "team"}, "# Private\n\nPRIVATE BODY MUST NOT LEAK")
 	tokenFile := filepath.Join(t.TempDir(), "share-token")

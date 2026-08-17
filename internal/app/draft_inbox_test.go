@@ -38,6 +38,7 @@ func initTestEnv(t *testing.T) (context.Context, string, *Service) {
 }
 
 func TestDraftInboxLifecycle(t *testing.T) {
+	t.Parallel()
 	// 1.2.1 Test Draft Create
 	t.Run("DraftCreate", func(t *testing.T) {
 		ctx, root, svc := initTestEnv(t)
@@ -287,6 +288,7 @@ func TestDraftInboxLifecycle(t *testing.T) {
 }
 
 func TestListNotesQuery_DiscardedFilter(t *testing.T) {
+	t.Parallel()
 	ctx, root, svc := initTestEnv(t)
 
 	t.Run("excludes_discarded_by_default", func(t *testing.T) {
@@ -338,6 +340,7 @@ func TestListNotesQuery_DiscardedFilter(t *testing.T) {
 }
 
 func TestFilterSearchNotes_DiscardedFilter(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "n1", Title: "Active", Status: "active"},
 		{ID: "n2", Title: "Discarded", Status: "discarded"},

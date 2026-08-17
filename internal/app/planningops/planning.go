@@ -60,7 +60,7 @@ func PreviewData(projection domain.Projection) (domain.PlanningSnapshot, domain.
 
 func BuildActionDraft(period string, snapshot domain.PlanningSnapshot, decision domain.PlanningDecision, now time.Time) domain.PlanningActionDraft {
 	draftID := actionIDFromRefs(period, snapshot.SnapshotID, decision.DecisionID, now)
-	draft := domain.PlanningActionDraft{SchemaVersion: "taskbridge.actions.v1", ActionID: draftID, SourcePeriod: period, SourceDecision: decision.DecisionID, SourceSnapshot: snapshot.SnapshotID, RequiresConfirmation: false, Tasks: []domain.ActionDraftTask{}, EvidenceRefs: []string{"snapshot:" + snapshot.SnapshotID, "decision:" + decision.DecisionID}, CreatedAt: now.Format(time.RFC3339)}
+	draft := domain.PlanningActionDraft{SchemaVersion: "pinax.planning.actions.v1", ActionID: draftID, SourcePeriod: period, SourceDecision: decision.DecisionID, SourceSnapshot: snapshot.SnapshotID, RequiresConfirmation: false, Tasks: []domain.ActionDraftTask{}, EvidenceRefs: []string{"snapshot:" + snapshot.SnapshotID, "decision:" + decision.DecisionID}, CreatedAt: now.Format(time.RFC3339)}
 	reason := actionReason(decision)
 	for i, taskID := range decision.Deferred {
 		taskID = strings.TrimSpace(taskID)
@@ -79,7 +79,7 @@ func actionReason(decision domain.PlanningDecision) string {
 			return reason.Summary
 		}
 	}
-	return "Planning recommendations should be confirmed by TaskBridge before writing tasks."
+	return "Planning recommendations should be reviewed before writing tasks."
 }
 
 func actionIDFromRefs(period, snapshotID, decisionID string, t time.Time) string {

@@ -73,7 +73,7 @@ func (s *Service) ProjectSubprojectCreate(_ context.Context, req ProjectWorkspac
 	if err := saveProjectWorkspace(root, workspace); err != nil {
 		return errorProjection("project.subproject.create", err), err
 	}
-	_ = appendEvent(root, "project.subproject.create", "success", map[string]string{"project": project.Slug, "subproject": subproject, "workspace_path": workspace.WorkspacePath})
+	appendEventWarned(root, "project.subproject.create", "success", map[string]string{"project": project.Slug, "subproject": subproject, "workspace_path": workspace.WorkspacePath})
 	projection := projectWorkspaceProjection(root, "project.subproject.create", "Project subproject workspace created.", workspace)
 	projection.Facts["dry_run"] = "false"
 	projection.Facts["writes"] = "true"
@@ -140,7 +140,7 @@ func (s *Service) ProjectLearningInit(ctx context.Context, req ProjectLearningRe
 	projection.Evidence = append(projection.Evidence, itemPaths...)
 	projection.Data = map[string]any{"learning_project": map[string]any{"project": projectSlug, "subproject": req.Subproject, "preset": req.Preset, "workspace": workspace, "columns": learningBoardColumns, "starter_notes": notePaths, "starter_items": itemPaths}}
 	projection.Actions = []domain.Action{{Name: "board_show", Command: fmt.Sprintf("pinax project board show %s --subproject %s --vault %s", shellQuote(projectSlug), shellQuote(req.Subproject), shellQuote(root))}}
-	_ = appendEvent(root, "project.learning.init", "success", map[string]string{"project": projectSlug, "subproject": req.Subproject, "preset": req.Preset})
+	appendEventWarned(root, "project.learning.init", "success", map[string]string{"project": projectSlug, "subproject": req.Subproject, "preset": req.Preset})
 	return projection, nil
 }
 

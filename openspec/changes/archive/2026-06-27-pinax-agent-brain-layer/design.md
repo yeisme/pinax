@@ -18,7 +18,7 @@ Pinax 的回答不能只是搜索结果列表，也不能是无来源 LLM 摘要
 
 ```mermaid
 flowchart LR
-    Agent[Claude Code / Codex / Cursor / OpenClaw / Hermes] --> MCP[pinax mcp serve]
+    Agent[Claude Code / Codex / Cursor / OpenClaw / legacy connector runtime] --> MCP[pinax mcp serve]
     Agent --> API[pinax api serve]
     Agent --> CLI[pinax CLI]
 

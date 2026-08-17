@@ -46,6 +46,52 @@ Do not use this skill for:
 
 User-facing command examples in docs, plans, reviews, and final replies must show the real command a human can run. Do not expose local execution wrappers, shell aliases, or agent-only command prefixes outside tool execution.
 
+## Rapid Local Iteration Default
+
+Treat a user request to add or change a capability as direct authorization for
+the bounded local implementation work. Do not block on a confirmation merely
+because the work creates a module, class, interface, internal/local endpoint,
+feature flag, schema or migration source, test fixture, mock, or adapter.
+
+Use the smallest reversible vertical slice that matches existing project
+patterns. Implement local contracts and focused tests first; use mocks,
+sandboxes, or disposable test data for external systems. Make reasonable
+routine decisions and report assumptions after verification instead of asking
+the user to choose implementation minutiae.
+
+Ask only before a real high-impact side effect: deletion or irreversible
+migration of non-disposable data, credential handling, production/live
+access-control changes, deploy/publish/push actions, charges, outbound
+communication, or bulk/destructive external writes. An exact current user
+request for that target and side effect supplies the necessary authority unless
+the platform requires another confirmation. Preserve unrelated dirty worktree
+changes throughout.
+
+See `docs/workflows/rapid-local-iteration.md` for the repository-wide policy.
+
+## Workspace And Checkpoint Defaults
+
+Choose the workspace before the first write:
+
+- Keep a client/Web lane in the current checkout/current branch when it needs live preview, rendering, browser inspection, or screenshot iteration.
+- Put a backend API/service/worker/daemon lane in an isolated `feature/<topic>` branch/worktree when it needs hot reload, long-running processes, migrations, database/cache state, separate ports, or verbose diagnostics.
+- Treat API contracts, schemas, generated clients, mocks, fixtures, and shared configuration as single-owner paths. Freeze the contract before splitting lanes.
+- Record `workspace_mode`, `owned_paths`, `shared_read_paths`, `forbidden_paths`, startup commands, ports, runtime/data directories, and focused verification in the checklist.
+
+At stable boundaries, use narrow checkpoints in this order: contract ready, previewable client slice, backend slice plus focused tests, and real integration/visual verification. Before a root-owned checkpoint commit, run `git status --short`, `git diff --check`, and the owner-provided focused command; stage only owned paths. A child agent returns the checkpoint manifest and does not commit, push, merge, or delete worktrees.
+
+## Automated Backend Debugging Loop
+
+When the backend lane fails or hot reload becomes unstable, keep the loop bounded and evidence-driven:
+
+1. Start the service with the owning project's real `Taskfile.yml`, package script, or documented command; record the command, process identity, port, health endpoint, log path, and isolated data directory.
+2. Wait for readiness, then reproduce with the smallest focused test or request. Do not infer readiness from process existence alone.
+3. Inspect structured logs, health output, trace/request IDs, and the smallest relevant diff. Redact credentials, tokens, provider payloads, and private prompts.
+4. Patch only the backend lane's owned paths, rerun the focused check, and then rerun the readiness/integration check that crosses the client boundary.
+5. Return a compact debug envelope: failure signature, reproduction command, evidence path, patch scope, verification result, and whether the failure is introduced, pre-existing, concurrent, environmental, or ambiguous.
+
+If the same deterministic failure repeats without new evidence, stop the loop at the owning skill's stop condition instead of restarting another backend process or creating a duplicate writer. A worktree does not authorize destructive cleanup or killing an unrelated process.
+
 ## Checklist Model
 
 Represent work as a tree. Parent nodes organize intent; only leaf nodes are executed.
@@ -167,6 +213,19 @@ For each active leaf:
 
 Use reasonable assumptions when local context makes the path clear. Do not ask the user to choose between routine implementation details.
 
+## Parallel Execution And Writer Leases
+
+Use `route-agents` before delegation. The root remains the scope owner and final
+integrator. One bounded feature defaults to one tracked-file writer; parallel
+implementers are allowed only for explicit, non-overlapping path leases with
+independent focused verification and no shared generated outputs.
+
+Each writer contract must name `owned_paths`, `shared_read_paths`,
+`forbidden_paths`, `focused_verification`, integration dependencies, and the
+common worker envelope. Start with at most two writers. If paths overlap, a
+shared generated file changes, or a writer times out with unknown liveness,
+stop adding writers and serialize the work.
+
 ## Progress Updates
 
 During longer sessions, report progress in checklist terms:
@@ -199,12 +258,27 @@ When blocked, report:
 
 ## Verification
 
-Always run a verification command before claiming completion. Prefer, in order:
+Always run a verification command before claiming completion. Use staged
+verification rather than repeatedly running every repository gate after each
+edit.
+
+During `implementing` and `slice-ready`, prefer, in order:
 
 1. The focused test for the changed behavior.
 2. The package or module test suite covering the changed files.
-3. Static checks such as typecheck, lint, validation scripts, or build.
+3. A necessary local typecheck or compile check for the owned slice.
 4. A manual inspection with exact files and rationale when no executable check exists.
+
+Do not repeatedly run repository-wide lint, full builds, complete e2e, or
+strict global validation during implementation. Run those checks only after
+the code, direct tests, and required docs are stable and the task enters
+`final-gate`, unless the task itself is a lint/build/CI repair or the nearest
+`AGENTS.md` explicitly requires a local static check for every slice.
+
+Before repairing a final-gate failure, classify it as `introduced`,
+`pre_existing`, `concurrent`, `environment`, or `ambiguous`. Only an
+`introduced` failure authorizes repair inside the writer's owned paths. Do not
+modify unrelated business logic merely to clear a global warning.
 
 If a check cannot run, say why and name the next best evidence used.
 
@@ -224,5 +298,6 @@ Keep the final response short and concrete:
 
 - summarize what changed
 - list verification commands and results
+- distinguish implementation status from final-gate status
 - call out unverified areas or residual risk
 - mention follow-up only when it directly extends the completed task

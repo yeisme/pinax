@@ -8,6 +8,7 @@ import (
 )
 
 func TestRootContentLayoutCreatesDefaultNoteJournalAndIndexPaths(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -52,6 +53,7 @@ func TestRootContentLayoutCreatesDefaultNoteJournalAndIndexPaths(t *testing.T) {
 }
 
 func TestLegacyNotesCompatKeepsExistingDailyNoteInPlace(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()

@@ -17,12 +17,14 @@ func validDeclaration() SyncConfig {
 }
 
 func TestSyncConfigValidate_AcceptsValidDeclaration(t *testing.T) {
+	t.Parallel()
 	if err := validDeclaration().Validate(); err != nil {
 		t.Fatalf("expected valid declaration to pass, got %v", err)
 	}
 }
 
 func TestSyncConfigValidate_RejectsUnsupportedSchema(t *testing.T) {
+	t.Parallel()
 	c := validDeclaration()
 	c.SchemaVersion = "pinax.sync.config.v999"
 	if err := c.Validate(); !IsSyncConfigError(err, "unsupported_schema_version") {
@@ -31,6 +33,7 @@ func TestSyncConfigValidate_RejectsUnsupportedSchema(t *testing.T) {
 }
 
 func TestSyncConfigValidate_RejectsUnsupportedBackend(t *testing.T) {
+	t.Parallel()
 	c := validDeclaration()
 	c.Backend.Kind = "ftp"
 	if err := c.Validate(); !IsSyncConfigError(err, "unsupported_backend_kind") {
@@ -39,6 +42,7 @@ func TestSyncConfigValidate_RejectsUnsupportedBackend(t *testing.T) {
 }
 
 func TestSyncConfigValidate_RejectsMissingWorkspaceAndKey(t *testing.T) {
+	t.Parallel()
 	c := validDeclaration()
 	c.Workspace.WorkspaceID = ""
 	c.Secrets.EncryptionKeyID = ""
@@ -48,6 +52,7 @@ func TestSyncConfigValidate_RejectsMissingWorkspaceAndKey(t *testing.T) {
 }
 
 func TestSyncConfigValidate_RejectsPlaintextSensitive(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		mutate func(*SyncConfig)
@@ -70,6 +75,7 @@ func TestSyncConfigValidate_RejectsPlaintextSensitive(t *testing.T) {
 }
 
 func TestSyncConfigValidate_RejectsUnsupportedScheme(t *testing.T) {
+	t.Parallel()
 	c := validDeclaration()
 	c.Backend.Endpoint = "ftp://example.com"
 	if err := c.Validate(); !IsSyncConfigError(err, "unsupported_scheme") {
@@ -78,6 +84,7 @@ func TestSyncConfigValidate_RejectsUnsupportedScheme(t *testing.T) {
 }
 
 func TestSyncConfigRoundTrip(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	c := validDeclaration()
 	if err := writeSyncConfig(dir, c); err != nil {
@@ -104,6 +111,7 @@ func TestSyncConfigRoundTrip(t *testing.T) {
 }
 
 func TestLoadSyncConfig_MissingIsSentinel(t *testing.T) {
+	t.Parallel()
 	_, err := LoadSyncConfig(t.TempDir())
 	if !errors.Is(err, ErrSyncDeclarationMissing) {
 		t.Fatalf("expected ErrSyncDeclarationMissing, got %v", err)
@@ -111,6 +119,7 @@ func TestLoadSyncConfig_MissingIsSentinel(t *testing.T) {
 }
 
 func TestEffectiveNamespace(t *testing.T) {
+	t.Parallel()
 	c := validDeclaration()
 	if got := c.EffectiveNamespace(); got != "t-t1/a-pinax/w-personal" {
 		t.Fatalf("namespace = %q", got)
@@ -181,6 +190,7 @@ func TestSecretEnvelopeUnlockRequired(t *testing.T) {
 }
 
 func TestResolveUnlockProvider(t *testing.T) {
+	t.Parallel()
 	if _, err := ResolveUnlockProvider("fake"); err != nil {
 		t.Fatalf("fake provider: %v", err)
 	}
@@ -193,6 +203,7 @@ func TestResolveUnlockProvider(t *testing.T) {
 }
 
 func TestSecretEnvelopeRejectsPlaintextName(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	env := SecretEnvelope{Provider: "fake", Secrets: map[string]SecretEntry{"password=hunter2": {Identity: "x", Ciphertext: "x"}}}
 	if err := SaveSecretEnvelope(dir, env); err == nil {
@@ -203,6 +214,7 @@ func TestSecretEnvelopeRejectsPlaintextName(t *testing.T) {
 // --- Compiler ---
 
 func TestCompileProducesRuntimeConfig(t *testing.T) {
+	t.Parallel()
 	result, err := Compile(CompileRequest{
 		Declaration:     validDeclaration(),
 		ResolvedSecret:  "stored://tencent-cos-pinax",
@@ -231,6 +243,7 @@ func TestCompileProducesRuntimeConfig(t *testing.T) {
 }
 
 func TestApplyCompiledWritesAndBacksUp(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	result, _ := Compile(CompileRequest{
 		Declaration:     validDeclaration(),
@@ -266,6 +279,7 @@ func TestApplyCompiledWritesAndBacksUp(t *testing.T) {
 }
 
 func TestDetectDrift(t *testing.T) {
+	t.Parallel()
 	decl := validDeclaration()
 	result, _ := Compile(CompileRequest{Declaration: decl, DeviceID: "d1"})
 	runtime := result.RuntimeConfig

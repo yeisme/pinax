@@ -34,14 +34,13 @@ Current safe building blocks are real commands:
 
 ```bash
 pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent
-pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json
 pinax search "Alice" --vault ./my-notes --json
 pinax note backlinks "Alice" --vault ./my-notes --json
 pinax graph query --kind technique --match storyboard --vault ./my-notes --json
 pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json
 ```
 
-The bounded context bundle schema is `pinax.agent_brain.context_bundle.v1`. It carries `task`, `entities`, `memory_refs`, `semantic_refs`, `graph_refs`, `query_refs`, `receipts`, `freshness`, `body_exposure`, and `next_actions`. The bundle is assembled from existing projections and copies only bounded references plus real follow-up commands. It does not copy full note bodies, raw snippets, raw evidence text, provider payloads, prompts, credentials, or private tool arguments.
+The bounded context bundle schema is `pinax.agent_brain.context_bundle.v1`. It carries `task`, `entities`, `memory_refs`, `graph_refs`, `query_refs`, `receipts`, `freshness`, `body_exposure`, and `next_actions`. External RAG context is an integration-owned projection and is not assembled or stored by Pinax. The bundle does not copy full note bodies, raw snippets, raw evidence text, provider payloads, prompts, credentials, or private tool arguments.
 
 Any future `answer` or `synthesis` projection must obey these rules:
 
@@ -50,7 +49,7 @@ Any future `answer` or `synthesis` projection must obey these rules:
 | Evidence first | Every claim must point to note path, memory id, graph edge, query row, receipt id, or provider-safe citation. |
 | Freshness visible | Stale index, old meeting notes, superseded memory records, and unknown provider state must be explicit. |
 | Body exposure preserved | Synthesis may quote only bounded snippets; full body access requires explicit local body mode and must not be sent through MCP by default. |
-| Cost and provider visible | Embedding, rerank, and LLM calls must expose provider/model/source type and never hide paid or network-backed work. |
+| Cost and provider visible | LLM and other paid network calls must expose provider/model/source type and never hide paid or network-backed work. |
 | No silent maintenance | Entity merge, contradiction resolution, memory pruning, and note rewrites generate plans or receipts; they do not run as invisible background edits. |
 | Agent command preview | Next steps are real commands a user can run directly, such as `pinax proof loop run --vault ./my-notes --json`. |
 

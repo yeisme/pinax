@@ -23,6 +23,7 @@ func rebaseManifest(entries ...remote.ManifestEntry) remote.Manifest {
 // revision conflict, the pull finds no content conflict, and the retry commit
 // succeeds against the freshly pulled revision.
 func TestPushAutoRebaseSuccess(t *testing.T) {
+	t.Parallel()
 	base := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"))
 	local := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"), rebaseManifestEntry("notes/local.md", "blob_local"))
 	pulled := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"))
@@ -61,6 +62,7 @@ func TestPushAutoRebaseSuccess(t *testing.T) {
 // remote head, the rebuilt plan detects a content conflict, so no retry happens
 // and the conflict operations are returned for the caller to project.
 func TestPushAutoRebaseConflict(t *testing.T) {
+	t.Parallel()
 	base := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_base"))
 	local := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_local"))
 	pulled := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_remote"))
@@ -93,6 +95,7 @@ func TestPushAutoRebaseConflict(t *testing.T) {
 // commit also fails with a revision conflict, so the ORIGINAL conflict error is
 // surfaced and exactly one retry was attempted.
 func TestPushAutoRebaseRetryExhausted(t *testing.T) {
+	t.Parallel()
 	base := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"))
 	local := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"), rebaseManifestEntry("notes/local.md", "blob_local"))
 	pulled := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"))
@@ -128,6 +131,7 @@ func TestPushAutoRebaseRetryExhausted(t *testing.T) {
 // --yes: without it, the revision conflict error is returned directly and the
 // remote is never pulled.
 func TestPushAutoRebaseNoYesSurfacesConflict(t *testing.T) {
+	t.Parallel()
 	commit := func(baseRevision string) (cloudsync.CommitResult, error) {
 		return cloudsync.CommitResult{}, cloudsync.ErrRevisionConflict
 	}
@@ -149,6 +153,7 @@ func TestPushAutoRebaseNoYesSurfacesConflict(t *testing.T) {
 // TestPushAutoRebasePullFailureSurfacesOriginalConflict ensures a failed pull
 // does not swallow the original revision conflict.
 func TestPushAutoRebasePullFailureSurfacesOriginalConflict(t *testing.T) {
+	t.Parallel()
 	commit := func(baseRevision string) (cloudsync.CommitResult, error) {
 		return cloudsync.CommitResult{}, cloudsync.ErrRevisionConflict
 	}
@@ -165,6 +170,7 @@ func TestPushAutoRebasePullFailureSurfacesOriginalConflict(t *testing.T) {
 // TestPushAutoRebaseNonConflictErrorUnchanged ensures a non-conflict commit
 // error is propagated verbatim without triggering a rebase.
 func TestPushAutoRebaseNonConflictErrorUnchanged(t *testing.T) {
+	t.Parallel()
 	other := errors.New("transport_unavailable")
 	commit := func(baseRevision string) (cloudsync.CommitResult, error) {
 		return cloudsync.CommitResult{}, other
@@ -188,6 +194,7 @@ func TestPushAutoRebaseNonConflictErrorUnchanged(t *testing.T) {
 // revision conflict (cloudclient REVISION_CONFLICT) also triggers auto-rebase,
 // so the fix covers both object-store and Pinax Cloud transports.
 func TestPushAutoRebaseServerConflictError(t *testing.T) {
+	t.Parallel()
 	base := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"))
 	local := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"), rebaseManifestEntry("notes/local.md", "blob_local"))
 	pulled := rebaseManifest(rebaseManifestEntry("notes/shared.md", "blob_shared"))
@@ -228,8 +235,8 @@ func cloudPushAutoRebaseIntegrationFixture(t *testing.T) (svc *Service, deviceA,
 		}
 	}
 	for _, req := range []CloudLoginRequest{
-		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret"},
-		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret"},
+		{VaultPath: deviceA, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "laptop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
+		{VaultPath: deviceB, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "desktop", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"},
 	} {
 		if _, err := svc.CloudLogin(ctx, req); err != nil {
 			t.Fatalf("cloud login: %v", err)
@@ -242,6 +249,7 @@ func cloudPushAutoRebaseIntegrationFixture(t *testing.T) (svc *Service, deviceA,
 // a stale cached base, a push --yes pulls the advanced remote head, finds no
 // content conflict, and retries the commit successfully.
 func TestPushAutoRebaseIntegrationSuccess(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, deviceA, deviceB := cloudPushAutoRebaseIntegrationFixture(t)
 
@@ -272,6 +280,7 @@ func TestPushAutoRebaseIntegrationSuccess(t *testing.T) {
 // path: both devices modify the same file, B's stale-base push auto-rebases,
 // detects the content conflict, and surfaces conflict_required.
 func TestPushAutoRebaseIntegrationConflict(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, deviceA, deviceB := cloudPushAutoRebaseIntegrationFixture(t)
 

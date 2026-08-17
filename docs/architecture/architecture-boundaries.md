@@ -56,7 +56,7 @@ Each app capability package must keep a `doc.go` with the same ownership fields.
 - `syncops`: sync path policy normalization, sync plan redaction, and cloud sync string sanitization.
 - `versionops`: vault-relative version object path validation.
 - `briefingops`: briefing recipe projection shaping.
-- `planningops`: planning period parsing, capacity risk rules, preview extraction, and TaskBridge action draft construction.
+- `planningops`: planning period parsing, capacity risk rules, preview extraction, and Pinax-owned action draft construction.
 
 New use-case logic should extend the relevant capability package first, then expose or preserve the facade method needed by CLI callers. Existing facade methods may keep IO, persistence, event append, and compatibility glue while pure business rules and projection shaping move into capability packages.
 

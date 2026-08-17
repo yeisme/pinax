@@ -56,7 +56,7 @@ Pinax SHALL build GitHub Pages style HTML output by generating a publish-safe pr
 
 ### Requirement: Canonical renderer consumes bounded data only
 
-Pinax SHALL expose a stable publish data contract for the renderer and SHALL NOT require the renderer to read the source vault, `.pinax/**`, SQLite, LanceDB, provider config, token files or sync state.
+Pinax SHALL expose a stable publish data contract for the renderer and SHALL NOT require the renderer to read the source vault, `.pinax/**`, SQLite, external RAG vector files, provider config, token files or sync state.
 
 #### Scenario: Generate publish data bundle
 
@@ -227,7 +227,7 @@ The `pinax-web` renderer SHALL render static HTML from a bounded publish-safe bu
 #### Scenario: Renderer input is bounded
 - **WHEN** `pinax publish build` invokes the renderer
 - **THEN** renderer input SHALL be a publish-safe bundle containing manifest, selected notes, selected assets, graph facts, taxonomies, search metadata, source facts and build metadata
-- **AND** the renderer SHALL NOT read source vault paths, `.pinax/**`, SQLite, LanceDB, provider config, token files or sync state.
+- **AND** the renderer SHALL NOT read source vault paths, `.pinax/**`, SQLite, external RAG vector files, provider config, token files or sync state.
 
 #### Scenario: Renderer supports controlled Markdown semantics
 - **WHEN** the renderer processes selected Markdown notes
@@ -283,7 +283,7 @@ Pinax SHALL provide an explicit LAN share command for internal read-only viewing
 - **WHEN** 用户运行 `pinax share start --profile public --out ./dist/site --scope published --host 0.0.0.0 --port 8787 --allow-lan --readonly --vault ./my-notes --json`
 - **THEN** Pinax SHALL serve the generated published site and its required bounded API projection on the requested LAN-facing address
 - **AND** stdout SHALL contain one JSON projection with web URL, API URL, host, port, scope, readonly mode, auth mode and route exposure facts
-- **AND** it SHALL NOT expose the private vault root, `.pinax/**`, SQLite, LanceDB, provider config, token files or sync state.
+- **AND** it SHALL NOT expose the private vault root, `.pinax/**`, SQLite, external RAG vector files, provider config, token files or sync state.
 
 #### Scenario: Share command keeps existing serve defaults compatible
 - **WHEN** `pinax share start` is added
@@ -383,4 +383,3 @@ Pinax SHALL write redacted per-run evidence for publish integration, component a
 - **WHEN** publish evidence contains stdout, stderr, events, receipts, manifests, HTML output or deploy logs
 - **THEN** Pinax SHALL redact tokens, Authorization headers, cookies, provider raw payloads, raw prompts, hidden system prompts, private tool arguments and full chain-of-thought
 - **AND** recursive contract tests SHALL reject known sentinel leaks.
-

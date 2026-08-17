@@ -60,6 +60,7 @@ func (s *Store) autoMigrate(ctx context.Context) error {
 		&AgentPrincipalRow{},
 		&AgentProposalRow{},
 		&AgentHandoffRow{},
+		&AgentHandoffSourceRow{},
 		&AgentFeedbackRow{},
 	)
 }
@@ -269,6 +270,24 @@ func (s *Store) ListProposals(ctx context.Context, scope agentprotocol.Scope) ([
 	return rows, nil
 }
 
+// GetHandoff 按 ID 读取一条 handoff 及其 source refs。
+func (s *Store) GetHandoff(ctx context.Context, handoffID string) (AgentHandoffRow, error) {
+	var row AgentHandoffRow
+	if err := s.db.WithContext(ctx).Where("handoff_id = ?", handoffID).First(&row).Error; err != nil {
+		return AgentHandoffRow{}, err
+	}
+	var sourceRows []AgentHandoffSourceRow
+	if err := s.db.WithContext(ctx).Where("handoff_id = ?", handoffID).Order("created_at ASC").Find(&sourceRows).Error; err != nil {
+		return AgentHandoffRow{}, err
+	}
+	for _, sourceRow := range sourceRows {
+		row.Sources = append(row.Sources, agentprotocol.SourceRef{
+			Kind: sourceRow.Kind, Ref: sourceRow.Ref, Label: sourceRow.Label, Span: sourceRow.Span,
+		})
+	}
+	return row, nil
+}
+
 // SaveHandoff 保存 handoff。
 func (s *Store) SaveHandoff(ctx context.Context, h agentprotocol.Handoff) error {
 	row := AgentHandoffRow{
@@ -287,7 +306,26 @@ func (s *Store) SaveHandoff(ctx context.Context, h agentprotocol.Handoff) error 
 		RequestedNextCapability: h.RequestedNextCapability,
 		CreatedAt:               h.CreatedAt,
 	}
-	return s.db.WithContext(ctx).Create(&row).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&row).Error; err != nil {
+			return fmt.Errorf("save handoff row: %w", err)
+		}
+		for _, src := range h.Sources {
+			sourceRow := AgentHandoffSourceRow{
+				ID:        sourceID(h.HandoffID, src),
+				HandoffID: h.HandoffID,
+				Kind:      src.Kind,
+				Ref:       src.Ref,
+				Label:     src.Label,
+				Span:      src.Span,
+				CreatedAt: time.Now().UTC(),
+			}
+			if err := tx.Create(&sourceRow).Error; err != nil {
+				return fmt.Errorf("save handoff source: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // ListHandoffs 按 scope 列出 handoff。
@@ -295,6 +333,26 @@ func (s *Store) ListHandoffs(ctx context.Context, scope agentprotocol.Scope) ([]
 	var rows []AgentHandoffRow
 	if err := s.db.WithContext(ctx).Where("scope_kind = ? AND scope_id = ?", scope.Kind, scope.ID).Order("created_at DESC").Find(&rows).Error; err != nil {
 		return nil, err
+	}
+	if len(rows) == 0 {
+		return rows, nil
+	}
+	handoffIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		handoffIDs = append(handoffIDs, row.HandoffID)
+	}
+	var sourceRows []AgentHandoffSourceRow
+	if err := s.db.WithContext(ctx).Where("handoff_id IN ?", handoffIDs).Order("created_at ASC").Find(&sourceRows).Error; err != nil {
+		return nil, err
+	}
+	sourcesByHandoff := make(map[string]agentprotocol.SourceRefList, len(rows))
+	for _, sourceRow := range sourceRows {
+		sourcesByHandoff[sourceRow.HandoffID] = append(sourcesByHandoff[sourceRow.HandoffID], agentprotocol.SourceRef{
+			Kind: sourceRow.Kind, Ref: sourceRow.Ref, Label: sourceRow.Label, Span: sourceRow.Span,
+		})
+	}
+	for i := range rows {
+		rows[i].Sources = sourcesByHandoff[rows[i].HandoffID]
 	}
 	return rows, nil
 }

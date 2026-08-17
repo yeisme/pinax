@@ -111,7 +111,7 @@ func (s *Service) TrashRestore(ctx context.Context, req TrashRequest) (domain.Pr
 	if err := saveTrashTombstones(root, tombstones); err != nil {
 		return errorProjection("trash.restore", err), err
 	}
-	_ = appendEvent(root, "trash.restore", "success", map[string]string{"object_id": objectID})
+	appendEventWarned(root, "trash.restore", "success", map[string]string{"object_id": objectID})
 	projection := domain.NewProjection("trash.restore", "Trash object restored.")
 	projection.Facts["object_id"] = objectID
 	projection.Facts["object_kind"] = trashObjectKind(tombstone)
@@ -160,7 +160,7 @@ func (s *Service) TrashPurge(_ context.Context, req TrashRequest) (domain.Projec
 	if err := saveTrashTombstones(root, tombstones); err != nil {
 		return errorProjection("trash.purge", err), err
 	}
-	_ = appendEvent(root, "trash.purge", "success", map[string]string{"object_id": objectID, "hard": "true"})
+	appendEventWarned(root, "trash.purge", "success", map[string]string{"object_id": objectID, "hard": "true"})
 	projection.Summary = "Trash object purged."
 	return projection, nil
 }
@@ -228,7 +228,7 @@ func (s *Service) ProjectDelete(_ context.Context, req ProjectDeleteRequest) (do
 	if err := upsertTrashTombstone(root, tombstone); err != nil {
 		return errorProjection("project.delete", err), err
 	}
-	_ = appendEvent(root, "project.delete", "success", map[string]string{"project": project.Slug, "trash_path": trashRel})
+	appendEventWarned(root, "project.delete", "success", map[string]string{"project": project.Slug, "trash_path": trashRel})
 	projection := domain.NewProjection("project.delete", "Project moved to trash.")
 	projection.Facts["project"] = project.Slug
 	projection.Facts["object_id"] = tombstone.ObjectID
@@ -296,7 +296,7 @@ func (s *Service) ProjectSubprojectDelete(_ context.Context, req ProjectSubproje
 	if err := upsertTrashTombstone(root, tombstone); err != nil {
 		return errorProjection("project.subproject.delete", err), err
 	}
-	_ = appendEvent(root, "project.subproject.delete", "success", map[string]string{"project": project.Slug, "subproject": subproject, "trash_path": trashRel})
+	appendEventWarned(root, "project.subproject.delete", "success", map[string]string{"project": project.Slug, "subproject": subproject, "trash_path": trashRel})
 	projection := domain.NewProjection("project.subproject.delete", "Project subproject moved to trash.")
 	projection.Facts["project"] = project.Slug
 	projection.Facts["subproject"] = subproject
@@ -664,7 +664,7 @@ func applyRemoteNoteDelete(root, objectID string, marker remoteTrashDeleteMarker
 	if _, err := appendNoteRecordEvent(context.Background(), root, domain.RecordEventNoteTrashed, "sync.pull.delete:"+note.ID+":"+remoteTombstoneID(marker, note.ID), note, note.Path, func(event *domain.RecordEvent) { event.TrashPath = trashRel }); err != nil {
 		return remoteTrashDeleteResult{}, err
 	}
-	_ = appendEvent(root, "sync.pull.delete", "success", map[string]string{"object_id": note.ID, "trash_path": trashRel})
+	appendEventWarned(root, "sync.pull.delete", "success", map[string]string{"object_id": note.ID, "trash_path": trashRel})
 	return remoteTrashDeleteResult{Applied: true}, nil
 }
 
@@ -723,7 +723,7 @@ func applyRemoteProjectDelete(root, objectID string, marker remoteTrashDeleteMar
 	if err := upsertTrashTombstone(root, tombstone); err != nil {
 		return remoteTrashDeleteResult{}, err
 	}
-	_ = appendEvent(root, "sync.pull.delete", "success", map[string]string{"object_id": objectID, "trash_path": trashRel})
+	appendEventWarned(root, "sync.pull.delete", "success", map[string]string{"object_id": objectID, "trash_path": trashRel})
 	result := remoteTrashDeleteResult{Applied: true}
 	if hadLocalContent && contentBackupRel != "" {
 		result.Conflict = &domain.SyncConflictEntry{File: contentBackupRel, MainPath: objectID}
@@ -776,7 +776,7 @@ func applyRemoteSubprojectDelete(root, objectID string, marker remoteTrashDelete
 	if err := upsertTrashTombstone(root, tombstone); err != nil {
 		return remoteTrashDeleteResult{}, err
 	}
-	_ = appendEvent(root, "sync.pull.delete", "success", map[string]string{"object_id": objectID, "trash_path": trashRel})
+	appendEventWarned(root, "sync.pull.delete", "success", map[string]string{"object_id": objectID, "trash_path": trashRel})
 	result := remoteTrashDeleteResult{Applied: true}
 	if hadLocalContent && workspaceBackupRel != "" {
 		result.Conflict = &domain.SyncConflictEntry{File: workspaceBackupRel, MainPath: objectID}

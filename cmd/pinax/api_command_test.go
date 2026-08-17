@@ -7,6 +7,7 @@ import (
 )
 
 func TestAPIServeMachineModesAreQuietAndWriteModeConflictIsStable(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, mode := range []string{"--json", "--agent"} {
 		stdout, stderr, err := runAPIServeUntilCanceled(t, root, "api", "serve", "--port", "0", "--vault", root, mode)
@@ -24,6 +25,7 @@ func TestAPIServeMachineModesAreQuietAndWriteModeConflictIsStable(t *testing.T) 
 }
 
 func TestAPIServeLifecycleOutput(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	stdout, stderr, err := runAPIServeUntilCanceled(t, root, "api", "serve", "--port", "0", "--vault", root)
 	if err != nil || stdout != "" {
@@ -54,6 +56,7 @@ func TestAPIServeLifecycleOutput(t *testing.T) {
 }
 
 func TestAPIRoutesHumanOutputListsEndpointsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out := runCLI(t, "api", "routes", "--vault", root)
 	for _, want := range []string{"API routes", "Method", "Endpoint", "Command", "Surface", "GET", "/v1/projects/{slug}/board", "CALL", "Pinax.Note.Read", "project.board.show"} {
@@ -76,6 +79,7 @@ func TestAPIRoutesHumanOutputListsEndpointsCLI(t *testing.T) {
 }
 
 func TestAPIRoutesJSONExposesReleaseCoreCapabilitiesCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out := runCLI(t, "api", "routes", "--vault", root, "--json")
 	// Every release core capability must be discoverable with its proof-loop
@@ -94,6 +98,7 @@ func TestAPIRoutesJSONExposesReleaseCoreCapabilitiesCLI(t *testing.T) {
 }
 
 func TestAPIWorkbenchStatusCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Workbench", "--json")
 	out := runCLI(t, "api", "status", "--vault", root, "--json")

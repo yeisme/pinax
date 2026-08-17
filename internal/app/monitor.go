@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -233,8 +234,13 @@ func (r *monitorRecorder) Finish(status string, err error) (string, string) {
 	r.run.Evidence = []string{evidence, filepath.ToSlash(filepath.Join(".pinax", "monitor", "events.jsonl"))}
 	run := r.run
 	r.mu.Unlock()
-	_ = writeMonitorRun(r.root, run)
-	_ = appendMonitorEvent(r.root, run)
+	if err := writeMonitorRun(r.root, run); err != nil {
+		warnPersistFailure("monitor run", err)
+	}
+	pruneMonitorRuns(r.root)
+	if err := appendMonitorEvent(r.root, run); err != nil {
+		warnPersistFailure("monitor event", err)
+	}
 	return run.RunID, evidence
 }
 
@@ -715,4 +721,58 @@ func addMonitorProjectionFacts(projection *domain.Projection, runID, evidence st
 	if evidence != "" {
 		projection.Evidence = append(projection.Evidence, evidence)
 	}
+}
+
+// monitorRunRetention bounds how many monitor run records are kept. Runs are
+// operational telemetry (not durable receipts); without pruning the runs tree
+// grows without limit and every monitor show pays a full walk.
+const monitorRunRetention = 200
+
+// pruneMonitorRuns removes the oldest run records beyond the retention bound.
+// Failures are reported on stderr and never fail the monitored command.
+func pruneMonitorRuns(root string) {
+	runsDir := filepath.Join(root, ".pinax", "monitor", "runs")
+	type runFile struct {
+		path    string
+		modTime time.Time
+	}
+	var files []runFile
+	err := filepath.WalkDir(runsDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return nil
+		}
+		files = append(files, runFile{path: path, modTime: info.ModTime()})
+		return nil
+	})
+	if err != nil || len(files) <= monitorRunRetention {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modTime.After(files[j].modTime) })
+	for _, stale := range files[monitorRunRetention:] {
+		if err := os.Remove(stale.path); err != nil {
+			warnPersistFailure("monitor run prune", err)
+			continue
+		}
+		// Best-effort cleanup of month directories left empty by pruning.
+		parent := filepath.Dir(stale.path)
+		if empty, checkErr := dirEmpty(parent); checkErr == nil && empty {
+			_ = os.Remove(parent)
+			grand := filepath.Dir(parent)
+			if empty, checkErr := dirEmpty(grand); checkErr == nil && empty {
+				_ = os.Remove(grand)
+			}
+		}
+	}
+}
+
+func dirEmpty(path string) (bool, error) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false, err
+	}
+	return len(entries) == 0, nil
 }

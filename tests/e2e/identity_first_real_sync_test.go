@@ -10,6 +10,7 @@ import (
 )
 
 func TestIdentityFirstRealSyncSmoke(t *testing.T) {
+	t.Parallel()
 	endpoint := os.Getenv("PINAX_SYNC_REAL_ENDPOINT")
 	if endpoint == "" {
 		t.Skip("PINAX_SYNC_REAL_ENDPOINT is required for real sync smoke")
@@ -36,8 +37,8 @@ func TestIdentityFirstRealSyncSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	objectID := created.Facts["note_id"]
-	loginA := app.CloudLoginRequest{VaultPath: deviceA, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: "real-smoke-a", SecretRef: secretRef}
-	loginB := app.CloudLoginRequest{VaultPath: deviceB, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: "real-smoke-b", SecretRef: secretRef}
+	loginA := app.CloudLoginRequest{VaultPath: deviceA, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: "real-smoke-a", SecretRef: secretRef, EncryptionSecretRef: "plain:test-secret"}
+	loginB := app.CloudLoginRequest{VaultPath: deviceB, Endpoint: endpoint, WorkspaceID: workspaceID, DeviceID: "real-smoke-b", SecretRef: secretRef, EncryptionSecretRef: "plain:test-secret"}
 	if _, err := svc.CloudLogin(ctx, loginA); err != nil {
 		t.Fatal(err)
 	}

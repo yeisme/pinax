@@ -16,9 +16,9 @@ Agent Brain MLP 的最小闭环：
 | 步骤 | 真实命令 | 输出边界 |
 | --- | --- | --- |
 | 导入资料 | `pinax import markdown ./source --dry-run --vault ./my-notes --json`，确认后 `pinax import markdown ./source --group research --kind reference --status active --conflict rename --yes --vault ./my-notes --json` | dry-run 不写；apply 通过 service 写 note 和 import receipt。 |
-| 建索引和语义投影 | `pinax index refresh --vault ./my-notes --json`，`pinax kb rebuild --backend lancedb --provider ollama --model nomic-embed-text --vault ./my-notes --json` | KB rebuild 写本地 projection；provider/key 只显示来源，不回显 secret。 |
+| 建本地索引并交接 RAG | `pinax index refresh --vault ./my-notes --json`，`pinax export markdown ./temp/rag-export --vault ./my-notes --json` | Pinax 只写本地可重建索引；外部 RAG owner 负责 chunk、embedding、vector、rerank 和质量评测。 |
 | 结构化长期记忆 | `pinax memory capture --type decision --subject alice --object "Preferred concise async updates" --source notes/meetings/alice.md --vault ./my-notes --json` | 写 `.pinax/memory/ledger.sqlite`，必须带 source；recall/context 不输出私密全文。 |
-| Agent 查询上下文 | `pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent`，`pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json` | 返回 bounded facts、ranking reason、evidence refs 和 next actions。 |
+| Agent 查询上下文 | `pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent`，`pinax search "Alice" --vault ./my-notes --json` | 返回 bounded facts、ranking reason、evidence refs 和 next actions；语义上下文由外部 RAG owner 返回。 |
 | 关系和事实校验 | `pinax note backlinks "Alice" --vault ./my-notes --json`，`pinax search "Alice" --link-target notes/people/alice.md --vault ./my-notes --json`，`pinax graph query --kind technique --match storyboard --vault ./my-notes --json` | 返回 bounded relationship/prompt-graph evidence，不加载全量图，不自动修复。 |
 | Agent 接入 | `pinax mcp serve --vault ./my-notes` | MCP 默认只读，降级 body mode，不能写 vault。 |
 | 维护和压缩 | `pinax proof loop run --vault ./my-notes --json` | 先诊断、计划、snapshot requirement 和 receipt；apply 必须显式 `--apply --yes`。 |
@@ -32,4 +32,3 @@ Agent Brain MLP 的最小闭环：
 Agent Brain maintenance 只保留 proof-loop 内的 plan-first 能力：实体合并、引用修复、记忆去重、过期检测、矛盾提示和摘要压缩都必须先产出 reviewable plan，不得静默改写 note body。
 
 当前 MVP 的第一轮外部评估优先服务真实 Markdown vault：先让用户安全连接、capture daily/inbox，建立 SQLite/GORM local index，按 tag/group/folder/kind/status 搜索和浏览，保存常用视图，检查 resolved/broken/ambiguous links、orphan notes 和 attachments，按 `--link-target` 搜索，导入和导出 Markdown bundle，补充 metadata，生成 repair/organize plan 和 project board plan，然后在显式 version snapshot 保护后执行本地变更。Project board 是本地 project workbench，不是 remote Todo provider；`project board plan --save` 写 review snapshot，weekly planning 可以读取 board counts，但不会自动把全部 item 写入外部 task system。
-

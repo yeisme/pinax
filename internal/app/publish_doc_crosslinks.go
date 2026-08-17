@@ -16,20 +16,50 @@ type publishDocCrossDocResult struct {
 // publishDocResolveCrossDocLinks 把 note 正文里对其他 note 的引用改写为目标 note 的飞书文档 URL。
 // 仅改写已发布到同一 target 且 mapping 有 URL 的引用；未发布/未解析/歧义引用保留原样。
 func publishDocResolveCrossDocLinks(root string, source domain.Note, body string) (string, int) {
-	result := publishDocAnalyzeCrossDocLinks(root, source, body, domain.PublishDocTargetLarkDoc)
+	var loader publishDocSnapshotLoader
+	result := publishDocAnalyzeCrossDocLinks(root, source, body, domain.PublishDocTargetLarkDoc, &loader)
 	return result.Body, result.Summary.Rewritten
 }
 
-func publishDocAnalyzeCrossDocLinks(root string, source domain.Note, body string, target domain.PublishDocTarget) publishDocCrossDocResult {
+// publishDocVaultSnapshot is one run's shared view of the vault for cross-doc
+// link analysis. Scanning and resolver-building happen once per run instead of
+// once per note (the --all flows previously rescanned the whole vault for
+// every note, an O(N^2) walk with frontmatter parsing).
+type publishDocVaultSnapshot struct {
+	notes []domain.Note
+	snap  notelinks.ResolverSnapshot
+}
+
+// publishDocSnapshotLoader lazily loads (and caches) the vault snapshot for a
+// run; the zero loader scans on demand.
+type publishDocSnapshotLoader struct {
+	loaded bool
+	snap   publishDocVaultSnapshot
+}
+
+func (l *publishDocSnapshotLoader) load(root string) (publishDocVaultSnapshot, error) {
+	if l.loaded {
+		return l.snap, nil
+	}
+	notes, err := scanNotes(root)
+	if err != nil {
+		return publishDocVaultSnapshot{}, err
+	}
+	l.snap = publishDocVaultSnapshot{notes: notes, snap: notelinks.BuildResolverSnapshot(notes)}
+	l.loaded = true
+	return l.snap, nil
+}
+
+func publishDocAnalyzeCrossDocLinks(root string, source domain.Note, body string, target domain.PublishDocTarget, loader *publishDocSnapshotLoader) publishDocCrossDocResult {
 	result := publishDocCrossDocResult{Body: body}
 	if strings.TrimSpace(body) == "" {
 		return result
 	}
-	notes, err := scanNotes(root)
-	if err != nil || len(notes) == 0 {
+	vault, err := loader.load(root)
+	if err != nil || len(vault.notes) == 0 {
 		return result
 	}
-	snap := notelinks.BuildResolverSnapshot(notes)
+	snap := vault.snap
 	rawLinks := notelinks.ParseNoteLinks(body)
 	if len(rawLinks) == 0 {
 		return result

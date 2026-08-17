@@ -1136,7 +1136,7 @@ func (s *Service) publishDevWatch(ctx context.Context, req PublishRequest) (doma
 	}
 	defer closeWatchers()
 	emitPublishEvent(req.LiveEvents, "watch_started", "running", map[string]string{"profile": strings.TrimSpace(req.Profile), "target": buildReq.Target})
-	batches := publishDevDebounce(ctx, events, 250*time.Millisecond)
+	batches := syncdaemon.DebounceWithCoalescer(ctx, events, 250*time.Millisecond, publishDevCoalesceEvents)
 	rebuilds := 0
 	failures := 0
 	lastError := ""
@@ -1223,7 +1223,7 @@ func publishDevSmoke(ctx context.Context, url string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(request)
+	resp, err := publishHTTPClient.Do(request)
 	if err != nil {
 		return err
 	}
@@ -1302,48 +1302,6 @@ func publishDevWatchEvents(ctx context.Context, root, rendererDir string) (<-cha
 		}
 	}
 	return events, errorsCh, closeWatchers, nil
-}
-
-func publishDevDebounce(ctx context.Context, in <-chan syncdaemon.WatchEvent, delay time.Duration) <-chan []syncdaemon.WatchEvent {
-	if delay <= 0 {
-		delay = 250 * time.Millisecond
-	}
-	out := make(chan []syncdaemon.WatchEvent, 1)
-	go func() {
-		defer close(out)
-		var batch []syncdaemon.WatchEvent
-		var timer *time.Timer
-		var timerC <-chan time.Time
-		flush := func() {
-			if len(batch) == 0 {
-				return
-			}
-			out <- publishDevCoalesceEvents(batch)
-			batch = nil
-		}
-		for {
-			select {
-			case <-ctx.Done():
-				flush()
-				return
-			case event, ok := <-in:
-				if !ok {
-					flush()
-					return
-				}
-				batch = append(batch, event)
-				if timer != nil {
-					timer.Stop()
-				}
-				timer = time.NewTimer(delay)
-				timerC = timer.C
-			case <-timerC:
-				flush()
-				timerC = nil
-			}
-		}
-	}()
-	return out
 }
 
 func publishDevCoalesceEvents(events []syncdaemon.WatchEvent) []syncdaemon.WatchEvent {
@@ -1460,7 +1418,12 @@ func (s *Service) PublishServe(ctx context.Context, req PublishRequest) (domain.
 	emitPublishEvent(req.LiveEvents, "serve_ready", "success", map[string]string{"profile": strings.TrimSpace(req.Profile), "host": host, "port": fmt.Sprint(addr.Port), "url": url})
 	served := false
 	if req.Once {
-		resp, err := http.Get(url)
+		request, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			_ = server.Shutdown(ctx)
+			return errorProjection("publish.serve", reqErr), reqErr
+		}
+		resp, err := publishHTTPClient.Do(request)
 		if err != nil {
 			_ = server.Shutdown(ctx)
 			return errorProjection("publish.serve", err), err
@@ -1679,7 +1642,7 @@ func publishDeployHTTP(ctx context.Context, vaultRoot, outDir string, policy pub
 	if token, ok := publishTokenFromSecretRef(policy.SecretRef); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := publishHTTPClient.Do(req)
 	if err != nil {
 		return publishDeployResult{}, err
 	}
@@ -2062,11 +2025,15 @@ func pinaxWebRendererPackageDir() (string, error) {
 	return "", fmt.Errorf("pinax-web renderer package was not found")
 }
 
+// publishHTTPClient bounds every outbound HTTP request the publish pipeline
+// makes on its own (dev smoke, serve-once check, HTTP deploy target, Feishu
+// webhook): the zero-value DefaultClient never times out.
+var publishHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 func writePublishFile(path string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, body, 0o644)
+	// Atomic (temp+fsync+rename) so registry/profile/receipt readers never
+	// observe a torn truncate-then-write window.
+	return atomicWriteFile(path, body, 0o644)
 }
 
 func copyPublishAsset(root, outDir, rel string) error {

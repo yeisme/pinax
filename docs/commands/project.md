@@ -1,6 +1,6 @@
 # pinax project
 
-`pinax project` manages local project workspaces inside one Markdown vault. It is a local organization surface, not a remote issue tracker, and it does not synchronize work items to GitHub, Gitea, TaskBridge, or any provider by itself.
+`pinax project` manages local project workspaces inside one Markdown vault. It is a local organization surface, not a remote issue tracker, and it does not synchronize work items to GitHub, Gitea, or any provider by itself.
 
 ## Commands
 
@@ -141,7 +141,7 @@ Local REST/RPC exposes read projections and controlled write plans for dashboard
 
 Project Workspace remains local-first. The API does not become a remote issue tracker, does not write provider issues, and does not parse Markdown directly in handlers.
 
-See also [`plan`](./plan.md) for personal daily/weekly/monthly plans and TaskBridge action drafts, and [`api`](./api.md) for local projection access.
+See also [`plan`](./plan.md) for local daily/weekly/monthly plans and Pinax-owned action drafts, and [`api`](./api.md) for local projection access.
 
 ## Project and task object identity
 

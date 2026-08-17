@@ -8,6 +8,7 @@ import (
 )
 
 func TestProofLoopRunPreviewEmitsRunIDAndStageFacts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), pinaxNoteFixture("note_alpha", "Alpha", "alpha body\n"))
@@ -65,6 +66,7 @@ func TestProofLoopRunPreviewEmitsRunIDAndStageFacts(t *testing.T) {
 // TestProofLoopRunApplyRequiresYes 证明 --apply 不带 --yes 时拒绝写入。
 
 func TestProofLoopRunApplyRequiresYes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out, err := runCLIExpectError("proof", "loop", "run", "--vault", root, "--apply", "--json")
@@ -79,6 +81,7 @@ func TestProofLoopRunApplyRequiresYes(t *testing.T) {
 // TestProofLoopRunApplyExecutesAfterFreshSnapshot 证明 --apply --yes 先 fresh snapshot 再 apply。
 
 func TestProofLoopRunApplyExecutesAfterFreshSnapshot(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "No Tags.md"), "# No Tags\n\nbody without tags\n")

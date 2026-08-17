@@ -237,12 +237,31 @@ func syncRunCounts(plan syncplan.Plan, base map[string]int) map[string]int {
 	}
 	counts["operations"] = len(plan.Operations)
 	counts["conflicts"] = len(plan.ConflictQueue)
+	for _, key := range []string{"added", "modified", "deleted", "renamed", "bytes_uploaded", "bytes_downloaded"} {
+		if _, ok := counts[key]; !ok {
+			counts[key] = 0
+		}
+	}
 	for _, op := range plan.Operations {
 		switch op.Kind {
 		case "upload_blob":
 			counts["upload_blobs"]++
+			if op.BaseRevision == "" {
+				counts["added"]++
+			} else {
+				counts["modified"]++
+			}
 		case "download_blob":
 			counts["download_blobs"]++
+			if op.BaseRevision == "" {
+				counts["added"]++
+			} else {
+				counts["modified"]++
+			}
+		case "delete_local", "delete_remote":
+			counts["deleted"]++
+		case "move":
+			counts["renamed"]++
 		case "conflict":
 			counts["conflicts"]++
 		}
@@ -272,6 +291,10 @@ func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
 				facts[key] = value
 			}
 		}
+		if code := syncRunOperationChangeCode(operation); code != "" {
+			facts["change_code"] = code
+		}
+		facts["change_state"] = syncRunOperationChangeState(operation.Status, receipt.Status)
 		if err := appendEvent(root, "sync.file", receipt.Status, facts); err != nil {
 			return err
 		}
@@ -291,6 +314,38 @@ func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
 		facts["error_code"] = receipt.Error.Code
 	}
 	return appendEvent(root, "sync.run", receipt.Status, facts)
+}
+
+func syncRunOperationChangeCode(operation syncplan.Operation) string {
+	switch operation.Kind {
+	case "upload_blob", "download_blob":
+		if operation.BaseRevision == "" {
+			return "A"
+		}
+		return "M"
+	case "delete_local", "delete_remote":
+		return "D"
+	case "move":
+		return "R"
+	case "conflict", "revision_conflict", "path_collision":
+		return "C"
+	default:
+		return ""
+	}
+}
+
+func syncRunOperationChangeState(operationStatus, receiptStatus string) string {
+	if operationStatus == "conflict" || receiptStatus == "conflict" {
+		return "conflict"
+	}
+	switch receiptStatus {
+	case "success":
+		return "applied"
+	case "failed", "partial":
+		return "failed"
+	default:
+		return "planned"
+	}
 }
 
 func sanitizeCommandError(err *domain.CommandError) *domain.CommandError {
@@ -325,7 +380,9 @@ func writeApprovalRequiredSyncRun(root string, req SyncRequest, command string, 
 	if finishErr != nil {
 		return finishErr
 	}
-	_ = writeCurrentSyncState(root, state, receipt, "")
+	if err := writeCurrentSyncState(root, state, receipt, ""); err != nil {
+		warnPersistFailure("sync state", err)
+	}
 	projection.Facts["run_id"] = receipt.RunID
 	projection.Facts["remote_write"] = "false"
 	projection.Facts["target"] = outputTarget
@@ -412,7 +469,18 @@ func (s *Service) SyncLogsShow(_ context.Context, req SyncLogsRequest) (domain.P
 	projection.Facts["status"] = record.Receipt.Status
 	projection.Facts["remote_write"] = fmt.Sprint(record.Receipt.RemoteWrite)
 	projection.Facts["backend_kind"] = record.Receipt.BackendKind
-	projection.Data = map[string]any{"receipt": record.Receipt}
+	data := map[string]any{"receipt": record.Receipt}
+	viewResult := "planned"
+	switch record.Receipt.Status {
+	case "success":
+		viewResult = "applied"
+	case "failed":
+		viewResult = "failed"
+	case "partial":
+		viewResult = "partial"
+	}
+	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(syncplan.Plan{Direction: syncplan.Direction(record.Receipt.Direction), Target: record.Receipt.Target, BaseRevision: record.Receipt.BaseRevision, RemoteRevision: record.Receipt.RemoteRevisionBefore, Operations: record.Receipt.Operations}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, pinaxcloud.Manifest{}, syncOutputViewOptions{Scope: "cached", Result: viewResult, RemoteAfter: record.Receipt.RevisionID, LocalAfter: record.Receipt.RevisionID, PathPolicy: record.Receipt.Redaction.PathPolicy}))
+	projection.Data = data
 	projection.Evidence = []string{filepath.ToSlash(strings.TrimPrefix(record.Path, root+string(os.PathSeparator)))}
 	return projection, nil
 }
@@ -605,4 +673,73 @@ func (s *Service) SyncLogsFollow(ctx context.Context, req SyncLogsRequest, emit 
 			}
 		}
 	}
+}
+
+// SyncKeysStatus reports which key derivation the vault uses and which one the
+// remote manifest envelope is encrypted under, so a re-encryption migration
+// can be verified objectively: remote_derivation flips legacy→v2 after a push
+// re-encrypts, and unknown means a foreign secret or corrupted state.
+func (s *Service) SyncKeysStatus(ctx context.Context, req VaultRequest) (domain.Projection, error) {
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("sync.keys", err), err
+	}
+	state, err := cloudStateForSync(root, SyncRequest{})
+	if err != nil {
+		projection, projErr := cloudStateErrorProjection("sync.keys", root, err)
+		return projection, projErr
+	}
+	projection := domain.NewProjection("sync.keys", "Sync encryption key derivation status.")
+	projection.Facts["configured"] = "true"
+	if active, legacy, keyErr := pinaxcloud.SyncKeyVersions(pinaxcloud.EncryptionSecretRef(state.Config)); keyErr != nil {
+		projection.Facts["configured"] = "false"
+		projection.Data = map[string]any{"error": keyErr.Error()}
+		return projection, nil
+	} else {
+		projection.Facts["active_key_id"] = active
+		projection.Facts["legacy_key_id"] = legacy
+		projection.Facts["derivation"] = "v2"
+		projection.Data = map[string]any{"active_key_id": active, "legacy_key_id": legacy, "derivation": "v2", "iterations": 600000}
+	}
+	snapshot, snapErr := loadCloudRemoteSnapshot(ctx, root, state)
+	if snapErr != nil {
+		projection.Facts["remote_reachable"] = "false"
+		if data, ok := projection.Data.(map[string]any); ok {
+			data["remote_error"] = snapErr.Error()
+		}
+		return projection, snapErr
+	}
+	projection.Facts["remote_reachable"] = "true"
+	if strings.TrimSpace(snapshot.RevisionID) == "" {
+		projection.Facts["remote_state"] = "empty"
+		if data, ok := projection.Data.(map[string]any); ok {
+			data["remote_state"] = "empty"
+		}
+		return projection, nil
+	}
+	active := projection.Facts["active_key_id"]
+	legacy := projection.Facts["legacy_key_id"]
+	class := pinaxcloud.ClassifyKeyID(snapshot.ManifestKeyID, active, legacy)
+	projection.Facts["remote_state"] = "present"
+	projection.Facts["remote_derivation"] = class
+	projection.Facts["remote_manifest_key_id"] = snapshot.ManifestKeyID
+	projection.Facts["remote_manifest_blob_id"] = snapshot.ManifestBlobID
+	projection.Facts["reencryption_required"] = fmt.Sprint(class != "v2")
+	switch class {
+	case "v2":
+		projection.Summary = "Remote is fully encrypted with the v2 derivation."
+	case "legacy":
+		projection.Summary = "Remote manifest still uses the legacy derivation; push to re-encrypt."
+		projection.Actions = []domain.Action{{Name: "reencrypt", Command: fmt.Sprintf("pinax sync push --target %s --vault %s --yes --json", syncConfigCommand(state.Config.Endpoint), shellQuote(root))}}
+	default:
+		projection.Summary = "Remote manifest key does not match this vault's derivations."
+	}
+	if data, ok := projection.Data.(map[string]any); ok {
+		data["remote_derivation"] = class
+		data["remote_manifest_key_id"] = snapshot.ManifestKeyID
+		data["remote_manifest_blob_id"] = snapshot.ManifestBlobID
+		data["remote_revision_id"] = snapshot.RevisionID
+		data["reencryption_required"] = class != "v2"
+	}
+	return projection, nil
 }

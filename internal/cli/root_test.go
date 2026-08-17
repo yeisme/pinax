@@ -13,6 +13,7 @@ import (
 )
 
 func TestNewRootCommandFactoryIsolatedState(t *testing.T) {
+	t.Parallel()
 	first := NewRootCommand("test-one")
 	var firstOut bytes.Buffer
 	first.SetOut(&firstOut)
@@ -373,6 +374,7 @@ func TestConfiguredRemoteModeRejectsUnsupportedBusinessCommand(t *testing.T) {
 }
 
 func TestRemoteCommandCoverageClassifiesEveryVisibleRunnableCommand(t *testing.T) {
+	t.Parallel()
 	coverage := RemoteCommandCoverage(NewRootCommand("test"))
 	if len(coverage) == 0 {
 		t.Fatalf("expected command coverage entries")
@@ -435,7 +437,7 @@ func TestConfiguredRemoteModeLeavesRootHelpLocal(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("root help should remain local: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "Pinax manages local Markdown vault notes") {
+	if !strings.Contains(out.String(), "Pinax helps one person capture, find, organize, and protect") {
 		t.Fatalf("root help output = %s", out.String())
 	}
 }

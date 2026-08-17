@@ -8,7 +8,7 @@ import (
 	"github.com/yeisme/pinax/internal/publishdocast"
 )
 
-func buildPublishDocPackage(root string, profile domain.PublishDocProfile, note domain.Note) (domain.PublishDocPackage, domain.PublishDocCrossDocSummary, error) {
+func buildPublishDocPackage(root string, profile domain.PublishDocProfile, note domain.Note, loader *publishDocSnapshotLoader) (domain.PublishDocPackage, domain.PublishDocCrossDocSummary, error) {
 	now := time.Now().UTC()
 	pkg := domain.PublishDocPackage{
 		SchemaVersion: domain.PublishDocPackageSchemaVersion,
@@ -24,7 +24,7 @@ func buildPublishDocPackage(root string, profile domain.PublishDocProfile, note 
 	}
 	crossDocSummary := domain.PublishDocCrossDocSummary{}
 	if profile.Target == domain.PublishDocTargetLarkDoc && profile.ResolveDocRenderer() == domain.PublishDocRendererNativeDocx {
-		crossDoc := publishDocAnalyzeCrossDocLinks(root, note, pkg.BodyMarkdown, profile.Target)
+		crossDoc := publishDocAnalyzeCrossDocLinks(root, note, pkg.BodyMarkdown, profile.Target, loader)
 		pkg.BodyMarkdown = crossDoc.Body
 		crossDocSummary = crossDoc.Summary
 		if crossDocSummary.Total > 0 {

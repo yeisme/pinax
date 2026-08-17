@@ -326,7 +326,7 @@ func (s *Service) VersionRestoreApply(ctx context.Context, req VersionRestoreApp
 	if err != nil {
 		return errorProjection("version.restore.apply", err), err
 	}
-	_ = appendEvent(root, "version.restore.apply", "success", map[string]string{"plan_id": plan.PlanID, "path": plan.Path, "revision": plan.Revision})
+	appendEventWarned(root, "version.restore.apply", "success", map[string]string{"plan_id": plan.PlanID, "path": plan.Path, "revision": plan.Revision})
 	projection := domain.NewProjection("version.restore.apply", "Version restore applied to local Markdown.")
 	projection.Facts["local_write"] = "true"
 	projection.Facts["remote_write"] = "false"

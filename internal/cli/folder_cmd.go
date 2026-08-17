@@ -118,3 +118,46 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 	folderCmd.AddCommand(folderListCmd, folderShowCmd, folderCreateCmd, folderRenameCmd, folderMoveCmd, folderDeleteCmd, folderAdoptCmd, folderRepairCmd)
 	root.AddCommand(folderCmd)
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "folder list",
+		Method:      "Pinax.Folder.List",
+		Flags: []remoteParamSpec{
+			s("purpose", "purpose"), s("under", "under"),
+			b("include_empty", "include-empty"), i("depth", "depth"),
+		},
+	})
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "folder show", Method: "Pinax.Folder.Show", ArgParams: []string{"path"}})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "folder create",
+		Method:      "Pinax.Folder.Create",
+		ArgParams:   []string{"path"},
+		Flags:       []remoteParamSpec{s("purpose", "purpose"), b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "folder rename",
+		Method:      "Pinax.Folder.Rename",
+		ArgParams:   []string{"path", "target_path"},
+		Flags:       []remoteParamSpec{b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "folder move",
+		Method:      "Pinax.Folder.Move",
+		ArgParams:   []string{"path", "target_parent"},
+		Flags:       []remoteParamSpec{b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "folder delete",
+		Method:      "Pinax.Folder.Delete",
+		ArgParams:   []string{"path"},
+		Flags:       []remoteParamSpec{b("empty_only", "empty-only"), b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "folder adopt",
+		Method:      "Pinax.Folder.Adopt",
+		ArgParams:   []string{"path"},
+		Flags:       []remoteParamSpec{s("purpose", "purpose"), b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "folder repair", Method: "Pinax.Folder.RepairPlan"})
+}

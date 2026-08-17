@@ -146,7 +146,7 @@ func (s *Service) SyncConflictsResolve(_ context.Context, req SyncConflictResolv
 	if err != nil {
 		return errorProjection("sync.conflicts.resolve", err), err
 	}
-	_ = appendEvent(root, "sync.conflict.resolve", "success", map[string]string{"conflict_file": entry.File, "main_path": entry.MainPath, "resolution": resolution, "receipt_path": receipt.ReceiptPath})
+	appendEventWarned(root, "sync.conflict.resolve", "success", map[string]string{"conflict_file": entry.File, "main_path": entry.MainPath, "resolution": resolution, "receipt_path": receipt.ReceiptPath})
 	projection := domain.NewProjection("sync.conflicts.resolve", "Sync conflict resolved.")
 	projection.Facts["conflict_file"] = entry.File
 	projection.Facts["main_path"] = entry.MainPath

@@ -9,6 +9,7 @@ import (
 )
 
 func TestPluginValidateManifestJSONContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pluginDir := filepath.Join(root, "plugins", "project-dashboard")
 	writeCLIFixture(t, filepath.Join(pluginDir, "dist", "plugin.wasm"), "fake wasm bytes")
@@ -56,6 +57,7 @@ budgets:
 }
 
 func TestPluginValidateRejectsSecretBearingManifest(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pluginDir := filepath.Join(root, "plugins", "unsafe-plugin")
 	secret := "sk-live-pinax-secret-1234567890"
@@ -98,6 +100,7 @@ budgets:
 }
 
 func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pluginDir := writePluginFixture(t, root)
 
@@ -159,6 +162,7 @@ func TestPluginInstallRegistryLockInspectAndEnableDisable(t *testing.T) {
 }
 
 func TestPluginCommandFamilyOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
@@ -230,6 +234,7 @@ func TestPluginCommandFamilyOutputContract(t *testing.T) {
 }
 
 func TestPluginRunUnavailableContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")
@@ -282,6 +287,7 @@ func TestPluginRunPythonExternalRunnerContract(t *testing.T) {
 }
 
 func TestPluginPermissionsGrantRevokeAndRunDenyByDefault(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pluginDir := writePluginFixture(t, root)
 	runCLI(t, "plugin", "install", pluginDir, "--scope", "vault", "--vault", root, "--json")

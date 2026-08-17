@@ -10,6 +10,7 @@ import (
 )
 
 func TestCloudStateLifecycle(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	state, err := Login(root, LoginRequest{Endpoint: "https://cloud.example.test", WorkspaceID: "ws_123", DeviceID: "dev_laptop", SecretRef: "op://pinax/cloud-token", EncryptionSecretRef: "env://PINAX_SYNC_SECRET"})
 	if err != nil {
@@ -53,6 +54,7 @@ func TestCloudStateLifecycle(t *testing.T) {
 }
 
 func TestCloudStateWritesStructuredYAMLS3Config(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	state, err := Login(root, LoginRequest{
 		Endpoint:    "s3://notes/pinax-sync?endpoint=http%3A%2F%2F10.10.1.102%3A9010&path_style=true&profile=ec&region=us-east-1",
@@ -99,6 +101,7 @@ func TestCloudStateWritesStructuredYAMLS3Config(t *testing.T) {
 }
 
 func TestCloudStateWritesVirtualHostedS3Config(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	state, err := Login(root, LoginRequest{
 		WorkspaceID: "yeisme-notes",
@@ -135,6 +138,7 @@ func TestCloudStateWritesVirtualHostedS3Config(t *testing.T) {
 }
 
 func TestCloudStateLoadsLegacyJSONConfig(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".pinax", "cloud"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -163,6 +167,7 @@ func TestCloudStateLoadsLegacyJSONConfig(t *testing.T) {
 }
 
 func TestCloudStateMissingConfig(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if _, err := Load(root); err == nil || !IsNotConfigured(err) {
 		t.Fatalf("load without config err = %v", err)
@@ -174,6 +179,7 @@ func TestCloudStateMissingConfig(t *testing.T) {
 }
 
 func TestCloudStateRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cases := []LoginRequest{
 		{WorkspaceID: "ws", DeviceID: "dev", SecretRef: "ref"},

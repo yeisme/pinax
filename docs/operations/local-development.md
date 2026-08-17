@@ -7,12 +7,11 @@ task build
 task test
 task test:integration
 task check
-task kb:sidecar:test
 ```
 
 Before changing behavior, read [Module Review And TDD](./module-review-tdd.md). It records the current cross-module review queue and the RED -> GREEN commands expected for profile/vault/config boundaries, remote cache safety, publish approval, provider adapter isolation, and integration evidence redaction.
 
-`task check` runs the offline LanceDB sidecar protocol gate. It validates the sidecar JSON protocol and redaction boundary without installing Python packages from PyPI. Use `task kb:sidecar:test` before release or when changing `tools/pinax-lancedb-sidecar`; that command installs the real `lancedb` dependency in a temporary venv and runs the real rebuild/search sidecar tests.
+`task check` covers the active Pinax local vault, index, sync, API, output, and OpenSpec gates. Vector/RAG provider and database checks belong to the external RAG project.
 
 If `task` is not installed, use Go and OpenSpec commands directly:
 
@@ -92,7 +91,7 @@ rm -rf /tmp/pinax-notes
 ./dist/pinax project board show research --note-display card --vault /tmp/pinax-notes --json
 ./dist/pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault /tmp/pinax-notes --json
 ./dist/pinax project board plan research --save --vault /tmp/pinax-notes --json
-./dist/pinax plan weekly --taskbridge --dry-run --vault /tmp/pinax-notes --json
+./dist/pinax plan weekly --dry-run --vault /tmp/pinax-notes --json
 ./dist/pinax project board export research --format markdown --vault /tmp/pinax-notes --json
 ./dist/pinax project item add research "local board task" --column next --body "controlled work item" --vault /tmp/pinax-notes --json
 ./dist/pinax storage set s3 --bucket notes --region us-east-1 --prefix pinax/ --profile work --vault /tmp/pinax-notes --json

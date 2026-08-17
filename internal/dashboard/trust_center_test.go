@@ -28,7 +28,7 @@ func newTrustCenterTestServer(t *testing.T) *Server {
 func TestAgentContinuityRoute_GET(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/agent-continuity", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/agent-continuity", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("agent-continuity status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -47,7 +47,7 @@ func TestAgentContinuityRoute_GET(t *testing.T) {
 func TestAgentContinuityRoute_MethodNotAllowed(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/agent-continuity", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/agent-continuity", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("agent-continuity POST status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
 	}
@@ -56,7 +56,7 @@ func TestAgentContinuityRoute_MethodNotAllowed(t *testing.T) {
 func TestMemoryInboxRoute_GET(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/memory-inbox", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/memory-inbox", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("memory-inbox status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -78,7 +78,7 @@ func TestMemoryInboxRoute_GET(t *testing.T) {
 func TestMemoryInboxRoute_MethodNotAllowed(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/memory-inbox", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/memory-inbox", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("memory-inbox POST status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
 	}
@@ -87,7 +87,7 @@ func TestMemoryInboxRoute_MethodNotAllowed(t *testing.T) {
 func TestTrustMetricsRoute_GET(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/trust-metrics", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/trust-metrics", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("trust-metrics status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -115,7 +115,7 @@ func TestTrustMetricsRoute_GET(t *testing.T) {
 func TestTrustMetricsRoute_MethodNotAllowed(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodDelete, "/api/trust-metrics", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodDelete, "/api/trust-metrics", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("trust-metrics DELETE status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
 	}
@@ -125,7 +125,7 @@ func TestOldRoutesUnchanged(t *testing.T) {
 	server := newTrustCenterTestServer(t)
 
 	overview := httptest.NewRecorder()
-	server.Handler().ServeHTTP(overview, httptest.NewRequest(http.MethodGet, "/api/overview", nil))
+	server.Handler().ServeHTTP(overview, newLocalRequest(http.MethodGet, "/api/overview", nil))
 	if overview.Code != http.StatusOK {
 		t.Fatalf("overview status = %d body=%s", overview.Code, overview.Body.String())
 	}
@@ -138,7 +138,7 @@ func TestOldRoutesUnchanged(t *testing.T) {
 	}
 
 	notes := httptest.NewRecorder()
-	server.Handler().ServeHTTP(notes, httptest.NewRequest(http.MethodGet, "/api/notes", nil))
+	server.Handler().ServeHTTP(notes, newLocalRequest(http.MethodGet, "/api/notes", nil))
 	if notes.Code != http.StatusOK {
 		t.Fatalf("notes status = %d body=%s", notes.Code, notes.Body.String())
 	}
@@ -164,7 +164,7 @@ func TestTrustCenter_NoBodyLeak(t *testing.T) {
 	server := NewServer(svc, root)
 	for _, endpoint := range []string{"/api/agent-continuity", "/api/memory-inbox", "/api/trust-metrics"} {
 		res := httptest.NewRecorder()
-		server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, endpoint, nil))
+		server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, endpoint, nil))
 		if res.Code != http.StatusOK {
 			t.Fatalf("%s status = %d body=%s", endpoint, res.Code, res.Body.String())
 		}

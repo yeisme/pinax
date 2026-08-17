@@ -14,6 +14,7 @@ import (
 // TestPublishDocNativePlanIntegration 验证 app 层 publishDocBuildPlan 把 note 正文 + vault template
 // 解析为 provider-neutral plan，包含标题/段落/列表/表格/代码块。
 func TestPublishDocNativePlanIntegration(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_x", Title: "X Note", Path: "notes/x.md", Body: "## Section\n\nparagraph text\n\n- a\n- b\n\n```go\ncode()\n```\n\n| H1 | H2 |\n| -- | -- |\n| 1 | 2 |\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, warnings := publishDocBuildPlan(note, profile)
@@ -42,6 +43,7 @@ func TestPublishDocNativePlanIntegration(t *testing.T) {
 // TestPublishDocVaultTemplateDuplicateTitleHandling 验证 stripPublishDocDuplicateTitle
 // 在 note body 以与标题同名的 H1 开头时去重，避免原生文档标题重复。
 func TestPublishDocVaultTemplateDuplicateTitleHandling(t *testing.T) {
+	t.Parallel()
 	body := "# Same Title\n\ncontent"
 	stripped := stripPublishDocDuplicateTitle(body, "Same Title")
 	if stripPublishDocDuplicateTitle(stripped, "Same Title") == "" && stripped == "" {
@@ -60,6 +62,7 @@ func TestPublishDocVaultTemplateDuplicateTitleHandling(t *testing.T) {
 
 // TestPublishDocNativePlanNoH1Note 验证无 H1 note 仍生成稳定 plan。
 func TestPublishDocNativePlanNoH1Note(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_plain", Title: "Plain", Path: "notes/plain.md", Body: "Just a paragraph.\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, _ := publishDocBuildPlan(note, profile)
@@ -70,6 +73,7 @@ func TestPublishDocNativePlanNoH1Note(t *testing.T) {
 
 // TestPublishDocNativePlanChineseTitle 验证中文标题 normalization 不出错。
 func TestPublishDocNativePlanChineseTitle(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_zh", Title: "中文标题。", Path: "notes/zh.md", Body: "正文段落。\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, _ := publishDocBuildPlan(note, profile)
@@ -81,6 +85,7 @@ func TestPublishDocNativePlanChineseTitle(t *testing.T) {
 // TestPublishDocNativePlanMermaidKeptInBody 验证 Mermaid 保留在正文 fenced code block，
 // 由 Feishu markdown 导入原生转换；plan 不把 Mermaid 作为 NativeAsset，也不在 plan 阶段告警。
 func TestPublishDocNativePlanMermaidKeptInBody(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_mermaid", Title: "Mermaid", Path: "notes/m.md", Body: "```mermaid\ngraph TD\n  A-->B\n```\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, warnings := publishDocBuildPlan(note, profile)
@@ -108,6 +113,7 @@ func TestPublishDocNativePlanMermaidKeptInBody(t *testing.T) {
 // TestPublishDocNativePlanSVGPreservedAsAsset 验证 inline SVG 在 plan 阶段作为 NativeAsset 保留，
 // 不插入 raw SVG 到正文 block，也不在 plan 阶段发 warning。
 func TestPublishDocNativePlanSVGPreservedAsAsset(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_svg", Title: "SVG", Path: "notes/s.md", Body: "<svg><rect/></svg>\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, warnings := publishDocBuildPlan(note, profile)
@@ -137,6 +143,7 @@ func TestPublishDocNativePlanSVGPreservedAsAsset(t *testing.T) {
 
 // TestPublishDocAssetPathEscapeRejected 验证路径逃逸被拒绝并产生 warning。
 func TestPublishDocAssetPathEscapeRejected(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_escape", Title: "Escape", Path: "notes/e.md", Body: "![x](../../../etc/passwd)\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, warnings := publishDocBuildPlan(note, profile)
@@ -159,6 +166,7 @@ func TestPublishDocAssetPathEscapeRejected(t *testing.T) {
 
 // TestPublishDocNativePlanLocalImageAttachmentResolved 验证 vault 内相对图片被解析为 media ref。
 func TestPublishDocNativePlanLocalImageAttachmentResolved(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_img", Title: "Image", Path: "notes/index/img.md", Body: "![diagram](assets/diagram.png)\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, _ := publishDocBuildPlan(note, profile)
@@ -177,6 +185,7 @@ func TestPublishDocNativePlanLocalImageAttachmentResolved(t *testing.T) {
 
 // TestPublishDocResolveRendererCompatibility 验证旧 profile/mapping 兼容读取规则。
 func TestPublishDocResolveRendererCompatibility(t *testing.T) {
+	t.Parallel()
 	// 新 profile：native-docx。
 	newProfile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	if newProfile.ResolveDocRenderer() != domain.PublishDocRendererNativeDocx {
@@ -201,6 +210,7 @@ func TestPublishDocResolveRendererCompatibility(t *testing.T) {
 
 // TestPublishDocNativePlanProviderNeutral 验证 plan 与 lark-cli 命令无关（provider-neutral）。
 func TestPublishDocNativePlanProviderNeutral(t *testing.T) {
+	t.Parallel()
 	note := domain.Note{ID: "note_pn", Title: "PN", Path: "notes/pn.md", Body: "text\n"}
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	plan, _ := publishDocBuildPlan(note, profile)
@@ -293,6 +303,7 @@ func TestPublishDocNativeInsertAssetsUsesManifestCleanup(t *testing.T) {
 }
 
 func TestPublishDocExecutableUsesOfficialNotionCLI(t *testing.T) {
+	t.Parallel()
 	if got := publishDocExecutable(domain.PublishDocTargetNotionPage); got != "ntn" {
 		t.Fatalf("publishDocExecutable(notion-page) = %q, want ntn", got)
 	}

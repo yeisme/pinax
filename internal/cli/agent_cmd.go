@@ -245,17 +245,27 @@ func addAgentHandoffCommands(parent *cobra.Command, ctx commandBuildContext) {
 		Short: "Cross-agent bounded working state handoff",
 	}
 
-	var hScope, hObjective string
+	var hScope, hObjective, hCurrentState, hDecisions, hCompletedWork, hBlockers string
+	var hVerification, hFollowUps, hSources, hRequestedNextCapability string
+	var hToPrincipal, hToRuntime string
 	createCmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a handoff (bounded working state, not confirmed memory)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			handoffID, err := agentSvc.AgentHandoffCreate(cmd.Context(), app.AgentHandoffCreateRequest{
-				VaultPath: agentVaultPath(ctx),
-				From:      agentPrincipal(),
-				To:        agentprotocol.DefaultAdapterPrincipal("target-agent", "codex"),
-				Scope:     parseScope(hScope),
-				Objective: hObjective,
+				VaultPath:               agentVaultPath(ctx),
+				From:                    agentPrincipal(),
+				To:                      agentprotocol.DefaultAdapterPrincipal(hToPrincipal, hToRuntime),
+				Scope:                   parseScope(hScope),
+				Objective:               hObjective,
+				CurrentState:            hCurrentState,
+				Decisions:               splitCSV(hDecisions),
+				CompletedWork:           splitCSV(hCompletedWork),
+				Blockers:                splitCSV(hBlockers),
+				Verification:            splitCSV(hVerification),
+				FollowUps:               splitCSV(hFollowUps),
+				Sources:                 parseSources(hSources),
+				RequestedNextCapability: hRequestedNextCapability,
 			})
 			if err != nil {
 				return renderAgentError(cmd, ctx, "agent.handoff.create", err)
@@ -267,6 +277,16 @@ func addAgentHandoffCommands(parent *cobra.Command, ctx commandBuildContext) {
 	}
 	createCmd.Flags().StringVar(&hScope, "scope", "workspace:default", "Target scope")
 	createCmd.Flags().StringVar(&hObjective, "objective", "", "Handoff objective")
+	createCmd.Flags().StringVar(&hCurrentState, "current-state", "", "Current bounded task state")
+	createCmd.Flags().StringVar(&hDecisions, "decisions", "", "Comma-separated decisions")
+	createCmd.Flags().StringVar(&hCompletedWork, "completed-work", "", "Comma-separated completed work items")
+	createCmd.Flags().StringVar(&hBlockers, "blockers", "", "Comma-separated blockers")
+	createCmd.Flags().StringVar(&hVerification, "verification", "", "Comma-separated verification facts")
+	createCmd.Flags().StringVar(&hFollowUps, "follow-ups", "", "Comma-separated follow-up actions")
+	createCmd.Flags().StringVar(&hSources, "sources", "", "Comma-separated source refs (kind:ref)")
+	createCmd.Flags().StringVar(&hRequestedNextCapability, "requested-next-capability", "", "Capability requested from the receiving agent")
+	createCmd.Flags().StringVar(&hToPrincipal, "to-principal", "target-agent", "Receiving principal ID")
+	createCmd.Flags().StringVar(&hToRuntime, "to-runtime", "codex", "Receiving agent runtime")
 	handoffCmd.AddCommand(createCmd)
 
 	var listScope string
@@ -286,6 +306,25 @@ func addAgentHandoffCommands(parent *cobra.Command, ctx commandBuildContext) {
 	}
 	listCmd.Flags().StringVar(&listScope, "scope", "workspace:default", "Target scope")
 	handoffCmd.AddCommand(listCmd)
+
+	showCmd := &cobra.Command{
+		Use:   "show <handoff-id>",
+		Short: "Show one bounded handoff",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			result, err := agentSvc.AgentHandoffGet(cmd.Context(), agentVaultPath(ctx), args[0])
+			if err != nil {
+				return renderAgentError(cmd, ctx, "agent.handoff.show", err)
+			}
+			proj := domain.NewProjection("agent.handoff.show", "Handoff loaded.")
+			proj.Facts["handoff_id"] = result.HandoffID
+			proj.Facts["scope"] = result.ScopeKind + ":" + result.ScopeID
+			proj.Facts["source_count"] = fmt.Sprintf("%d", len(result.Sources))
+			proj.Data = result
+			return ctx.renderProjection(cmd, proj, nil)
+		},
+	}
+	handoffCmd.AddCommand(showCmd)
 
 	parent.AddCommand(handoffCmd)
 }

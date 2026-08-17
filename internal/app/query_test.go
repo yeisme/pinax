@@ -14,6 +14,7 @@ import (
 )
 
 func TestPinaxSQLParserBuildsQueryAST(t *testing.T) {
+	t.Parallel()
 	ast, err := searchops.ParseSQL(`SELECT title, status AS state FROM notes WHERE status = "active" AND tags CONTAINS "pinax" ORDER BY updated_at DESC LIMIT 20`)
 	if err != nil {
 		t.Fatalf("parse sql: %v", err)
@@ -30,6 +31,7 @@ func TestPinaxSQLParserBuildsQueryAST(t *testing.T) {
 }
 
 func TestPinaxSQLV2ParserBuildsAggregateGroupedAST(t *testing.T) {
+	t.Parallel()
 	ast, err := searchops.ParseSQL(`SELECT status, COUNT(*) AS total, MIN(priority) AS min_priority, MAX(updated_at) AS newest FROM notes WHERE status IN ("active", "done") AND priority >= 2 AND due IS NOT EMPTY GROUP BY status ORDER BY total DESC LIMIT 10`)
 	if err != nil {
 		t.Fatalf("parse sql v2 aggregate: %v", err)
@@ -65,6 +67,7 @@ func TestPinaxSQLV2ParserBuildsAggregateGroupedAST(t *testing.T) {
 }
 
 func TestPinaxSQLV2ParserSourcesAndExists(t *testing.T) {
+	t.Parallel()
 	for _, source := range []domain.QuerySource{domain.QuerySourceTasks, domain.QuerySourceLinks, domain.QuerySourceBacklinks, domain.QuerySourceAssets} {
 		t.Run(string(source), func(t *testing.T) {
 			ast, err := searchops.ParseSQL(`SELECT title FROM ` + string(source) + ` WHERE EXISTS target LIMIT 5`)
@@ -79,6 +82,7 @@ func TestPinaxSQLV2ParserSourcesAndExists(t *testing.T) {
 }
 
 func TestDatabaseSchemaSetRejectsUnsafeValues(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -94,6 +98,7 @@ func TestDatabaseSchemaSetRejectsUnsafeValues(t *testing.T) {
 }
 
 func TestDatabaseSchemaV2TypedOverridesListShowAndValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -168,6 +173,7 @@ func TestDatabaseSchemaV2TypedOverridesListShowAndValidation(t *testing.T) {
 }
 
 func TestPinaxSQLRejectsForbiddenAndUnsupportedSyntax(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		sql  string
@@ -190,6 +196,7 @@ func TestPinaxSQLRejectsForbiddenAndUnsupportedSyntax(t *testing.T) {
 }
 
 func TestQueryExplainProjection(t *testing.T) {
+	t.Parallel()
 	svc := NewService()
 	projection, err := svc.QueryExplain(t.Context(), QueryRequest{SQL: `SELECT title, status FROM notes WHERE status = "active" LIMIT 10`})
 	if err != nil {
@@ -201,6 +208,7 @@ func TestQueryExplainProjection(t *testing.T) {
 }
 
 func TestQueryRunRequiresIndexUnlessLazy(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -228,6 +236,7 @@ func TestQueryRunRequiresIndexUnlessLazy(t *testing.T) {
 }
 
 func TestQueryPlannerPropertyFilterSafeQuery(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -253,6 +262,7 @@ func TestQueryPlannerPropertyFilterSafeQuery(t *testing.T) {
 }
 
 func TestQueryPaginationCursorAndSelectedProperty(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -287,6 +297,7 @@ func TestQueryPaginationCursorAndSelectedProperty(t *testing.T) {
 	}
 }
 func TestQueryRunProjectsSelectedColumnsAndParsesComparisons(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -317,6 +328,7 @@ func TestQueryRunProjectsSelectedColumnsAndParsesComparisons(t *testing.T) {
 }
 
 func TestDatabaseViewShowRunsSavedSQLQuery(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -346,6 +358,7 @@ func TestDatabaseViewShowRunsSavedSQLQuery(t *testing.T) {
 }
 
 func TestDatabaseViewDisplayRenderContracts(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -409,6 +422,7 @@ func TestDatabaseViewDisplayRenderContracts(t *testing.T) {
 }
 
 func TestDatabaseViewRenderAddsTabProjectionContract(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	root := t.TempDir()
 	svc := NewService()
@@ -451,6 +465,7 @@ func TestDatabaseViewRenderAddsTabProjectionContract(t *testing.T) {
 }
 
 func TestSQLAndDataviewExposeStableObjectIdentity(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	writeAppFixture(t, filepath.Join(root, "notes", "renamed.md"), "---\nschema_version: pinax.note.v1\nnote_id: "+objectID+"\ntitle: Renamed\ntags: [pinax]\nkind: reference\n---\n\n# Renamed\n")
@@ -468,6 +483,7 @@ func TestSQLAndDataviewExposeStableObjectIdentity(t *testing.T) {
 }
 
 func TestSQLRelationsExposeSourceAndTargetObjectIDs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"

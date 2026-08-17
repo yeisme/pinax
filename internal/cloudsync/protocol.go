@@ -7,16 +7,19 @@ import (
 	"path"
 	"strings"
 	"sync"
+
 	"time"
+
+	"github.com/yeisme/pinax/internal/syncwire"
 )
 
 const (
-	EnvelopeSchemaVersion   = "pinax.cloud.envelope.v1"
+	EnvelopeSchemaVersion   = syncwire.EnvelopeSchemaVersion
 	HeadSchemaVersion       = "pinax.cloud.head.v1"
 	RevisionSchemaVersion   = "pinax.cloud.revision.v1"
-	ManifestSchemaVersionV1 = "pinax.cloud.manifest.v1"
-	ManifestSchemaVersionV2 = "pinax.cloud.manifest.v2"
-	ManifestSchemaVersion   = ManifestSchemaVersionV1
+	ManifestSchemaVersionV1 = syncwire.ManifestSchemaVersionV1
+	ManifestSchemaVersionV2 = syncwire.ManifestSchemaVersionV2
+	ManifestSchemaVersion   = syncwire.ManifestSchemaVersion
 	ConflictSchemaVersion   = "pinax.cloud.conflict.v1"
 )
 
@@ -27,27 +30,17 @@ var (
 	ErrInvalidEnvelope  = errors.New("invalid_envelope")
 )
 
-type Envelope struct {
-	SchemaVersion string            `json:"schema_version"`
-	Alg           string            `json:"alg"`
-	KeyID         string            `json:"key_id"`
-	Nonce         string            `json:"nonce"`
-	Ciphertext    string            `json:"ciphertext"`
-	PlainSHA256   string            `json:"plain_sha256"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
-}
+// Envelope is the syncwire envelope; cloudsync aliases it so the transport
+// layer and the encryption helpers share one wire schema.
+type Envelope = syncwire.Envelope
 
-func (e Envelope) Validate() error {
-	if e.SchemaVersion != EnvelopeSchemaVersion || strings.TrimSpace(e.Alg) == "" || strings.TrimSpace(e.KeyID) == "" || strings.TrimSpace(e.Nonce) == "" || strings.TrimSpace(e.Ciphertext) == "" || strings.TrimSpace(e.PlainSHA256) == "" {
-		return ErrInvalidEnvelope
-	}
-	for key, value := range e.Metadata {
-		if unsafePlaintextToken(key + "=" + value) {
-			return ErrInvalidEnvelope
-		}
-	}
-	return nil
-}
+// Manifest wire types are owned by syncwire; aliases keep cloudsync.*
+// identifiers working with a single on-wire schema.
+type (
+	Manifest       = syncwire.Manifest
+	ManifestEntry  = syncwire.ManifestEntry
+	ManifestDelete = syncwire.ManifestDelete
+)
 
 type Head struct {
 	SchemaVersion   string `json:"schema_version"`
@@ -68,80 +61,6 @@ type Revision struct {
 	CreatedByDevice  string   `json:"created_by_device"`
 }
 
-type Manifest struct {
-	SchemaVersion string           `json:"schema_version"`
-	Entries       []ManifestEntry  `json:"entries"`
-	Deletes       []ManifestDelete `json:"deletes,omitempty"`
-}
-
-type ManifestEntry struct {
-	ObjectID    string `json:"object_id,omitempty"`
-	ObjectKind  string `json:"object_kind,omitempty"`
-	RevisionID  string `json:"revision_id,omitempty"`
-	DeviceID    string `json:"device_id,omitempty"`
-	Path        string `json:"path"`
-	BlobID      string `json:"blob_id"`
-	PlainSHA256 string `json:"plain_sha256"`
-	Size        int64  `json:"size"`
-	UpdatedAt   string `json:"updated_at"`
-}
-
-type ManifestDelete struct {
-	PathHash    string `json:"path_hash"`
-	ObjectKind  string `json:"object_kind"`
-	ObjectID    string `json:"object_id,omitempty"`
-	TombstoneID string `json:"tombstone_id"`
-	DeletedAt   string `json:"deleted_at,omitempty"`
-	TrashBlobID string `json:"trash_blob_id,omitempty"`
-	RevisionID  string `json:"revision_id,omitempty"`
-	DeviceID    string `json:"device_id,omitempty"`
-}
-
-func (m Manifest) Validate() error {
-	if m.SchemaVersion != ManifestSchemaVersionV1 && m.SchemaVersion != ManifestSchemaVersionV2 {
-		return fmt.Errorf("invalid_manifest")
-	}
-	objectIDs := map[string]bool{}
-	paths := map[string]bool{}
-	for _, entry := range m.Entries {
-		if strings.TrimSpace(entry.Path) == "" || unsafePlaintextToken(entry.BlobID) || strings.TrimSpace(entry.BlobID) == "" || strings.TrimSpace(entry.PlainSHA256) == "" {
-			return fmt.Errorf("invalid_manifest")
-		}
-		if m.SchemaVersion == ManifestSchemaVersionV2 {
-			if strings.TrimSpace(entry.ObjectID) == "" || strings.TrimSpace(entry.ObjectKind) == "" || strings.TrimSpace(entry.RevisionID) == "" || strings.TrimSpace(entry.DeviceID) == "" || objectIDs[entry.ObjectID] || paths[entry.Path] {
-				return fmt.Errorf("invalid_manifest")
-			}
-			objectIDs[entry.ObjectID] = true
-			paths[entry.Path] = true
-		}
-	}
-	for _, deleteMarker := range m.Deletes {
-		if strings.TrimSpace(deleteMarker.PathHash) == "" || unsafePlaintextToken(deleteMarker.PathHash) || strings.TrimSpace(deleteMarker.ObjectKind) == "" || strings.TrimSpace(deleteMarker.TombstoneID) == "" || unsafePlaintextToken(deleteMarker.TombstoneID) {
-			return fmt.Errorf("invalid_manifest")
-		}
-		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" && unsafePlaintextToken(deleteMarker.TrashBlobID) {
-			return fmt.Errorf("invalid_manifest")
-		}
-		if m.SchemaVersion == ManifestSchemaVersionV2 && (strings.TrimSpace(deleteMarker.ObjectID) == "" || strings.TrimSpace(deleteMarker.RevisionID) == "" || strings.TrimSpace(deleteMarker.DeviceID) == "") {
-			return fmt.Errorf("invalid_manifest")
-		}
-	}
-	return nil
-}
-
-func (m Manifest) BlobIDs() []string {
-	ids := make([]string, 0, len(m.Entries)+len(m.Deletes))
-	for _, entry := range m.Entries {
-		ids = append(ids, entry.BlobID)
-	}
-	for _, deleteMarker := range m.Deletes {
-		if strings.TrimSpace(deleteMarker.TrashBlobID) != "" {
-			ids = append(ids, deleteMarker.TrashBlobID)
-		}
-	}
-	return ids
-}
-
 type Conflict struct {
 	SchemaVersion    string `json:"schema_version"`
 	PathHash         string `json:"path_hash"`
@@ -152,7 +71,7 @@ type Conflict struct {
 }
 
 func (c Conflict) Validate() error {
-	if c.SchemaVersion != ConflictSchemaVersion || unsafePlaintextToken(c.PathHash) || strings.TrimSpace(c.PathHash) == "" || strings.TrimSpace(c.LocalBlobID) == "" || strings.TrimSpace(c.RemoteBlobID) == "" {
+	if c.SchemaVersion != ConflictSchemaVersion || syncwire.IsUnsafePlaintextToken(c.PathHash) || strings.TrimSpace(c.PathHash) == "" || strings.TrimSpace(c.LocalBlobID) == "" || strings.TrimSpace(c.RemoteBlobID) == "" {
 		return fmt.Errorf("invalid_conflict")
 	}
 	return nil
@@ -232,11 +151,6 @@ func shardedKey(prefix, group, id, suffix string) string {
 		second = safe[2:4]
 	}
 	return joinKey(prefix, group, "sha256", first, second, safe+suffix)
-}
-
-func unsafePlaintextToken(value string) bool {
-	lowered := strings.ToLower(strings.TrimSpace(value))
-	return strings.Contains(lowered, "path=") || strings.Contains(lowered, "notes/") || strings.Contains(lowered, ".pinax/trash") || strings.Contains(lowered, ".md") || strings.Contains(lowered, "authorization") || strings.Contains(lowered, "token") || strings.Contains(lowered, "cookie")
 }
 
 func safeID(value string) string {

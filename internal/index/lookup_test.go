@@ -8,6 +8,7 @@ import (
 )
 
 func TestLookupAPIMatchesRegisteredAdoptableAssetsAliasAndContent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeIndexFixture(t, filepath.Join(root, "notes", "alpha-note.md"), "# Alpha")
 	writeIndexFixture(t, filepath.Join(root, "notes", "draft-idea.md"), "# Draft")
@@ -72,6 +73,7 @@ func TestLookupAPIMatchesRegisteredAdoptableAssetsAliasAndContent(t *testing.T) 
 }
 
 func TestLookupRankingPrefersExactIdentityFieldsOverContent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeIndexFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha")
 	writeIndexFixture(t, filepath.Join(root, "notes", "content.md"), "# Content")

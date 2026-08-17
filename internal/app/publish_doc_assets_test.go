@@ -65,6 +65,7 @@ func TestPublishDocDownloadRemoteAssetToFile(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteRejectsUnsafeTargets(t *testing.T) {
+	t.Parallel()
 	urls := []string{
 		"http://example.com/x.png",
 		"https://127.0.0.1/x.png",
@@ -87,6 +88,7 @@ func TestPublishDocDownloadRemoteRejectsUnsafeTargets(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteRejectsResolvedPrivateTargets(t *testing.T) {
+	t.Parallel()
 	prevLookup := remoteAssetLookupIP
 	remoteAssetLookupIP = func(ctx context.Context, host string) ([]net.IPAddr, error) {
 		return []net.IPAddr{{IP: net.ParseIP("192.168.1.20")}}, nil
@@ -128,6 +130,7 @@ func TestPublishDocDownloadRemoteAllowsSafeHTTPSTestServer(t *testing.T) {
 }
 
 func TestPublishDocDownloadRemoteRejectsHTTPNonLoopback(t *testing.T) {
+	t.Parallel()
 	if _, _, err := publishDocFetchRemote(context.Background(), "http://example.com/x.png"); err == nil {
 		t.Fatalf("http must be rejected")
 	}
@@ -137,6 +140,7 @@ func TestPublishDocDownloadRemoteRejectsHTTPNonLoopback(t *testing.T) {
 }
 
 func TestPublishDocReadImageDimensionsPNG(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	rel := "test.png"
 	if err := os.WriteFile(filepath.Join(root, rel), buildTestPNGHeader(3, 5), 0o644); err != nil {
@@ -149,6 +153,7 @@ func TestPublishDocReadImageDimensionsPNG(t *testing.T) {
 }
 
 func TestPublishDocReadImageDimensionsNonPNG(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	rel := "notimage.txt"
 	if err := os.WriteFile(filepath.Join(root, rel), []byte("hello world"), 0o644); err != nil {
@@ -218,6 +223,7 @@ func buildTestPNGHeader(width, height int) []byte {
 }
 
 func TestPublishDocParseManagedAssetBlockIDs(t *testing.T) {
+	t.Parallel()
 	content := `<title>Doc</title><whiteboard id="user_wb" token="user"></whiteboard><img id="user_img" name="manual.png"></img><figure id="user_fig"></figure>`
 	if got := publishDocManagedAssetBlockIDs(content, nil); len(got) != 0 {
 		t.Fatalf("unmanaged cloud blocks must not be selected for cleanup: %+v", got)
@@ -229,6 +235,7 @@ func TestPublishDocParseManagedAssetBlockIDs(t *testing.T) {
 }
 
 func TestParsePublishDocMediaInsertBlockID(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"ok":true,"data":{"block_id":"blk_img","file_token":"tok"}}`)
 	if got := parsePublishDocMediaInsertBlockID(body); got != "blk_img" {
 		t.Fatalf("block id = %q", got)

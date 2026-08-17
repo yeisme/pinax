@@ -9,7 +9,7 @@
 | CLI 和 app 编排 | `cmd/pinax`、`internal/cli`、`internal/app` | 命令层承载业务逻辑、secret-ref 校验、stdout/stderr 合同 |
 | Vault、index、sync、remote | `internal/notes`、`internal/index`、`internal/remote`、`internal/cloudsync`、`internal/assets` | remote key 安全、缓存 revision、frontmatter 注入、GORM/索引边界 |
 | Provider、publish、plugin、API | `internal/provider`、`internal/delivery`、`internal/plugin`、`internal/cloudclient`、`internal/remoteapi`、`internal/mcpserver`、`internal/app/*publish*` | provider adapter 隔离、远端写入审批、warning 脱敏、临时源码残留 |
-| 测试、证据、文档、输出 | `internal/output`、`internal/redaction`、`internal/testkit`、`tests/e2e`、`docs/`、当前 OpenSpec | integration evidence 入口、脱敏类别、smoke 记录、完整使用样例 |
+| 测试、证据、文档、输出 | `internal/output`、`internal/redaction`、`tools/testkit`、`tests/e2e`、`docs/`、当前 OpenSpec | integration evidence 入口、脱敏类别、smoke 记录、完整使用样例 |
 
 ## 模块覆盖索引
 
@@ -46,12 +46,11 @@
 | `internal/redaction` | 测试、证据、文档、输出 | `go test ./internal/redaction -count=1` |
 | `internal/remote` | Vault、index、sync、remote | `go test ./internal/remote -count=1` |
 | `internal/remoteapi` | Provider、publish、plugin、API | `go test ./internal/remoteapi -count=1` |
-| `internal/research` | Provider、publish、plugin、API | `go test ./internal/research -count=1` |
 | `internal/search` | Vault、index、sync、remote | `go test ./internal/search ./internal/index -run 'Search' -count=1` |
-| `internal/semantic` | Vault、index、sync、remote | `go test ./internal/semantic ./cmd/pinax -run 'KB|Semantic' -count=1` |
+| External RAG project | Semantic retrieval, embeddings, vector store, rerank | Validate in the external RAG repository; Pinax only validates Markdown export and local text search. |
 | `internal/sync` | Vault、index、sync、remote | `go test ./internal/sync -count=1` |
 | `internal/templateengine` | CLI 和 app 编排 | `go test ./internal/templateengine ./internal/app -run 'Template' -count=1` |
-| `internal/testkit` | 测试、证据、文档、输出 | `go test ./internal/testkit/... -count=1` |
+| `tools/testkit` | 测试、证据、文档、输出 | `go test ./tools/testkit/... -count=1` |
 | `internal/vaultignore` | Vault、index、sync、remote | `go test ./internal/vaultignore ./internal/index -run 'Ignore|Vault' -count=1` |
 | `internal/vaultregistry` | CLI 和 app 编排；Vault/index/sync | `go test ./internal/vaultregistry ./cmd/pinax -run 'Vault' -count=1` |
 | `internal/version` | Vault、index、sync、remote | `go test ./internal/version ./cmd/pinax -run 'Version|Restore|Snapshot' -count=1` |
@@ -159,13 +158,13 @@ GREEN：新增 publish warning detail redaction，只保留 asset kind、vault-r
 RED：补 evidence runner 测试，输出 Cookie、webhook URL、raw prompt、provider payload、private body 后断言所有 evidence 文件都不含原文。
 
 ```bash
-go test ./internal/testkit/... ./tests/e2e -run 'IntegrationEvidence|EvidenceRedaction' -count=1
+go test ./tools/testkit/... ./tests/e2e -run 'IntegrationEvidence|EvidenceRedaction' -count=1
 ```
 
 GREEN：runner 复用通用 redaction sensitive class；OpenSpec 任务的验证命令改为 `task test:integration` 或新增参数化 evidence runner，例如：
 
 ```bash
-go run ./internal/testkit/integrationevidence --run TestPublishDoc
+go run ./tools/testkit/integrationevidence --run TestPublishDoc
 ```
 
 ## 已覆盖证据

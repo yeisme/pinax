@@ -11,6 +11,7 @@ import (
 // 全部渲染面，把受保护凭证/prompt/webhook 替换成有界占位符，覆盖 facts/actions/evidence/data/error。
 // note 正文（body）由各命令的有界投影控制，门禁不做全局清空，只拦截凭证与 prompt。
 func TestApplyProjectionRedactionScansNestedPayloads(t *testing.T) {
+	t.Parallel()
 	p := domain.Projection{
 		Summary: "Authorization: Bearer s3cr3t leak",
 		Facts:   map[string]string{"auth": "Bearer abc123", "endpoint": "token=xyz456"},
@@ -62,6 +63,7 @@ func TestApplyProjectionRedactionScansNestedPayloads(t *testing.T) {
 
 // TestApplyProjectionRedactionPreservesSafeContent 证明门禁不误伤正常事实、路径与摘要。
 func TestApplyProjectionRedactionPreservesSafeContent(t *testing.T) {
+	t.Parallel()
 	p := domain.Projection{
 		Summary: "Version restore applied to local Markdown.",
 		Facts:   map[string]string{"path": "notes/alpha.md", "plan_id": "restore_20260615", "local_write": "true"},

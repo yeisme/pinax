@@ -67,6 +67,30 @@ func (s *AgentMemoryService) AgentContinuity(ctx context.Context, req Continuity
 	if err := pack.AssertNoBody(500); err != nil {
 		return agentcontinuity.ContinuityPack{}, fmt.Errorf("continuity pack body safety check failed: %w", err)
 	}
+	pack.SourceCoverage = resolveContinuitySourceCoverage(ctx, req.VaultPath, pack.Sources)
 
 	return pack, nil
+}
+
+func resolveContinuitySourceCoverage(ctx context.Context, vaultPath string, sources agentprotocol.SourceRefList) agentcontinuity.SourceCoverage {
+	coverage := agentcontinuity.SourceCoverage{Total: len(sources)}
+	resolver := NewService()
+	for _, source := range sources {
+		if source.Kind != "note" && source.Kind != "asset" {
+			coverage.Missing++
+			continue
+		}
+		result, err := resolver.ResolveVaultObject(ctx, ResolverRequest{
+			VaultPath: vaultPath,
+			Query:     source.Ref,
+			Scope:     "registered",
+			Kind:      source.Kind,
+		})
+		if err != nil || result.Facts.Ambiguous || len(result.Candidates) != 1 {
+			coverage.Missing++
+			continue
+		}
+		coverage.Resolved++
+	}
+	return coverage
 }

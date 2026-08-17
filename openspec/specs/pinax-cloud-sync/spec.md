@@ -136,10 +136,10 @@ Cloud Sync SHALL preserve the distinction between encrypted source content, serv
 
 #### Scenario: Brain projections are rebuilt locally
 
-- **WHEN** Cloud Sync scans a vault with local `.pinax/index.sqlite`, `.pinax/kb/lancedb/`, `.pinax/graph/`, answer cache, or provider cache files
-- **THEN** those files SHALL be treated as local rebuildable projections or cache state
+- **WHEN** Cloud Sync scans a vault with local `.pinax/index.sqlite`, external RAG export/cache material, `.pinax/graph/`, answer cache, or provider cache files
+- **THEN** those files SHALL be treated as local rebuildable projections or cache state, and external RAG material SHALL remain outside Pinax ownership
 - **AND** they SHALL NOT be uploaded as plaintext Cloud Sync content
-- **AND** after pull/import, users MAY rebuild projections with commands such as `pinax index refresh --vault ./my-notes --json`, `pinax kb refresh --vault ./my-notes`, or `pinax graph rebuild --vault ./my-notes --json`.
+- **AND** after pull/import, users MAY rebuild projections with commands such as `pinax index refresh --vault ./my-notes --json`, `pinax export markdown ./temp/rag-export --vault ./my-notes --json`, or `pinax graph rebuild --vault ./my-notes --json`.
 
 #### Scenario: Memory and maintenance evidence require explicit encrypted contract
 
@@ -606,4 +606,34 @@ Cloud Sync SHALL require explicit first-device or new-device bootstrap semantics
 - **WHEN** unlocked secrets resolve to a different encryption key identity than the remote head
 - **THEN** sync SHALL fail with `encryption_key_mismatch`
 - **AND** SHALL provide a recovery action without generating a replacement key automatically
+
+### Requirement: env secrets 不进入内容 manifest
+
+Cloud Sync SHALL treat encrypted and plaintext env assets, materialized runtime files and their caches as protected paths.
+
+#### Scenario: manifest 排除 env secrets
+
+- **WHEN** a vault contains `.env`, `.env.local`, `.pinax/pinax-sync.env.age` and `.pinax/runtime/pinax-sync.env`
+- **THEN** none of these files SHALL be uploaded as ordinary plaintext content entries
+- **AND** sync receipts SHALL report counts and redacted paths only
+
+### Requirement: Sync key derivation SHALL use per-secret salt and current iteration guidance
+
+The sync encryption key SHALL be derived with PBKDF2-SHA256 at no fewer than 600,000 iterations over a salt derived from the shared secret itself, so devices sharing a secret derive the same key while distinct secrets get distinct salts.
+
+#### Scenario: New envelopes use the v2 derivation
+
+- **WHEN** a push encrypts a blob or manifest
+- **THEN** the envelope SHALL carry the KeyID of the v2 derivation
+
+#### Scenario: Legacy envelopes remain readable
+
+- **WHEN** a pull reads an envelope whose KeyID belongs to the pre-v2 derivation
+- **AND** the same secret is configured
+- **THEN** decryption SHALL succeed through the legacy fallback key without any migration step
+
+#### Scenario: Foreign keys fail closed
+
+- **WHEN** an envelope's KeyID matches neither the active nor a legacy key for the configured secret
+- **THEN** decryption SHALL fail with a key ID mismatch error
 

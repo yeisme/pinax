@@ -8,6 +8,7 @@ import (
 )
 
 func TestPublishDocProfileSetRendererInvalidRejected(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out, err := runCLIExpectError("publish", "doc", "profile", "set", "lark-doc", "--folder", "fld_test", "--renderer", "html", "--vault", root, "--json")
 	if err == nil {
@@ -27,6 +28,7 @@ func TestPublishDocProfileSetRendererInvalidRejected(t *testing.T) {
 }
 
 func TestPublishDocProfileSetMarkdownFileRendererLegacy(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	out := runCLI(t, "publish", "doc", "profile", "set", "lark-doc", "--folder", "fld_test", "--as", "user", "--renderer", "markdown-file", "--vault", root, "--json")
 	env := parsePublishEnvelope(t, out)
@@ -128,6 +130,7 @@ func TestPublishDocStatusShowsRendererAndObjectType(t *testing.T) {
 }
 
 func TestPublishDocListInfersRendererForLegacyMappings(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishNoteFixture(t, root, "notes/index/legacy.md", map[string]string{"note_id": "note_legacy", "title": "Legacy", "kind": "concept", "status": "active", "publish": "public"}, "# Legacy\n\nLegacy linked mapping.\n")
 	writePublishNoteFixture(t, root, "notes/index/native.md", map[string]string{"note_id": "note_native", "title": "Native", "kind": "concept", "status": "active", "publish": "public"}, "# Native\n\nNative linked mapping.\n")

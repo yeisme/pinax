@@ -9,6 +9,7 @@ import (
 )
 
 func TestRecordIdentityAuditMachineOutputsAndReadOnlyBehavior(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, "notes", "legacy.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_legacy\ntitle: Legacy\nkind: reference\n---\n\n# Legacy\n")
 
@@ -30,6 +31,7 @@ func TestRecordIdentityAuditMachineOutputsAndReadOnlyBehavior(t *testing.T) {
 }
 
 func TestIdentityMigrationPlanSaveReturnsSavedAsset(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, "notes", "missing.md"), "---\nschema_version: pinax.note.v1\ntitle: Missing\nkind: reference\n---\n\n# Missing\n")
 
@@ -50,6 +52,7 @@ func TestIdentityMigrationPlanSaveReturnsSavedAsset(t *testing.T) {
 }
 
 func TestRecordIdentityHelpAndHumanSummary(t *testing.T) {
+	t.Parallel()
 	help := runCLI(t, "record", "identity", "--help")
 	for _, want := range []string{"audit", "plan"} {
 		if !strings.Contains(help, want) {
@@ -65,6 +68,7 @@ func TestRecordIdentityHelpAndHumanSummary(t *testing.T) {
 }
 
 func TestIdentityMigrationApplyCLIRequiresYesAndSupportsResume(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, "notes", "legacy.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_legacy\ntitle: Legacy\nkind: reference\n---\n\n# Legacy\n")
 	planned := runCLI(t, "record", "identity", "plan", "--save", "--vault", root, "--json")

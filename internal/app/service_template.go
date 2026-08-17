@@ -37,7 +37,7 @@ func (s *Service) InitTemplates(_ context.Context, req VaultRequest) (domain.Pro
 			created++
 		}
 	}
-	_ = appendEvent(root, "template.init", "success", map[string]string{"created": fmt.Sprint(created)})
+	appendEventWarned(root, "template.init", "success", map[string]string{"created": fmt.Sprint(created)})
 	projection := domain.NewProjection("template.init", "Built-in templates initialized.")
 	projection.Facts["templates"] = fmt.Sprint(len(builtInTemplates()))
 	projection.Facts["created"] = fmt.Sprint(created)
@@ -373,7 +373,7 @@ func (s *Service) CreateTemplate(_ context.Context, req TemplateRequest) (domain
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return errorProjection("template.create", err), err
 	}
-	_ = appendEvent(root, "template.create", "success", map[string]string{"template": name})
+	appendEventWarned(root, "template.create", "success", map[string]string{"template": name})
 	projection := domain.NewProjection("template.create", "Template created.")
 	projection.Facts["template"] = name
 	if templateHasDesignFrontmatter(body) {
@@ -407,7 +407,7 @@ func (s *Service) ValidateTemplate(_ context.Context, req TemplateRequest) (doma
 	if len(issues) > 0 {
 		projection.Status = "partial"
 	}
-	_ = appendEvent(root, "template.validate", projection.Status, map[string]string{"template": name, "issues": fmt.Sprint(len(issues))})
+	appendEventWarned(root, "template.validate", projection.Status, map[string]string{"template": name, "issues": fmt.Sprint(len(issues))})
 	return projection, nil
 }
 
@@ -439,7 +439,7 @@ func (s *Service) DeleteTemplate(_ context.Context, req TemplateRequest) (domain
 		}
 		return errorProjection("template.delete", err), err
 	}
-	_ = appendEvent(root, "template.delete", "success", map[string]string{"template": name})
+	appendEventWarned(root, "template.delete", "success", map[string]string{"template": name})
 	projection := domain.NewProjection("template.delete", "Template deleted.")
 	projection.Facts["template"] = name
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}

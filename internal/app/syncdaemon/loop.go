@@ -20,6 +20,16 @@ type SyncExecutor interface {
 // EventSink receives the same redacted daemon events that are persisted locally.
 type EventSink func(SyncDaemonEvent)
 
+// CredentialGate reports whether the daemon may perform remote writes (push or
+// pull that can commit a revision) under the current repository-encrypted
+// credential state. When RemoteWriteAllowed returns false, the daemon enters a
+// degraded state and skips remote writes for that cycle (the repository
+// credential must resolve from a non-interactive source; the daemon must never
+// open an interactive TTY prompt). A nil Gate preserves the legacy behavior.
+type CredentialGate interface {
+	RemoteWriteAllowed() (allowed bool, reason string)
+}
+
 type Loop struct {
 	Repo         Repository
 	Target       string
@@ -29,6 +39,7 @@ type Loop struct {
 	SyncTimeout  time.Duration
 	Backoff      Backoff
 	EventSink    EventSink
+	Gate         CredentialGate
 }
 
 func (l *Loop) RunOnce(ctx context.Context, localDirty bool, knownRemote string) (DaemonState, error) {
@@ -45,6 +56,22 @@ func (l *Loop) RunOnceWithTrigger(ctx context.Context, localDirty bool, knownRem
 	state.Status = StatusRunning
 	state.LocalDirty = localDirty
 	l.emit(SyncDaemonEvent{Type: "sync_started", Status: state.Status, LocalDirty: localDirty, Facts: map[string]any{"known_remote": knownRemote}}, trigger, cycleID)
+
+	// Credential gate (pinax-passphrase-s3-bootstrap task 4.4): when a gate is
+	// configured and the repository-encrypted credential is not resolvable from
+	// a non-interactive source, enter degraded state and forbid remote writes
+	// for this cycle. The daemon must never open an interactive prompt.
+	if l.Gate != nil {
+		if allowed, reason := l.Gate.RemoteWriteAllowed(); !allowed {
+			state.Status = StatusDegraded
+			state.LastErrorCode = "sync_repo_unlock_required"
+			state.Message = reason
+			_ = l.Repo.WriteState(state)
+			l.emit(SyncDaemonEvent{Type: "credential_degraded", Status: state.Status, ErrorCode: state.LastErrorCode, Message: reason, RemoteWrite: false}, trigger, cycleID)
+			l.emit(SyncDaemonEvent{Type: "sync_failed", Status: state.Status, ErrorCode: state.LastErrorCode, Message: reason, DurationMS: time.Since(started).Milliseconds(), RemoteWrite: false}, trigger, cycleID)
+			return state, errors.New(reason)
+		}
+	}
 
 	remoteRevision := knownRemote
 	if l.Poller != nil {

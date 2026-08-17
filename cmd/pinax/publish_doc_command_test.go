@@ -166,6 +166,7 @@ func TestPublishDocLarkDoctorFailsWhenRequestedUserIdentityMissing(t *testing.T)
 }
 
 func TestPublishDocProviderListNotionProfileAndAgentOutput(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishNoteFixture(t, root, "notes/index/beta.md", map[string]string{"note_id": "note_beta", "title": "Beta", "kind": "concept", "status": "active", "publish": "public"}, "# Beta\n\nBody for Notion profile contract.\n")
 
@@ -216,6 +217,7 @@ func TestPublishDocProviderListNotionProfileAndAgentOutput(t *testing.T) {
 }
 
 func TestPublishDocAllRejectsConflictingSelectors(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writePublishNoteFixture(t, root, "notes/index/alpha.md", map[string]string{"note_id": "note_alpha", "title": "Alpha", "kind": "concept", "status": "active"}, "# Alpha\n\nBody.\n")
 	runCLI(t, "publish", "doc", "profile", "set", "lark-doc", "--folder", "fld_test", "--vault", root, "--json")

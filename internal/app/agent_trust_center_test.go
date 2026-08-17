@@ -8,6 +8,7 @@ import (
 )
 
 func TestAgentTrustCenter_OK(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "trust-center-test"}
@@ -46,6 +47,7 @@ func TestAgentTrustCenter_OK(t *testing.T) {
 }
 
 func TestAgentTrustCenter_InvalidScope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := NewAgentMemoryService()
@@ -61,6 +63,7 @@ func TestAgentTrustCenter_InvalidScope(t *testing.T) {
 }
 
 func TestAgentTrustCenter_SectionDegraded(t *testing.T) {
+	t.Parallel()
 	// 验证 section 失败可隔离：不存在的 vault 路径应该 degrade 而不是 panic
 	ctx := context.Background()
 	svc := NewAgentMemoryService()
@@ -77,6 +80,7 @@ func TestAgentTrustCenter_SectionDegraded(t *testing.T) {
 }
 
 func TestAgentTrustCenter_NoBodyLeak(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "no-leak-test"}

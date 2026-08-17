@@ -13,6 +13,7 @@ import (
 )
 
 func TestResolveVaultObjectUsesIndexManifestAndScanFallback(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -62,6 +63,7 @@ func TestResolveVaultObjectUsesIndexManifestAndScanFallback(t *testing.T) {
 }
 
 func TestResolveVaultObjectScopes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -123,6 +125,7 @@ func assertResolvedKinds(t *testing.T, svc *Service, root, scope, kind string, w
 }
 
 func TestResolveVaultObjectProjectionReturnsCandidatesAndNextActions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -162,6 +165,7 @@ func TestResolveVaultObjectProjectionReturnsCandidatesAndNextActions(t *testing.
 }
 
 func TestResolveVaultObjectIntegrationDisambiguatesNoteAssetAndUnmanagedConflicts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -196,6 +200,7 @@ func TestResolveVaultObjectIntegrationDisambiguatesNoteAssetAndUnmanagedConflict
 }
 
 func TestResolveVaultObjectForWriteFailsBeforeWriteOnAmbiguousCandidates(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := NewService()
@@ -270,6 +275,7 @@ func assertCandidateKinds(t *testing.T, candidates []domain.VaultObjectCandidate
 }
 
 func TestResolveManagedObjectForMutationRejectsPathOnlyNote(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "notes", "path-only.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

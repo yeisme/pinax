@@ -12,6 +12,7 @@ import (
 // TestCrossAgentMemoryHandoff 验证 Cohors → Codex 和 Codex → Cohors
 // 能通过 common handoff schema 完成交接。
 func TestCrossAgentMemoryHandoff(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "cross-agent"}

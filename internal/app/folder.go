@@ -177,7 +177,7 @@ func (s *Service) CreateFolder(_ context.Context, req FolderOperationRequest) (d
 	projection.Summary = "Folder created."
 	projection.Facts["created"] = fmt.Sprint(created)
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "folders.json"))}
-	_ = appendEvent(root, "folder.created", "success", map[string]string{"folder_path": folderPath, "purpose": string(purpose), "created": fmt.Sprint(created)})
+	appendEventWarned(root, "folder.created", "success", map[string]string{"folder_path": folderPath, "purpose": string(purpose), "created": fmt.Sprint(created)})
 	if err := refreshIndex(root); err != nil {
 		projection.Status = "partial"
 		projection.Facts["index_status"] = "stale"
@@ -279,7 +279,7 @@ func (s *Service) AdoptFolder(_ context.Context, req FolderOperationRequest) (do
 	projection.Summary = "Folder adopted."
 	projection.Facts["adopted"] = "true"
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "folders.json"))}
-	_ = appendEvent(root, "folder.adopted", "success", map[string]string{"folder_path": folderPath, "purpose": string(purpose)})
+	appendEventWarned(root, "folder.adopted", "success", map[string]string{"folder_path": folderPath, "purpose": string(purpose)})
 	if err := refreshIndex(root); err != nil {
 		projection.Status = "partial"
 		projection.Facts["index_status"] = "stale"
@@ -363,7 +363,7 @@ func (s *Service) DeleteFolder(_ context.Context, req FolderOperationRequest) (d
 	projection.Facts["deleted"] = fmt.Sprint(exists)
 	projection.Facts["removed_registry"] = fmt.Sprint(removedRegistry)
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "folders.json"))}
-	_ = appendEvent(root, "folder.deleted", "success", map[string]string{"folder_path": folderPath, "deleted": fmt.Sprint(exists)})
+	appendEventWarned(root, "folder.deleted", "success", map[string]string{"folder_path": folderPath, "deleted": fmt.Sprint(exists)})
 	if err := refreshIndex(root); err != nil {
 		projection.Status = "partial"
 		projection.Facts["index_status"] = "stale"
@@ -502,7 +502,7 @@ func applyFolderMove(root, command, sourcePath, targetPath string, dryRun, yes, 
 	projection.Facts[appliedFact] = "true"
 	projection.Facts["updated_notes"] = fmt.Sprint(updatedNotes)
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "folders.json"))}
-	_ = appendEvent(root, command, "success", map[string]string{"folder_path": sourcePath, "target_path": targetPath})
+	appendEventWarned(root, command, "success", map[string]string{"folder_path": sourcePath, "target_path": targetPath})
 	if err := refreshIndex(root); err != nil {
 		projection.Status = "partial"
 		projection.Facts["index_status"] = "stale"

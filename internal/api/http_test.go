@@ -23,6 +23,7 @@ import (
 )
 
 func TestLocalAPIProjectBoardMatchesProjectionEnvelope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -91,6 +92,7 @@ func TestLocalAPIProjectBoardMatchesProjectionEnvelope(t *testing.T) {
 }
 
 func TestLocalAPINoteReadAndProjectItemWritePlan(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -148,6 +150,7 @@ func TestLocalAPINoteReadAndProjectItemWritePlan(t *testing.T) {
 }
 
 func TestLocalAPIDatabaseTaskAndGraphCapabilities(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
 	viewName := addAPIDatabaseViewFixture(t, ctx, root, svc)
@@ -192,6 +195,7 @@ func TestLocalAPIDatabaseTaskAndGraphCapabilities(t *testing.T) {
 }
 
 func TestLocalAPIFolderRoutesAndWriteGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -247,6 +251,7 @@ func TestLocalAPIFolderRoutesAndWriteGate(t *testing.T) {
 }
 
 func TestLocalAPIProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -274,6 +279,7 @@ func TestLocalAPIProjectSubprojectDryRunDoesNotWrite(t *testing.T) {
 }
 
 func TestProjectionHTTPStatusMapsStableErrorCodes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		code string
 		want int
@@ -295,6 +301,7 @@ func TestProjectionHTTPStatusMapsStableErrorCodes(t *testing.T) {
 }
 
 func TestLocalAPIRPCTransportDispatchesProjectionEnvelope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
 	server := NewServer(svc, root)
@@ -308,6 +315,7 @@ func TestLocalAPIRPCTransportDispatchesProjectionEnvelope(t *testing.T) {
 }
 
 func TestLocalAPIRPCErrorsAndWriteGateUseProjectionEnvelope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
 	readonly := NewServer(svc, root)
@@ -354,6 +362,7 @@ func TestLocalAPIRPCErrorsAndWriteGateUseProjectionEnvelope(t *testing.T) {
 }
 
 func TestLocalAPIMemoryRoutesAndWriteGate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -408,6 +417,7 @@ func TestLocalAPIMemoryRoutesAndWriteGate(t *testing.T) {
 }
 
 func TestLocalAPIRPCAuthScopeAndHiddenGroupUseMethodMetadata(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, _, _ := newAPITestVault(t, ctx)
 	store := NewMemoryTokenStore()
@@ -446,6 +456,7 @@ func TestLocalAPIRPCAuthScopeAndHiddenGroupUseMethodMetadata(t *testing.T) {
 }
 
 func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, itemID, noteRef := newAPITestVault(t, ctx)
 	// Add inbox fixture
@@ -556,6 +567,7 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 }
 
 func TestLocalAPIRootReturnsDiscoveryProjection(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -583,6 +595,7 @@ func TestLocalAPIRootReturnsDiscoveryProjection(t *testing.T) {
 }
 
 func TestLocalAPIWorkbenchPageExposesMemoryCapabilityAndExpandableInspector(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -610,6 +623,7 @@ func TestLocalAPIWorkbenchPageExposesMemoryCapabilityAndExpandableInspector(t *t
 }
 
 func TestLocalAPIRequestLoggerUsesZapAndRedactsSecrets(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -630,6 +644,8 @@ func TestLocalAPIRequestLoggerUsesZapAndRedactsSecrets(t *testing.T) {
 	server := NewServerWithOptions(svc, root, ServerOptions{AuthMode: AuthModeNone, Logger: logger})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/capabilities?token=secret-token", nil)
+	req.Host = "127.0.0.1"
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Authorization", "Bearer secret-token")
 	req.RemoteAddr = "127.0.0.1:12345"
 	res := httptest.NewRecorder()
@@ -651,6 +667,7 @@ func TestLocalAPIRequestLoggerUsesZapAndRedactsSecrets(t *testing.T) {
 }
 
 func TestLocalAPIRPCRequestLoggerIncludesOperationFields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -671,6 +688,7 @@ func TestLocalAPIRPCRequestLoggerIncludesOperationFields(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/rpc", strings.NewReader(`{"id":"call-1","method":"Pinax.Folder.Create","params":{"path":"rpc-logs","purpose":"notes"}}`))
 	req.RemoteAddr = "127.0.0.1:12345"
+	req.Host = "127.0.0.1"
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
 	assertRESTErrorProjection(t, res, http.StatusBadRequest, "approval_required")
@@ -689,6 +707,7 @@ func TestLocalAPIRPCRequestLoggerIncludesOperationFields(t *testing.T) {
 }
 
 func TestLocalRESTMethodAndRouteErrorsUseProjectionEnvelope(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, itemID, _ := newAPITestVault(t, ctx)
 	server := NewServer(svc, root)
@@ -708,6 +727,7 @@ func TestLocalRESTMethodAndRouteErrorsUseProjectionEnvelope(t *testing.T) {
 // returns approval_required, and a snapshot-gated mutation without a fresh
 // snapshot returns snapshot_required. No vault file is modified in any case.
 func TestReleaseCoreWriteGateReturnsProjectionErrors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -750,6 +770,7 @@ func TestReleaseCoreWriteGateReturnsProjectionErrors(t *testing.T) {
 }
 
 func TestLocalRESTRemoteWriteGatesDoNotModifyVaultAndStayRedacted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root, svc, itemID, _ := newAPITestVault(t, ctx)
 	server := NewServer(svc, root)
@@ -905,6 +926,7 @@ func writeAPIFixture(t *testing.T, path, content string) {
 // --- Auth integration tests ---
 
 func TestAuthIntegration_TempTokenFullFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -938,6 +960,7 @@ func TestAuthIntegration_TempTokenFullFlow(t *testing.T) {
 }
 
 func TestAuthIntegration_FileTokenStoreFullFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	root := t.TempDir()
 	svc := app.NewService()
@@ -981,6 +1004,7 @@ func TestAuthIntegration_FileTokenStoreFullFlow(t *testing.T) {
 }
 
 func TestAuthIntegration_ScopedTokenCannotAccessOtherGroups(t *testing.T) {
+	t.Parallel()
 	store := NewMemoryTokenStore()
 	rec, secret := GenerateTokenRecord("read-only", map[TokenScope]ScopeTarget{
 		ScopeRead: {Groups: []string{"capabilities"}},
@@ -1020,6 +1044,7 @@ func TestAuthIntegration_ScopedTokenCannotAccessOtherGroups(t *testing.T) {
 }
 
 func TestAuthIntegration_ExpiredTokenRejected(t *testing.T) {
+	t.Parallel()
 	store := NewMemoryTokenStore()
 	rec, secret := GenerateTokenRecord("expired", map[TokenScope]ScopeTarget{
 		ScopeRead: {},

@@ -194,6 +194,7 @@ func TestStore_SaveAndListHandoffs(t *testing.T) {
 		Scope:         scope,
 		Objective:     "Review slice",
 		Decisions:     []string{"chose GORM"},
+		Sources:       agentprotocol.SourceRefList{{Kind: "note", Ref: "notes/pinax-slice.md"}},
 		CreatedAt:     time.Now().UTC(),
 	}
 	if err := s.SaveHandoff(ctx, h); err != nil {
@@ -205,6 +206,9 @@ func TestStore_SaveAndListHandoffs(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].HandoffID != "h_1" {
 		t.Fatalf("handoff list mismatch: %+v", list)
+	}
+	if len(list[0].Sources) != 1 || list[0].Sources[0].Ref != "notes/pinax-slice.md" {
+		t.Fatalf("handoff sources mismatch: %+v", list[0].Sources)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 )
 
 func TestProjectDeleteTrashRestoreCLIContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "history", "--name", "History", "--notes-prefix", "notes/history", "--vault", root, "--json")
@@ -97,6 +98,7 @@ func TestProjectDeleteTrashRestoreCLIContract(t *testing.T) {
 }
 
 func TestProjectSubprojectDeleteRequiresSnapshotAndRestoresWorkspace(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "history-learning", "--name", "History Learning", "--notes-prefix", "notes/history-learning", "--vault", root, "--json")
@@ -150,6 +152,7 @@ func TestProjectSubprojectDeleteRequiresSnapshotAndRestoresWorkspace(t *testing.
 }
 
 func TestProjectDeleteEdgeCasesAndOutputModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "project", "create", "archive", "--name", "Archive", "--notes-prefix", "notes/archive", "--vault", root, "--json")

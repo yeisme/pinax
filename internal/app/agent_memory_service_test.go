@@ -33,6 +33,7 @@ func adapterPrincipal() agentprotocol.Principal {
 }
 
 func TestAgentMemory_ProposeAndApprove(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_app"}
@@ -78,6 +79,7 @@ func TestAgentMemory_ProposeAndApprove(t *testing.T) {
 }
 
 func TestAgentMemory_ProposeUnsourced(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_unsourced"}
@@ -102,6 +104,7 @@ func TestAgentMemory_ProposeUnsourced(t *testing.T) {
 }
 
 func TestAgentMemory_ProposeDuplicate(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_dup"}
@@ -134,6 +137,7 @@ func TestAgentMemory_ProposeDuplicate(t *testing.T) {
 }
 
 func TestAgentMemory_ProposeConflict(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_conf"}
@@ -166,6 +170,7 @@ func TestAgentMemory_ProposeConflict(t *testing.T) {
 }
 
 func TestAgentMemory_AdapterCannotApprove(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_perm"}
@@ -187,6 +192,7 @@ func TestAgentMemory_AdapterCannotApprove(t *testing.T) {
 }
 
 func TestAgentHandoff_CreateAndList(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_h"}
@@ -225,6 +231,7 @@ func TestAgentHandoff_CreateAndList(t *testing.T) {
 }
 
 func TestAgentFeedback_AddAndList(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_fb"}
@@ -257,6 +264,7 @@ func TestAgentFeedback_AddAndList(t *testing.T) {
 }
 
 func TestAgentMemory_LifecycleOperations(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_lc"}
@@ -300,6 +308,7 @@ func TestAgentMemory_LifecycleOperations(t *testing.T) {
 }
 
 func TestAgentMemoryService_ProposalReviewFields(t *testing.T) {
+	t.Parallel()
 	// Verify the review struct is properly populated
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()

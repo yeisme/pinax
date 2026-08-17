@@ -8,6 +8,7 @@ import (
 )
 
 func TestActivityCommandOutputContracts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, ".pinax", "events.jsonl"), `{"schema_version":"pinax.event.v1","type":"note.new","status":"success","ts":"2026-06-27T10:00:00Z","facts":{"path":"notes/alpha.md","Authorization":"Bearer secret-token"}}`+"\n")
 
@@ -58,6 +59,7 @@ func TestActivityCommandOutputContracts(t *testing.T) {
 }
 
 func TestActivityCommandPartialOnCorruptOptionalSource(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, ".pinax", "events.jsonl"), `{"schema_version":"pinax.event.v1","type":"index.refresh","status":"success","ts":"2026-06-27T10:00:00Z","facts":{"path":"notes/index.md"}}`+"\n{"+"\n")
 

@@ -40,7 +40,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 
 ## 项目看板和远程适配器
 
-- `pinax project board show|plan|configure|export` 提供本地 project workspace。看板由 Markdown note、project metadata、index projection 和 saved planning snapshot 生成；vault 仍是真源，TaskBridge 和 provider 都不是真源。
+- `pinax project board show|plan|configure|export` 提供本地 project workspace。看板由 Markdown note、project metadata、index projection 和 saved planning snapshot 生成；vault 仍是真源，provider 都不是真源。
 - `pinax project learning init` 会为长期学习项目创建或复用 project、subproject workspace、learning board columns、starter notes 和 starter work items，例如 stock-learning notes。
 - `pinax project item add|move|archive` 通过 application service 写入受控 Markdown。archive 必须先有 `--yes` 和 version snapshot；缺失时返回稳定的 `approval_required` 或 `snapshot_required` projection。
 - `pinax task adopt <item> --plan` 只预览 inferred checklist task adoption；只有 `--yes` 才写 task adoption ledger。
@@ -67,6 +67,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [Demo Proof Loop](./demo-proof-loop.md)
 - [命令手册](./commands/README.md)
 - [本地开发运行手册](./operations/local-development.md)
+- [Hermes × Pinax 个人 Action Capture Canary](./operations/hermes-action-capture-canary.md)
 - [模块审查与 TDD 手册](./operations/module-review-tdd.md)
 - [完整使用样例](./usage/full-example.md)
 - [Release Packaging](./operations/release-packaging.md)

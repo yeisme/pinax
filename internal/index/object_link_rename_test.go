@@ -7,6 +7,7 @@ import (
 )
 
 func TestRenameBacklinkPreservesObjectEdgeAndCurrentPath(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	sourceID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	targetID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"

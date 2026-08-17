@@ -197,6 +197,10 @@ func requiredScopeForRoute(method string, route RouteInfo) TokenScope {
 // authMiddleware validates tokens and enforces scope requirements.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.tokenFileErr != nil {
+			writeAuthError(w, "token_store_unavailable", "The configured token file could not be loaded; refusing requests instead of downgrading authentication", http.StatusServiceUnavailable)
+			return
+		}
 		info, knownRoute := s.lookupRequestRouteInfo(r)
 		group := info.Group
 		if knownRoute && !s.isGroupExposed(group) {
@@ -209,9 +213,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// No-auth mode: only check loopback
+		// No-auth mode: only check loopback + Host (DNS-rebinding defense: a
+		// remote page that rebinds to 127.0.0.1 would pass the loopback check
+		// but cannot control its Host header to match the local origin).
 		if s.authMode == AuthModeNone {
-			if !isLoopback(r) {
+			if !isLoopback(r) || !isLocalHostHeader(r.Host) {
 				s.writeAudit("no-auth", r.Method, r.URL.Path, "", group, http.StatusForbidden)
 				writeAuthError(w, "loopback_required", "No-auth mode only allows local access", http.StatusForbidden)
 				return
@@ -288,6 +294,22 @@ func isLoopback(r *http.Request) bool {
 		host = r.RemoteAddr
 	}
 	return host == "127.0.0.1" || host == "::1" || host == "[::1]"
+}
+
+// isLocalHostHeader defends against DNS rebinding: a browser page whose DNS
+// resolves to 127.0.0.1 passes isLoopback but still sends its attacker-
+// controlled hostname in the Host header.
+func isLocalHostHeader(host string) bool {
+	name := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		name = h
+	}
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
+	default:
+		return false
+	}
 }
 
 // writeAuthError writes a JSON error response for auth failures.

@@ -370,3 +370,42 @@ func addProjectCommands(root *cobra.Command, ctx commandBuildContext) {
 	root.AddCommand(projectCmd)
 
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "project board show",
+		Method:      "Pinax.ProjectBoard.Show",
+		ArgParams:   []string{"project"},
+		Flags:       []remoteParamSpec{s("subproject", "subproject"), s("note_display", "note-display")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "project subproject list",
+		Method:      "Pinax.Project.Subproject.List",
+		ArgParams:   []string{"project"},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "project subproject show",
+		Method:      "Pinax.Project.Subproject.Show",
+		ArgParams:   []string{"project", "subproject"},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "project subproject create",
+		Method:      "Pinax.Project.Subproject.Create",
+		ArgParams:   []string{"project", "subproject"},
+		Flags:       []remoteParamSpec{s("title", "title"), s("template", "template"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "project item move",
+		Method:      "Pinax.ProjectItem.Plan",
+		ArgParams:   []string{"item_id", "column"},
+		Const:       map[string]string{"action": "move"},
+		Flags:       []remoteParamSpec{b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "project item archive",
+		Method:      "Pinax.ProjectItem.Plan",
+		ArgParams:   []string{"item_id"},
+		Const:       map[string]string{"action": "archive"},
+		Flags:       []remoteParamSpec{b("yes", "yes")},
+	})
+}

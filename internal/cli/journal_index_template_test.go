@@ -15,6 +15,7 @@ type cliJSONProjection struct {
 }
 
 func TestJournalTemplateCLIContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	projection := runCLIJSON(t, "journal", "daily", "show", "--date", "2026-06-08", "--template", "journal.daily", "--vault", root, "--json")
 	if projection.Command != "daily.show" || projection.Status != "success" || projection.Mode != "json" {
@@ -26,6 +27,7 @@ func TestJournalTemplateCLIContract(t *testing.T) {
 }
 
 func TestIndexPageCLIContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	preview := runCLIJSON(t, "index", "page", "preview", "home", "--template", "index.home", "--vault", root, "--json")
 	if preview.Command != "index.page.preview" || preview.Facts["writes"] != "false" || preview.Facts["path"] != "index/home.md" {
@@ -45,6 +47,7 @@ func TestIndexPageCLIContract(t *testing.T) {
 }
 
 func TestTemplateInspectCLIContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	projection := runCLIJSON(t, "template", "inspect", "index.home", "--vault", root, "--json")
 	if projection.Command != "template.inspect" || projection.Status != "success" || projection.Mode != "json" {
@@ -77,6 +80,7 @@ func runCLIJSON(t *testing.T, args ...string) cliJSONProjection {
 }
 
 func TestJournalDailyTemplateFlag(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	projection := runCLIJSON(t, "journal", "daily", "show", "--date", "2026-06-08", "--template", "journal.daily", "--vault", root, "--json")
 	if projection.Command != "daily.show" || projection.Facts["template"] != "journal.daily" || projection.Facts["path"] != "daily/2026-06-08.md" {
@@ -85,6 +89,7 @@ func TestJournalDailyTemplateFlag(t *testing.T) {
 }
 
 func TestJournalWeeklyTemplateFlag(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	projection := runCLIJSON(t, "journal", "weekly", "show", "--date", "2026-W23", "--template", "journal.weekly", "--vault", root, "--json")
 	if projection.Command != "weekly.show" || projection.Facts["template"] != "journal.weekly" || projection.Facts["path"] != "weekly/2026-W23.md" {

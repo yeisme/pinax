@@ -247,3 +247,40 @@ func addDraftCommands(root *cobra.Command, ctx commandBuildContext) {
 
 	root.AddCommand(draftCmd)
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "draft list", Method: "Pinax.Draft.List"})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "draft show",
+		Method:      "Pinax.Draft.Show",
+		ArgParams:   []string{"ref"},
+		Flags:       []remoteParamSpec{s("display", "display")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "draft create",
+		Method:      "Pinax.Draft.Create",
+		ArgParams:   []string{"title"},
+		Flags:       []remoteParamSpec{s("body", "body"), b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "draft promote",
+		Method:      "Pinax.Draft.Promote",
+		ArgParams:   []string{"ref"},
+		Flags: []remoteParamSpec{
+			s("status", "status"), s("folder", "folder"), s("kind", "kind"),
+			b("dry_run", "dry-run"), b("yes", "yes"),
+		},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "draft archive",
+		Method:      "Pinax.Draft.Archive",
+		ArgParams:   []string{"ref"},
+		Flags:       []remoteParamSpec{b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "draft discard",
+		Method:      "Pinax.Draft.Discard",
+		ArgParams:   []string{"ref"},
+		Flags:       []remoteParamSpec{b("dry_run", "dry-run"), b("yes", "yes")},
+	})
+}

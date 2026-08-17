@@ -318,7 +318,7 @@ func (s *Service) backendSync(req BackendPlanRequest, direction string) (domain.
 		return domain.NewErrorProjection("backend."+direction, err), err
 	}
 	// MVP: 真实 push/pull 需要后端 adapter 实现，当前只记录事件。
-	_ = appendEvent(root, "backend."+direction, "success", map[string]string{"backend": profile.Name, "kind": string(profile.Kind), "direction": direction})
+	appendEventWarned(root, "backend."+direction, "success", map[string]string{"backend": profile.Name, "kind": string(profile.Kind), "direction": direction})
 	projection := domain.NewProjection("backend."+direction, fmt.Sprintf("Backend %s recorded.", direction))
 	projection.Facts["backend"] = profile.Name
 	projection.Facts["kind"] = string(profile.Kind)
@@ -365,7 +365,7 @@ func (s *Service) RemoveBackend(_ context.Context, req BackendRequest) (domain.P
 	if err := saveBackendRegistry(root, registry); err != nil {
 		return errorProjection("backend.remove", err), err
 	}
-	_ = appendEvent(root, "backend.remove", "success", map[string]string{"name": req.Name})
+	appendEventWarned(root, "backend.remove", "success", map[string]string{"name": req.Name})
 	projection := domain.NewProjection("backend.remove", "Backend removed.")
 	projection.Facts["name"] = req.Name
 	projection.Facts["backends"] = fmt.Sprint(len(registry.Backends))
@@ -818,7 +818,7 @@ func saveBackendRegistryProjection(root string, registry domain.BackendRegistry,
 	if err := saveBackendRegistry(root, registry); err != nil {
 		return errorProjection(command, err), err
 	}
-	_ = appendEvent(root, command, "success", map[string]string{"backend": profile.Name, "kind": string(profile.Kind)})
+	appendEventWarned(root, command, "success", map[string]string{"backend": profile.Name, "kind": string(profile.Kind)})
 	projection := domain.NewProjection(command, summary)
 	projection.Facts["name"] = profile.Name
 	projection.Facts["kind"] = string(profile.Kind)

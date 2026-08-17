@@ -15,6 +15,7 @@ import (
 )
 
 func TestDemo(t *testing.T) {
+	t.Parallel()
 	runDemoTestScript(t,
 		"testdata/demo/scripts/demo_diagnose.txt",
 		"testdata/demo/scripts/demo_plan_snapshot_apply.txt",
@@ -23,10 +24,12 @@ func TestDemo(t *testing.T) {
 }
 
 func TestDemoPlanSnapshotApply(t *testing.T) {
+	t.Parallel()
 	runDemoTestScript(t, "testdata/demo/scripts/demo_plan_snapshot_apply.txt")
 }
 
 func TestDemoRestore(t *testing.T) {
+	t.Parallel()
 	runDemoTestScript(t, "testdata/demo/scripts/demo_restore.txt")
 }
 

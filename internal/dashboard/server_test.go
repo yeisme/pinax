@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +25,7 @@ func TestReadonlyDashboardServesStatsDoctorAndRedacts(t *testing.T) {
 	writeDashboardFixture(t, filepath.Join(root, ".pinax", "events.jsonl"), `{"type":"provider","token":"secret-token","authorization":"Bearer secret"}`+"\n")
 
 	server := NewServer(svc, root)
-	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	req := newLocalRequest(http.MethodGet, "/api/overview", nil)
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -43,7 +44,7 @@ func TestReadonlyDashboardServesStatsDoctorAndRedacts(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/overview", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/overview", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("write-like method status = %d", res.Code)
 	}
@@ -63,7 +64,7 @@ func TestReadonlyDashboardServesLinkGraphSummary(t *testing.T) {
 
 	server := NewServer(svc, root)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/graph-summary", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/graph-summary", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("graph summary status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -89,13 +90,13 @@ func TestReadonlyDashboardServesLinkGraphSummary(t *testing.T) {
 	}
 
 	overview := httptest.NewRecorder()
-	server.Handler().ServeHTTP(overview, httptest.NewRequest(http.MethodGet, "/api/overview", nil))
+	server.Handler().ServeHTTP(overview, newLocalRequest(http.MethodGet, "/api/overview", nil))
 	if overview.Code != http.StatusOK || !strings.Contains(overview.Body.String(), "link_graph") || !strings.Contains(overview.Body.String(), "dashboard.graph_summary") {
 		t.Fatalf("overview missing link graph summary: status=%d body=%s", overview.Code, overview.Body.String())
 	}
 
 	index := httptest.NewRecorder()
-	server.Handler().ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/", nil))
+	server.Handler().ServeHTTP(index, newLocalRequest(http.MethodGet, "/", nil))
 	for _, want := range []string{"关系", "断链", "歧义", "孤立", "pinax "} {
 		if !strings.Contains(index.Body.String(), want) {
 			t.Fatalf("dashboard index missing %q:\n%s", want, index.Body.String())
@@ -103,7 +104,7 @@ func TestReadonlyDashboardServesLinkGraphSummary(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/graph-summary", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/graph-summary", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("graph summary write-like method status = %d", res.Code)
 	}
@@ -123,12 +124,12 @@ func TestReadonlyDashboardServesRepairPlans(t *testing.T) {
 
 	server := NewServer(svc, root)
 	indexRes := httptest.NewRecorder()
-	server.Handler().ServeHTTP(indexRes, httptest.NewRequest(http.MethodGet, "/", nil))
+	server.Handler().ServeHTTP(indexRes, newLocalRequest(http.MethodGet, "/", nil))
 	if indexRes.Code != http.StatusOK || !strings.Contains(indexRes.Body.String(), "Repair plans") || !strings.Contains(indexRes.Body.String(), "pinax repair apply") {
 		t.Fatalf("repair index missing plan summary: status=%d body=%s", indexRes.Code, indexRes.Body.String())
 	}
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/repair-plans", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/repair-plans", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("repair plans status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -149,7 +150,7 @@ func TestReadonlyDashboardServesRepairPlans(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/repair-plans", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/repair-plans", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("repair plans write-like method status = %d", res.Code)
 	}
@@ -168,7 +169,7 @@ func TestReadonlyDashboardServesAllNotesWithPublishVisibility(t *testing.T) {
 
 	server := NewServer(svc, root)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/notes", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/notes", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("notes status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -201,7 +202,7 @@ func TestReadonlyDashboardServesAllNotesWithPublishVisibility(t *testing.T) {
 	}
 
 	index := httptest.NewRecorder()
-	server.Handler().ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/", nil))
+	server.Handler().ServeHTTP(index, newLocalRequest(http.MethodGet, "/", nil))
 	indexBody := index.Body.String()
 	for _, want := range []string{"All notes", "Public Note", "Private Note", "Internal Note", "public", "private", "internal", "/api/notes"} {
 		if !strings.Contains(indexBody, want) {
@@ -215,7 +216,7 @@ func TestReadonlyDashboardServesAllNotesWithPublishVisibility(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/notes", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/notes", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("notes write-like method status = %d", res.Code)
 	}
@@ -235,7 +236,7 @@ func TestReadonlyDashboardServesProjectBoard(t *testing.T) {
 
 	server := NewServer(svc, root)
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/project-board/research", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/project-board/research", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("board status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -247,7 +248,7 @@ func TestReadonlyDashboardServesProjectBoard(t *testing.T) {
 		t.Fatalf("board payload = %s", res.Body.String())
 	}
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/project-board/research", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/project-board/research", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("board write-like method status = %d", res.Code)
 	}
@@ -264,7 +265,7 @@ func TestReadonlyDashboardServesBoundedNoteDisplay(t *testing.T) {
 	server := NewServer(svc, root)
 
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/note-display/note_secret?display=detail", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/note-display/note_secret?display=detail", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("note display status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -273,7 +274,7 @@ func TestReadonlyDashboardServesBoundedNoteDisplay(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/note-display/note_secret", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/note-display/note_secret", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("write-like note display status = %d", res.Code)
 	}
@@ -296,7 +297,7 @@ func TestReadonlyDashboardServesDatabaseTabProjection(t *testing.T) {
 	server := NewServer(svc, root)
 
 	res := httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/database-tabs/active-tab", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodGet, "/api/database-tabs/active-tab", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("database tab status = %d body=%s", res.Code, res.Body.String())
 	}
@@ -309,7 +310,7 @@ func TestReadonlyDashboardServesDatabaseTabProjection(t *testing.T) {
 	}
 
 	res = httptest.NewRecorder()
-	server.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/database-tabs/active-tab", nil))
+	server.Handler().ServeHTTP(res, newLocalRequest(http.MethodPost, "/api/database-tabs/active-tab", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("database tab write-like method status = %d", res.Code)
 	}
@@ -337,4 +338,12 @@ func dashboardFixtureTitle(path, content string) string {
 		}
 	}
 	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
+
+// newLocalRequest builds a request with a loopback Host header, matching what
+// a real local client sends and what the DNS-rebinding guard requires.
+func newLocalRequest(method, target string, body io.Reader) *http.Request {
+	req := httptest.NewRequest(method, target, body)
+	req.Host = "127.0.0.1"
+	return req
 }

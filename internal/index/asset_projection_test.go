@@ -9,6 +9,7 @@ import (
 )
 
 func TestAssetProjectionListAndFind(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	asset := domain.Asset{ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0103", ID: "asset_index", Path: "assets/from-index.png", Filename: "from-index.png", Stem: "from-index", Extension: "png", MediaType: "image/png", Size: 12, SHA256: "abc123", ManagedStatus: domain.ManagedStatusManaged, Width: 3, Height: 2}
 	if err := ReplaceAssetProjection(root, []domain.Asset{asset}); err != nil {
@@ -34,6 +35,7 @@ func TestAssetProjectionListAndFind(t *testing.T) {
 }
 
 func TestVaultObjectLookupSchemaHasResolverCandidateFields(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	note := domain.Note{ID: "note_alpha", Title: "Alpha", Path: "notes/projects/alpha-note.md", Body: "# Alpha"}
 	if _, err := Rebuild(root, []domain.Note{note}); err != nil {
@@ -58,6 +60,7 @@ func TestVaultObjectLookupSchemaHasResolverCandidateFields(t *testing.T) {
 }
 
 func TestAssetLinksAndVaultFilesProjectionFromRebuild(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeIndexFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
 	writeIndexFixture(t, filepath.Join(root, "attachments", "spec.pdf"), "pdf")
@@ -96,6 +99,7 @@ func TestAssetLinksAndVaultFilesProjectionFromRebuild(t *testing.T) {
 }
 
 func TestRebuildAndRefreshProjectRegisteredUnmanagedAndAssets(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeIndexFixture(t, filepath.Join(root, "notes", "registered.md"), "# Registered")
 	writeIndexFixture(t, filepath.Join(root, "notes", "unmanaged.md"), "# Unmanaged")

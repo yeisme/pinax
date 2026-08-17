@@ -56,6 +56,21 @@ task release:package:validate
 
 The target may write `dist/` artifacts, but it must not write a user vault, provider credentials, package-manager repositories, or public release channels.
 
+## macOS repository-sync support evidence
+
+A macOS install smoke or an operator report is an **observed** result, not a platform-support claim. Pinax only records an exact `darwin/<arch>` tuple as a release **candidate** after its release binary, installation channel, macOS version, and the Keychain/bootstrap, inbound, outbound, and recovery command contracts have been captured. It becomes **supported** only after the separately authorized real COS/S3 round trip and recovery matrix pass on that same tuple.
+
+The local candidate probe is deliberately read-only: it invokes `version --json` and `--help` contracts only, never opens a vault or calls a remote. On the relevant Mac, invoke it with a release artifact rather than a development `go run` binary:
+
+```bash
+PINAX_MACOS_SUPPORT_BINARY=/absolute/path/to/pinax \
+PINAX_MACOS_SUPPORT_PROVENANCE=vX.Y.Z@sha256:<64-lowercase-hex-digest> \
+PINAX_MACOS_SUPPORT_INSTALL_CHANNEL=archive \
+task integration:sync-macos-candidate
+```
+
+It writes the standard redacted run directory under `temp/integration-test-runs/<run-id>/`, including `artifacts/platform-support.json`. Successful contract probes set the tuple to `candidate` and keep `bootstrap_pull`, `outbound_round_trip`, and `recovery_matrix` as `not_run`; do not announce support from that result alone. A non-macOS host fails closed with `macos_platform_required` and still writes failure evidence.
+
 ## Post-release checklist
 
 After a tagged release publishes, verify the public artifacts without provider credentials or user vaults:

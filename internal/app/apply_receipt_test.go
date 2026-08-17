@@ -12,6 +12,7 @@ import (
 )
 
 func TestMetadataApplyWritesObjectRevisionReceiptWithoutBody(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := "notes/alpha.md"
 	writeAppFixture(t, filepath.Join(root, filepath.FromSlash(path)), "---\nschema_version: pinax.note.v1\nnote_id: 01982d84-2b48-7000-8000-000000000051\ntitle: Alpha\n---\n\n# Alpha\n\nSECRET_BODY_SENTINEL\n")

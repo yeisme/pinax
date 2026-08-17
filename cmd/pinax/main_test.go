@@ -7,6 +7,7 @@ import (
 )
 
 func TestDailyNoteCompletionUsesShellFriendlyTitle(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "daily", "2026-06-09.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_daily_legacy\ntitle: Daily 2026-06-09\ntags: [daily]\nfolder: daily\nkind: daily\nstatus: journal\n---\n\n# 2026-06-09\n")

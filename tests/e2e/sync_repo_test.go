@@ -14,6 +14,7 @@ import (
 // writable per-script dir so the device-local stored:// secret store works in
 // the sandboxed HOME=/no-home testscript environment.
 func TestSyncRepoDeclarative(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/sync_repo/scripts", func(env *testscript.Env) error {
 		env.Vars = append(env.Vars,
 			"XDG_CONFIG_HOME="+filepath.Join(env.WorkDir, "xdg"),

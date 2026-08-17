@@ -9,6 +9,7 @@ import (
 )
 
 func TestSourceTemplateCreatesGitHubSourceNote(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -45,6 +46,7 @@ func TestSourceTemplateCreatesGitHubSourceNote(t *testing.T) {
 }
 
 func TestSourceTemplateExplicitFieldsOverrideDefaults(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -78,6 +80,7 @@ func TestSourceTemplateExplicitFieldsOverrideDefaults(t *testing.T) {
 }
 
 func TestDurableSourceMetadataAndOrganizePlans(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "iptv-org/iptv", "--body", "# iptv-org/iptv\n\nSource: https://github.com/iptv-org/iptv\n", "--kind", "reference", "--tags", "github", "--dir", "research", "--vault", root, "--json")
@@ -98,6 +101,7 @@ func TestDurableSourceMetadataAndOrganizePlans(t *testing.T) {
 }
 
 func TestSearchSourceNotes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "iptv-org/iptv", "--template", "source.github", "--var", "url=https://github.com/iptv-org/iptv", "--vault", root, "--json")
@@ -125,6 +129,7 @@ func TestSearchSourceNotes(t *testing.T) {
 }
 
 func TestDurableSourceGraphChecks(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	runCLI(t, "note", "add", "M3U Playlist Format", "--body", "# M3U Playlist Format\n", "--kind", "concept", "--vault", root, "--json")

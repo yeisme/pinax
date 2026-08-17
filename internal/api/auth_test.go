@@ -8,6 +8,7 @@ import (
 )
 
 func TestGenerateTokenRecordCreatesValidRecord(t *testing.T) {
+	t.Parallel()
 	scope := map[TokenScope]ScopeTarget{
 		ScopeRead:  {},
 		ScopeWrite: {},
@@ -38,6 +39,7 @@ func TestGenerateTokenRecordCreatesValidRecord(t *testing.T) {
 }
 
 func TestVerifySecretMatchesPlaintext(t *testing.T) {
+	t.Parallel()
 	rec, secret := GenerateTokenRecord("test", nil, "", "auto")
 	if !VerifySecret(rec, secret) {
 		t.Fatal("expected secret to verify")
@@ -48,6 +50,7 @@ func TestVerifySecretMatchesPlaintext(t *testing.T) {
 }
 
 func TestIsExpired_NoExpiry(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{}
 	if IsExpired(rec) {
 		t.Fatal("token without expiry should not be expired")
@@ -55,6 +58,7 @@ func TestIsExpired_NoExpiry(t *testing.T) {
 }
 
 func TestIsExpired_FutureExpiry(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{
 		ExpiresAt: time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
 	}
@@ -64,6 +68,7 @@ func TestIsExpired_FutureExpiry(t *testing.T) {
 }
 
 func TestIsExpired_PastExpiry(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{
 		ExpiresAt: time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339),
 	}
@@ -73,6 +78,7 @@ func TestIsExpired_PastExpiry(t *testing.T) {
 }
 
 func TestHasScope_EmptyGroups(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{
 		Scope: map[TokenScope]ScopeTarget{
 			ScopeRead: {Groups: nil},
@@ -87,6 +93,7 @@ func TestHasScope_EmptyGroups(t *testing.T) {
 }
 
 func TestHasScope_SpecificGroups(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{
 		Scope: map[TokenScope]ScopeTarget{
 			ScopeRead: {Groups: []string{"notes", "folders"}},
@@ -101,6 +108,7 @@ func TestHasScope_SpecificGroups(t *testing.T) {
 }
 
 func TestHasScope_MissingScope(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{
 		Scope: map[TokenScope]ScopeTarget{
 			ScopeRead: {},
@@ -111,6 +119,7 @@ func TestHasScope_MissingScope(t *testing.T) {
 	}
 }
 func TestHasScope_RestrictsActionsWhenPresent(t *testing.T) {
+	t.Parallel()
 	rec := &TokenRecord{
 		Scope: map[TokenScope]ScopeTarget{
 			ScopeWrite: {Groups: []string{"folders"}, Actions: []string{"folder.create"}},
@@ -127,6 +136,7 @@ func TestHasScope_RestrictsActionsWhenPresent(t *testing.T) {
 // --- MemoryTokenStore ---
 
 func TestMemoryTokenStore_CRUD(t *testing.T) {
+	t.Parallel()
 	store := NewMemoryTokenStore()
 	rec, secret := GenerateTokenRecord("test", map[TokenScope]ScopeTarget{
 		ScopeRead: {},
@@ -191,6 +201,7 @@ func TestMemoryTokenStore_CRUD(t *testing.T) {
 }
 
 func TestMemoryTokenStore_VerifyExpired(t *testing.T) {
+	t.Parallel()
 	store := NewMemoryTokenStore()
 	rec, secret := GenerateTokenRecord("expired", nil,
 		time.Now().UTC().Add(-1*time.Hour).Format(time.RFC3339), "auto")
@@ -203,6 +214,7 @@ func TestMemoryTokenStore_VerifyExpired(t *testing.T) {
 }
 
 func TestMemoryTokenStore_GetNotFound(t *testing.T) {
+	t.Parallel()
 	store := NewMemoryTokenStore()
 	_, err := store.Get("nonexistent")
 	if err == nil {
@@ -213,6 +225,7 @@ func TestMemoryTokenStore_GetNotFound(t *testing.T) {
 // --- FileTokenStore ---
 
 func TestFileTokenStore_CRUD(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tokens.json")
 	store, err := NewFileTokenStore(path)
@@ -279,6 +292,7 @@ func TestFileTokenStore_CRUD(t *testing.T) {
 }
 
 func TestFileTokenStore_VerifyExpired(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	store, err := NewFileTokenStore(filepath.Join(dir, "tokens.json"))
 	if err != nil {
@@ -295,6 +309,7 @@ func TestFileTokenStore_VerifyExpired(t *testing.T) {
 }
 
 func TestFileTokenStore_MultipleTokens(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	store, _ := NewFileTokenStore(filepath.Join(dir, "tokens.json"))
 
@@ -321,6 +336,7 @@ func TestFileTokenStore_MultipleTokens(t *testing.T) {
 }
 
 func TestFileTokenStore_PersistenceAcrossInstances(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tokens.json")
 
@@ -340,6 +356,7 @@ func TestFileTokenStore_PersistenceAcrossInstances(t *testing.T) {
 }
 
 func TestFileTokenStore_EmptyOnNewFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	store, _ := NewFileTokenStore(filepath.Join(dir, "tokens.json"))
 	list, err := store.List()
@@ -352,6 +369,7 @@ func TestFileTokenStore_EmptyOnNewFile(t *testing.T) {
 }
 
 func TestGenerateSecret_Uniqueness(t *testing.T) {
+	t.Parallel()
 	s1 := GenerateSecret()
 	s2 := GenerateSecret()
 	if s1 == s2 {

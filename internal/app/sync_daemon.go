@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
 	pinaxcloud "github.com/yeisme/pinax/internal/remote"
@@ -27,6 +28,24 @@ type SyncDaemonRequest struct {
 	SyncTimeout  time.Duration
 	LogLimit     int
 	LiveEvents   syncdaemon.EventSink
+	// ProjectUnlockSource, when set, unlocks the repository-encrypted credential
+	// bundle for daemon poll/pull/push. The daemon never opens an interactive
+	// prompt: a nil source in repository-encrypted mode drives the credential
+	// gate into a degraded state (pinax-passphrase-s3-bootstrap task 6.7).
+	ProjectUnlockSource projectsecrets.UnlockSource
+	// UnlockFlags carries the CLI unlock flag values so SyncDaemonStart can
+	// forward them to the spawned `daemon run` subprocess; the resolved source
+	// itself cannot cross a process boundary.
+	UnlockFlags SyncDaemonUnlockFlags
+}
+
+// SyncDaemonUnlockFlags mirrors the daemon unlock CLI flags. Only non-interactive
+// sources are permitted; prompt is rejected at the CLI before reaching here.
+type SyncDaemonUnlockFlags struct {
+	Unlock         string
+	UnlockRef      string
+	PassphraseFile string
+	EnvVar         string
 }
 
 func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (domain.Projection, error) {
@@ -48,6 +67,20 @@ func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (dom
 	state := syncdaemon.NewState(target, os.Getpid(), syncdaemon.DetectionWatch, syncdaemon.StatusRunning)
 	_ = repo.WriteState(state)
 	manifestFacts, manifestErr := syncDaemonManifestPreflight(root)
+	if capErr := syncCapabilityGate(root); capErr != nil {
+		commandErr := commandErrorFromError(capErr)
+		state.Status = syncdaemon.StatusDegraded
+		state.LastErrorCode = commandErr.Code
+		state.Message = commandErr.Message
+		_ = repo.WriteState(state)
+		event := syncdaemon.NewEvent("capability_unsupported", syncdaemon.StatusDegraded, target)
+		event.ErrorCode = commandErr.Code
+		event.Message = commandErr.Message
+		emitSyncDaemonEvent(repo, req.LiveEvents, event)
+		projection := syncDaemonProjection("sync.daemon.run", "Sync daemon remote writes blocked by an unsupported repository capability.", root, state, nil)
+		projection.Facts["remote_write"] = "false"
+		return projection, commandErr
+	}
 	if manifestErr != nil {
 		commandErr := commandErrorFromError(manifestErr)
 		state.Status = syncdaemon.StatusDegraded
@@ -67,7 +100,26 @@ func (s *Service) SyncDaemonRun(ctx context.Context, req SyncDaemonRequest) (dom
 	startedEvent := syncdaemon.NewEvent("started", syncdaemon.StatusRunning, target)
 	startedEvent.Facts = manifestFacts
 	emitSyncDaemonEvent(repo, req.LiveEvents, startedEvent)
-	loop := syncdaemon.Loop{Repo: repo, Target: target, Poller: cloudDaemonPoller{root: root, req: SyncRequest{VaultPath: root, Target: target}}, Executor: cloudDaemonExecutor{s: s, root: root, target: target}, PollInterval: defaultDaemonPollInterval(req.PollInterval), SyncTimeout: defaultDaemonSyncTimeout(req.SyncTimeout), EventSink: req.LiveEvents}
+	// Credential gate (pinax-passphrase-s3-bootstrap task 6.7): a repository-
+	// encrypted vault with no non-interactive unlock source must not reach the
+	// remote. The gate is evaluated each cycle; when it denies, the loop enters a
+	// degraded state and emits a credential_degraded event instead of polling or
+	// pushing with a device-local AWS profile fallback.
+	daemonRuntime, _ := pinaxcloud.Load(root)
+	credentialMode := ""
+	if daemonRuntime.Config.S3 != nil {
+		credentialMode = daemonRuntime.Config.S3.CredentialMode
+	}
+	loop := syncdaemon.Loop{
+		Repo:         repo,
+		Target:       target,
+		Poller:       cloudDaemonPoller{root: root, req: SyncRequest{VaultPath: root, Target: target}, unlockSource: req.ProjectUnlockSource},
+		Executor:     cloudDaemonExecutor{s: s, root: root, target: target, unlockSource: req.ProjectUnlockSource},
+		PollInterval: defaultDaemonPollInterval(req.PollInterval),
+		SyncTimeout:  defaultDaemonSyncTimeout(req.SyncTimeout),
+		EventSink:    req.LiveEvents,
+		Gate:         DaemonCredentialGate{Mode: credentialMode, UnlockSource: req.ProjectUnlockSource, EnvelopePresent: repoCredentialEnvelopePresent(root)},
+	}
 	envReloader := pinaxcloud.NewEnvReloader(root, nil)
 	state, err = syncDaemonRunCycle(ctx, root, repo, loop, state, "startup", envReloader, req.LiveEvents)
 	if req.Once || err != nil {
@@ -165,6 +217,22 @@ func (s *Service) SyncDaemonStart(_ context.Context, req SyncDaemonRequest) (dom
 	}
 	defer func() { _ = stderr.Close() }()
 	args := []string{"sync", "daemon", "run", "--target", target, "--vault", root, "--yes", "--poll-interval", defaultDaemonPollInterval(req.PollInterval).String(), "--sync-timeout", defaultDaemonSyncTimeout(req.SyncTimeout).String()}
+	// Forward the non-interactive unlock flags so the spawned daemon run can
+	// resolve the same repository-encrypted source. Only daemon-safe flags are
+	// forwarded (prompt is rejected at the CLI); the flag values are references
+	// (keychain ref, file path, env var name) and never the passphrase itself.
+	if v := strings.TrimSpace(req.UnlockFlags.Unlock); v != "" {
+		args = append(args, "--unlock", v)
+	}
+	if v := strings.TrimSpace(req.UnlockFlags.UnlockRef); v != "" {
+		args = append(args, "--unlock-ref", v)
+	}
+	if v := strings.TrimSpace(req.UnlockFlags.PassphraseFile); v != "" {
+		args = append(args, "--passphrase-file", v)
+	}
+	if v := strings.TrimSpace(req.UnlockFlags.EnvVar); v != "" {
+		args = append(args, "--env-var", v)
+	}
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -394,8 +462,9 @@ func syncDaemonLocalHash(root string) (string, bool, error) {
 }
 
 type cloudDaemonPoller struct {
-	root string
-	req  SyncRequest
+	root         string
+	req          SyncRequest
+	unlockSource projectsecrets.UnlockSource
 }
 
 func (p cloudDaemonPoller) PollHead(ctx context.Context) (string, error) {
@@ -403,7 +472,7 @@ func (p cloudDaemonPoller) PollHead(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	transport, err := cloudTransportForState(ctx, state)
+	transport, _, err := cloudTransportForStateWithCredential(ctx, state, p.root, p.unlockSource)
 	if err != nil {
 		return "", err
 	}
@@ -415,18 +484,19 @@ func (p cloudDaemonPoller) PollHead(ctx context.Context) (string, error) {
 }
 
 type cloudDaemonExecutor struct {
-	s      *Service
-	root   string
-	target string
+	s            *Service
+	root         string
+	target       string
+	unlockSource projectsecrets.UnlockSource
 }
 
 func (e cloudDaemonExecutor) Pull(ctx context.Context, remoteRevision string) error {
-	_, err := e.s.SyncPull(ctx, SyncRequest{VaultPath: e.root, Target: e.target, Yes: true, RemoteRevision: remoteRevision})
+	_, err := e.s.SyncPull(ctx, SyncRequest{VaultPath: e.root, Target: e.target, Yes: true, RemoteRevision: remoteRevision, ProjectUnlockSource: e.unlockSource})
 	return err
 }
 
 func (e cloudDaemonExecutor) Push(ctx context.Context) (string, error) {
-	projection, err := e.s.SyncPush(ctx, SyncRequest{VaultPath: e.root, Target: e.target, Yes: true})
+	projection, err := e.s.SyncPush(ctx, SyncRequest{VaultPath: e.root, Target: e.target, Yes: true, ProjectUnlockSource: e.unlockSource})
 	if err != nil {
 		return "", err
 	}

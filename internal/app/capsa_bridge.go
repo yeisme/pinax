@@ -62,16 +62,30 @@ func addCapsaBridgeFacts(projection *domain.Projection, requestedTarget string) 
 	}
 }
 
+// capsaSummaryPhrases maps the exact legacy-cloud phrases that the capsa alias
+// surface rebrands. Replacing whole phrases (instead of the word "cloud"
+// anywhere) keeps legitimate text — vault names, provider messages, paths —
+// from being corrupted.
+var capsaSummaryPhrases = []string{
+	"S3 direct cloud backend configured.",
+	"Rclone direct cloud backend configured.",
+	"Cloud backend configured.",
+	"Cloud backend status read.",
+	"Cloud device session logged out.",
+	"Cloud backend diagnostics passed.",
+	"s3 cloud backend configuration is incomplete",
+	"rclone cloud backend configuration is incomplete",
+	"cloud login configuration is incomplete",
+}
+
 func rewriteProjectionCommands(projection *domain.Projection, old, next string) {
 	if old == next || old == "" || next == "" {
 		return
 	}
 	projection.Command = strings.Replace(projection.Command, old+".", next+".", 1)
-	projection.Summary = strings.ReplaceAll(projection.Summary, "Cloud", "Capsa")
-	projection.Summary = strings.ReplaceAll(projection.Summary, "cloud", "Capsa")
+	projection.Summary = rebrandCapsaPhrases(projection.Summary)
 	if projection.Error != nil {
-		projection.Error.Message = strings.ReplaceAll(projection.Error.Message, "Cloud", "Capsa")
-		projection.Error.Message = strings.ReplaceAll(projection.Error.Message, "cloud", "Capsa")
+		projection.Error.Message = rebrandCapsaPhrases(projection.Error.Message)
 		projection.Error.Hint = strings.ReplaceAll(projection.Error.Hint, "pinax "+old, "pinax "+next)
 		projection.Error.Hint = strings.ReplaceAll(projection.Error.Hint, "--target "+old, "--target "+next)
 	}
@@ -79,4 +93,12 @@ func rewriteProjectionCommands(projection *domain.Projection, old, next string) 
 		projection.Actions[i].Command = strings.ReplaceAll(projection.Actions[i].Command, "pinax "+old, "pinax "+next)
 		projection.Actions[i].Command = strings.ReplaceAll(projection.Actions[i].Command, "--target "+old, "--target "+next)
 	}
+}
+
+func rebrandCapsaPhrases(text string) string {
+	for _, phrase := range capsaSummaryPhrases {
+		rebranded := strings.ReplaceAll(strings.ReplaceAll(phrase, "Cloud", "Capsa"), "cloud", "Capsa")
+		text = strings.ReplaceAll(text, phrase, rebranded)
+	}
+	return text
 }

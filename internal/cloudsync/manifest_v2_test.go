@@ -3,14 +3,16 @@ package cloudsync
 import "testing"
 
 func TestManifestV2ValidatesObjectRevisionAndDeviceFacts(t *testing.T) {
-	manifest := Manifest{SchemaVersion: ManifestSchemaVersionV2, Entries: []ManifestEntry{{ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101", ObjectKind: "note", Path: "notes/a.md", RevisionID: "objrev_a", DeviceID: "device_a", BlobID: "blob_a", PlainSHA256: "sha", Size: 1, UpdatedAt: "2026-07-10T00:00:00Z"}}}
+	t.Parallel()
+	manifest := Manifest{SchemaVersion: ManifestSchemaVersionV2, Entries: []ManifestEntry{{ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101", ObjectKind: "note", Path: "notes/a.md", RevisionID: "objrev_a", DeviceID: "device_a", BlobID: "blob_a", SHA256: "sha", Size: 1, UpdatedAt: "2026-07-10T00:00:00Z"}}}
 	if err := manifest.Validate(); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestManifestV2RejectsMissingOrDuplicateObjectFacts(t *testing.T) {
-	valid := ManifestEntry{ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101", ObjectKind: "note", Path: "notes/a.md", RevisionID: "objrev_a", DeviceID: "device_a", BlobID: "blob_a", PlainSHA256: "sha", Size: 1, UpdatedAt: "2026-07-10T00:00:00Z"}
+	t.Parallel()
+	valid := ManifestEntry{ObjectID: "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101", ObjectKind: "note", Path: "notes/a.md", RevisionID: "objrev_a", DeviceID: "device_a", BlobID: "blob_a", SHA256: "sha", Size: 1, UpdatedAt: "2026-07-10T00:00:00Z"}
 	cases := []struct {
 		name string
 		edit func(*ManifestEntry)
@@ -43,7 +45,8 @@ func TestManifestV2RejectsMissingOrDuplicateObjectFacts(t *testing.T) {
 }
 
 func TestManifestV1DecoderRemainsCompatible(t *testing.T) {
-	manifest := Manifest{SchemaVersion: ManifestSchemaVersionV1, Entries: []ManifestEntry{{Path: "notes/a.md", BlobID: "blob_a", PlainSHA256: "sha"}}}
+	t.Parallel()
+	manifest := Manifest{SchemaVersion: ManifestSchemaVersionV1, Entries: []ManifestEntry{{Path: "notes/a.md", BlobID: "blob_a", SHA256: "sha"}}}
 	if err := manifest.Validate(); err != nil {
 		t.Fatal(err)
 	}

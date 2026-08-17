@@ -7,6 +7,7 @@ import (
 )
 
 func TestPropertyExtractorAndSchemaInfer(t *testing.T) {
+	t.Parallel()
 	notes := []domain.Note{
 		{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Tags: []string{"pinax", "db"}, Status: "active", Kind: "reference", UpdatedAt: "2026-06-08T00:00:00Z", Body: "due:: 2026-06-09\npriority:: 2\npublished:: true\nrelated:: [[Beta]]\n"},
 		{ID: "note_beta", Title: "Beta", Path: "notes/beta.md", Tags: []string{"db"}, Status: "done", Kind: "project", Body: "priority:: high\n"},

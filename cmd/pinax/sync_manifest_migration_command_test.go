@@ -7,6 +7,7 @@ import (
 )
 
 func TestSyncManifestAuditAndPlanCommands(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: 01982d84-2b48-7000-8000-000000000031\ntitle: Alpha\n---\n\n# Alpha\n")
 	audit := runCLI(t, "sync", "manifest", "audit", "--device-id", "device-a", "--vault", root, "--json")

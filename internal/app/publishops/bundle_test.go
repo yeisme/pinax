@@ -9,6 +9,7 @@ import (
 )
 
 func TestBuildPublishBundleWritesPublishSafeDataAndAssets(t *testing.T) {
+	t.Parallel()
 	vaultRoot := t.TempDir()
 	bundleRoot := filepath.Join(t.TempDir(), "bundle")
 	writePublishOpsFile(t, vaultRoot, "assets/diagram.png", "fake image")

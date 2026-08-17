@@ -13,6 +13,7 @@ import (
 )
 
 func TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	store := t.TempDir()
@@ -22,7 +23,7 @@ func TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick(t *testing.T) {
 		t.Fatalf("init vault: %v", err)
 	}
 	writeFile(t, filepath.Join(root, "notes", "startup.md"), "# Startup\n\ninitial daemon sync\n")
-	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "dev", SecretRef: "test-secret"}); err != nil {
+	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "dev", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"}); err != nil {
 		t.Fatalf("cloud login: %v", err)
 	}
 	time.AfterFunc(250*time.Millisecond, cancel)
@@ -46,6 +47,7 @@ func TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick(t *testing.T) {
 }
 
 func TestSyncDaemonStateRepository(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := syncdaemon.NewRepository(root)
 	state := syncdaemon.NewState("cloud", 123, syncdaemon.DetectionWatch, syncdaemon.StatusRunning)
@@ -70,6 +72,7 @@ func TestSyncDaemonStateRepository(t *testing.T) {
 }
 
 func TestSyncDaemonStateRedaction(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := syncdaemon.NewRepository(root)
 	state := syncdaemon.NewState("cloud", 1, syncdaemon.DetectionWatch, syncdaemon.StatusDegraded)
@@ -86,7 +89,8 @@ func TestSyncDaemonStateRedaction(t *testing.T) {
 }
 
 func TestSyncDaemonStateIgnoresPinaxRuntimePaths(t *testing.T) {
-	for _, path := range []string{".pinax/sync-daemon/daemon.json", ".pinax/kb/lancedb/index", ".git/index", "temp/run.log"} {
+	t.Parallel()
+	for _, path := range []string{".pinax/sync-daemon/daemon.json", ".pinax/rag-cache/index", ".git/index", "temp/run.log"} {
 		if !syncdaemon.IgnoreRuntimePath(path) || syncdaemon.SafeEventPath(path) != "" {
 			t.Fatalf("runtime path not ignored: %s", path)
 		}
@@ -97,6 +101,7 @@ func TestSyncDaemonStateIgnoresPinaxRuntimePaths(t *testing.T) {
 }
 
 func TestSyncDaemonSingleRunnerLock(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	lock, err := syncdaemon.AcquireRunnerLock(root)
 	if err != nil {
@@ -109,6 +114,7 @@ func TestSyncDaemonSingleRunnerLock(t *testing.T) {
 }
 
 func TestSyncDaemonStartRejectsExistingLiveRunner(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := syncdaemon.NewRepository(root)
 	state := syncdaemon.NewState("cloud", os.Getpid(), syncdaemon.DetectionWatch, syncdaemon.StatusRunning)
@@ -127,6 +133,7 @@ func TestSyncDaemonStartRejectsExistingLiveRunner(t *testing.T) {
 }
 
 func TestSyncOperationLockBlocksConcurrentWrites(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	lock, err := syncdaemon.AcquireOperationLock(root, "test")
 	if err != nil {
@@ -139,6 +146,7 @@ func TestSyncOperationLockBlocksConcurrentWrites(t *testing.T) {
 }
 
 func TestSyncLockStalePidRecovery(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, ".pinax", "sync", "operation.lock")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -156,6 +164,7 @@ func TestSyncLockStalePidRecovery(t *testing.T) {
 }
 
 func TestSyncDaemonWatcherDebounce(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	in := make(chan syncdaemon.WatchEvent, 3)
@@ -175,6 +184,7 @@ func TestSyncDaemonWatcherIgnoresRuntimePaths(t *testing.T) {
 }
 
 func TestSyncDaemonScanFallbackOnWatcherError(t *testing.T) {
+	t.Parallel()
 	state := syncdaemon.NewState("cloud", 1, syncdaemon.DetectionScan, syncdaemon.StatusDegraded)
 	if state.DetectionMode != string(syncdaemon.DetectionScan) || state.Status != syncdaemon.StatusDegraded {
 		t.Fatalf("scan fallback state = %#v", state)
@@ -182,6 +192,7 @@ func TestSyncDaemonScanFallbackOnWatcherError(t *testing.T) {
 }
 
 func TestSyncDaemonRemotePoll(t *testing.T) {
+	t.Parallel()
 	repo := syncdaemon.NewRepository(t.TempDir())
 	loop := syncdaemon.Loop{Repo: repo, Target: "cloud", Poller: fakePoller{revision: "rev_2"}}
 	state, err := loop.RunOnce(context.Background(), false, "rev_2")
@@ -191,6 +202,7 @@ func TestSyncDaemonRemotePoll(t *testing.T) {
 }
 
 func TestSyncDaemonCleanPollDoesNotPush(t *testing.T) {
+	t.Parallel()
 	exec := &fakeExecutor{}
 	loop := syncdaemon.Loop{Repo: syncdaemon.NewRepository(t.TempDir()), Target: "cloud", Poller: fakePoller{revision: "rev_clean"}, Executor: exec}
 	state, err := loop.RunOnce(context.Background(), false, "rev_clean")
@@ -200,6 +212,7 @@ func TestSyncDaemonCleanPollDoesNotPush(t *testing.T) {
 }
 
 func TestSyncDaemonSyncTimeoutCancelsAttempt(t *testing.T) {
+	t.Parallel()
 	exec := &fakeExecutor{blockPush: true}
 	loop := syncdaemon.Loop{Repo: syncdaemon.NewRepository(t.TempDir()), Target: "cloud", Executor: exec, SyncTimeout: 5 * time.Millisecond}
 	state, err := loop.RunOnce(context.Background(), true, "")
@@ -209,6 +222,7 @@ func TestSyncDaemonSyncTimeoutCancelsAttempt(t *testing.T) {
 }
 
 func TestSyncDaemonBackoff(t *testing.T) {
+	t.Parallel()
 	repo := syncdaemon.NewRepository(t.TempDir())
 	loop := syncdaemon.Loop{Repo: repo, Target: "cloud", Poller: fakePoller{err: errors.New("transport_unavailable")}, Backoff: syncdaemon.Backoff{Base: time.Millisecond, Max: time.Second}}
 	state, err := loop.RunOnce(context.Background(), false, "")
@@ -220,6 +234,7 @@ func TestSyncDaemonBackoff(t *testing.T) {
 func TestSyncDaemonTransportUnavailableStatus(t *testing.T) { TestSyncDaemonBackoff(t) }
 
 func TestSyncDaemonRunOncePersistsTriggerAndSyncEvents(t *testing.T) {
+	t.Parallel()
 	repo := syncdaemon.NewRepository(t.TempDir())
 	if err := repo.WriteState(syncdaemon.NewState("cloud", 1, syncdaemon.DetectionWatch, syncdaemon.StatusRunning)); err != nil {
 		t.Fatalf("WriteState: %v", err)
@@ -265,6 +280,7 @@ func TestSyncDaemonRunOncePersistsTriggerAndSyncEvents(t *testing.T) {
 }
 
 func TestSyncDaemonEventSinkReceivesRedactedEvents(t *testing.T) {
+	t.Parallel()
 	repo := syncdaemon.NewRepository(t.TempDir())
 	if err := repo.WriteState(syncdaemon.NewState("cloud", 1, syncdaemon.DetectionWatch, syncdaemon.StatusRunning)); err != nil {
 		t.Fatalf("WriteState: %v", err)
@@ -289,6 +305,7 @@ func TestSyncDaemonEventSinkReceivesRedactedEvents(t *testing.T) {
 }
 
 func TestSyncDaemonPullBeforePush(t *testing.T) {
+	t.Parallel()
 	exec := &fakeExecutor{}
 	loop := syncdaemon.Loop{Repo: syncdaemon.NewRepository(t.TempDir()), Target: "cloud", Poller: fakePoller{revision: "rev_remote"}, Executor: exec}
 	_, err := loop.RunOnce(context.Background(), true, "rev_base")
@@ -298,6 +315,7 @@ func TestSyncDaemonPullBeforePush(t *testing.T) {
 }
 
 func TestSyncDaemonPushesLocalChange(t *testing.T) {
+	t.Parallel()
 	exec := &fakeExecutor{pushRevision: "rev_new"}
 	loop := syncdaemon.Loop{Repo: syncdaemon.NewRepository(t.TempDir()), Target: "cloud", Executor: exec}
 	state, err := loop.RunOnce(context.Background(), true, "")
@@ -307,6 +325,7 @@ func TestSyncDaemonPushesLocalChange(t *testing.T) {
 }
 
 func TestSyncDaemonRevisionConflictRetry(t *testing.T) {
+	t.Parallel()
 	exec := &fakeExecutor{pushErr: errors.New("REVISION_CONFLICT")}
 	loop := syncdaemon.Loop{Repo: syncdaemon.NewRepository(t.TempDir()), Target: "cloud", Executor: exec}
 	state, err := loop.RunOnce(context.Background(), true, "")
@@ -316,6 +335,7 @@ func TestSyncDaemonRevisionConflictRetry(t *testing.T) {
 }
 
 func TestSyncDaemonPausesOnConflict(t *testing.T) {
+	t.Parallel()
 	exec := &fakeExecutor{pullErr: errors.New("conflict_required")}
 	loop := syncdaemon.Loop{Repo: syncdaemon.NewRepository(t.TempDir()), Target: "cloud", Poller: fakePoller{revision: "rev_remote"}, Executor: exec}
 	state, err := loop.RunOnce(context.Background(), false, "rev_base")
@@ -388,6 +408,7 @@ func TestSyncDaemonStatusConvergesStaleDegradedDaemon(t *testing.T) {
 }
 
 func TestSyncDaemonStopIsIdempotentForInactiveProcess(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	repo := syncdaemon.NewRepository(root)
 	state := syncdaemon.NewState("capsa", os.Getpid()+1000000, syncdaemon.DetectionWatch, syncdaemon.StatusDegraded)
@@ -416,6 +437,7 @@ func TestSyncDaemonStopIsIdempotentForInactiveProcess(t *testing.T) {
 }
 
 func TestCommandErrorClassifiesKeyIDMismatch(t *testing.T) {
+	t.Parallel()
 	commandErr := commandErrorFromError(errors.New("key ID mismatch: envelope=key_old, key=key_new"))
 	if commandErr.Code != "encryption_key_mismatch" {
 		t.Fatalf("command error code = %q", commandErr.Code)

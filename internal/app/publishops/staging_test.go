@@ -10,6 +10,7 @@ import (
 )
 
 func TestBuildHugoStagingProjectWritesSafeThemeContract(t *testing.T) {
+	t.Parallel()
 	vaultRoot := t.TempDir()
 	stageRoot := filepath.Join(t.TempDir(), "stage")
 	writePublishOpsFile(t, vaultRoot, "assets/diagram.png", "fake image")
@@ -60,6 +61,7 @@ func TestBuildHugoStagingProjectWritesSafeThemeContract(t *testing.T) {
 }
 
 func TestBuildHugoStagingProjectMaterializesSafeLocalTheme(t *testing.T) {
+	t.Parallel()
 	vaultRoot := t.TempDir()
 	stageRoot := filepath.Join(t.TempDir(), "stage")
 	writePublishOpsFile(t, vaultRoot, "themes/local/theme.toml", "name = \"local-reviewable\"\n[params]\ncontract = \"pinax.publish_theme.v1\"\n")
@@ -82,6 +84,7 @@ func TestBuildHugoStagingProjectMaterializesSafeLocalTheme(t *testing.T) {
 }
 
 func TestBuiltinThemeProvidesEncyclopediaLayouts(t *testing.T) {
+	t.Parallel()
 	vaultRoot := t.TempDir()
 	stageRoot := filepath.Join(t.TempDir(), "stage")
 	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
@@ -126,6 +129,7 @@ func TestBuiltinThemeProvidesEncyclopediaLayouts(t *testing.T) {
 }
 
 func TestBuiltinThemeUsesLocalAssetsAndStableHTMLStructure(t *testing.T) {
+	t.Parallel()
 	stageRoot := filepath.Join(t.TempDir(), "stage")
 	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
 	if _, err := BuildHugoStagingProject(HugoStagingRequest{VaultRoot: t.TempDir(), StageRoot: stageRoot, Profile: profile, Plan: domain.PublishPlan{}, Notes: nil}); err != nil {

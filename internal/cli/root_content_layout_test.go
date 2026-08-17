@@ -9,6 +9,7 @@ import (
 )
 
 func TestDefaultNoteRootCLIPath(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cmd := NewRootCommand("test")
 	var out bytes.Buffer

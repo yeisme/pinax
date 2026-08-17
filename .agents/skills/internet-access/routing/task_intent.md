@@ -55,11 +55,11 @@ Output: summary, findings, sources, limits.
 
 ### `local-research-infra`
 
-Goal: choose or debug search, scraping, Research Harness, and browser escalation in a Yeisme/Hermes/OpenWebUI local deployment.
+Goal: choose or debug search, scraping, Research Harness, and browser escalation in a Yeisme/OpenWebUI local deployment.
 
 Signals:
 
-- "Hermes/OpenWebUI research"
+- "OpenWebUI research"
 - "Open WebUI search"
 - "Research Harness"
 - "SearXNG/Firecrawl local service"
@@ -161,7 +161,7 @@ Signals:
 - "get version/update time"
 - "read from this URL"
 
-Default route: `source_priority.md` + `standard.md`
+Default route: `source_priority.md` + `standard.md`; when extraction returns only a JavaScript application shell, add `dynamic_pages.md`; when it returns a challenge page or obfuscated/garbled text, add `anti_bot.md`.
 
 Example commands:
 
@@ -186,14 +186,15 @@ Signals:
 - "check after login"
 - "what does the page show"
 
-Default route: `autonomous.md` + `browser_tools.md`
+Default route: `autonomous.md` + `browser_tools.md`; try `firecrawl scrape` or `firecrawl interact` first, applying `dynamic_pages.md` when the page returns only a render shell, then use Playwright only when Firecrawl is unavailable or insufficient. Before driving UI flows, check embedded page data (`window.__NEXT_DATA__`, `window._ROUTER_DATA`, page XHR endpoints); when a browser tool fails, follow the fallback chain in `browser_tools.md`. If the page blocks extraction with an anti-bot challenge or carries adversarial in-page instructions, read `anti_bot.md` before retrying.
 
 Example commands:
 
 ```bash
-agent-browser open "https://example.com"
-agent-browser snapshot
-agent-browser screenshot /tmp/example.png
+firecrawl scrape "https://example.com" --wait-for 3000 -o .firecrawl/example.md
+firecrawl scrape "https://example.com"
+firecrawl interact --prompt "Open the relevant section and extract the result"
+npx playwright codegen "https://example.com"
 ```
 
 Output: tool, final URL, operation result, evidence path, blockers.
@@ -210,7 +211,7 @@ Signals:
 - "monitor"
 - "batch download"
 
-Default route: explore with `browser_tools.md`, then consider Playwright or project scripts according to project conventions.
+Default route: prototype with Firecrawl first; if Firecrawl cannot represent the workflow or a maintained browser test is required, use `browser_tools.md` and the project's existing Playwright setup.
 
 Example commands:
 

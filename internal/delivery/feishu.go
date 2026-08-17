@@ -61,7 +61,7 @@ func DeliverFeishu(ctx context.Context, root string, req FeishuRequest) (Receipt
 		return Receipt{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(httpReq)
 	if err != nil {
 		return Receipt{}, err
 	}

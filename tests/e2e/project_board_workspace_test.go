@@ -8,6 +8,7 @@ import (
 )
 
 func TestProjectBoardWorkspace(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/project_board/scripts",
 		Setup: func(env *testscript.Env) error {

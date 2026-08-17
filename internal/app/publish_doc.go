@@ -15,7 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/provider"
 	"github.com/yeisme/pinax/internal/publishdocast"
 	"gopkg.in/yaml.v3"
 )
@@ -109,6 +111,10 @@ func (s *Service) PublishDocProviderDoctor(ctx context.Context, req PublishReque
 }
 
 func (s *Service) PublishDocPrepare(ctx context.Context, req PublishRequest) (domain.Projection, error) {
+	return s.publishDocPrepareWithSnapshot(ctx, req, &publishDocSnapshotLoader{})
+}
+
+func (s *Service) publishDocPrepareWithSnapshot(ctx context.Context, req PublishRequest, snapshotLoader *publishDocSnapshotLoader) (domain.Projection, error) {
 	if req.All && strings.TrimSpace(req.Note) != "" {
 		cmdErr := &domain.CommandError{Code: "argument_conflict", Message: "--all cannot be combined with --note", Hint: "Use pinax publish doc prepare --all --target <target> --vault <vault> --json or prepare one --note"}
 		return domain.NewErrorProjection("publish.doc.prepare", cmdErr), cmdErr
@@ -124,7 +130,7 @@ func (s *Service) PublishDocPrepare(ctx context.Context, req PublishRequest) (do
 	if err != nil {
 		return errorProjection("publish.doc.prepare", err), err
 	}
-	pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note)
+	pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note, snapshotLoader)
 	if err != nil {
 		return errorProjection("publish.doc.prepare", err), err
 	}
@@ -163,6 +169,7 @@ func (s *Service) PublishDocPrepareAll(ctx context.Context, req PublishRequest) 
 		return errorProjection("publish.doc.prepare", err), err
 	}
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
+	snapshotLoader := &publishDocSnapshotLoader{}
 	type packageSummary struct {
 		NoteID        string                            `json:"note_id"`
 		NotePath      string                            `json:"note_path"`
@@ -173,7 +180,7 @@ func (s *Service) PublishDocPrepareAll(ctx context.Context, req PublishRequest) 
 	packages := make([]packageSummary, 0, len(notes))
 	summary := domain.PublishDocCrossDocSummary{}
 	for _, note := range notes {
-		projection, err := s.PublishDocPrepare(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)})
+		projection, err := s.publishDocPrepareWithSnapshot(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)}, snapshotLoader)
 		if err != nil {
 			return projection, err
 		}
@@ -216,6 +223,9 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 		return errorProjection("publish.doc.push", err), err
 	}
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Path < notes[j].Path })
+	// One vault snapshot shared by every package build in this run; without it
+	// cross-doc analysis rescans the whole vault per note.
+	snapshotLoader := &publishDocSnapshotLoader{}
 	passes := 1
 	if !req.DryRun && profile.Target == domain.PublishDocTargetLarkDoc && profile.ResolveDocRenderer() == domain.PublishDocRendererNativeDocx {
 		passes = 2
@@ -230,45 +240,68 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 	}
 	results := make([]pushSummary, 0, len(notes))
 	finalCrossDoc := domain.PublishDocCrossDocSummary{}
+	// Second pass exists only to re-render cross-doc links once their targets
+	// exist remotely. Notes whose pass-1 package had no unresolved cross-doc
+	// links gain nothing from a second push, so skip them instead of paying a
+	// second provider round trip (and asset re-insertion) for the whole vault.
+	needsSecondPass := map[string]bool{}
+	fail := func(p domain.Projection, cause error) (domain.Projection, error) {
+		if p.Data == nil {
+			p.Data = map[string]any{}
+		}
+		if data, ok := p.Data.(map[string]any); ok {
+			data["partial"] = true
+			data["results"] = results
+		}
+		return p, cause
+	}
 	for pass := 1; pass <= passes; pass++ {
 		if pass == passes {
 			finalCrossDoc = domain.PublishDocCrossDocSummary{}
 		}
 		for _, note := range notes {
 			if req.DryRun {
-				pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note)
+				pkg, crossDocSummary, err := buildPublishDocPackage(root, profile, note, snapshotLoader)
 				if err != nil {
-					return errorProjection("publish.doc.push", err), err
+					return fail(errorProjection("publish.doc.push", err), err)
 				}
 				if pass == passes && crossDocSummary.Total > 0 {
 					publishDocMergeCrossDocSummary(&finalCrossDoc, crossDocSummary)
 				}
 				if cmdErr := publishDocProviderPreflight(ctx, profile, pkg, note); cmdErr != nil {
-					return domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr
+					return fail(domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr)
 				}
 				if pass == passes {
 					results = append(results, pushSummary{Pass: pass, NoteID: pkg.NoteID, NotePath: pkg.NotePath, PackageID: pkg.ID, Status: string(domain.PublishDocStatusDryRunVerified)})
 				}
 				continue
 			}
-			prepareProjection, err := s.PublishDocPrepare(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)})
+			prepareProjection, err := s.publishDocPrepareWithSnapshot(ctx, PublishRequest{VaultPath: root, Note: note.ID, Target: string(profile.Target)}, snapshotLoader)
 			if err != nil {
-				return prepareProjection, err
+				return fail(prepareProjection, err)
 			}
 			pkg, ok := publishDocProjectionPackage(prepareProjection)
 			if !ok {
 				cmdErr := &domain.CommandError{Code: "publish_package_missing", Message: "Prepared package was not returned"}
-				return domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr
+				return fail(domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr)
 			}
-			if pass == passes && pkg.CrossDocLinks != nil {
-				publishDocMergeCrossDocSummary(&finalCrossDoc, *pkg.CrossDocLinks)
+			if pkg.CrossDocLinks != nil {
+				if pass < passes && pkg.CrossDocLinks.Unpublished > 0 {
+					needsSecondPass[pkg.NoteID] = true
+				}
+				if pass == passes {
+					publishDocMergeCrossDocSummary(&finalCrossDoc, *pkg.CrossDocLinks)
+				}
+			}
+			if pass > 1 && !needsSecondPass[pkg.NoteID] {
+				continue
 			}
 			pushProjection, err := s.PublishDocPush(ctx, PublishRequest{VaultPath: root, PackageID: pkg.ID, Target: string(profile.Target), DryRun: req.DryRun})
 			if err != nil {
 				if pushProjection.Error != nil && pushProjection.Error.Code == "publish_object_type_migration_required" {
 					pushProjection.Actions = append(pushProjection.Actions, domain.Action{Name: "unlink_all", Command: fmt.Sprintf("pinax publish doc unlink --all --target %s --vault <vault> --json", shellQuote(string(profile.Target)))})
 				}
-				return pushProjection, err
+				return fail(pushProjection, err)
 			}
 			if pass == passes {
 				results = append(results, pushSummary{Pass: pass, NoteID: pkg.NoteID, NotePath: pkg.NotePath, PackageID: pkg.ID, Status: pushProjection.Facts["publish_status"], ExternalURL: pushProjection.Facts["external_url"]})
@@ -284,8 +317,65 @@ func (s *Service) PublishDocPushAll(ctx context.Context, req PublishRequest) (do
 		projection.Facts["dry_run"] = "true"
 	}
 	publishDocAddCrossDocFacts(&projection, finalCrossDoc)
+	if !req.DryRun {
+		if pruned := prunePublishDocPackages(root); pruned > 0 {
+			projection.Facts["packages_pruned"] = fmt.Sprint(pruned)
+		}
+	}
 	projection.Data = map[string]any{"results": results, "cross_doc_links": finalCrossDoc}
 	return projection, nil
+}
+
+// prunePublishDocPackages bounds the growth of the prepared-package registry:
+// every prepare/push writes a new timestamped pubdoc_*.json and nothing ever
+// removed them, so repeated vault pushes accumulated unbounded JSON files.
+// Keep the newest few packages per note (history for receipts/inspection) and
+// delete the rest.
+func prunePublishDocPackages(root string) int {
+	const keep = 3
+	dir := filepath.Join(publishDocRoot(root), "packages")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	type pkgFile struct {
+		path    string
+		modTime time.Time
+	}
+	byNote := map[string][]pkgFile{}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var pkg domain.PublishDocPackage
+		if err := json.Unmarshal(body, &pkg); err != nil || strings.TrimSpace(pkg.NoteID) == "" {
+			continue
+		}
+		byNote[pkg.NoteID] = append(byNote[pkg.NoteID], pkgFile{path: filepath.Join(dir, entry.Name()), modTime: info.ModTime()})
+	}
+	pruned := 0
+	for _, files := range byNote {
+		if len(files) <= keep {
+			continue
+		}
+		sort.Slice(files, func(i, j int) bool { return files[i].modTime.After(files[j].modTime) })
+		for _, stale := range files[keep:] {
+			if err := os.Remove(stale.path); err != nil {
+				warnPersistFailure("publish doc package prune", err)
+				continue
+			}
+			pruned++
+		}
+	}
+	return pruned
 }
 
 func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domain.Projection, error) {
@@ -307,7 +397,16 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 	// 迁移守卫优先于通用包校验：active mapping 指向 Drive file 但 profile 已切到 native-docx 时，
 	// 给出最具体、可操作的迁移错误（unlink 后重发），而不是先被 renderer_mismatch 拦截。
 	// dry-run 同样需要探测迁移阻断，所以守卫放在 dry-run 分支之前。
-	mapping, _ := readPublishDocMapping(root, pkg.NoteID, profile.Target)
+	// Only a genuinely missing mapping counts as "never published"; a corrupt
+	// or unreadable mapping MUST fail the push instead of silently creating a
+	// second remote document and orphaning the first.
+	mapping, mappingReadErr := readPublishDocMapping(root, pkg.NoteID, profile.Target)
+	if mappingReadErr != nil {
+		var cmdErr *domain.CommandError
+		if !errors.As(mappingReadErr, &cmdErr) || cmdErr.Code != "publish_mapping_not_found" {
+			return errorProjection("publish.doc.push", mappingReadErr), mappingReadErr
+		}
+	}
 	if mapping.PublishStatus == domain.PublishDocStatusDetached {
 		mapping = domain.PublishDocMapping{}
 	}
@@ -382,6 +481,14 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 	if result.ID == "" {
 		result.ID = mapping.ExternalObject.ID
 	}
+	// Guard against a provider CLI that succeeded by exit code but returned no
+	// object ID: persisting a mapping without an ID makes the NEXT push create
+	// a duplicate remote document (mirrors the folder-token guard below).
+	if result.ID == "" {
+		cmdErr := &domain.CommandError{Code: "publish_provider_result_invalid", Message: "Provider CLI did not return a document token", Hint: "Rerun the push; if it repeats, inspect the provider CLI output with pinax publish doc doctor"}
+		_ = writePublishDocReceipt(root, "publish.doc.push", pkg.NoteID, pkg.ID, profile.Target, "failed", "")
+		return domain.NewErrorProjection("publish.doc.push", cmdErr), cmdErr
+	}
 	if result.URL == "" {
 		result.URL = mapping.ExternalObject.URL
 	}
@@ -394,8 +501,9 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 		return errorProjection("publish.doc.push", err), err
 	}
 	_ = writePublishDocReceipt(root, "publish.doc.push", pkg.NoteID, pkg.ID, profile.Target, "success", result.URL)
+	var indexErr *domain.CommandError
 	if profile.IndexPage {
-		_ = publishDocRebuildIndex(ctx, root, profile)
+		indexErr = publishDocRebuildIndex(ctx, root, profile)
 	}
 	projection := publishDocProjection("publish.doc.push", pkg.NoteID, pkg.ID, profile.Target, domain.PublishDocStatusPublished, result.URL)
 	projection.Facts["external_object_type"] = mapping.ExternalObject.Type
@@ -403,6 +511,13 @@ func (s *Service) PublishDocPush(ctx context.Context, req PublishRequest) (domai
 		projection.Facts["renderer"] = string(mapping.Renderer)
 	}
 	projection.Facts["render_warnings"] = fmt.Sprint(len(mapping.RenderWarnings))
+	if indexErr != nil {
+		// The document push itself succeeded; the index rebuild failure must
+		// still be visible instead of silently leaving a stale index page.
+		projection.Facts["index_rebuild"] = "failed"
+		projection.Status = "partial"
+		fmt.Fprintf(os.Stderr, "pinax: publish doc index rebuild failed: %s\n", indexErr.Message)
+	}
 	projection.Data = map[string]any{"mapping": mapping}
 	return projection, nil
 }
@@ -742,6 +857,17 @@ func ensurePublishDocLarkFolder(ctx context.Context, root string, profile domain
 	if mapping, err := readPublishDocFolderMapping(root, profile.Target, remotePath); err == nil && mapping.FolderToken != "" {
 		return mapping.FolderToken, nil
 	}
+	// The read-check-create-write cycle below must be serialized across
+	// processes: two concurrent pushes that both miss the registry both create
+	// the remote folder and the loser's token is orphaned in Drive.
+	lock, lockErr := acquirePublishDocRegistryLockWithRetry(root)
+	if lockErr != nil {
+		return "", &domain.CommandError{Code: "publish_registry_locked", Message: "Another publish operation is updating the folder registry", Hint: "Wait for the concurrent publish to finish and retry"}
+	}
+	defer lock.Release()
+	if mapping, err := readPublishDocFolderMapping(root, profile.Target, remotePath); err == nil && mapping.FolderToken != "" {
+		return mapping.FolderToken, nil
+	}
 	parent := profile.Folder
 	parts := strings.Split(remotePath, "/")
 	for i, part := range parts {
@@ -768,9 +894,30 @@ func ensurePublishDocLarkFolder(ctx context.Context, root string, profile domain
 			parent = result.ID
 		}
 		mapping := domain.PublishDocFolderMapping{SchemaVersion: domain.PublishDocMappingSchemaVersion, Target: profile.Target, Provider: profile.Provider, RemotePath: partial, FolderToken: parent, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
-		_ = writePublishDocFolderMapping(root, mapping)
+		if err := writePublishDocFolderMapping(root, mapping); err != nil {
+			// Losing the token silently would orphan the remote folder on the
+			// next push; surface the persistence failure instead.
+			warnPersistFailure("publish doc folder mapping", err)
+		}
 	}
 	return parent, nil
+}
+
+// acquirePublishDocRegistryLockWithRetry waits briefly for a concurrent
+// registry update instead of failing the whole push outright.
+func acquirePublishDocRegistryLockWithRetry(root string) (syncdaemon.Lock, error) {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lock, err := syncdaemon.AcquirePublishDocRegistryLock(root)
+		if err == nil {
+			return lock, nil
+		}
+		var cmdErr *domain.CommandError
+		if !errors.As(err, &cmdErr) || cmdErr.Code != "lock_held" || time.Now().After(deadline) {
+			return syncdaemon.Lock{}, err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func findPublishDocLarkFolder(ctx context.Context, profile domain.PublishDocProfile, parentToken, name string) string {
@@ -779,7 +926,7 @@ func findPublishDocLarkFolder(ctx context.Context, profile domain.PublishDocProf
 		return ""
 	}
 	var payload map[string]any
-	if err := json.Unmarshal(extractPublishDocJSON(out), &payload); err != nil {
+	if err := json.Unmarshal(provider.ExtractJSON(out), &payload); err != nil {
 		return ""
 	}
 	data, _ := payload["data"].(map[string]any)
@@ -888,7 +1035,11 @@ func publishDocRebuildIndex(ctx context.Context, root string, profile domain.Pub
 		indexType := publishDocExternalObjectType(profile, result)
 		profile.IndexObject = &domain.PublishDocExternalObject{Provider: profile.Provider, Target: string(profile.Target), Type: indexType, ID: result.ID, URL: result.URL}
 	}
-	_ = writePublishDocProfile(root, profile)
+	if err := writePublishDocProfile(root, profile); err != nil {
+		// Losing the locally stored index token makes the NEXT push create a
+		// duplicate index page remotely; the caller must surface this.
+		return &domain.CommandError{Code: "publish_index_failed", Message: "Index page was published but its token could not be stored locally", Hint: "Retry the push; if it repeats, inspect .pinax/publish/doc write permissions"}
+	}
 	return nil
 }
 
@@ -1197,11 +1348,7 @@ func publishDocLarkIdentityReady(body []byte, identity string) bool {
 }
 
 func publishDocLarkArgs(profile domain.PublishDocProfile, args ...string) []string {
-	out := append([]string{}, args...)
-	if profile.As != "" && profile.As != "auto" {
-		out = append(out, "--as", profile.As)
-	}
-	return out
+	return provider.AppendAs(append([]string{}, args...), profile.As)
 }
 
 func publishDocProviderPreflight(ctx context.Context, profile domain.PublishDocProfile, pkg domain.PublishDocPackage, note domain.Note) *domain.CommandError {
@@ -1301,39 +1448,14 @@ func runPublishDocCLIDir(ctx context.Context, dir, name string, args []string, s
 
 func parsePublishDocProviderResult(body []byte, target domain.PublishDocTarget) publishDocProviderResult {
 	var payload map[string]any
-	_ = json.Unmarshal(extractPublishDocJSON(body), &payload)
-	id := firstString(payload, "id", "file_token", "folder_token", "token", "obj_token")
-	url := firstString(payload, "url", "external_url")
-	objType := firstString(payload, "type", "object_type")
+	_ = json.Unmarshal(provider.ExtractJSON(body), &payload)
+	id := provider.FirstString(payload, "id", "file_token", "folder_token", "token", "obj_token")
+	url := provider.FirstString(payload, "url", "external_url")
+	objType := provider.FirstString(payload, "type", "object_type")
 	if url == "" && id != "" && target == domain.PublishDocTargetLarkDoc {
 		url = "https://www.feishu.cn/drive/file/" + id
 	}
 	return publishDocProviderResult{ID: id, URL: url, ObjectType: objType}
-}
-
-func extractPublishDocJSON(body []byte) []byte {
-	trimmed := bytes.TrimSpace(body)
-	if len(trimmed) == 0 || trimmed[0] == '{' {
-		return trimmed
-	}
-	if i := bytes.IndexByte(trimmed, '{'); i >= 0 {
-		return trimmed[i:]
-	}
-	return trimmed
-}
-
-func firstString(payload map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value, ok := payload[key].(string); ok && value != "" {
-			return value
-		}
-		if data, ok := payload["data"].(map[string]any); ok {
-			if value, ok := data[key].(string); ok && value != "" {
-				return value
-			}
-		}
-	}
-	return ""
 }
 
 func publishDocProviderErrorCode(stderr string) string {

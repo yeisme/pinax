@@ -137,7 +137,7 @@ func (s *Service) SyncManifestPlan(ctx context.Context, req SyncManifestMigratio
 	}
 	remoteIdentities := map[string]pinaxcloud.ManifestIdentity{}
 	if cloudState, loadErr := pinaxcloud.Load(root); loadErr == nil {
-		if snapshot, snapshotErr := loadCloudRemoteSnapshot(ctx, cloudState); snapshotErr == nil && snapshot.Manifest.SchemaVersion == pinaxcloud.ManifestSchemaVersionV2 {
+		if snapshot, snapshotErr := loadCloudRemoteSnapshot(ctx, root, cloudState); snapshotErr == nil && snapshot.Manifest.SchemaVersion == pinaxcloud.ManifestSchemaVersionV2 {
 			for _, entry := range snapshot.Manifest.Entries {
 				if identity.Classify(entry.ObjectID) == identity.IDClassCanonical {
 					remoteIdentities[entry.Path] = pinaxcloud.ManifestIdentity{ObjectID: entry.ObjectID, ObjectKind: entry.ObjectKind}

@@ -118,7 +118,7 @@ func (s *Service) CollectionImport(ctx context.Context, req CollectionRequest) (
 	if err != nil {
 		return errorProjection("collection.import", err), err
 	}
-	_ = appendEvent(root, "collection.import", "success", map[string]string{"bundle_id": plan.Bundle.ID, "imported_notes": fmt.Sprint(importedNotes), "imported_prompts": fmt.Sprint(importedPrompts), "receipt_path": receiptRel})
+	appendEventWarned(root, "collection.import", "success", map[string]string{"bundle_id": plan.Bundle.ID, "imported_notes": fmt.Sprint(importedNotes), "imported_prompts": fmt.Sprint(importedPrompts), "receipt_path": receiptRel})
 	projection.Summary = "Collection imported."
 	projection.Facts["imported_notes"] = fmt.Sprint(importedNotes)
 	projection.Facts["imported_prompts"] = fmt.Sprint(importedPrompts)

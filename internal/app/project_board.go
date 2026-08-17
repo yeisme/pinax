@@ -209,7 +209,7 @@ func (s *Service) ProjectBoardViewSave(_ context.Context, req ProjectBoardReques
 	if err := writeJSONAsset(filepath.Join(root, filepath.FromSlash(rel)), view); err != nil {
 		return errorProjection("project.board.view.save", err), err
 	}
-	_ = appendEvent(root, "project.board.view.save", "success", map[string]string{"project": project.Slug, "subproject": subproject, "view": viewName, "saved_path": rel})
+	appendEventWarned(root, "project.board.view.save", "success", map[string]string{"project": project.Slug, "subproject": subproject, "view": viewName, "saved_path": rel})
 	projection := domain.NewProjection("project.board.view.save", "Project board view saved.")
 	projection.Facts["project"] = project.Slug
 	projection.Facts["view"] = viewName
@@ -262,7 +262,7 @@ func (s *Service) ProjectBoardConfigure(_ context.Context, req ProjectBoardReque
 	if err := os.WriteFile(path, append(payload, '\n'), 0o644); err != nil {
 		return errorProjection("project.board.configure", err), err
 	}
-	_ = appendEvent(root, "project.board.configure", "success", map[string]string{"project": project.Slug, "subproject": subproject, "saved_path": rel})
+	appendEventWarned(root, "project.board.configure", "success", map[string]string{"project": project.Slug, "subproject": subproject, "saved_path": rel})
 	projection := domain.NewProjection("project.board.configure", "Project board configuration saved.")
 	projection.Facts["project"] = project.Slug
 	if subproject != "" {
@@ -309,7 +309,7 @@ func (s *Service) ProjectBoardPlan(ctx context.Context, req ProjectBoardRequest)
 	if err := os.WriteFile(path, append(payload, '\n'), 0o644); err != nil {
 		return errorProjection("project.board.plan", err), err
 	}
-	_ = appendEvent(root, "project.board.plan", "success", map[string]string{"project": req.Project, "snapshot_id": snapshotID, "saved_path": rel})
+	appendEventWarned(root, "project.board.plan", "success", map[string]string{"project": req.Project, "snapshot_id": snapshotID, "saved_path": rel})
 	boardProjection.Facts["writes"] = "true"
 	boardProjection.Facts["snapshot_id"] = snapshotID
 	boardProjection.Facts["saved_path"] = rel
@@ -431,7 +431,7 @@ func (s *Service) ProjectItemAdd(_ context.Context, req ProjectItemRequest) (dom
 	}
 	note := parseNote(rel, content)
 	_ = refreshIndex(root)
-	_ = appendEvent(root, "project.item.add", "success", map[string]string{"project": project.Slug, "subproject": req.Subproject, "path": rel, "column": column})
+	appendEventWarned(root, "project.item.add", "success", map[string]string{"project": project.Slug, "subproject": req.Subproject, "path": rel, "column": column})
 	projection := projectItemProjection("project.item.add", "Project item created.", note, column)
 	projection.Evidence = []string{rel, filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	return projection, nil
@@ -607,7 +607,7 @@ func (s *Service) TaskAdopt(_ context.Context, req TaskAdoptRequest) (domain.Pro
 	if err := writeJSONAsset(filepath.Join(root, filepath.FromSlash(ledgerRel)), adoption); err != nil {
 		return errorProjection("task.adopt", err), err
 	}
-	_ = appendEvent(root, "task.adopt", "success", map[string]string{"item_id": item.ItemID, "project": item.Project, "source_path": item.Path})
+	appendEventWarned(root, "task.adopt", "success", map[string]string{"item_id": item.ItemID, "project": item.Project, "source_path": item.Path})
 	projection.Summary = "Task adopted."
 	projection.Facts["writes"] = "true"
 	projection.Facts["adopted"] = "1"
@@ -1028,7 +1028,7 @@ func patchProjectItemNote(_ context.Context, _ *Service, root string, note domai
 		return err
 	}
 	_ = refreshIndex(root)
-	_ = appendEvent(root, eventType, "success", map[string]string{"path": note.Path, "column": column})
+	appendEventWarned(root, eventType, "success", map[string]string{"path": note.Path, "column": column})
 	return nil
 }
 

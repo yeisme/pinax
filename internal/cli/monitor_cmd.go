@@ -55,3 +55,13 @@ func addMonitorCommands(root *cobra.Command, ctx commandBuildContext) {
 	monitorCmd.AddCommand(runsCmd, showCmd, tailCmd, summaryCmd, manageCmd)
 	root.AddCommand(monitorCmd)
 }
+
+func init() {
+	monitorFlagSpecs := []remoteParamSpec{
+		s("command", "command"), s("query", "query"), s("status", "status"),
+		s("since", "since"), s("until", "until"), i("limit", "limit"),
+	}
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "monitor runs", Method: "Pinax.Monitor.List", Flags: monitorFlagSpecs})
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "monitor show", Method: "Pinax.Monitor.Show", ArgParams: []string{"run_id"}})
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "monitor summary", Method: "Pinax.Monitor.Summary", Flags: monitorFlagSpecs})
+}

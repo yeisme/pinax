@@ -10,6 +10,7 @@ import (
 )
 
 func TestIndexEventAssignsSequenceEpochAndTimestamp(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 6, 7, 9, 0, 0, 0, time.UTC)
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{QueueSize: 2, Epoch: 7, Now: func() time.Time { return now }})
 
@@ -24,6 +25,7 @@ func TestIndexEventAssignsSequenceEpochAndTimestamp(t *testing.T) {
 }
 
 func TestIndexCoordinatorCoalescesDuplicateEvents(t *testing.T) {
+	t.Parallel()
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{QueueSize: 8, Epoch: 3})
 	for _, hash := range []string{"old", "new"} {
 		if _, err := coordinator.Emit(context.Background(), IndexEvent{Kind: IndexEventNoteChanged, Path: "notes/a.md", ContentHash: hash}); err != nil {
@@ -49,6 +51,7 @@ func TestIndexCoordinatorCoalescesDuplicateEvents(t *testing.T) {
 }
 
 func TestIndexCoordinatorBoundedQueueHonorsContext(t *testing.T) {
+	t.Parallel()
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{QueueSize: 1})
 	if _, err := coordinator.Emit(context.Background(), IndexEvent{Kind: IndexEventNoteChanged, Path: "notes/a.md"}); err != nil {
 		t.Fatalf("first emit: %v", err)
@@ -66,6 +69,7 @@ func TestIndexCoordinatorBoundedQueueHonorsContext(t *testing.T) {
 }
 
 func TestIndexCoordinatorContextCancellationStopsProcessing(t *testing.T) {
+	t.Parallel()
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{QueueSize: 2})
 	if _, err := coordinator.Emit(context.Background(), IndexEvent{Kind: IndexEventRebuildRequested}); err != nil {
 		t.Fatalf("emit: %v", err)
@@ -78,6 +82,7 @@ func TestIndexCoordinatorContextCancellationStopsProcessing(t *testing.T) {
 }
 
 func TestDiscardStaleResult(t *testing.T) {
+	t.Parallel()
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{Epoch: 1})
 	coordinator.BeginEpoch()
 	called := false
@@ -94,6 +99,7 @@ func TestDiscardStaleResult(t *testing.T) {
 }
 
 func TestSingleWriter(t *testing.T) {
+	t.Parallel()
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{Epoch: 4})
 	var active int64
 	var maxActive int64
@@ -131,6 +137,7 @@ func TestSingleWriter(t *testing.T) {
 }
 
 func TestConcurrentIncremental(t *testing.T) {
+	t.Parallel()
 	coordinator := NewIndexCoordinator(IndexCoordinatorOptions{Epoch: 9})
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {

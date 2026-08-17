@@ -8,6 +8,7 @@ import (
 )
 
 func TestBriefingCandidate(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/briefing_candidate/scripts",
 		Setup: func(env *testscript.Env) error {

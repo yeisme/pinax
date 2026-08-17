@@ -18,7 +18,7 @@ Pinax 的 `internal/memory` 已支持 fact/decision/event/task、source citation
 
 **Non-Goals:**
 
-- 不实现完整 Codex plugin、Cohors runtime integration 或 Hermes provider bridge。
+- 不实现完整 Codex plugin、Cohors runtime integration 或通信 provider bridge。
 - 不建设公网 memory backend、组织 ACL 和团队 SaaS。
 - 不把向量数据库设为 memory truth。
 - 不同步明文 memory body 到 Capsa。

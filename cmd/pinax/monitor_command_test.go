@@ -8,6 +8,7 @@ import (
 )
 
 func TestMonitorCommandOutputContracts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alpha\ntitle: Alpha\nkind: reference\n---\n\nAlpha body secret-token raw prompt system prompt\n")
@@ -57,6 +58,7 @@ func TestMonitorCommandOutputContracts(t *testing.T) {
 }
 
 func TestMonitorCommandPartialWarningsOutput(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCLIFixture(t, filepath.Join(root, ".pinax", "monitor", "runs", "bad.json"), "{\n")
 
@@ -83,6 +85,7 @@ func TestMonitorCommandPartialWarningsOutput(t *testing.T) {
 }
 
 func TestMonitorAndActivityShowCompletionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_alpha\ntitle: Alpha\nkind: reference\n---\n\nAlpha body secret-token raw prompt system prompt\n")

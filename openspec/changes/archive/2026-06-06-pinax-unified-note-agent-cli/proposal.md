@@ -18,11 +18,10 @@
 ## Non-Goals
 
 - 不实现 vault、sync、provider、briefing、MCP 或 Feishu 业务能力。
-- 不接入真实 Notion、飞书、Hermes、internet-access 或外部网络凭据。
+- 不接入真实 Notion、飞书、legacy connector runtime、internet-access 或外部网络凭据。
 - 不创建 `.pinax/` 运行数据或机器可读 vault metadata。
 
 ## Impact
 
 - 子项目影响：`cli/pinax`。
 - 根仓库影响：`.gitmodules`、submodule gitlink、`.skills/profiles/targets/cli/pinax.txt` 和生成的 runtime skills 副本。
-

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +12,7 @@ import (
 )
 
 func TestSyncSubcommandsDefaultToCapsaCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -39,6 +39,7 @@ func TestSyncSubcommandsDefaultToCapsaCLI(t *testing.T) {
 }
 
 func TestBackendProviderCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -202,6 +203,7 @@ func TestBackendProviderCLI(t *testing.T) {
 }
 
 func TestBackendDoctorIssueOutputCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, ".pinax", "backends.json"), `{"schema_version":"pinax.backends.v1","default_backend":"broken-s3","backends":[{"name":"broken-s3","kind":"s3","bucket":"notes","capabilities":["doctor"]}]}`)
@@ -220,100 +222,8 @@ func TestBackendDoctorIssueOutputCLI(t *testing.T) {
 	}
 }
 
-func TestPlanDailyTaskBridgeWritesMarkdownBlockThroughCLI(t *testing.T) {
-	t.Setenv("PINAX_TEST_NOW", "2026-06-21T15:30:00Z")
-	installFakeTaskBridgeCLI(t)
-	root := t.TempDir()
-	runCLI(t, "init", root, "--title", "Vault", "--json")
-
-	dryOut, dryErr, err := runCLISeparate("plan", "daily", "--taskbridge", "--dry-run", "--vault", root, "--json")
-	if err != nil || dryErr != "" {
-		t.Fatalf("plan daily taskbridge dry-run err=%v stderr=%q stdout=%s", err, dryErr, dryOut)
-	}
-	var dryEnvelope map[string]any
-	if err := json.Unmarshal([]byte(dryOut), &dryEnvelope); err != nil {
-		t.Fatalf("dry-run json invalid: %v\n%s", err, dryOut)
-	}
-	dryFacts := dryEnvelope["facts"].(map[string]any)
-	if dryFacts["source"] != "taskbridge" || dryFacts["captured_at"] != "2026-06-21T15:30:00Z" || dryFacts["target_note"] != "daily/2026-06-21.md" {
-		t.Fatalf("dry-run facts = %#v", dryFacts)
-	}
-	dailySummary := runCLI(t, "plan", "daily", "--taskbridge", "--dry-run", "--vault", root)
-	for _, want := range []string{"Planning selected tasks", "Task ID", "Title", "Section", "task_cli_1", "CLI task", "task_cli_2", "CLI deferred task"} {
-		if !strings.Contains(dailySummary, want) {
-			t.Fatalf("plan daily taskbridge summary missing %q:\n%s", want, dailySummary)
-		}
-	}
-	dailyAgent := runCLI(t, "plan", "daily", "--taskbridge", "--dry-run", "--vault", root, "--agent")
-	for _, want := range []string{"plan_task.1.task_id=task_cli_1", `plan_task.1.title="CLI task"`, "plan_task.1.section_id=must_do", "plan_task.2.task_id=task_cli_2", `plan_task.2.title="CLI deferred task"`, "plan_task.2.section_id=at_risk"} {
-		if !strings.Contains(dailyAgent, want) {
-			t.Fatalf("plan daily taskbridge agent output missing %q:\n%s", want, dailyAgent)
-		}
-	}
-	if _, statErr := os.Stat(filepath.Join(root, "daily", "2026-06-21.md")); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("dry-run should not create daily note, stat=%v", statErr)
-	}
-
-	applyOut := runCLI(t, "plan", "daily", "--taskbridge", "--save", "--yes", "--vault", root, "--json")
-	var applyEnvelope map[string]any
-	if err := json.Unmarshal([]byte(applyOut), &applyEnvelope); err != nil {
-		t.Fatalf("apply json invalid: %v\n%s", err, applyOut)
-	}
-	applyFacts := applyEnvelope["facts"].(map[string]any)
-	if applyFacts["managed_block"] != "planning-daily" || applyFacts["saved_path"] == "" {
-		t.Fatalf("apply facts = %#v", applyFacts)
-	}
-	daily := readCLIFile(t, filepath.Join(root, "daily", "2026-06-21.md"))
-	for _, want := range []string{"<!-- pinax:managed name=planning-daily -->", "Captured at: 2026-06-21T15:30:00Z", "CLI task", "task_cli_1"} {
-		if !strings.Contains(daily, want) {
-			t.Fatalf("daily note missing %q:\n%s", want, daily)
-		}
-	}
-
-	actionsOut := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--save", "--vault", root, "--json")
-	var actionsEnvelope map[string]any
-	if err := json.Unmarshal([]byte(actionsOut), &actionsEnvelope); err != nil {
-		t.Fatalf("taskbridge actions json invalid: %v\n%s", err, actionsOut)
-	}
-	actionsFacts := actionsEnvelope["facts"].(map[string]any)
-	if actionsFacts["source"] != "taskbridge" || actionsFacts["tasks"] != "1" || actionsFacts["saved_path"] == "" {
-		t.Fatalf("taskbridge actions facts = %#v", actionsFacts)
-	}
-	actionsSummary := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--vault", root)
-	for _, want := range []string{"Action draft tasks", "Task ID", "Kind", "Reason", "task_cli_2", "defer", "selected 2 TaskBridge commitments"} {
-		if !strings.Contains(actionsSummary, want) {
-			t.Fatalf("plan actions taskbridge summary missing %q:\n%s", want, actionsSummary)
-		}
-	}
-	actionsAgent := runCLI(t, "plan", "actions", "--from", "daily", "--taskbridge", "--vault", root, "--agent")
-	for _, want := range []string{"action_task.1.task_id=task_cli_2", "action_task.1.kind=defer", `action_task.1.reason="selected 2 TaskBridge commitments for today's plan"`, "action_task.1.requires_confirmation=true"} {
-		if !strings.Contains(actionsAgent, want) {
-			t.Fatalf("plan actions taskbridge agent output missing %q:\n%s", want, actionsAgent)
-		}
-	}
-	draft := readCLIFile(t, filepath.Join(root, actionsFacts["saved_path"].(string)))
-	if !strings.Contains(draft, `"task_id": "task_cli_2"`) || strings.Contains(draft, "--confirm") {
-		t.Fatalf("taskbridge action draft invalid:\n%s", draft)
-	}
-}
-
-func installFakeTaskBridgeCLI(t *testing.T) {
-	t.Helper()
-	binDir := t.TempDir()
-	path := filepath.Join(binDir, "taskbridge")
-	script := `#!/bin/sh
-if [ "$1 $2" != "agent today" ]; then echo unexpected args: "$@" >&2; exit 2; fi
-cat <<'JSON'
-{"schema":"taskbridge.agent-result.v1","status":"ok","request_id":"req_cli","dry_run":false,"requires_confirmation":false,"result":{"schema":"taskbridge.today.v1","date":"2026-06-21","status":"ok","summary":{"must_do":1,"at_risk":1,"inbox":0,"overdue":0,"project_next":0,"sync_warnings":0},"sections":[{"id":"must_do","title":"Must do today","tasks":[{"id":"task_cli_1","title":"CLI task","status":"todo","source":"local","priority":"high","reason":"Due today"}]},{"id":"at_risk","title":"At risk","tasks":[{"id":"task_cli_2","title":"CLI deferred task","status":"todo","source":"local","priority":"low","reason":"Too large"}]}],"suggested_actions":[{"id":"act_cli_1","type":"defer_task","task_id":"task_cli_2","reason":"Too large for today","requires_confirmation":true}],"warnings":[]},"warnings":[],"errors":[]}
-JSON
-`
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake taskbridge: %v", err)
-	}
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
 func TestFeishuDeliveryCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "briefing", "deliver", "feishu", "--webhook", "https://open.feishu.cn/open-apis/bot/v2/hook/raw-token", "--secret-ref", "env://FEISHU_WEBHOOK", "--title", "Daily briefing", "--text", "AI tooling update", "--dry-run", "--vault", root, "--json")
@@ -327,6 +237,7 @@ func TestFeishuDeliveryCLI(t *testing.T) {
 }
 
 func TestBriefingRecipeCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	initOut := runCLI(t, "briefing", "recipe", "init", "--vault", root, "--json")
@@ -345,6 +256,7 @@ func TestBriefingRecipeCLI(t *testing.T) {
 }
 
 func TestCloudOutputContractModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nsecret-token body\n")
@@ -372,6 +284,7 @@ func TestCloudOutputContractModes(t *testing.T) {
 }
 
 func TestSyncRunReceiptsLogsStatusAndRedactionCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectRoot := t.TempDir()
 	rawPath := "notes/raw-secret-path.md"
@@ -461,6 +374,7 @@ func TestSyncRunReceiptsLogsStatusAndRedactionCLI(t *testing.T) {
 }
 
 func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nbody\n")
@@ -511,6 +425,7 @@ func TestSyncRunReceiptsCoverPartialFailedApprovalAndPruneCLI(t *testing.T) {
 }
 
 func TestSyncRunPathRedactionPoliciesCLI(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		policy      string
 		wantPath    bool
@@ -595,6 +510,10 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 			writeServerJSON(w, http.StatusOK, map[string]any{"blob_id": req.BlobID, "object_key": "vaults/ws_123/" + req.BlobID, "method": "PUT", "url": "https://objects.example.local/" + req.BlobID})
 		case r.Method == http.MethodPut && strings.Contains(workspacePath, "/blobs/"):
 			writeServerJSON(w, http.StatusCreated, map[string]any{"status": "stored"})
+		case r.Method == http.MethodGet && strings.Contains(workspacePath, "/blobs/"):
+			// Durable-commit read-back (GetManifest routes through blob GET) only
+			// needs a decodable blob envelope to consider the manifest observable.
+			writeServerJSON(w, http.StatusOK, map[string]any{"schema_version": "pinax.cloud.blob.v1", "alg": "AES-256-GCM", "ciphertext": "cmVhZC1iYWNr", "plain_sha256": "read-back"})
 		case r.Method == http.MethodPost && strings.HasSuffix(workspacePath, "/revisions"):
 			if got := r.Header.Get("Idempotency-Key"); got == "" {
 				t.Fatalf("server transport missing idempotency key")
@@ -686,6 +605,7 @@ func TestSyncCloudPlannerCLI(t *testing.T) {
 }
 
 func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	targetCompletion := runCLI(t, "__complete", "sync", "pull", "--target", "")
@@ -705,6 +625,7 @@ func TestSyncTargetCompletionAndInitUsesExistingCloudConfigCLI(t *testing.T) {
 }
 
 func TestCloudStateCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	missing, err := runCLIExpectError("capsa", "status", "--vault", root, "--json")
@@ -733,6 +654,7 @@ func TestCloudStateCLI(t *testing.T) {
 }
 
 func TestCapsaStateCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	missing, err := runCLIExpectError("capsa", "status", "--vault", root, "--json")
@@ -770,6 +692,7 @@ func TestCapsaStateCLI(t *testing.T) {
 }
 
 func TestCloudBackendSetS3CLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
@@ -813,6 +736,7 @@ func TestCloudBackendSetS3CLI(t *testing.T) {
 }
 
 func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "pinax-note-1322128555", "--region", "ap-guangzhou", "--prefix", "pinax-sync/", "--endpoint", "https://cos.ap-guangzhou.myqcloud.com", "--profile", "tencent-cos-pinax", "--workspace", "yeisme-notes", "--device", "windows-pc", "--vault", root, "--json")
@@ -832,6 +756,7 @@ func TestCloudBackendSetS3TencentCOSUsesVirtualHostedStyle(t *testing.T) {
 }
 
 func TestCloudBackendSetS3ExplicitVirtualHostedStyleCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "s3", "--bucket", "notes", "--region", "us-east-1", "--prefix", "pinax-sync/", "--endpoint", "http://10.10.1.102:9010", "--profile", "work", "--addressing-style", "virtual-hosted", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
@@ -846,6 +771,7 @@ func TestCloudBackendSetS3ExplicitVirtualHostedStyleCLI(t *testing.T) {
 }
 
 func TestCloudBackendSetRcloneCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	out := runCLI(t, "capsa", "backend", "set", "rclone", "--remote", "onedrive:PinaxSync", "--workspace", "personal", "--device", "laptop", "--vault", root, "--json")
@@ -909,6 +835,7 @@ func TestDirectCloudPushPullCLI(t *testing.T) {
 }
 
 func TestSyncConflictsCommandsUseProjectionOutputModesAndReceiptsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	mainRel := filepath.ToSlash(filepath.Join("notes", "alpha.md"))
@@ -1009,6 +936,7 @@ func TestSyncConflictNextActionsAppearInSyncJSONAndAgentOutputsCLI(t *testing.T)
 }
 
 func TestSyncConflictsCobraLayerDoesNotResolveFilesDirectlyCLI(t *testing.T) {
+	t.Parallel()
 	source := readCLIFile(t, filepath.Join("..", "..", "internal", "cli", "sync_conflicts_cmd.go"))
 	for _, forbidden := range []string{"os.Rename", "os.Remove", "fmt.Println", "fmt.Printf"} {
 		if strings.Contains(source, forbidden) {
@@ -1018,6 +946,7 @@ func TestSyncConflictsCobraLayerDoesNotResolveFilesDirectlyCLI(t *testing.T) {
 }
 
 func TestBackendLegacyStorageProjection(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	// Use primary storage set s3 command
@@ -1035,6 +964,7 @@ func TestBackendLegacyStorageProjection(t *testing.T) {
 }
 
 func TestPlanningWorkflowsCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -1143,6 +1073,7 @@ func TestPlanningWorkflowsCLI(t *testing.T) {
 }
 
 func TestBackendObjectListAndStatCommandsReadLocalBlobStore(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	backendRoot := filepath.Join(root, "backend-store")
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -1174,6 +1105,7 @@ func TestBackendObjectListAndStatCommandsReadLocalBlobStore(t *testing.T) {
 }
 
 func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	backendRoot := filepath.Join(root, "backend-store")
 	runCLI(t, "init", root, "--title", "Vault", "--json")
@@ -1269,6 +1201,7 @@ func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
 }
 
 func TestSyncLogsTailFollowFlagAndJSONGuardCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	help := runCLI(t, "sync", "logs", "tail", "--help")
@@ -1282,6 +1215,7 @@ func TestSyncLogsTailFollowFlagAndJSONGuardCLI(t *testing.T) {
 }
 
 func TestSyncLogsTailShowsSyncedFilesInAllMachineSurfacesCLI(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	objectRoot := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

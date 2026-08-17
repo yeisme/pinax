@@ -8,6 +8,7 @@ import (
 )
 
 func TestSyncOfflineAndRedaction(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/sync/scripts", func(env *testscript.Env) error {
 		env.Vars = append(env.Vars, "XDG_CONFIG_HOME="+filepath.Join(env.WorkDir, "xdg"))
 		return nil

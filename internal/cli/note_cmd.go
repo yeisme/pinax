@@ -420,3 +420,33 @@ func confirmNoteDelete(cmd *cobra.Command, noteRef string, hard bool) (bool, err
 	answer := strings.TrimSpace(scanner.Text())
 	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes") || answer == "\u662f", nil
 }
+
+func init() {
+	registerRemoteCommand(remoteCommandSpec{
+		CommandPath: "note list",
+		Method:      "Pinax.Note.List",
+		Flags: []remoteParamSpec{
+			csv("tags", "tag"), s("project", "project"),
+			{Key: "group", Flag: "group", FallbackFlag: "project"},
+			s("folder", "folder"), s("kind", "kind"), s("status", "status"),
+			s("created_after", "created-after"), s("updated_before", "updated-before"),
+			b("recent", "recent"), i("limit", "limit"), s("sort", "sort"),
+			s("path_prefix", "path-prefix"), sa("properties", "property"),
+			b("strict_properties", "strict-properties"),
+		},
+	})
+	noteReadSpec := remoteCommandSpec{
+		Method:    "Pinax.Note.Read",
+		ArgParams: []string{"ref"},
+		Flags:     []remoteParamSpec{s("display", "display")},
+	}
+	noteReadSpec.CommandPath = "note show"
+	registerRemoteCommand(noteReadSpec)
+	noteReadSpec.CommandPath = "note read"
+	registerRemoteCommand(noteReadSpec)
+	// note preview never defined --display; the old switch silently read a
+	// missing flag there. Keep its RPC params to ref only.
+	noteReadSpec.Flags = nil
+	noteReadSpec.CommandPath = "note preview"
+	registerRemoteCommand(noteReadSpec)
+}

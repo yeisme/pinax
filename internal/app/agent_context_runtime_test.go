@@ -9,6 +9,7 @@ import (
 )
 
 func TestAgentContextRuntime_BoundedContext(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_ctx_rt"}
@@ -62,6 +63,7 @@ func TestAgentContextRuntime_BoundedContext(t *testing.T) {
 }
 
 func TestAgentContextRuntime_LegacyMerge(t *testing.T) {
+	t.Parallel()
 	svc, vault := testAgentMemoryService(t)
 	ctx := context.Background()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "ws_legacy"}

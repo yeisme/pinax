@@ -8,6 +8,7 @@ import (
 )
 
 func TestJournalIndexTemplateStarterTemplatesIndexPageRefreshTemplateRecommendTemplateCompletionTemplateNextAction(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/journal_index_template/scripts",
 		Setup: func(env *testscript.Env) error {

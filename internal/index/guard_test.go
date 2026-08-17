@@ -19,6 +19,7 @@ import (
 // 检测的直接 GORM 链针对常见 *gorm.DB 变量名 db/tx 调用查询构造方法，
 // 例如 db.Find( / tx.Where( / db.Create(；gen DAO 的 q.X.WithContext(ctx).Find( 不会命中。
 func TestNoDirectGormBusinessQueries(t *testing.T) {
+	t.Parallel()
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("get cwd: %v", err)
@@ -122,6 +123,7 @@ func stripComments(src string) string {
 
 // TestGuardRegexDetectsViolations 证明守卫正则能命中违规且放过合法 gen DAO 调用。
 func TestGuardRegexDetectsViolations(t *testing.T) {
+	t.Parallel()
 	reGormChain := regexp.MustCompile(`\b(db|tx)\.(Raw|Exec|Where|Find|First|Take|Last|Create|Save|Delete|Order|Model|Count|Updates?|UpdateColumns?|Pluck|Scan|Group|Having|Join|Distinct|Select|Limit|Offset|Row|Rows)\s*\(`)
 	reSQLVerb := regexp.MustCompile(`"(?i:\s*(SELECT|INSERT\s+INTO|UPDATE\s+\w|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE|PRAGMA)\b)`)
 	reDatabaseSQL := regexp.MustCompile(`"database/sql"`)

@@ -8,6 +8,7 @@ import (
 )
 
 func TestSyncDaemonCommandHelp(t *testing.T) {
+	t.Parallel()
 	out := runCLI(t, "sync", "daemon", "--help")
 	for _, want := range []string{"run", "start", "status", "stop", "logs"} {
 		if !strings.Contains(out, want) {
@@ -23,6 +24,7 @@ func TestSyncDaemonCommandHelp(t *testing.T) {
 }
 
 func TestSyncDaemonOutputContract(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
@@ -49,6 +51,7 @@ func TestSyncDaemonOutputContract(t *testing.T) {
 }
 
 func TestSyncDaemonRequiresApprovalForWrites(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	for _, args := range [][]string{{"sync", "daemon", "run", "--once", "--target", "cloud", "--vault", root, "--json"}, {"sync", "daemon", "start", "--target", "cloud", "--vault", root, "--json"}} {
@@ -61,6 +64,7 @@ func TestSyncDaemonRequiresApprovalForWrites(t *testing.T) {
 }
 
 func TestSyncDaemonRunLiveOutputModes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	store := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")

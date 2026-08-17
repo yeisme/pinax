@@ -12,6 +12,7 @@ import (
 )
 
 func TestDaemonServiceSlug(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		vault string
 		want  string
@@ -30,6 +31,7 @@ func TestDaemonServiceSlug(t *testing.T) {
 }
 
 func TestSystemdUnitContentHasRequiredDirectives(t *testing.T) {
+	t.Parallel()
 	binary := "/usr/local/bin/pinax"
 	vault := "/home/user/my-notes"
 	content := systemdUnitContent(binary, vault, "my-notes")
@@ -62,6 +64,7 @@ func TestSystemdUnitContentHasRequiredDirectives(t *testing.T) {
 }
 
 func TestLaunchdPlistIsValidXML(t *testing.T) {
+	t.Parallel()
 	binary := "/usr/local/bin/pinax"
 	vault := "/Users/user/my-notes"
 	content := launchdPlistContent(binary, vault, "my-notes")
@@ -86,6 +89,7 @@ func TestLaunchdPlistIsValidXML(t *testing.T) {
 }
 
 func TestInstallDaemonUnitLinuxWritesUnitAndReturnsEnableCommand(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	binary := "/usr/local/bin/pinax"
 	vault := t.TempDir()
@@ -111,6 +115,7 @@ func TestInstallDaemonUnitLinuxWritesUnitAndReturnsEnableCommand(t *testing.T) {
 }
 
 func TestInstallDaemonUnitDarwinWritesPlist(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	binary := "/usr/local/bin/pinax"
 	vault := t.TempDir()
@@ -136,6 +141,7 @@ func TestInstallDaemonUnitDarwinWritesPlist(t *testing.T) {
 }
 
 func TestInstallDaemonUnitWindowsUnsupported(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	_, _, err := installDaemonUnit("windows", home, "/pinax", "/vault", "my-notes")
 	if err == nil {
@@ -148,6 +154,7 @@ func TestInstallDaemonUnitWindowsUnsupported(t *testing.T) {
 }
 
 func TestUninstallDaemonUnitRemovesFile(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	binary := "/usr/local/bin/pinax"
 	vault := t.TempDir()
@@ -177,6 +184,7 @@ func TestUninstallDaemonUnitRemovesFile(t *testing.T) {
 }
 
 func TestUninstallDaemonUnitMissingFileReportsNotRemoved(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	_, removed, err := uninstallDaemonUnit("linux", home, "never-installed")
 	if err != nil {

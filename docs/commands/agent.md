@@ -40,10 +40,44 @@ pinax agent memory approve <proposal-id> --vault ./my-notes --yes --json
 
 # Create a cross-agent handoff
 pinax agent handoff create --vault ./my-notes \
-  --objective "Review GORM Gen migration slice" --json
+  --scope project:pinax \
+  --objective "Review GORM Gen migration slice" \
+  --current-state "Implementation is ready for review" \
+  --decisions "Use GORM Gen for typed DAO" \
+  --completed-work "Added repository contract tests" \
+  --blockers "Migration smoke is still pending" \
+  --verification "go test ./internal/index" \
+  --follow-ups "Run the migration smoke" \
+  --sources "note:note_gorm_decision" \
+  --to-principal codex-agent-b \
+  --to-runtime codex \
+  --requested-next-capability review \
+  --json
+
+# Inspect the bounded handoff without exposing a transcript
+pinax agent handoff show <handoff-id> --vault ./my-notes --json
 
 # Add recall feedback
 pinax agent feedback add --vault ./my-notes --kind useful --memory-id <id> --json
+```
+
+## Real-vault continuity dogfood
+
+The dogfood runner requires an isolated copy of a real vault and refuses a vault root that still contains `.git`. It selects ten unique real note sources, runs baseline continuity, proposal review, owner approval, a bounded handoff and Agent B continuation, then writes redacted receipts under `temp/continuity-dogfood-runs/<run-id>/`.
+
+```bash
+PINAX_CONTINUITY_DOGFOOD_VAULT=./temp/continuity-dogfood-real-vault \
+  task integration:agent-continuity:dogfood
+```
+
+The receipt excludes note bodies, titles, raw prompts, provider payloads, secrets and full transcripts. It records task-level sample IDs, vault-size band, agent pair, observation window, source coverage, review decision, continuation status, recovery classification and known bias. Seven-day reuse and willingness-to-pay remain separate product observations and are not inferred from this runner.
+
+Preserve the isolated vault state. On day 7-14, run the follow-up against the same vault and initial cohort receipt. The command rejects observations before day 7 or after day 14.
+
+```bash
+PINAX_CONTINUITY_DOGFOOD_VAULT=./temp/continuity-dogfood-real-vault \
+PINAX_CONTINUITY_COHORT_RUN=./temp/continuity-dogfood-runs/<run-id> \
+  task integration:agent-continuity:followup
 ```
 
 ## Scope Format

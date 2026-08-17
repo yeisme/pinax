@@ -7,6 +7,7 @@ import (
 )
 
 func TestIndexRebuildPropertyProjectionAndStatus(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	notes := []domain.Note{{ID: "note_alpha", Title: "Alpha", Path: "notes/alpha.md", Tags: []string{"pinax"}, Status: "active", Body: "priority:: 2\n"}}
 	if _, err := Rebuild(root, notes); err != nil {

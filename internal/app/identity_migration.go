@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/identity"
@@ -52,7 +53,7 @@ func (s *Service) RecordIdentityPlan(ctx context.Context, req IdentityMigrationR
 	plan := domain.IdentityMigrationPlan{
 		SchemaVersion: domain.IdentityMigrationPlanSchemaVersion,
 		PlanID:        identityMigrationPlanID(report, operations),
-		CreatedAt:     currentTimeUTC().Format("2006-01-02T15:04:05Z07:00"),
+		CreatedAt:     s.currentTimeUTC().Format("2006-01-02T15:04:05Z07:00"),
 		VaultPath:     root,
 		Issues:        report.Issues,
 		Operations:    operations,
@@ -231,7 +232,7 @@ func (s *Service) RecordIdentityApply(ctx context.Context, req IdentityMigration
 	if err := ensureIdentityMigrationPlanFresh(root, plan); err != nil {
 		return errorProjection("record.identity.apply", err), err
 	}
-	now := currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
+	now := s.currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
 	if !receiptExists {
 		receipt = domain.IdentityMigrationReceipt{SchemaVersion: domain.IdentityMigrationReceiptSchemaVersion, PlanID: plan.PlanID, Status: "running", Phase: "snapshot", StartedAt: now, UpdatedAt: now, CompletedPaths: []string{}, RestoreCommands: identityMigrationRestoreCommands(root, plan), SavedPath: identityMigrationReceiptPath(plan.PlanID)}
 		snapshot, snapshotErr := s.versionBackend.Snapshot(ctx, versionSnapshotRequest(root, plan.PlanID))
@@ -240,7 +241,7 @@ func (s *Service) RecordIdentityApply(ctx context.Context, req IdentityMigration
 		}
 		receipt.SnapshotID = snapshot.SnapshotID
 		receipt.Phase = "frontmatter"
-		receipt.UpdatedAt = currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
+		receipt.UpdatedAt = s.currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
 		if err := saveIdentityMigrationReceipt(root, receipt); err != nil {
 			return errorProjection("record.identity.apply", err), err
 		}
@@ -259,14 +260,14 @@ func (s *Service) RecordIdentityApply(ctx context.Context, req IdentityMigration
 		receipt.CompletedPaths = append(receipt.CompletedPaths, operation.Path)
 		sort.Strings(receipt.CompletedPaths)
 		receipt.Phase = "applying"
-		receipt.UpdatedAt = currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
+		receipt.UpdatedAt = s.currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
 		if err := saveIdentityMigrationReceipt(root, receipt); err != nil {
 			return errorProjection("record.identity.apply", err), err
 		}
 	}
 	receipt.Status = "completed"
 	receipt.Phase = "completed"
-	receipt.UpdatedAt = currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
+	receipt.UpdatedAt = s.currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
 	receipt.ErrorCode = ""
 	receipt.ErrorMessage = ""
 	if err := saveIdentityMigrationReceipt(root, receipt); err != nil {
@@ -376,7 +377,7 @@ func failIdentityMigration(root string, receipt *domain.IdentityMigrationReceipt
 	receipt.Status = "failed"
 	receipt.ErrorCode = code
 	receipt.ErrorMessage = err.Error()
-	receipt.UpdatedAt = currentTimeUTC().Format("2006-01-02T15:04:05Z07:00")
+	receipt.UpdatedAt = time.Now().UTC().Format("2006-01-02T15:04:05Z07:00")
 	_ = saveIdentityMigrationReceipt(root, *receipt)
 	commandErr := &domain.CommandError{Code: code, Message: "identity migration did not complete", Hint: fmt.Sprintf("Resume with pinax record identity apply --vault %s --plan %s --yes --resume", shellQuote(root), shellQuote(receipt.PlanID))}
 	projection := domain.NewErrorProjection("record.identity.apply", commandErr)

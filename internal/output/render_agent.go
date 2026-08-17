@@ -10,7 +10,7 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 )
 
-func renderAgent(w io.Writer, p domain.Projection) error {
+func renderAgentWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
 	lines := []string{
 		"spec_version=" + p.SpecVersion,
 		"mode=agent",
@@ -74,6 +74,7 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 		}
 	}
 	lines = appendAgentDataListLines(lines, p)
+	lines = appendCommandCatalogAgentLines(lines, p)
 	lines = appendNoteLinkAgentLines(lines, p)
 	lines = appendRepairPlanAgentLines(lines, p)
 	lines = appendRemoteVaultAgentLines(lines, p)
@@ -82,7 +83,7 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 	lines = appendProfileDetailAgentLines(lines, p)
 	lines = appendBackendDetailAgentLines(lines, p)
 	lines = appendBackendCapabilitiesAgentLines(lines, p)
-	lines = appendSyncOperationAgentLines(lines, p)
+	lines = appendSyncOperationAgentLines(lines, p, opts)
 	lines = appendPublishPlanAgentLines(lines, p)
 	lines = appendPublishThemeEjectAgentLines(lines, p)
 	lines = appendCollectionPlanAgentLines(lines, p)
@@ -97,6 +98,22 @@ func renderAgent(w io.Writer, p domain.Projection) error {
 	}
 	_, err := fmt.Fprintln(w, strings.Join(lines, "\n"))
 	return err
+}
+
+func appendCommandCatalogAgentLines(lines []string, p domain.Projection) []string {
+	if p.Command != "commands.list" {
+		return lines
+	}
+	for i, item := range dataListMaps(p.Data, "commands") {
+		prefix := fmt.Sprintf("catalog.%d.", i+1)
+		for _, field := range []agentListField{{"name", []string{"name"}}, {"visibility", []string{"visibility"}}, {"group", []string{"group"}}, {"summary", []string{"summary"}}} {
+			value := firstDataPathString(item, field.Paths...)
+			if value != "" {
+				lines = append(lines, prefix+field.Key+"="+quoteAgentValue(value))
+			}
+		}
+	}
+	return lines
 }
 
 func appendRepairPlanAgentLines(lines []string, p domain.Projection) []string {
@@ -389,11 +406,57 @@ func appendBackendCapabilitiesAgentLines(lines []string, p domain.Projection) []
 	return lines
 }
 
-func appendSyncOperationAgentLines(lines []string, p domain.Projection) []string {
+func appendSyncOperationAgentLines(lines []string, p domain.Projection, opts RenderOptions) []string {
 	switch p.Command {
-	case "sync.diff", "sync.push", "sync.pull":
+	case "sync", "sync.all", "sync.all.pull", "sync.all.push", "sync.diff", "sync.push", "sync.pull", "sync.logs.show":
 	default:
 		return lines
+	}
+	if root, ok := dataMap(p.Data); ok {
+		if view, ok := dataMap(root["sync_view"]); ok {
+			changes := dataListMaps(view, "changes")
+			limit := syncPreviewLimit(opts, len(changes))
+			if limit > len(changes) {
+				limit = len(changes)
+			}
+			lines = append(lines, "fact.sync.change_total="+fmt.Sprint(len(changes)))
+			lines = append(lines, "fact.sync.change_shown="+fmt.Sprint(limit))
+			lines = append(lines, "fact.sync.change_truncated="+fmt.Sprint(limit < len(changes)))
+			for i, change := range changes[:limit] {
+				prefix := fmt.Sprintf("change.%d.", i+1)
+				for _, field := range []agentListField{{"code", []string{"code"}}, {"state", []string{"state"}}, {"path", []string{"path"}}, {"from_path", []string{"from_path"}}, {"to_path", []string{"to_path"}}, {"operation", []string{"operation"}}, {"side", []string{"side"}}, {"size_bytes", []string{"size_bytes"}}} {
+					value := firstDataPathString(change, field.Paths...)
+					if value != "" {
+						lines = append(lines, prefix+field.Key+"="+quoteAgentValue(value))
+					}
+				}
+				// Preserve the legacy operation.* projection as an additive
+				// compatibility surface for existing agents. New consumers should
+				// prefer change.* and the aggregate sync facts above.
+				legacyPrefix := fmt.Sprintf("operation.%d.", i+1)
+				legacyFields := []struct {
+					key   string
+					value string
+				}{
+					{key: "kind", value: firstDataPathString(change, "operation")},
+					{key: "path", value: firstDataPathString(change, "path", "to_path", "from_path")},
+					{key: "status", value: firstDataPathString(change, "state")},
+				}
+				for _, field := range legacyFields {
+					if field.value != "" {
+						lines = append(lines, legacyPrefix+field.key+"="+quoteAgentValue(field.value))
+					}
+				}
+			}
+			if content, ok := dataMap(root["content_diff"]); ok {
+				for _, field := range []string{"file_count", "shown", "total_lines", "total_bytes", "truncated"} {
+					if value := dataPathString(content, field); value != "" {
+						lines = append(lines, "fact.sync.content_diff."+field+"="+quoteAgentValue(value))
+					}
+				}
+			}
+			return lines
+		}
 	}
 	operations := dataListMaps(p.Data, "plan", "operations")
 	limit := len(operations)

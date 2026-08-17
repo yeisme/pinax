@@ -39,6 +39,7 @@ func writeCrossLinkMapping(t *testing.T, root, noteID, url string) {
 }
 
 func TestPublishDocResolveCrossDocLinksRewritesWikiLink(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "# Alpha\n\nSee [[Beta]] for details.")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "# Beta\n\nbody")
@@ -59,6 +60,7 @@ func TestPublishDocResolveCrossDocLinksRewritesWikiLink(t *testing.T) {
 }
 
 func TestPublishDocResolveCrossDocLinksRewritesMarkdownLink(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "see [beta note](b.md)")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
@@ -76,6 +78,7 @@ func TestPublishDocResolveCrossDocLinksRewritesMarkdownLink(t *testing.T) {
 }
 
 func TestPublishDocResolveCrossDocLinksSkipsUnpublishedTarget(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "See [[Beta]].")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
@@ -93,6 +96,7 @@ func TestPublishDocResolveCrossDocLinksSkipsUnpublishedTarget(t *testing.T) {
 }
 
 func TestPublishDocResolveCrossDocLinksSkipsDetachedTarget(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "See [[Beta]].")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
@@ -107,7 +111,7 @@ func TestPublishDocResolveCrossDocLinksSkipsDetachedTarget(t *testing.T) {
 	}
 
 	source := domain.Note{ID: "note_a", Title: "Alpha", Path: "notes/a.md"}
-	result := publishDocAnalyzeCrossDocLinks(root, source, "See [[Beta]].", domain.PublishDocTargetLarkDoc)
+	result := publishDocAnalyzeCrossDocLinks(root, source, "See [[Beta]].", domain.PublishDocTargetLarkDoc, &publishDocSnapshotLoader{})
 	if result.Summary.Rewritten != 0 || result.Summary.Unpublished != 1 {
 		t.Fatalf("detached mapping must be treated as unpublished, summary=%+v body=%q", result.Summary, result.Body)
 	}
@@ -117,6 +121,7 @@ func TestPublishDocResolveCrossDocLinksSkipsDetachedTarget(t *testing.T) {
 }
 
 func TestPublishDocResolveCrossDocLinksSkipsSelfReference(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "self [[Alpha]]")
 	writeCrossLinkMapping(t, root, "note_a", "https://example.test/docx/a_token")
@@ -133,6 +138,7 @@ func TestPublishDocResolveCrossDocLinksSkipsSelfReference(t *testing.T) {
 }
 
 func TestPublishDocResolveCrossDocLinksWikiAlias(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "[[Beta|the beta]]")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
@@ -149,6 +155,7 @@ func TestPublishDocResolveCrossDocLinksWikiAlias(t *testing.T) {
 }
 
 func TestPublishDocResolveCrossDocLinksUnresolvedTargetStays(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "[[NonExistent]] note")
 	// no note "NonExistent" → unresolved, stays as-is
@@ -164,6 +171,7 @@ func TestPublishDocResolveCrossDocLinksUnresolvedTargetStays(t *testing.T) {
 }
 
 func TestPublishDocAnalyzeCrossDocLinksCountsOccurrencesAndConflicts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "[[Beta]] and [[Beta]] and [[Missing]] and [[Draft]]")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
@@ -171,7 +179,7 @@ func TestPublishDocAnalyzeCrossDocLinksCountsOccurrencesAndConflicts(t *testing.
 	writeCrossLinkMapping(t, root, "note_b", "https://example.test/docx/b_token")
 
 	source := domain.Note{ID: "note_a", Title: "Alpha", Path: "notes/a.md"}
-	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]] and [[Beta]] and [[Missing]] and [[Draft]]", domain.PublishDocTargetLarkDoc)
+	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]] and [[Beta]] and [[Missing]] and [[Draft]]", domain.PublishDocTargetLarkDoc, &publishDocSnapshotLoader{})
 	if result.Summary.Total != 3 {
 		t.Fatalf("expected three distinct raw links, got %d", result.Summary.Total)
 	}
@@ -193,13 +201,14 @@ func TestPublishDocAnalyzeCrossDocLinksCountsOccurrencesAndConflicts(t *testing.
 }
 
 func TestPublishDocAnalyzeCrossDocLinksReportsAmbiguous(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "[[Beta]]")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
 	writeCrossLinkNote(t, root, "other/b.md", "note_b2", "Beta", "body")
 
 	source := domain.Note{ID: "note_a", Title: "Alpha", Path: "notes/a.md"}
-	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]]", domain.PublishDocTargetLarkDoc)
+	result := publishDocAnalyzeCrossDocLinks(root, source, "[[Beta]]", domain.PublishDocTargetLarkDoc, &publishDocSnapshotLoader{})
 	if result.Summary.Ambiguous != 1 {
 		t.Fatalf("expected ambiguous link, got summary: %+v", result.Summary)
 	}
@@ -212,6 +221,7 @@ func TestPublishDocAnalyzeCrossDocLinksReportsAmbiguous(t *testing.T) {
 }
 
 func TestPublishDocPrepareAllProcessesVaultCrossDocSummary(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "[[Beta]] and [[Draft]] and [[Missing]]")
 	writeCrossLinkNote(t, root, "notes/b.md", "note_b", "Beta", "body")
@@ -273,6 +283,7 @@ func TestPublishDocPushAllDryRunDoesNotWritePackages(t *testing.T) {
 }
 
 func TestPublishDocPushAllRequiresApprovalForRemoteWrites(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "body")
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
@@ -294,6 +305,7 @@ func TestPublishDocPushAllRequiresApprovalForRemoteWrites(t *testing.T) {
 }
 
 func TestPublishDocPushRejectsPackageRendererMismatch(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "notes/a.md", "note_a", "Alpha", "body")
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
@@ -325,6 +337,7 @@ func TestPublishDocPushRejectsPackageRendererMismatch(t *testing.T) {
 }
 
 func TestPublishDocMoveObjectTypeUsesNativeMappingType(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		mapping domain.PublishDocMapping
@@ -341,6 +354,7 @@ func TestPublishDocMoveObjectTypeUsesNativeMappingType(t *testing.T) {
 }
 
 func TestPublishDocProfileSetPreservesIndexObject(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	profile.Folder = "fld_old"
@@ -366,6 +380,7 @@ func TestPublishDocProfileSetPreservesIndexObject(t *testing.T) {
 }
 
 func TestPublishDocUnlinkAllDetachesTargetMappings(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	profile := domain.NewPublishDocProfile(domain.PublishDocTargetLarkDoc)
 	profile.Folder = "fld_test"
@@ -394,6 +409,7 @@ func TestPublishDocUnlinkAllDetachesTargetMappings(t *testing.T) {
 }
 
 func TestPublishDocPrepareUsesRewrittenBodyForNativePlanAssets(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeCrossLinkNote(t, root, "alpha.md", "note_alpha", "Alpha", "See [[Beta]].\n\nMarkdown link to [Beta md](beta.md).")
 	writeCrossLinkNote(t, root, "beta.md", "note_beta", "Beta", "body")

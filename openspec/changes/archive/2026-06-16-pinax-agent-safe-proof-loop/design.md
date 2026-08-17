@@ -36,7 +36,7 @@ flowchart TD
 
 ### Out of scope
 
-- 新增 Notion、Feishu、Hermes、OneDrive native SDK 或 provider。
+- 新增 Notion、Feishu、legacy connector runtime、OneDrive native SDK 或 provider。
 - 扩展 daily briefing。
 - hosted SaaS、billing、用户管理或云端搜索。
 - agent 自动 apply，或绕过 CLI service 直接写 `.pinax` 结构化资产。

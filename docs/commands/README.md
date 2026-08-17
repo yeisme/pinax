@@ -4,7 +4,8 @@ This directory manages Pinax CLI command documentation. The root README keeps on
 
 ## How to Read
 
-- If you do not know where to start: first read the five core workflows below, then the command map.
+- If you do not know where to start: run `pinax --help`; it shows nine personal local entry points.
+- To inspect every existing advanced and compatibility surface, run `pinax commands`.
 - If you want one runnable end-to-end path across local vault, proof loop, project/database, API, sync, backend, publish, and plugin dry-run, see [Full Usage Example](../usage/full-example.md).
 - To organize your note structure: see [organize](./organize.md).
 - If you only want to look up parameters for a specific command: run `pinax <command> --help`; help is the source of truth for the current binary.
@@ -35,13 +36,15 @@ Pinax is built around one agent-safe proof loop. Each path maps to a small set o
 | **Retrieve** | [`pinax index refresh`](./index.md), [`pinax search`](./search.md), [`pinax memory`](./memory.md), [`pinax note links`](./note.md), [`pinax note backlinks`](./note.md), [`pinax note orphans`](./note.md) | Build the index and read bounded context. |
 | **Diagnose** | [`pinax vault doctor`](./vault.md), [`pinax vault stats`](./vault.md) | Check vault health and surface issues. |
 | **Plan** | [`pinax repair plan --save`](./repair.md), [`pinax organize plan --save`](./organize.md) | Turn issues into reviewable saved plans. |
-| **Apply safely** | [`pinax version snapshot`](./version.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Snapshot first, then apply with explicit confirmation. |
+| **Apply safely** | [`pinax backup create`](./backup.md), [`pinax repair apply --yes`](./repair.md), [`pinax organize apply --yes`](./organize.md) | Create a local backup first, then apply with explicit confirmation. |
 
 Capsa Sync (`pinax capsa`/`pinax sync`), daily briefing (`pinax briefing`), and provider expansion (`pinax backend`) are separate advanced workflows, not part of the local proof loop.
 
 Project Workspace (`pinax project learning init ...`, `pinax project subproject ...`, `pinax project board ...`, `pinax project item ...`) is an advanced local workflow for managing research, learning, client, content, or tool-candidate work inside one vault. It stays local-first and writes only Markdown plus CLI-authored `.pinax` project metadata.
 
 ## Command Map
+
+The default root help is intentionally smaller than this map. Commands marked advanced are not deprecated or removed; their names, flags, and machine output contracts remain executable and discoverable through `pinax commands`.
 
 | Group | Command | When to Use |
 | --- | --- | --- |
@@ -53,6 +56,7 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Local vault | [`pinax record`](./record.md) | Manage the vault record ledger for registering and viewing record history. |
 | Local vault | [`pinax project`](./project.md) | Manage project partitions inside a vault. |
 | Local vault | [`pinax task`](./task.md) | Preview or adopt inferred checklist tasks into managed task evidence. |
+| Local safety | [`pinax backup`](./backup.md) | Check, create, inspect, and restore personal local versioned backups. |
 | Note workflow | [`pinax journal`](./journal.md) | Manage daily, weekly, and monthly journals. |
 | Note workflow | [`pinax inbox`](./inbox.md) | Quickly capture temporary content, then triage it into the formal note structure. |
 | Note workflow | [`pinax draft`](./draft.md) | Manage draft-box notes, with support for creating, advancing, archiving, and discarding. |
@@ -63,7 +67,6 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Organization and retrieval | [`pinax view`](./view.md) | Save and reuse a set of note filtering criteria. |
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
 | Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target. |
-| Organization and retrieval | [`pinax kb`](./kb.md) | Import text/Markdown, inspect embedding providers, rebuild the local LanceDB semantic projection, and return bounded agent context. |
 | Organization and retrieval | [`pinax memory`](./memory.md) | Capture cited facts, decisions, events, and tasks for deterministic agent memory with explainable ranking signals. |
 | Organization and retrieval | [`pinax graph`](./graph.md) | Rebuild and query local knowledge graph projections for prompt/content assets. |
 | Organization and retrieval | [`pinax query`](./query.md) | Run controlled Pinax SQL queries against the local note database. |
@@ -89,16 +92,18 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | Automation and integration | [`pinax token`](./token.md) | Create, list, revoke, and rotate local API bearer tokens. |
 | Automation and integration | [`pinax profile`](./profile.md) | Manage backend/API connection profile aliases. |
 | Configuration and maintenance | [`pinax config`](./config.md) | View, set, and diagnose Pinax configuration. |
-| Configuration and maintenance | [`pinax version`](./version.md) | View the version backend and create snapshot evidence. |
+| Configuration and maintenance | [`pinax version`](./version.md) | Advanced compatibility entry for the underlying version backend and evidence commands. |
 | Configuration and maintenance | [`pinax asset`](./asset.md) | Manage vault multimedia and binary assets. |
 | Configuration and maintenance | [`pinax activity`](./activity.md) | Inspect unified vault activity across events, monitor runs, sync runs, API audit, and records. |
 | Configuration and maintenance | [`pinax monitor`](./monitor.md) | Inspect command performance monitor traces and maintenance status. |
 | Configuration and maintenance | [`pinax storage`](./storage.md) | Configure the vault storage backend. |
 | Configuration and maintenance | [`pinax index`](./index.md) | Manage local SQLite/GORM index projections. |
 
-## Main Paths for Version and Asset
+## Main Paths for Backup, Version, and Asset
 
-- `pinax version` is the user-visible entry point for vault version evidence. It is used to view backend capabilities, create snapshots, read history/diff/show/changed, and generate restore plans. Git is only an optional backend type; regular help, error hints, and next actions should all recommend `pinax version ...`.
+- `pinax backup` is the personal default for local safety. It reuses the existing local version/Git service for status, create, history, restore plan, and restore apply; it does not create another backup engine or contact a remote transport.
+- `pinax version` remains the advanced compatibility entry for backend capabilities, diff/show/changed, and existing scripts. Its command paths and machine contracts are unchanged.
+- S3/rclone/Capsa remain explicit advanced sync or archive paths. They are not implied by `pinax backup`, and their remote durability must be evaluated from their own write/read-back evidence.
 - `pinax git snapshot` is retained only as a hidden compatibility alias, with behavior routed to `pinax version snapshot`. During migration, change scripts from `pinax git snapshot --vault <vault> --message <msg>` to `pinax version snapshot --vault <vault> --message <msg>`.
 - `pinax asset` manages manifests, hashes, references, backlinks, orphans, missing files, and repair plans for images, audio, video, PDFs, and other binary files in the vault. The asset manifest is CLI-authored metadata; asset payloads remain regular files inside the vault and do not enter stdout, stderr, events, or record logs.
 
@@ -115,8 +120,10 @@ Project Workspace (`pinax project learning init ...`, `pinax project subproject 
 | View a scoped project board | `pinax project board show research --subproject stock-learning --vault work` |
 | View today's note | `pinax journal daily show --vault work` |
 | Search content | `pinax search "keyword" --vault work` |
-| Search semantic context | `pinax kb search "project context" --vault work` |
-| Check KB embedding providers | `pinax kb provider list --vault work --json` |
+| Create a local backup | `pinax backup create --message "daily checkpoint" --vault work` |
+| Restore from a local backup | `pinax backup restore notes/example.md --revision <snapshot_id> --plan --vault work` |
+| Hand off semantic context | `pinax export markdown ./temp/rag-export --vault work --json` |
+| Export Markdown for external RAG | `pinax export markdown ./temp/rag-export --vault work --json` |
 | Recall agent memory with ranking evidence | `pinax memory recall "release workflow" --entity pinax --vault work --json` |
 | Manage directories | `pinax folder create spaces/research --purpose notes --vault ./my-notes` |
 | View vault health | `pinax vault doctor --vault ./my-notes` |
@@ -136,7 +143,7 @@ Agent Brain is a staged capability, not a hosted/team backend. Current workflows
 | --- | --- | --- |
 | Ingest | `pinax import markdown ./source --dry-run --vault ./my-notes --json` | implemented |
 | Memory context | `pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent` | implemented |
-| KB context | `pinax kb context "prepare for Alice meeting" --limit 8 --vault ./my-notes --json` | implemented |
+| External RAG context | `pinax export markdown ./temp/rag-export --vault ./my-notes --json` | external owner |
 | Search | `pinax search "Alice" --vault ./my-notes --json` | implemented |
 | Graph evidence | `pinax note backlinks "Alice" --vault ./my-notes --json` and `pinax graph query --kind technique --match storyboard --vault ./my-notes --json` | implemented |
 | Query/database rows | `pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json` | implemented |

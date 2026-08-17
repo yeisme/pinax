@@ -1,7 +1,7 @@
 # End-to-end briefing workflow with fake research evidence and fake Feishu.
 exec pinax init vault --title Vault --json
 exec pinax briefing recipe init --topic 'AI tooling' --vault vault --json
-exec pinax briefing recipe set --source fake:hermes --vault vault --json
+exec pinax briefing recipe set --source fake:research --vault vault --json
 
 exec pinax briefing run --dry-run --vault vault --json
 stdout '"command":"briefing.run"'

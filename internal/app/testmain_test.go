@@ -1,0 +1,22 @@
+package app
+
+import (
+	"os"
+	"testing"
+
+	"github.com/yeisme/pinax/internal/remote"
+)
+
+// TestMain redirects the pinax profile config dir to a scratch directory so
+// app-level tests that persist stored:// secrets without an explicit
+// encryption ref can never write into the developer's real user config.
+func TestMain(m *testing.M) {
+	if os.Getenv("XDG_CONFIG_HOME") == "" {
+		if dir, err := os.MkdirTemp("", "pinax-app-test-xdg-"); err == nil {
+			_ = os.Setenv("XDG_CONFIG_HOME", dir)
+			defer func() { _ = os.RemoveAll(dir) }()
+		}
+	}
+	remote.SetKeyDerivationIterationsForTesting(1000)
+	os.Exit(m.Run())
+}

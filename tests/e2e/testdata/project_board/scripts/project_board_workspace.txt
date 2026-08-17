@@ -1,4 +1,5 @@
 # Project board workspace through the real CLI.
+env PINAX_TEST_MODE=1
 env PINAX_TEST_NOW=2026-06-21T15:30:00Z
 exec pinax init vault --title Vault --json
 ! stderr .
@@ -61,7 +62,7 @@ exec pinax project board plan research --save --vault vault --json
 stdout '"command":"project.board.plan"'
 stdout '"saved_path":".pinax/planning/project-boards/'
 
-exec pinax plan weekly --taskbridge --dry-run --vault vault --json
+exec pinax plan weekly --dry-run --vault vault --json
 ! stderr .
 stdout '"command":"plan.weekly"'
 stdout '"board_snapshot_id":"project-board-'

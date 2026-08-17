@@ -30,6 +30,9 @@ type Server struct {
 	exposeGroups []string
 	hideGroups   []string
 	tempSecret   string
+	// tokenFileErr is set when --token-file could not be loaded; the server
+	// then refuses every request instead of downgrading to an open temp token.
+	tokenFileErr error
 }
 
 type ServerOptions struct {
@@ -77,8 +80,12 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 	case AuthModeTokenFile:
 		store, err := NewFileTokenStore(options.TokenFile)
 		if err != nil {
-			s.tokenStore = NewMemoryTokenStore()
-			s.authMode = AuthModeTemp
+			// Fail loudly instead of silently downgrading to an unrestricted
+			// temp token: a typo'd --token-file must not produce a wide-open
+			// server. The server carries the error and refuses requests.
+			s.tokenStore = nil
+			s.authMode = AuthModeTokenFile
+			s.tokenFileErr = err
 		} else {
 			s.tokenStore = store
 		}
@@ -966,15 +973,17 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !route.Readonly {
-		if boolParam(req.Params, "dry_run") {
-			// Dry-run routes validate and preview without persistence, so they are safe on read-only API servers.
-		} else if !s.allowWrite {
+		// The allow-write gate applies to dry runs too, matching the REST
+		// surface (ensureFolderWriteAllowed): a read-only server must not run
+		// even preview-shaped write commands. dry_run only replaces the yes
+		// confirmation.
+		if !s.allowWrite {
 			err := &domain.CommandError{Code: "write_disabled", Message: "API server is currently read-only", Hint: "Start with pinax api serve --allow-write and retry"}
 			projection := domain.NewErrorProjection(route.Command, err)
 			writeProjectionStatus(w, projection, http.StatusForbidden)
 			s.logRPCRequest(start, req, route, http.StatusForbidden, projection)
 			return
-		} else if !boolParam(req.Params, "yes") {
+		} else if !boolParam(req.Params, "yes") && !boolParam(req.Params, "dry_run") {
 			err := &domain.CommandError{Code: "approval_required", Message: "Remote RPC writes require yes=true", Hint: "Preview with dry_run=true first, then include yes=true to confirm"}
 			projection := domain.NewErrorProjection(route.Command, err)
 			writeProjectionStatus(w, projection, http.StatusBadRequest)

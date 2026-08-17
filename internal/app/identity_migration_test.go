@@ -14,6 +14,7 @@ import (
 )
 
 func TestRecordIdentityAuditIsReadOnlyAndReportsMigrationIssues(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	canonical := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	writeAppFixture(t, filepath.Join(root, "notes", "canonical.md"), noteFixture(canonical, "Canonical"))
@@ -42,6 +43,7 @@ func TestRecordIdentityAuditIsReadOnlyAndReportsMigrationIssues(t *testing.T) {
 }
 
 func TestIdentityMigrationPlanSavesCLIAuthoredMigrationAsset(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeAppFixture(t, filepath.Join(root, "notes", "legacy.md"), noteFixture("note_legacy", "Legacy"))
 	writeAppFixture(t, filepath.Join(root, "notes", "missing.md"), noteFixture("", "Missing"))
@@ -79,6 +81,7 @@ func TestIdentityMigrationPlanSavesCLIAuthoredMigrationAsset(t *testing.T) {
 }
 
 func TestRecordIdentityAuditDetectsLedgerFrontmatterMismatchWithoutWritingState(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	frontmatterID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	ledgerID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"
@@ -118,6 +121,7 @@ func noteFixture(noteID, title string) string {
 }
 
 func TestRecordIdentityAuditReportsCanonicalDuplicateAndLedgerPathCollision(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	duplicateID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	writeAppFixture(t, filepath.Join(root, "notes", "duplicate-a.md"), noteFixture(duplicateID, "Duplicate A"))
@@ -156,6 +160,7 @@ func TestRecordIdentityAuditReportsCanonicalDuplicateAndLedgerPathCollision(t *t
 }
 
 func TestIdentityMigrationApplyRequiresApprovalAndCreatesSnapshotReceipt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "notes", "legacy.md")
 	writeAppFixture(t, path, noteFixture("note_legacy", "Legacy"))
@@ -215,6 +220,7 @@ func TestIdentityMigrationApplyRequiresApprovalAndCreatesSnapshotReceipt(t *test
 }
 
 func TestIdentityMigrationApplyRejectsStalePlanAndCompletedResumeIsIdempotent(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "notes", "legacy.md")
 	writeAppFixture(t, path, noteFixture("note_legacy", "Legacy"))
@@ -244,6 +250,7 @@ func TestIdentityMigrationApplyRejectsStalePlanAndCompletedResumeIsIdempotent(t 
 }
 
 func TestIdentityMigrationResumeAfterLedgerFailure(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "notes", "legacy.md")
 	writeAppFixture(t, path, noteFixture("note_legacy", "Legacy"))
@@ -277,6 +284,7 @@ func TestIdentityMigrationResumeAfterLedgerFailure(t *testing.T) {
 }
 
 func TestIdentityMigrationPlanRepairsFrontmatterMirrorFromLedger(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	frontmatterID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0101"
 	ledgerID := "018f22e2-7b6d-7a3a-8db8-1f7ddf0c0102"

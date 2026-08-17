@@ -53,6 +53,7 @@ func TestResolveEnvSnapshot_Success(t *testing.T) {
 }
 
 func TestResolveEnvSnapshot_MissingAsset(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	_, err := ResolveEnvSnapshot(tmp, nil)
 	if !errors.Is(err, ErrEnvAssetMissing) {
@@ -82,6 +83,7 @@ func TestResolveEnvSnapshot_StrictParseFailure(t *testing.T) {
 }
 
 func TestEnvSnapshot_Immutable(t *testing.T) {
+	t.Parallel()
 	snap := NewEnvSnapshot(map[string]string{"A": "1"}, "digest", "test")
 	_, _ = snap.Lookup("A")
 	again, _ := snap.Lookup("A")
@@ -91,6 +93,7 @@ func TestEnvSnapshot_Immutable(t *testing.T) {
 }
 
 func TestEnvSnapshot_ApplyAllowlist(t *testing.T) {
+	t.Parallel()
 	snap := NewEnvSnapshot(map[string]string{"A": "1", "B": "2", "C": "3"}, "d", "s")
 	out := snap.ApplyAllowlist([]string{"A", "C", "MISSING"})
 	if len(out) != 2 {
@@ -102,6 +105,7 @@ func TestEnvSnapshot_ApplyAllowlist(t *testing.T) {
 }
 
 func TestEnvSnapshot_OverlayEnvPrecedence(t *testing.T) {
+	t.Parallel()
 	snap := NewEnvSnapshot(map[string]string{"SNAP_KEY": "from-snapshot", "OTHER": "also-snapshot"}, "d", "s")
 	// Explicit process environment should win for SNAP_KEY.
 	base := []string{"PATH=/usr/bin", "SNAP_KEY=from-process-env"}
@@ -193,6 +197,7 @@ func TestEnvReloader_RetainsLastSnapshotOnReloadFailure(t *testing.T) {
 }
 
 func TestEnvReloader_NoAssetNotDegraded(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	reloader := NewEnvReloader(tmp, nil)
 	snap, status := reloader.RunSnapshot()
@@ -205,6 +210,7 @@ func TestEnvReloader_NoAssetNotDegraded(t *testing.T) {
 }
 
 func TestMaterializeEnv_Creates0600File(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	snap := NewEnvSnapshot(map[string]string{"A": "1", "B": "2"}, "d", "s")
 	path, err := MaterializeEnv(tmp, snap, []string{"A", "B"})
@@ -224,6 +230,7 @@ func TestMaterializeEnv_Creates0600File(t *testing.T) {
 }
 
 func TestMaterializeEnv_RespectsAllowlist(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	snap := NewEnvSnapshot(map[string]string{"A": "1", "SECRET": "s3cret"}, "d", "s")
 	path, err := MaterializeEnv(tmp, snap, []string{"A"})
@@ -237,6 +244,7 @@ func TestMaterializeEnv_RespectsAllowlist(t *testing.T) {
 }
 
 func TestMaterializeEnv_RejectsSymlink(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	runtimeDir := filepath.Join(tmp, ".pinax", "runtime")
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
@@ -261,6 +269,7 @@ func TestMaterializeEnv_RejectsSymlink(t *testing.T) {
 }
 
 func TestCleanMaterializedEnv_RemovesOnlyManaged(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	snap := NewEnvSnapshot(map[string]string{"A": "1"}, "d", "s")
 	if _, err := MaterializeEnv(tmp, snap, []string{"A"}); err != nil {
@@ -281,6 +290,7 @@ func TestCleanMaterializedEnv_RemovesOnlyManaged(t *testing.T) {
 }
 
 func TestCleanMaterializedEnv_RejectsSymlink(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	runtimeDir := filepath.Join(tmp, ".pinax", "runtime")
 	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {

@@ -9,6 +9,7 @@ import (
 )
 
 func TestManifestBuildsPathHashesAndBlobCache(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeManifestFixture(t, filepath.Join(root, "notes", "alpha.md"), "# Alpha\nsecret local body\n")
 	writeManifestFixture(t, filepath.Join(root, "notes", "nested", "beta.md"), "# Beta\n")
@@ -58,6 +59,7 @@ func TestManifestBuildsPathHashesAndBlobCache(t *testing.T) {
 }
 
 func TestManifestPathHashIsStable(t *testing.T) {
+	t.Parallel()
 	if PathHash("notes\\Alpha.md") != PathHash("notes/Alpha.md") {
 		t.Fatalf("path hash should normalize separators")
 	}

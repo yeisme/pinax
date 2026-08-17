@@ -47,6 +47,9 @@ const (
 	CodeBackendUnavailable = "BACKEND_UNAVAILABLE"
 	CodeTransportError     = "TRANSPORT_ERROR"
 	CodeCloudHTTPError     = "CLOUD_HTTP_ERROR"
+	// CodeVaultIDRequired marks a client-side configuration problem: the
+	// configured cloud workspace/vault id is empty. Formerly a panic.
+	CodeVaultIDRequired = "VAULT_ID_REQUIRED"
 )
 
 type Config struct {
@@ -264,63 +267,84 @@ func (c *Client) LinkVault(ctx context.Context, vaultID string) (VaultLinkFacts,
 }
 
 func (c *Client) CurrentRevision(ctx context.Context) (Revision, error) {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return Revision{}, err
+	}
 	var out Revision
-	err := c.doJSON(ctx, http.MethodGet, c.vaultPath(vaultID, "head"), "", nil, &out)
+	err = c.doJSON(ctx, http.MethodGet, c.vaultPath(vaultID, "head"), "", nil, &out)
 	return out, err
 }
 
 // Changes 调用 GET /v1/vaults/{vault_id}/changes?since=<revision_id> 获取增量对象引用。
 func (c *Client) Changes(ctx context.Context, since string) (ChangesResult, error) {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return ChangesResult{}, err
+	}
 	path := c.vaultPath(vaultID, "changes")
 	if strings.TrimSpace(since) != "" {
 		path += "?since=" + url.QueryEscape(since)
 	}
 	var out ChangesResult
-	err := c.doJSON(ctx, http.MethodGet, path, "", nil, &out)
+	err = c.doJSON(ctx, http.MethodGet, path, "", nil, &out)
 	return out, err
 }
 
 func (c *Client) BatchCheckBlobs(ctx context.Context, blobIDs []string) (BlobCheckResult, error) {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return BlobCheckResult{}, err
+	}
 	var out BlobCheckResult
-	err := c.doJSON(ctx, http.MethodPost, c.vaultPath(vaultID, "blobs:batch-check"), "", blobCheckRequest{BlobIDs: blobIDs}, &out)
+	err = c.doJSON(ctx, http.MethodPost, c.vaultPath(vaultID, "blobs:batch-check"), "", blobCheckRequest{BlobIDs: blobIDs}, &out)
 	return out, err
 }
 
 // SignUpload 调用 POST /v1/vaults/{vault_id}/blobs:sign-upload 获取服务端拥有的上传计划。
 func (c *Client) SignUpload(ctx context.Context, blobID, blobHash string, size int64, contentType string) (UploadPlan, error) {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return UploadPlan{}, err
+	}
 	var out UploadPlan
-	err := c.doJSON(ctx, http.MethodPost, c.vaultPath(vaultID, "blobs:sign-upload"), "", signUploadRequest{BlobID: blobID, BlobHash: blobHash, Size: size, ContentType: contentType}, &out)
+	err = c.doJSON(ctx, http.MethodPost, c.vaultPath(vaultID, "blobs:sign-upload"), "", signUploadRequest{BlobID: blobID, BlobHash: blobHash, Size: size, ContentType: contentType}, &out)
 	return out, err
 }
 
 func (c *Client) UploadBlob(ctx context.Context, blobID string, envelope BlobEnvelope) error {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return err
+	}
 	return c.doJSON(ctx, http.MethodPut, c.vaultPath(vaultID, "blobs", blobID), "", envelope, nil)
 }
 
 func (c *Client) DownloadBlob(ctx context.Context, blobID string) (BlobEnvelope, error) {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return BlobEnvelope{}, err
+	}
 	var out BlobEnvelope
-	err := c.doJSON(ctx, http.MethodGet, c.vaultPath(vaultID, "blobs", blobID), "", nil, &out)
+	err = c.doJSON(ctx, http.MethodGet, c.vaultPath(vaultID, "blobs", blobID), "", nil, &out)
 	return out, err
 }
 
 func (c *Client) CommitRevision(ctx context.Context, req CommitRequest) (CommitResponse, error) {
-	vaultID := c.requireVaultID()
+	vaultID, err := c.requireVaultID()
+	if err != nil {
+		return CommitResponse{}, err
+	}
 	var out CommitResponse
-	err := c.doJSON(ctx, http.MethodPost, c.vaultPath(vaultID, "revisions"), strings.TrimSpace(req.IdempotencyKey), req, &out)
+	err = c.doJSON(ctx, http.MethodPost, c.vaultPath(vaultID, "revisions"), strings.TrimSpace(req.IdempotencyKey), req, &out)
 	return out, err
 }
 
-func (c *Client) requireVaultID() string {
+func (c *Client) requireVaultID() (string, error) {
 	if c.vaultID == "" {
-		panic("cloudclient: vault id is required for vault-scoped operations")
+		return "", &Error{Code: CodeVaultIDRequired, Message: "vault id is required for vault-scoped operations; configure the cloud workspace with pinax capsa login or cloud backend set"}
 	}
-	return c.vaultID
+	return c.vaultID, nil
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path, idempotencyKey string, input, output any) error {

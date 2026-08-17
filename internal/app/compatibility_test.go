@@ -9,6 +9,7 @@ import (
 
 // TestCompatibility_AgentContextUnchanged 验证新增 continuity/inbox 不影响旧 agent context。
 func TestCompatibility_AgentContextUnchanged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := NewAgentMemoryService()
@@ -34,6 +35,7 @@ func TestCompatibility_AgentContextUnchanged(t *testing.T) {
 
 // TestCompatibility_NewSurfaceAdditive 验证新 surface 不删除旧字段。
 func TestCompatibility_NewSurfaceAdditive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "compat"}
@@ -65,6 +67,7 @@ func TestCompatibility_NewSurfaceAdditive(t *testing.T) {
 // TestCompatibility_RollbackCapability 验证禁用新 capability 后旧面不受影响。
 // rollback 方式是隐藏新命令和 route registration，不删除 additive data。
 func TestCompatibility_RollbackCapability(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	vault := t.TempDir()
 	svc := NewAgentMemoryService()

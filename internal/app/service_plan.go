@@ -20,14 +20,13 @@ import (
 // the planning surface from the Service facade.
 
 type PlanningRequest struct {
-	VaultPath      string
-	Period         string // daily, weekly, monthly
-	WithTaskBridge bool
-	TaskReview     bool
-	DryRun         bool
-	Yes            bool
-	Save           bool
-	FromPeriod     string // for plan actions --from
+	VaultPath  string
+	Period     string // daily, weekly, monthly
+	TaskReview bool
+	DryRun     bool
+	Yes        bool
+	Save       bool
+	FromPeriod string // for plan actions --from
 }
 
 // PlanDaily 生成每日Plan。
@@ -54,7 +53,7 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 		return errorProjection("plan."+string(period), err), err
 	}
 	// 生成 planning snapshot。
-	now := currentTimeUTC()
+	now := s.currentTimeUTC()
 	snapshot := domain.PlanningSnapshot{
 		SchemaVersion: "pinax.planning.snapshot.v1",
 		SnapshotID:    planningSnapshotID(root, string(period), now),
@@ -90,17 +89,9 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 	}
 	planningops.AddCapacityRisk(&snapshot, &decision, len(facts), maxCommitments)
 	command := "plan." + string(period)
-	if req.WithTaskBridge && period == domain.PlanningDaily {
-		taskBridge, err := loadTaskBridgeDaily(ctx, now)
-		if err != nil {
-			return errorProjection(command, err), err
-		}
-		applyTaskBridgePlanning(&snapshot, &decision, taskBridge, maxCommitments)
-	}
 	if req.TaskReview && period == domain.PlanningDaily {
 		return s.planDailyTaskReview(ctx, root, now, snapshot, decision, req.Yes)
 	}
-	targetNote := filepath.ToSlash(filepath.Join("daily", now.Format("2006-01-02")+".md"))
 	if req.DryRun || !req.Yes {
 		projection := domain.NewProjection(command, string(period)+" plan previewed.")
 		projection.Facts["period"] = string(period)
@@ -109,32 +100,12 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 		projection.Facts["decision_id"] = decision.DecisionID
 		projection.Facts["max_commitments"] = fmt.Sprint(maxCommitments)
 		projection.Facts["risks"] = fmt.Sprint(len(snapshot.Risks))
-		if req.WithTaskBridge && period == domain.PlanningDaily {
-			projection.Facts["source"] = "taskbridge"
-			projection.Facts["captured_at"] = snapshot.CapturedAt
-			projection.Facts["target_note"] = targetNote
-			projection.Facts["managed_block"] = planningDailyBlockName
-			projection.Facts["selected_commitments"] = fmt.Sprint(len(decision.Selected))
-			projection.Facts["taskbridge_tasks"] = snapshot.Facts["taskbridge_tasks"]
-		}
 		copyProjectBoardPlanningFacts(&projection, snapshot)
 		projection.Data = map[string]any{"snapshot": snapshot, "decision": decision}
-		applyCommand := fmt.Sprintf("pinax plan %s --vault %s --yes", string(period), shellQuote(root))
-		if req.WithTaskBridge && period == domain.PlanningDaily {
-			applyCommand = fmt.Sprintf("pinax plan daily --taskbridge --vault %s --yes", shellQuote(root))
-		}
 		projection.Actions = []domain.Action{
-			{Name: "apply", Command: applyCommand},
+			{Name: "apply", Command: fmt.Sprintf("pinax plan %s --vault %s --yes", string(period), shellQuote(root))},
 		}
 		return projection, nil
-	}
-	if req.WithTaskBridge && period == domain.PlanningDaily {
-		markdown := renderTaskBridgeDailyMarkdown(snapshot, decision)
-		dailyRel, err := writeDailyPlanningBlock(root, now, markdown)
-		if err != nil {
-			return errorProjection(command, err), err
-		}
-		snapshot.Facts["target_note"] = dailyRel
 	}
 	// 写入 snapshot。
 	if req.Save {
@@ -144,21 +115,13 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 		}
 		snapshot.SavedPath = snapRel
 	}
-	_ = appendEvent(root, command, "success", map[string]string{"period": string(period), "snapshot_id": snapshot.SnapshotID})
+	appendEventWarned(root, command, "success", map[string]string{"period": string(period), "snapshot_id": snapshot.SnapshotID})
 	projection := domain.NewProjection(command, string(period)+" plan generated.")
 	projection.Facts["period"] = string(period)
 	projection.Facts["snapshot_id"] = snapshot.SnapshotID
 	projection.Facts["decision_id"] = decision.DecisionID
 	projection.Facts["max_commitments"] = fmt.Sprint(maxCommitments)
 	projection.Facts["risks"] = fmt.Sprint(len(snapshot.Risks))
-	if req.WithTaskBridge && period == domain.PlanningDaily {
-		projection.Facts["source"] = "taskbridge"
-		projection.Facts["captured_at"] = snapshot.CapturedAt
-		projection.Facts["target_note"] = snapshot.Facts["target_note"]
-		projection.Facts["managed_block"] = planningDailyBlockName
-		projection.Facts["selected_commitments"] = fmt.Sprint(len(decision.Selected))
-		projection.Facts["taskbridge_tasks"] = snapshot.Facts["taskbridge_tasks"]
-	}
 	copyProjectBoardPlanningFacts(&projection, snapshot)
 	if snapshot.SavedPath != "" {
 		projection.Facts["saved_path"] = snapshot.SavedPath
@@ -171,7 +134,7 @@ func (s *Service) planPeriod(ctx context.Context, req PlanningRequest, period do
 	return projection, nil
 }
 
-// PlanActions 生成 TaskBridge action file 草稿。
+// PlanActions 生成本地 planning action 草稿。
 func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
@@ -180,7 +143,7 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 	if err := ensureVaultAssets(root); err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	now := currentTimeUTC()
+	now := s.currentTimeUTC()
 	period := strings.TrimSpace(req.FromPeriod)
 	if period == "" {
 		period = "daily"
@@ -189,7 +152,7 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
-	preview, err := s.planPeriod(ctx, PlanningRequest{VaultPath: root, Period: period, WithTaskBridge: req.WithTaskBridge, DryRun: true}, planningPeriod)
+	preview, err := s.planPeriod(ctx, PlanningRequest{VaultPath: root, Period: period, DryRun: true}, planningPeriod)
 	if err != nil {
 		return errorProjection("plan.actions", err), err
 	}
@@ -206,14 +169,8 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 		projection.Facts["source_decision"] = draft.SourceDecision
 		projection.Facts["snapshot_id"] = draft.SourceSnapshot
 		projection.Facts["tasks"] = fmt.Sprint(len(draft.Tasks))
-		if req.WithTaskBridge && planningPeriod == domain.PlanningDaily {
-			projection.Facts["source"] = "taskbridge"
-		}
 		projection.Data = map[string]any{"draft": draft}
 		saveCommand := fmt.Sprintf("pinax plan actions --from %s --vault %s --save", period, shellQuote(root))
-		if req.WithTaskBridge && planningPeriod == domain.PlanningDaily {
-			saveCommand = fmt.Sprintf("pinax plan actions --from daily --taskbridge --vault %s --save", shellQuote(root))
-		}
 		projection.Actions = []domain.Action{
 			{Name: "save", Command: saveCommand},
 		}
@@ -225,21 +182,15 @@ func (s *Service) PlanActions(ctx context.Context, req PlanningRequest) (domain.
 		return errorProjection("plan.actions", err), err
 	}
 	draft.SavedPath = rel
-	_ = appendEvent(root, "plan.actions", "success", map[string]string{"action_id": draft.ActionID, "saved_path": rel})
+	appendEventWarned(root, "plan.actions", "success", map[string]string{"action_id": draft.ActionID, "saved_path": rel})
 	projection := domain.NewProjection("plan.actions", "Action draft saved.")
 	projection.Facts["action_id"] = draft.ActionID
 	projection.Facts["source_decision"] = draft.SourceDecision
 	projection.Facts["snapshot_id"] = draft.SourceSnapshot
 	projection.Facts["tasks"] = fmt.Sprint(len(draft.Tasks))
 	projection.Facts["saved_path"] = rel
-	if req.WithTaskBridge && planningPeriod == domain.PlanningDaily {
-		projection.Facts["source"] = "taskbridge"
-	}
 	projection.Evidence = []string{rel}
 	projection.Data = map[string]any{"draft": draft}
-	projection.Actions = []domain.Action{
-		{Name: "execute", Command: fmt.Sprintf("taskbridge agent execute --action-file %s --dry-run", rel)},
-	}
 	return projection, nil
 }
 
@@ -270,7 +221,7 @@ func (s *Service) PlanSnapshot(_ context.Context, req PlanningRequest) (domain.P
 		return errorProjection("plan.snapshot", err), err
 	}
 	snapshot.SavedPath = snapRel
-	_ = appendEvent(root, "plan.snapshot", "success", map[string]string{"snapshot_id": snapshot.SnapshotID})
+	appendEventWarned(root, "plan.snapshot", "success", map[string]string{"snapshot_id": snapshot.SnapshotID})
 	projection := domain.NewProjection("plan.snapshot", "Planning snapshot saved.")
 	projection.Facts["snapshot_id"] = snapshot.SnapshotID
 	projection.Facts["saved_path"] = snapRel

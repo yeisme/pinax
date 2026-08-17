@@ -14,6 +14,7 @@ import (
 // points at a writable per-script dir so the device-local profile store works
 // in the sandboxed HOME=/no-home testscript environment.
 func TestSyncEnvLoader(t *testing.T) {
+	t.Parallel()
 	runE2ETestScript(t, "testdata/sync_env/scripts", func(env *testscript.Env) error {
 		env.Vars = append(env.Vars,
 			"XDG_CONFIG_HOME="+filepath.Join(env.WorkDir, "xdg"),

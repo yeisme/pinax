@@ -28,54 +28,58 @@ tasks:
   test:
     desc: Run Go tests.
     cmds:
-      - go test ./...
+      - go test -timeout={{default "10m" .GO_TEST_TIMEOUT}} ./...
 
   test:integration:
     desc: Run integration/e2e tests and write local evidence.
     cmds:
-      - go run ./internal/testkit/integrationevidence
+      - go run ./tools/testkit/integrationevidence
 
   integration:identity:
     desc: Run identity-first kernel integration tests with redacted evidence.
     cmds:
-      - go run ./internal/testkit/integrationevidence --profile identity
+      - go run ./tools/testkit/integrationevidence --profile identity
 
   integration:identity:benchmark:
     desc: Run identity-first kernel benchmarks with redacted evidence.
     cmds:
-      - go run ./internal/testkit/integrationevidence --profile identity-benchmark
+      - go run ./tools/testkit/integrationevidence --profile identity-benchmark
 
   integration:agent-memory:
     desc: Run agent memory runtime integration tests with redacted evidence.
     cmds:
-      - go run ./internal/testkit/integrationevidence --profile agent-memory
+      - go run ./tools/testkit/integrationevidence --profile agent-memory
 
   integration:agent-continuity:
     desc: Run agent continuity experience integration tests with redacted evidence.
     cmds:
-      - go run ./internal/testkit/integrationevidence --profile agent-continuity
+      - go run ./tools/testkit/integrationevidence --profile agent-continuity
+
+  integration:agent-continuity:dogfood:
+    desc: Run ten redacted continuity samples against an isolated copy of a real vault.
+    cmds:
+      - test -n "$PINAX_CONTINUITY_DOGFOOD_VAULT" || (printf 'PINAX_CONTINUITY_DOGFOOD_VAULT is required\n' >&2; exit 2)
+      - go run ./tools/testkit/continuitydogfoodevidence --vault "$PINAX_CONTINUITY_DOGFOOD_VAULT"
+
+  integration:agent-continuity:followup:
+    desc: Run the day 7-14 continuity reuse follow-up against the preserved isolated vault.
+    cmds:
+      - test -n "$PINAX_CONTINUITY_DOGFOOD_VAULT" || (printf 'PINAX_CONTINUITY_DOGFOOD_VAULT is required\n' >&2; exit 2)
+      - test -n "$PINAX_CONTINUITY_COHORT_RUN" || (printf 'PINAX_CONTINUITY_COHORT_RUN is required\n' >&2; exit 2)
+      - go run ./tools/testkit/continuitydogfoodfollowup --vault "$PINAX_CONTINUITY_DOGFOOD_VAULT" --cohort-run "$PINAX_CONTINUITY_COHORT_RUN"
 
   integration:sync-real:
     desc: Run credential-safe real sync smoke when PINAX_SYNC_REAL_ENDPOINT is configured.
     cmds:
-      - go run ./internal/testkit/syncrealevidence
+      - go run ./tools/testkit/syncrealevidence
 
-  kb:sidecar:test:
-    desc: Run Python LanceDB KB sidecar tests.
-    deps: [kb:sidecar:protocol]
+  integration:sync-macos-candidate:
+    desc: Validate a macOS release candidate and write bounded support evidence; does not access a vault or remote.
     cmds:
-      - |
-        venv_dir="$(mktemp -d)"
-        trap 'rm -rf "$venv_dir"' EXIT
-        python3 -m venv "$venv_dir/venv"
-        "$venv_dir/venv/bin/python" -m pip install -e tools/pinax-lancedb-sidecar
-        PYTHONPATH=tools/pinax-lancedb-sidecar/src "$venv_dir/venv/bin/python" -m unittest discover tools/pinax-lancedb-sidecar/tests
-
-  kb:sidecar:protocol:
-    desc: Run offline Python sidecar protocol tests without installing LanceDB.
-    cmds:
-      - python3 -m compileall tools/pinax-lancedb-sidecar
-      - PYTHONPATH=tools/pinax-lancedb-sidecar/src python3 -m unittest tools/pinax-lancedb-sidecar/tests/test_protocol_offline.py
+      - test -n "$PINAX_MACOS_SUPPORT_BINARY" || (printf 'PINAX_MACOS_SUPPORT_BINARY is required\n' >&2; exit 2)
+      - test -n "$PINAX_MACOS_SUPPORT_PROVENANCE" || (printf 'PINAX_MACOS_SUPPORT_PROVENANCE is required\n' >&2; exit 2)
+      - test -n "$PINAX_MACOS_SUPPORT_INSTALL_CHANNEL" || (printf 'PINAX_MACOS_SUPPORT_INSTALL_CHANNEL is required\n' >&2; exit 2)
+      - go run ./tools/testkit/macosreleaseevidence --pinax "$PINAX_MACOS_SUPPORT_BINARY" --provenance "$PINAX_MACOS_SUPPORT_PROVENANCE" --install-channel "$PINAX_MACOS_SUPPORT_INSTALL_CHANNEL"
 
   publish:renderer:test:
     desc: Run the Pinax web renderer Vitest suite.
@@ -352,11 +356,16 @@ tasks:
 
   check:
     desc: Run the local Pinax quality gate.
-    deps: [fmt-check, lint, test, build, openspec, kb:sidecar:protocol, publish:smoke]
+    deps: [fmt-check, lint, test, build, openspec, publish:smoke]
+
+  race:
+    desc: Run the race detector on concurrency-heavy packages (watcher, debounce, monitor, sync).
+    cmds:
+      - go test -race -count=1 -shuffle=on -timeout={{default "30m" .GO_TEST_TIMEOUT}} ./internal/app/syncdaemon/... ./internal/cloudsync/... ./internal/cloudclient/... ./internal/app -run 'Monitor|Sync|Publish|Watch|Debounce|Forward'
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.
-    deps: [check, release:check]
+    deps: [check, race, release:check]
 
   clean:
     desc: Remove local build artifacts.
