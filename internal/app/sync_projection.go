@@ -228,9 +228,10 @@ func (r *cloudSyncRun) executeCloudPush() (domain.Projection, error) {
 		return projection, nil
 	}
 	emitSyncEvent(r.req.LiveEvents, SyncEvent{Type: "progress", Phase: "transfer", Direction: string(r.direction), RunID: r.receipt.RunID, Total: len(r.plan.Operations), Status: "running", RemoteWrite: true})
+	uploadStats := &cloudUploadStats{}
 	rebaseResult, execErr := runCloudPushRebase(cloudRebasePlan{
 		commit: func(base string) (cloudsync.CommitResult, error) {
-			return executeCloudPushWithCredential(r.ctx, r.root, r.state, r.localManifest, base, r.req.ProjectUnlockSource)
+			return executeCloudPushWithCredential(r.ctx, r.root, r.state, r.localManifest, base, r.req.ProjectUnlockSource, uploadStats)
 		},
 		pull: func() (cloudRemoteSnapshot, error) {
 			return loadCloudRemoteSnapshotWithCredential(r.ctx, r.state, r.root, r.req.ProjectUnlockSource)
@@ -301,6 +302,8 @@ func (r *cloudSyncRun) executeCloudPush() (domain.Projection, error) {
 		}
 	}
 	r.receipt.Counts["blobs"] = len(r.localManifest.Entries) + manifestTrashBackupCount(r.localManifest)
+	r.receipt.Counts["upload_blobs"] += int(uploadStats.Blobs)
+	r.receipt.Counts["bytes_uploaded"] += int(uploadStats.Bytes)
 	r.receipt.Counts["delete_markers"] = len(r.localManifest.Deletes)
 	r.receipt.Counts["trash_backup_blobs"] = manifestTrashBackupCount(r.localManifest)
 	projection := domain.NewProjection(r.command, "Capsa sync push completed through configured backend.")

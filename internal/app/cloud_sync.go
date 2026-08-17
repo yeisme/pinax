@@ -676,7 +676,18 @@ func safeSyncManifestCachePath(root, rel string) (string, error) {
 // unlock source: in repository-encrypted mode it injects the resolved AWS SDK
 // credentials provider into the push transport. The snapshot is closed after
 // the transport is built (StaticCredentialsProvider is self-contained).
-func executeCloudPushWithCredential(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string, source projectsecrets.UnlockSource) (cloudsync.CommitResult, error) {
+// cloudUploadStats records uploads performed by the push commit loop,
+// including the key-rotation re-encryption branch that the plan-based receipt
+// counters do not see.
+type cloudUploadStats struct {
+	Blobs int64
+	Bytes int64
+}
+
+func executeCloudPushWithCredential(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string, source projectsecrets.UnlockSource, stats *cloudUploadStats) (cloudsync.CommitResult, error) {
+	if stats == nil {
+		stats = &cloudUploadStats{}
+	}
 	// Resolve the transport through the unified credential-aware path so a
 	// repository-encrypted vault with no unlock source fails closed instead of
 	// falling back to the device-local shared profile chain (task 6.7).
@@ -757,6 +768,8 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 		if err := transport.PutBlob(ctx, entry.BlobID, cloudBlob); err != nil {
 			return cloudsync.CommitResult{}, err
 		}
+		stats.Blobs++
+		stats.Bytes += int64(len(content))
 	}
 	for i := len(manifest.Entries); i < len(objectRefs); i++ {
 		ref := objectRefs[i]
