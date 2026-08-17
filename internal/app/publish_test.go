@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -186,14 +187,28 @@ func TestPublishDevWatchOnceRebuildsAfterVaultMarkdownChange(t *testing.T) {
 
 	result := make(chan domain.Projection, 1)
 	errs := make(chan error, 1)
+	// watch_started is emitted after the fsnotify watchers are armed; waiting
+	// for it (instead of a fixed sleep) removes both the latency and the flake
+	// window where a change lands before watching begins.
+	watchStarted := make(chan struct{}, 1)
+	var watchOnce sync.Once
+	events := func(event PublishEvent) {
+		if event.Type == "watch_started" {
+			watchOnce.Do(func() { close(watchStarted) })
+		}
+	}
 	go func() {
-		projection, err := svc.PublishDev(ctx, PublishRequest{VaultPath: root, Profile: "public", Out: outDir, Host: "127.0.0.1", Port: 0, Watch: true, Once: true})
+		projection, err := svc.PublishDev(ctx, PublishRequest{VaultPath: root, Profile: "public", Out: outDir, Host: "127.0.0.1", Port: 0, Watch: true, Once: true, LiveEvents: events})
 		result <- projection
 		errs <- err
 	}()
 
 	waitForFile(t, filepath.Join(outDir, "index.html"), 10*time.Second)
-	time.Sleep(300 * time.Millisecond)
+	select {
+	case <-watchStarted:
+	case <-ctx.Done():
+		t.Fatalf("publish dev watch never started watching: %v", ctx.Err())
+	}
 	writeAppPublishNoteFixture(t, root, "notes/public.md", map[string]string{"note_id": "note_public", "title": "Public", "kind": "concept", "status": "active", "publish": "public"}, "# Public\n\nSecond body.\n")
 
 	select {

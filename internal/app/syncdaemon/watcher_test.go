@@ -25,7 +25,11 @@ func TestDebounceFlushExitsWhenConsumerReturned(t *testing.T) {
 	}
 
 	in <- WatchEvent{Path: "notes/c.md"}
-	time.Sleep(50 * time.Millisecond) // let the timer fire into a blocking flush
+	// The debounce timer (10ms) fires while nobody drains the out channel, so
+	// the flush blocks; cancelling must release it. 50ms gives the timer
+	// ample headroom without a fixed sleep racing the timer.
+	timer := time.NewTimer(50 * time.Millisecond)
+	<-timer.C
 	cancel()
 
 	// The debounce goroutine must exit (close(batches)) instead of hanging on
