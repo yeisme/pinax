@@ -69,24 +69,32 @@ Prerequisites:
 - Go 1.26.1 or newer, or download a prebuilt archive/package below.
 - Optional: [Task](https://taskfile.dev/) for `task check` and local development shortcuts.
 
-Install from source:
+Anonymous install (no GitHub token; public mirror [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s pinax
+export PATH="$HOME/.yeisme/bin:$PATH"
+pinax version
+```
+
+Install from source (needs Go, and the module repo must be reachable):
 
 ```bash
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-Download a prebuilt archive from GitHub Releases (current stable tag: `v0.2.0`):
+Download a prebuilt archive from the public mirror (current stable tag: `v0.2.0`):
 
 ```bash
 # linux x86_64 (adjust os/arch for your platform: darwin, windows; x86_64, aarch64)
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.2.0/checksums.txt
+curl -fsSL -o pinax.tar.gz https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
+curl -fsSL -o checksums.txt https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
 ```
 
-Windows uses a `.zip` archive instead of `.tar.gz`. See the release page for the full asset list (`darwin`, `linux`, `windows` × `x86_64`, `aarch64`), `checksums.txt`, source archives, and archive SBOMs.
+Windows uses a `.zip` archive instead of `.tar.gz`. See the [mirror release](https://github.com/yeisme/yeisme-dist/releases/tag/pinax/v0.2.0) for the full asset list (`darwin`, `linux`, `windows` × `x86_64`, `aarch64`), `checksums.txt`, source archives, and archive SBOMs. The product repo `yeisme/pinax` stays private.
 
 Install with Homebrew after a tagged release publishes the formula:
 

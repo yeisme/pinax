@@ -60,24 +60,32 @@ Agent plan 会绑定 object ID、observed path、expected content revision 和 r
 - Go 1.26.1 或更新版本，或下载下方预编译 archive。
 - 可选：[Task](https://taskfile.dev/)，用于 `task check` 等开发快捷命令。
 
-从源码安装：
+匿名安装（无需 GitHub token；公开镜像 [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s pinax
+export PATH="$HOME/.yeisme/bin:$PATH"
+pinax version
+```
+
+从源码安装（需要 Go，且能访问模块仓库）：
 
 ```bash
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-从 GitHub Release 下载预编译 archive（当前稳定 tag：`v0.2.0`）：
+从公开镜像下载预编译 archive（当前稳定 tag：`v0.2.0`）：
 
 ```bash
 # linux x86_64（请按你的平台调整 os/arch：darwin、windows；x86_64、aarch64）
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.2.0/checksums.txt
+curl -fsSL -o pinax.tar.gz https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
+curl -fsSL -o checksums.txt https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
 ```
 
-Windows 使用 `.zip` archive 而非 `.tar.gz`。完整 asset 列表见 release 页面（`darwin`、`linux`、`windows` × `x86_64`、`aarch64`）。
+Windows 使用 `.zip` archive 而非 `.tar.gz`。完整 asset 列表见 [镜像 release](https://github.com/yeisme/yeisme-dist/releases/tag/pinax/v0.2.0)。产品仓库 `yeisme/pinax` 保持私有。
 
 从本地 checkout 构建：
 

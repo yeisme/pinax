@@ -171,6 +171,18 @@ jobs:
           version: "v2.17.0"
           args: release --clean
 
+      - name: Notify yeisme-dist
+        env:
+          GH_TOKEN: ${{ secrets.DIST_SYNC_TOKEN }}
+        run: |
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::warning::skip dist notify: DIST_SYNC_TOKEN is not set"
+            exit 0
+          fi
+          gh api repos/yeisme/yeisme-dist/dispatches \
+            -f event_type=product-release \
+            --raw-field 'client_payload={"product":"pinax"}'
+
       - name: upload release artifacts
         uses: actions/upload-artifact@v4
         if: always()

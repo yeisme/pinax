@@ -19,14 +19,19 @@
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-**方式 B：下载 GitHub Release archive（无需 Go）**
+**方式 B：公开镜像安装器（无需 Go、无需 GitHub token）**
 
-从 [Pinax Releases](https://github.com/yeisme/pinax/releases) 下载对应平台的 archive（例如 `pinax_0.1.5_linux_x86_64.tar.gz`），解压并把 `pinax` 放到 `PATH`：
+```bash
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s pinax
+export PATH="$HOME/.yeisme/bin:$PATH"
+```
+
+或从 [yeisme-dist pinax/v0.2.0](https://github.com/yeisme/yeisme-dist/releases/tag/pinax/v0.2.0) 下载对应平台 archive，校验 checksum 后放入 `PATH`：
 
 ```bash
 # 示例：Linux x86_64
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.2.0/checksums.txt
+curl -fsSL -o pinax.tar.gz https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
+curl -fsSL -o checksums.txt https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz pinax
 chmod +x pinax
