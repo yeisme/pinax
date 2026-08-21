@@ -179,9 +179,9 @@ jobs:
             echo "::warning::skip dist notify: DIST_SYNC_TOKEN is not set"
             exit 0
           fi
-          gh api repos/yeisme/yeisme-dist/dispatches \
-            -f event_type=product-release \
-            --raw-field 'client_payload={"product":"pinax"}'
+          gh api repos/yeisme/yeisme-dist/dispatches --input - <<'EOF'
+          {"event_type":"product-release","client_payload":{"product":"pinax"}}
+          EOF
 
       - name: upload release artifacts
         uses: actions/upload-artifact@v4
