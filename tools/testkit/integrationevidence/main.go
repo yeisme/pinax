@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, or agent-continuity")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, or dsh-pane")
 	flag.Parse()
 	runID := time.Now().UTC().Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid())
 	config := buildConfigForProfile(*profile, runID, os.Stdout, os.Stderr)
@@ -64,6 +64,24 @@ func buildConfig(runID string, stdout, stderr io.Writer) evidence.Config {
 }
 
 func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	if profile == "dsh-pane" {
+		return evidence.Config{
+			RunID:             runID,
+			ParentDir:         filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"go", "test", "./internal/app", "-run", "Pane", "-count=1"},
+			PassThroughStdout: stdout,
+			PassThroughStderr: stderr,
+			PassStatus:        "passed",
+			Layer:             "component",
+			ExtraChecks: map[string]any{
+				"pane_snapshot_redaction":       true,
+				"handwritten_metadata_rejected": true,
+				"backlinks_bounded":             true,
+				"graph_summary_no_paths":        true,
+				"history_timeline_bounded":      true,
+			},
+		}
+	}
 	if profile == "agent-memory" {
 		return buildAgentMemoryConfig(runID, stdout, stderr)
 	}

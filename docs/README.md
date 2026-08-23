@@ -62,6 +62,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
 - [CLI Output Contract](./interfaces/cli-output-contract.md)
+- [DSH Pane Interface Contract](./interfaces/dsh-pane.md)
 - [Local REST/RPC Contract](./interfaces/remote-api-contract.md)
 - [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)
 - [Demo Proof Loop](./demo-proof-loop.md)

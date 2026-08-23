@@ -40,6 +40,17 @@ func TestBuildIdentityConfigUsesRequiredEvidenceDirectoryAndEntrypoint(t *testin
 	}
 }
 
+func TestBuildDshPaneProfile(t *testing.T) {
+	config := buildConfigForProfile("dsh-pane", "pane-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	if !strings.Contains(command, "./internal/app") || !strings.Contains(command, "Pane") {
+		t.Fatalf("pane evidence command = %s", command)
+	}
+	if config.Layer != "component" || config.ExtraChecks["handwritten_metadata_rejected"] != true {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
 func TestBuildIdentityBenchmarkProfile(t *testing.T) {
 	config := buildConfigForProfile("identity-benchmark", "benchmark-run", io.Discard, io.Discard)
 	command := strings.Join(config.Command, " ")

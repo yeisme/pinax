@@ -50,6 +50,7 @@ Pinax 是本地优先的统一笔记 Agent CLI：Markdown vault 是用户知识�
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
 - [CLI Output Contract](./interfaces/cli-output-contract.md)
+- [DSH Pane 接口合同](./interfaces/dsh-pane.md)
 - [Local REST/RPC Contract](./interfaces/remote-api-contract.md)
 - [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)
 - [命令手册](./commands/README.md)
