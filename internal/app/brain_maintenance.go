@@ -55,7 +55,7 @@ func (s *Service) BrainMaintenancePlan(_ context.Context, req BrainMaintenanceRe
 			cmdErr := &domain.CommandError{Code: "brain_maintenance_plan_save_failed", Message: err.Error(), Hint: "Retry the command"}
 			return domain.NewErrorProjection("brain.maintenance_plan", cmdErr), cmdErr
 		}
-		if err := os.WriteFile(absPath, append(body, '\n'), 0o600); err != nil {
+		if err := atomicWriteFile(absPath, append(body, '\n'), 0o600); err != nil {
 			cmdErr := &domain.CommandError{Code: "brain_maintenance_plan_save_failed", Message: "Could not write maintenance plan", Hint: "Check vault permissions"}
 			return domain.NewErrorProjection("brain.maintenance_plan", cmdErr), cmdErr
 		}

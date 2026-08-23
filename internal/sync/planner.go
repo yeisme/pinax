@@ -58,7 +58,14 @@ type Operation struct {
 	Path           string `json:"path,omitempty"`
 	PathHash       string `json:"path_hash,omitempty"`
 	BlobID         string `json:"blob_id,omitempty"`
-	Status         string `json:"status"`
+	// LocalBlobID is the local manifest's content-addressed blob for this
+	// object (the last synced state); apply uses it as a TOCTOU guard.
+	LocalBlobID string `json:"local_blob_id,omitempty"`
+	// FastForward marks a download where local provably matches the common
+	// base, so apply may overwrite local with the remote blob without
+	// preserving a conflict copy.
+	FastForward bool   `json:"fast_forward,omitempty"`
+	Status      string `json:"status"`
 }
 
 type ConflictEntry struct {
@@ -191,7 +198,16 @@ func diffObjectManifests(base, local, rem remote.Manifest, dir Direction) []Oper
 			if dir == DirectionPush || dir == DirectionDiff {
 				operations = append(operations, objectOperation("upload_blob", localEntry, remoteEntry, localEntry.Path))
 			} else {
-				operations = append(operations, objectOperation("download_blob", localEntry, remoteEntry, remoteEntry.Path))
+				op := objectOperation("download_blob", localEntry, remoteEntry, remoteEntry.Path)
+				// A local copy that provably matches the common base has no
+				// diverged content to preserve: the pull may fast-forward the
+				// remote blob without leaving a conflict copy. Proof needs
+				// either equal content-addressed blobs or non-empty matching
+				// revision ids; empty v1 revision ids alone prove nothing.
+				op.BaseRevision = baseEntry.RevisionID
+				op.LocalBlobID = localEntry.BlobID
+				op.FastForward = hasBase && (localEntry.BlobID == baseEntry.BlobID || (localEntry.RevisionID != "" && localEntry.RevisionID == baseEntry.RevisionID))
+				operations = append(operations, op)
 			}
 			continue
 		}
@@ -338,9 +354,11 @@ func diffManifests(base, local, rem remote.Manifest, dir Direction) []Operation 
 				continue
 			}
 			if l.BlobID == b.BlobID && r.BlobID != b.BlobID {
-				// changed remotely, untouched locally -> download
+				// changed remotely, untouched locally -> download; blob equality
+				// proves local matches base, so apply may fast-forward without
+				// a conflict copy (TOCTOU-guarded against post-plan edits).
 				if dir == DirectionPull || dir == DirectionDiff {
-					ops = append(ops, Operation{Kind: "download_blob", Path: path, PathHash: r.PathHash, BlobID: r.BlobID, Status: "planned"})
+					ops = append(ops, Operation{Kind: "download_blob", Path: path, PathHash: r.PathHash, BlobID: r.BlobID, LocalBlobID: l.BlobID, FastForward: true, Status: "planned"})
 				}
 				continue
 			}

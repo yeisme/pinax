@@ -1321,7 +1321,7 @@ func applyRepairFrontmatterPatch(root, rel string, fields map[string]string) err
 		return err
 	}
 	updated, _ := patchFrontmatterFields(string(content), fields)
-	return os.WriteFile(path, []byte(updated), 0o644)
+	return atomicWriteFile(path, []byte(updated), 0o644)
 }
 
 func vaultIssue(code, severity string, fact noteFact, message string, evidence []string, actions []domain.Action) domain.VaultIssue {

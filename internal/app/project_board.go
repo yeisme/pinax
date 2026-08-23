@@ -426,7 +426,7 @@ func (s *Service) ProjectItemAdd(_ context.Context, req ProjectItemRequest) (dom
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return errorProjection("project.item.add", err), err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
 		return errorProjection("project.item.add", err), err
 	}
 	note := parseNote(rel, content)
@@ -1024,7 +1024,7 @@ func patchProjectItemNote(_ context.Context, _ *Service, root string, note domai
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	updated, _ := patchFrontmatterFields(string(content), map[string]string{"board_column": column, "status": statusForBoardColumn(column), "updated_at": now})
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+	if err := atomicWriteFile(path, []byte(updated), 0o644); err != nil {
 		return err
 	}
 	_ = refreshIndex(root)

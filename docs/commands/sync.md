@@ -246,7 +246,7 @@ The target execution flow is transport-independent:
 5. Commit the new revision with compare-and-swap against the known base revision.
 6. Write local sync-state / run evidence after the commit result is known.
 7. Other devices read the committed head, download missing encrypted blobs, decrypt locally, and apply changes.
-8. Conflicting local edits are preserved as local conflict copies instead of being silently overwritten.
+8. Conflicting local edits are preserved as local conflict copies instead of being silently overwritten. A conflict copy is only preserved when local content actually diverged from the common base revision (or divergence cannot be proven, e.g. first sync of the object): a pull onto an untouched local copy fast-forwards the remote blob silently, and a file edited after the plan was built still preserves a copy as a TOCTOU guard. On manifest v2 vaults conflict copies are local-only snapshots: they keep the note's canonical `note_id`, so they are excluded from the v2 remote manifest and the identity audit (syncing them would duplicate object identity and block pushes). Resolve them with `pinax sync conflicts resolve`.
 
 `remote_write=true` belongs only to step 5 after a durable revision commit. It is not valid for dry-runs, plan generation, blob uploads, manifest uploads, conflict failures, unsupported transports, or pull operations.
 

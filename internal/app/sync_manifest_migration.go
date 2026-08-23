@@ -327,6 +327,11 @@ func buildSyncManifestIdentityAudit(root, requestedDeviceID string) (SyncManifes
 	}
 	managedNotePaths := make(map[string]identity.IDClass, len(notes))
 	for _, note := range notes {
+		// Conflict copies preserve the live note's canonical id; they are local
+		// merge snapshots, not managed objects, and must not duplicate identity.
+		if pinaxcloud.IsConflictCopyPath(note.Path) {
+			continue
+		}
 		class := identity.Classify(note.ID)
 		managedNotePaths[note.Path] = class
 		if class == identity.IDClassCanonical {
@@ -344,6 +349,9 @@ func buildSyncManifestIdentityAudit(root, requestedDeviceID string) (SyncManifes
 	}
 	seenObjectIDs := map[string]string{}
 	for _, entry := range manifest.Entries {
+		if pinaxcloud.IsConflictCopyPath(entry.Path) {
+			continue
+		}
 		fact, ok := identities[entry.Path]
 		code := ""
 		if !ok {

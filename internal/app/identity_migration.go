@@ -287,7 +287,7 @@ func applyIdentityMigrationOperation(ctx context.Context, root string, operation
 	}
 	patched, _ := patchFrontmatterFields(string(payload), map[string]string{"note_id": operation.ToObjectID})
 	if patched != string(payload) {
-		if err := os.WriteFile(path, []byte(patched), 0o644); err != nil {
+		if err := atomicWriteFile(path, []byte(patched), 0o644); err != nil {
 			return err
 		}
 	}

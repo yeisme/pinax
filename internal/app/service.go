@@ -697,7 +697,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return errorProjection("note.new", err), err
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
 		return errorProjection("note.new", err), err
 	}
 	dailyIndexRel, dailyErr := appendDailyIndex(root, domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status}, s.currentTimeUTC())
@@ -1896,7 +1896,7 @@ func (s *Service) ensureJournalNote(vaultPath, period string, req DailyRequest) 
 		return "", "", "", err
 	}
 	content := buildNoteContentWithObjectID(journalObjectID, title, "", period, period, []string{period}, "journal", now, body)
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
 		return "", "", "", err
 	}
 	if err := refreshIndex(root); err != nil {

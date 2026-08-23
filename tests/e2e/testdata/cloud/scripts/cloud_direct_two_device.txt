@@ -17,6 +17,10 @@ exec pinax sync push --target cloud --vault device-a --yes --json
 stdout '"command":"sync.push"'
 stdout '"status":"success"'
 stdout '"remote_write":true'
+stdout '"sync_view"'
+stdout '"schema_version":"pinax.sync.output.v1"'
+stdout '"result":"applied"'
+stdout '"direction":"push"'
 ! stdout 'from device A'
 
 exec pinax sync pull --target cloud --vault device-b --yes --json
@@ -24,7 +28,36 @@ stdout '"command":"sync.pull"'
 stdout '"status":"success"'
 stdout '"remote_write":false'
 stdout '"files_applied":1'
+stdout '"sync_view"'
+stdout '"direction":"pull"'
+stdout '"code":"A"'
+stdout '"path":"notes/alpha.md"'
 grep 'from device A' device-b/notes/alpha.md
+
+# Sequential edit: A updates, untouched-local B pulls → remote fast-forwards
+# with no noise conflict copy.
+exec sh -c 'printf "# Alpha\n\nv2 from device A\n" > device-a/notes/alpha.md'
+exec pinax sync push --target cloud --vault device-a --yes --json
+stdout '"command":"sync.push"'
+stdout '"status":"success"'
+exec pinax sync pull --target cloud --vault device-b --yes --json
+stdout '"command":"sync.pull"'
+stdout '"status":"success"'
+stdout '"conflicts":0'
+grep 'v2 from device A' device-b/notes/alpha.md
+exec sh -c '! ls device-b/notes/*.conflict.md >/dev/null 2>&1'
+
+# A converged second push reports up_to_date in the shared sync view (remote-aware scope).
+exec sh -c 'pinax sync push --target cloud --vault device-a --yes --json > push-converged.json'
+grep '"up_to_date":"true"' push-converged.json
+grep '"result":"up_to_date"' push-converged.json
+grep '"scope":"remote-aware"' push-converged.json
+
+# A converged second pull reports up_to_date too (facts and sync view aligned
+# with the push fast path).
+exec sh -c 'pinax sync pull --target cloud --vault device-b --yes --json > pull-converged.json'
+grep '"up_to_date":"true"' pull-converged.json
+grep '"result":"up_to_date"' pull-converged.json
 
 exec sh -c 'printf "# Alpha\n\nlocal desktop edit\n" > device-b/notes/alpha.md'
 exec sh -c 'printf "# Alpha\n\nupdated from device A\n" > device-a/notes/alpha.md'

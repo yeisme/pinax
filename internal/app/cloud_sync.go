@@ -285,7 +285,12 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			if !ok {
 				continue
 			}
-			applied, newConflicts, err := applyRemoteManifestEntry(ctx, root, transport, keys, entry)
+			// The planner marks downloads whose local copy provably matches
+			// the common base; only those may overwrite local without a
+			// conflict copy. A local file that drifted from the last synced
+			// blob since the plan was built (TOCTOU) still preserves a copy.
+			preserveConflict := !op.FastForward || localFileDriftedFromBlob(root, entry.Path, op.LocalBlobID)
+			applied, newConflicts, err := applyRemoteManifestEntryWithPolicy(ctx, root, transport, keys, entry, preserveConflict)
 			if err != nil {
 				return directPullResult{}, err
 			}
@@ -429,6 +434,24 @@ func applyRemoteManifestEntry(ctx context.Context, root string, transport clouds
 	return applyRemoteManifestEntryWithPolicy(ctx, root, transport, keys, entry, true)
 }
 
+// localFileDriftedFromBlob reports whether the vault file at rel still hashes
+// to lastSyncedBlobID. Unknown states (missing file, missing blob id, read
+// error) read as drifted so apply stays conservative and preserves a copy.
+func localFileDriftedFromBlob(root, rel, lastSyncedBlobID string) bool {
+	if strings.TrimSpace(lastSyncedBlobID) == "" {
+		return true
+	}
+	path, err := safeCloudSyncPath(root, rel)
+	if err != nil {
+		return true
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return true
+	}
+	return pinaxcloud.BlobID(raw) != lastSyncedBlobID
+}
+
 func applyRemoteManifestEntryWithPolicy(ctx context.Context, root string, transport cloudsync.Transport, keys pinaxcloud.CryptoKeys, entry pinaxcloud.ManifestEntry, preserveConflict bool) (bool, []domain.SyncConflictEntry, error) {
 	blobEnvelope, err := transport.GetBlob(ctx, entry.BlobID)
 	if err != nil {
@@ -470,7 +493,7 @@ func applyRemoteManifestEntryWithPolicy(ctx context.Context, root string, transp
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return false, nil, err
 	}
-	if err := os.WriteFile(path, content, fileMode); err != nil {
+	if err := atomicWriteFile(path, content, fileMode); err != nil {
 		return false, nil, err
 	}
 	return true, conflicts, nil
@@ -538,7 +561,7 @@ func preserveLocalConflict(root, rel string, now time.Time) (*domain.SyncConflic
 
 func writeConflictCopy(root, path string, content []byte, mode os.FileMode, now time.Time) (*domain.SyncConflictEntry, error) {
 	conflictPath := syncConflictCopyPath(path, now)
-	if err := os.WriteFile(conflictPath, content, mode); err != nil {
+	if err := atomicWriteFile(conflictPath, content, mode); err != nil {
 		return nil, err
 	}
 	rel, err := filepath.Rel(root, conflictPath)

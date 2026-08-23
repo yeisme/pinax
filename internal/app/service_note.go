@@ -319,7 +319,7 @@ func (s *Service) ImportMarkdown(_ context.Context, req ImportMarkdownRequest) (
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return errorProjection("import.markdown", err), err
 		}
-		if err := os.WriteFile(target, []byte(output), 0o644); err != nil {
+		if err := atomicWriteFile(target, []byte(output), 0o644); err != nil {
 			return errorProjection("import.markdown", err), err
 		}
 		written++

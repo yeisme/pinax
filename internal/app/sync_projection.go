@@ -418,10 +418,21 @@ func (r *cloudSyncRun) executeCloudPull() (domain.Projection, error) {
 	projection.Facts["revision_id"] = pullResult.RevisionID
 	projection.Facts["conflicts"] = fmt.Sprint(len(pullResult.Conflicts))
 	projection.Facts["local_write"] = fmt.Sprint(r.receipt.LocalWrite)
+	// A converged pull (nothing applied, no conflicts, manifest content equal)
+	// reports up_to_date so the shared view matches the push fast path.
+	upToDate := pullResult.FilesApplied == 0 && pullResult.DeletesApplied == 0 && len(pullResult.Conflicts) == 0 && cloudManifestContentEqual(r.localManifest, pullResult.Manifest)
+	if upToDate {
+		projection.Summary = "Remote is already up to date; nothing to pull."
+		projection.Facts["up_to_date"] = "true"
+	}
 	addSyncConflictFacts(&projection, pullResult.Conflicts)
 	projection.Evidence = []string{receiptPath}
 	data := map[string]any{"plan": syncops.SanitizePlan(r.plan, r.pathPolicy), "remote_write": false, "files_applied": pullResult.FilesApplied, "delete_markers_applied": pullResult.DeletesApplied, "revision_id": pullResult.RevisionID, "manifest_blob_id": pullResult.ManifestBlobID, "conflicts": pullResult.Conflicts, "receipt": r.receipt}
-	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(r.plan, r.baseManifest, r.localManifest, pullResult.Manifest, syncOutputViewOptions{Scope: "remote-aware", Result: "applied", RemoteAfter: pullResult.RevisionID, LocalAfter: pullResult.RevisionID, PathPolicy: r.pathPolicy}))
+	pullResultValue := "applied"
+	if upToDate {
+		pullResultValue = "up_to_date"
+	}
+	attachSyncOutputView(projection.Facts, data, buildSyncOutputView(r.plan, r.baseManifest, r.localManifest, pullResult.Manifest, syncOutputViewOptions{Scope: "remote-aware", Result: pullResultValue, RemoteAfter: pullResult.RevisionID, LocalAfter: pullResult.RevisionID, PathPolicy: r.pathPolicy}))
 	r.attachContentDiff(data, r.plan, pullResult.Manifest)
 	projection.Data = data
 	return projection, nil

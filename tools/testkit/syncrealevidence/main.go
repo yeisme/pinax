@@ -18,13 +18,16 @@ func main() {
 	result, err := evidence.Run(evidence.Config{
 		RunID:             runID,
 		ParentDir:         filepath.Join("temp", "integration-test-runs"),
-		Command:           []string{"go", "test", "./tests/e2e", "-run", "IdentityFirstRealSyncSmoke", "-count=1"},
+		Command:           []string{"go", "test", "./tests/e2e", "-run", "IdentityFirstRealSyncSmoke|SyncOutputRealDualDeviceRegression", "-count=1"},
 		PassThroughStdout: os.Stdout,
 		PassThroughStderr: os.Stderr,
 		ExtraChecks: map[string]any{
 			"real_transport":        true,
 			"manifest_v2_promotion": true,
 			"credential_safe":       true,
+			"sync_output_view":      true,
+			"conflict_preserved":    true,
+			"delete_markers":        true,
 		},
 	})
 	if err != nil {

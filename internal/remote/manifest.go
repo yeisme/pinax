@@ -9,6 +9,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -239,6 +240,18 @@ type ManifestIdentity struct {
 	ObjectKind string
 }
 
+// conflictCopyPattern matches sync-preserved conflict copies
+// (`<base>.<yyyyMMddHHmmss>.conflict.md`). These are local snapshots for
+// manual merge, not managed sync objects: they carry the same canonical
+// note_id as the live note, so syncing them would duplicate object identity
+// and permanently block manifest v2 pushes.
+var conflictCopyPattern = regexp.MustCompile(`\.\d{14}\.conflict\.md$`)
+
+// IsConflictCopyPath reports whether rel is a sync conflict-copy path.
+func IsConflictCopyPath(rel string) bool {
+	return conflictCopyPattern.MatchString(filepath.ToSlash(strings.TrimSpace(rel)))
+}
+
 func BuildManifestV2(root, deviceID string, identities map[string]ManifestIdentity) (Manifest, error) {
 	deviceID = strings.TrimSpace(deviceID)
 	if deviceID == "" {
@@ -248,6 +261,17 @@ func BuildManifestV2(root, deviceID string, identities map[string]ManifestIdenti
 	if err != nil {
 		return Manifest{}, err
 	}
+	// Conflict copies stay local: they preserve pre-pull content for manual
+	// merge and duplicate the live note's canonical object id.
+	entries := make([]ManifestEntry, 0, len(manifest.Entries))
+	for _, entry := range manifest.Entries {
+		if IsConflictCopyPath(entry.Path) {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	manifest.Entries = entries
+	manifest.EntryCount = len(entries)
 	seenObjectIDs := make(map[string]string, len(manifest.Entries))
 	for index := range manifest.Entries {
 		entry := &manifest.Entries[index]

@@ -637,3 +637,55 @@ The sync encryption key SHALL be derived with PBKDF2-SHA256 at no fewer than 600
 - **WHEN** an envelope's KeyID matches neither the active nor a legacy key for the configured secret
 - **THEN** decryption SHALL fail with a key ID mismatch error
 
+### Requirement: 冲突副本 SHALL 保持本地
+
+manifest v2 同步 SHALL 把 `*.<14位时间戳>.conflict.md` 冲突副本视为本地保留快照：`BuildManifestV2` SHALL NOT 将其写入远端 manifest，identity 审计 SHALL NOT 因其存在而判定 `duplicate_object_id`。
+
+#### Scenario: 冲突后继续 push
+
+- **WHEN** pull 在 v2 vault 中保留了冲突副本后设备再次 push
+- **THEN** identity 审计 SHALL 保持 eligible
+- **AND** push SHALL 正常提交，活笔记条目不受影响
+
+#### Scenario: 副本不上行
+
+- **WHEN** `BuildManifestV2` 构建远端 manifest
+- **THEN** 冲突副本路径 SHALL NOT 出现在 entries 中
+- **AND** `EntryCount` SHALL 等于 entries 数量
+
+#### Scenario: v1 行为不变
+
+- **WHEN** v1 manifest vault 产生冲突副本
+- **THEN** 现有同步行为 SHALL 保持不变
+
+### Requirement: pull SHALL 只在本地偏离 base 时保留冲突副本
+
+pull apply 阶段 SHALL 统一采用 preserveConflict 规则：base 信息缺失、planner 判定本地偏离 base、或本地内容 hash 与上次同步状态不一致时保留冲突副本；三者为假时远端内容 SHALL 静默 fast-forward 落盘，不产生副本与 conflict 计数。
+
+#### Scenario: 顺序编辑
+
+- **WHEN** 设备 A 编辑并 push，本地未改的设备 B pull
+- **THEN** B SHALL 落盘远端内容且不产生 `*.conflict.md`
+- **AND** `sync.conflicts` SHALL 为 0
+
+#### Scenario: 双方编辑
+
+- **WHEN** 两设备相对 base 各自编辑同一笔记后一方 pull
+- **THEN** SHALL 保留本地内容为冲突副本
+- **AND** `sync.conflicts` SHALL 计数
+
+#### Scenario: plan 后本地又被编辑
+
+- **WHEN** pull plan 生成后、apply 前本地文件再次被修改
+- **THEN** apply SHALL 保留冲突副本，不静默覆盖
+
+### Requirement: 收敛 pull SHALL 报告 up_to_date
+
+pull 在无待应用操作且本地/远端 manifest 内容一致时 SHALL 报告 `result=up_to_date`，facts 与 sync_view SHALL 与 push 侧 up-to-date 快路径一致。
+
+#### Scenario: 二次 pull
+
+- **WHEN** 已收敛设备再次 pull
+- **THEN** `sync.result` SHALL 为 `up_to_date`
+- **AND** `files_applied` SHALL 为 0
+
