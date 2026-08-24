@@ -363,9 +363,14 @@ tasks:
     cmds:
       - go test -race -count=1 -shuffle=on -timeout={{default "30m" .GO_TEST_TIMEOUT}} ./internal/app/syncdaemon/... ./internal/cloudsync/... ./internal/cloudclient/... ./internal/app -run 'Monitor|Sync|Publish|Watch|Debounce|Forward'
 
+  security:
+    desc: Run the pinned Go vulnerability scanner.
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
   ci:
     desc: Run the CI-equivalent Pinax quality gate.
-    deps: [check, race, release:check]
+    deps: [check, race, release:check, security]
 
   clean:
     desc: Remove local build artifacts.
