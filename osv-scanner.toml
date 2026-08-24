@@ -1,0 +1,8 @@
+# Copy to <product>/osv-scanner.toml
+# Every ignore MUST have a reason and an expiry. No permanent blackholes.
+# Example (uncomment and fill when a scan requires it):
+#
+# [[IgnoredVulns]]
+# id = "GO-2024-0000"
+# reason = "Not in the release binary call graph; confirmed by govulncheck."
+# ignoreUntil = "2026-11-21"
