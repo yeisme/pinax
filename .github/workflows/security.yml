@@ -35,9 +35,9 @@ jobs:
 
       - name: Install OSV-Scanner v2.5.1
         run: |
-          curl -fsSL -o /tmp/osv-scanner.tgz \
-            https://github.com/google/osv-scanner/releases/download/v2.5.1/osv-scanner_linux_amd64.tar.gz
-          tar -xzf /tmp/osv-scanner.tgz -C /tmp
+          curl -fsSL -o /tmp/osv-scanner \
+            https://github.com/google/osv-scanner/releases/download/v2.5.1/osv-scanner_linux_amd64
+          echo "f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be  /tmp/osv-scanner" | sha256sum -c -
           install -m 0755 /tmp/osv-scanner /usr/local/bin/osv-scanner
           osv-scanner --version
 
