@@ -40,7 +40,7 @@ Pinax 已具备 provider-neutral Agent Memory Runtime、bounded context、propos
 
 ### Target user screening
 
-- Uses two or more coding Agents (e.g. Codex + Cohors) for the same ongoing project.
+- Uses two or more coding Agents (e.g. Codex + Ordo) for the same ongoing project.
 - Maintains a Markdown vault or note collection with ≥50 notes.
 - Has experienced "re-explaining context" when switching between Agents within the same week.
 

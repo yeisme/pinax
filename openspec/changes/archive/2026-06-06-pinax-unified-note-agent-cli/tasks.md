@@ -42,7 +42,7 @@
 
 - [x] 2.1 增加 Go 开发生态和 Taskfile 入口。
   - Owner: `cli/pinax`
-  - Scope: 参考 Cohors `task build` 的使用体验，新增 Go CLI 版 `Taskfile.yml`，覆盖 `build`、`test`、`fmt`、`fmt-check`、`tidy`、`openspec`、`check`、`clean`。
+  - Scope: 参考 Ordo `task build` 的使用体验，新增 Go CLI 版 `Taskfile.yml`，覆盖 `build`、`test`、`fmt`、`fmt-check`、`tidy`、`openspec`、`check`、`clean`。
   - Depends on: 1.1
   - Lane: A
   - Acceptance:

@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-30
+goal: 让现有 agent.context、memory_recall、handoff_read 足以支撑四态 grounding consumer 与
+  transcript delete negative retrieval。

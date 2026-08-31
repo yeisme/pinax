@@ -10,7 +10,7 @@ Pinax SHALL expose versioned principal, scope, memory, source, context, proposal
 - **AND** the response SHALL declare body exposure and truncation without returning full private note bodies.
 
 #### Scenario: Runtime-specific fields remain optional
-- **WHEN** a Codex or Cohors adapter adds runtime metadata to a request
+- **WHEN** a Codex or Ordo adapter adds runtime metadata to a request
 - **THEN** the core SHALL process known common fields and optional adapter extensions
 - **AND** runtime metadata SHALL NOT change memory identity or lifecycle semantics.
 

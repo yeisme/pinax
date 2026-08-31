@@ -22,7 +22,7 @@ flowchart TD
 ## Decisions
 
 - 当前只提供最小 Cobra 入口，确认 Go toolchain、module、测试和 build 可用。
-- 新增 `Taskfile.yml` 作为本地开发任务聚合层；`task build` 对齐 Cohors 的体验，底层执行 Go build。
+- 新增 `Taskfile.yml` 作为本地开发任务聚合层；`task build` 对齐 Ordo 的体验，底层执行 Go build。
 - 业务能力包只保留 `doc.go` ownership marker，避免先写业务逻辑再补 OpenSpec。
 - 文档真源放 `cli/pinax/docs/`，根目录不复制项目文档。
 - skills profile 由根 `.skills/profiles/targets/cli/pinax.txt` 维护，runtime 副本由 `scripts/skills.sh sync-subprojects` 生成。

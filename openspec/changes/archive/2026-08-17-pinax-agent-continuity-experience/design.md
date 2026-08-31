@@ -2,7 +2,7 @@
 
 `pinax-agent-memory-runtime` 已定义 principal、scope、context pack、proposal、handoff、feedback、adapter descriptor 与 additive transport surfaces。现有 Dashboard 是 localhost 只读控制台，Proof Loop 已拥有 plan、snapshot、apply、receipt 和 restore 边界。当前缺口不是新的 memory engine，而是把这些底层能力编排成用户可理解的“继续工作”和“审阅记忆”体验，并提供可观察的信任证据。
 
-本 change 面向同时使用两个以上 Agent、维护长期项目并拥有 Markdown vault 的单一知识资产所有者。首个验证路径只要求 Codex/Cohors reference harness 或等价 fixture 模拟两个 Agent，不在 Pinax 内实现具体 runtime plugin。
+本 change 面向同时使用两个以上 Agent、维护长期项目并拥有 Markdown vault 的单一知识资产所有者。首个验证路径只要求 Codex/Ordo reference harness 或等价 fixture 模拟两个 Agent，不在 Pinax 内实现具体 runtime plugin。
 
 ## Goals / Non-Goals
 

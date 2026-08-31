@@ -2,7 +2,7 @@
 
 可复用提示词现在分散在笔记正文、聊天记录、Eikona workflow、Auctra 创作 brief 和人工经验里。Pinax 是本地知识 vault 和索引投影的 owner，应该负责把提示词沉淀成可搜索、可引用、可版本演进的 prompt asset，而不是让 Eikona 或 Auctra 直接保存长期提示词资产。
 
-这个 change 建立 Pinax 的 prompt asset vault：保存 `yeisme.prompt_asset.v1` 资产、维护 lifecycle、绑定 note/source refs、提供 `pinax://prompt/<id>` URI 解析、记录 usage feedback，并通过稳定 `--json` / `--agent` 输出供 Auctra、Eikona、Cohors 和脚本消费。
+这个 change 建立 Pinax 的 prompt asset vault：保存 `yeisme.prompt_asset.v1` 资产、维护 lifecycle、绑定 note/source refs、提供 `pinax://prompt/<id>` URI 解析、记录 usage feedback，并通过稳定 `--json` / `--agent` 输出供 Auctra、Eikona、Ordo 和脚本消费。
 
 ## What Changes
 

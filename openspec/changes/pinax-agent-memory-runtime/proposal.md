@@ -9,7 +9,7 @@ Pinax 已有 non-vector memory ledger、Agent Brain context bundle、bounded CLI
 - 新增 context compiler，复用现有 memory、search、KB、graph、query、project 和 receipt projection，按 permission、scope、lifecycle、confidence、freshness、task fitness 和 budget 编译 context pack。
 - 新增 proposal/review/approve/reject/supersede/expire/conflict application services；Agent 默认只能 propose，confirmed mutation 继续受 Pinax service 和 receipt 控制。
 - 新增 additive CLI `pinax agent ...`、generic MCP `pinax.agent.*`、localhost REST/RPC 和 Go SDK read/proposal surfaces。
-- 建立 generic adapter capability descriptor 和两个 reference adapter harness：Codex + Cohors；runtime-specific 安装和 hook 实现不进入 Pinax core domain。
+- 建立 generic adapter capability descriptor 和两个 reference adapter harness：Codex + Ordo；runtime-specific 安装和 hook 实现不进入 Pinax core domain。
 - 建立 transport parity、redaction、compatibility、integration evidence 和真实跨 Agent handoff dogfooding。
 - 保留现有 `pinax memory`、`pinax brain`、`pinax.brain.*`、Remote API Mode 和 stored ledger 行为。本 change 不批准删除、重命名或 repurpose 旧面。
 
@@ -18,7 +18,7 @@ Pinax 已有 non-vector memory ledger、Agent Brain context bundle、bounded CLI
 ### New Capabilities
 
 - `agent-memory-runtime`: Pinax 通用 memory domain、context compiler、proposal lifecycle、handoff、feedback、CLI/MCP/API/SDK 和兼容策略。
-- `agent-runtime-adapter-contract`: runtime capability descriptor、generic adapter boundary、Codex/Cohors reference harness、故障隔离和 adapter handoff。
+- `agent-runtime-adapter-contract`: runtime capability descriptor、generic adapter boundary、Codex/Ordo reference harness、故障隔离和 adapter handoff。
 
 ### Modified Capabilities
 

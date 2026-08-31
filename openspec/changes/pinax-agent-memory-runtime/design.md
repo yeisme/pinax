@@ -14,11 +14,11 @@ Pinax 的 `internal/memory` 已支持 fact/decision/event/task、source citation
 - 通过 proposal 和 review 防止 Agent 自动污染 confirmed memory。
 - 支持 bounded cross-Agent handoff 和 recall feedback。
 - 保持现有 memory/brain/MCP/API/stored rows 兼容。
-- 用 Codex + Cohors adapter harness 证明 runtime portability。
+- 用 Codex + Ordo adapter harness 证明 runtime portability。
 
 **Non-Goals:**
 
-- 不实现完整 Codex plugin、Cohors runtime integration 或通信 provider bridge。
+- 不实现完整 Codex plugin、Ordo runtime integration 或通信 provider bridge。
 - 不建设公网 memory backend、组织 ACL 和团队 SaaS。
 - 不把向量数据库设为 memory truth。
 - 不同步明文 memory body 到 Capsa。
@@ -139,7 +139,7 @@ REST/RPC 和 Go SDK 共享 application service DTO；transport 不直接读 ledg
 
 ## Adapter Boundary
 
-Reference adapter harness 只验证：descriptor negotiation、context request rendering、proposal/handoff conversion、failure isolation。Codex/Cohors 特有 hook、config、team run、trace path 和 plugin packaging 不进入 core packages。
+Reference adapter harness 只验证：descriptor negotiation、context request rendering、proposal/handoff conversion、failure isolation。Codex/Ordo 特有 hook、config、team run、trace path 和 plugin packaging 不进入 core packages。
 
 Adapter 不可用时返回 degraded status，不阻塞其他 transport。Core 不把 runtime name 写入 memory ID 或 lifecycle decision。
 
@@ -156,7 +156,7 @@ Adapter 不可用时返回 degraded status，不阻塞其他 transport。Core �
 - Unit：protocol validation、scope、lifecycle、ranking、budget、policy、redaction。
 - Integration：service + real GORM SQLite + existing projection dependencies。
 - Component：CLI/MCP/API/SDK parity 和 compatibility。
-- E2E：Codex harness producer/consumer、Cohors harness producer/consumer、cross-adapter handoff。
+- E2E：Codex harness producer/consumer、Ordo harness producer/consumer、cross-adapter handoff。
 - Evidence：每次 integration/component/e2e 写 `temp/integration-test-runs/<run-id>/` 标准资产。
 - Performance：10k memories、100k source refs、bounded context，禁止每次 request 全表/全 vault scan。
 

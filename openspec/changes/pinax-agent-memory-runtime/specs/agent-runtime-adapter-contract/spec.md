@@ -13,8 +13,8 @@ Every Agent adapter SHALL expose runtime ID, adapter version, supported contract
 
 Adapters MAY render context and lifecycle events into runtime-native forms, but SHALL preserve common memory IDs, scopes, lifecycle states, source refs and approval results. Adapter-specific metadata SHALL remain optional.
 
-#### Scenario: Codex and Cohors exchange a handoff
-- **WHEN** a Cohors reference adapter produces a common handoff and a Codex reference adapter consumes it
+#### Scenario: Codex and Ordo exchange a handoff
+- **WHEN** a Ordo reference adapter produces a common handoff and a Codex reference adapter consumes it
 - **THEN** both SHALL use the same handoff schema and source refs
 - **AND** neither SHALL require a core schema change or runtime-specific memory ID.
 
@@ -25,7 +25,7 @@ An adapter initialization, capability, rendering or transport failure SHALL retu
 #### Scenario: Codex adapter is unavailable
 - **WHEN** the Codex adapter executable or configuration is unavailable
 - **THEN** Pinax SHALL report the adapter as degraded with a recovery action
-- **AND** generic CLI/MCP and Cohors adapter access SHALL remain operational.
+- **AND** generic CLI/MCP and Ordo adapter access SHALL remain operational.
 
 ### Requirement: Generic transport adapters SHALL share application services
 
