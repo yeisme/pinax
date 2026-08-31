@@ -31,8 +31,8 @@ Pinax 不是云笔记后端、新闻爬虫、飞书知识库或长期 daemon。�
 - Go/Cobra/Viper CLI 架构：`golang-cobra-viper-cli-architecture`。
 - 后端、repository、provider adapter、事件和索引设计：`backend-system-workflow`。
 - 行为变更或 bugfix：`yeisme-coding-execution-driver`。
-- 失败命令、provider 异常、Git 状态异常、索引或 sync 异常：`evidence-based root-cause diagnosis`。
-- 完成前确认：`task quality gates`。
+- 失败命令、provider 异常、Git 状态异常、索引或 sync 异常：使用 `yeisme-coding-execution-driver` 的 diagnosis loop。
+- 完成前确认：运行 `yeisme-coding-execution-driver` completion gates，再执行 `review`、`health` 和所需集成证据检查。
 - PR/代码审查、质量扫描：`review`、`health`。
 - 性能专项：`performance-profiler`。
 
