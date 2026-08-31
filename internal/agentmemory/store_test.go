@@ -189,7 +189,7 @@ func TestStore_SaveAndListHandoffs(t *testing.T) {
 	h := agentprotocol.Handoff{
 		SchemaVersion: agentprotocol.HandoffSchemaVersion,
 		HandoffID:     "h_1",
-		FromPrincipal: agentprotocol.DefaultAdapterPrincipal("p_cohors", "cohors"),
+		FromPrincipal: agentprotocol.DefaultAdapterPrincipal("p_ordo", "ordo"),
 		ToPrincipal:   agentprotocol.DefaultAdapterPrincipal("p_codex", "codex"),
 		Scope:         scope,
 		Objective:     "Review slice",

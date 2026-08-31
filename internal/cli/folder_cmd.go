@@ -17,6 +17,9 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 	var createYes bool
 	var renameDryRun bool
 	var renameYes bool
+	var renameExpectedRevision string
+	var renameOperationID string
+	var renameIdempotencyKey string
 	var moveDryRun bool
 	var moveYes bool
 	var deleteDryRun bool
@@ -67,12 +70,15 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "folder.rename", "argument_required", "folder rename requires old and new folder paths", "pinax folder rename <old> <new> --vault <vault> --yes")
 		}
-		projection, err := ctx.svc.RenameFolder(cmd.Context(), app.FolderOperationRequest{VaultPath: *ctx.vaultPath, Path: args[0], TargetPath: args[1], DryRun: renameDryRun, Yes: renameYes})
+		projection, err := ctx.svc.RenameFolder(cmd.Context(), app.FolderOperationRequest{VaultPath: *ctx.vaultPath, Path: args[0], TargetPath: args[1], DryRun: renameDryRun, Yes: renameYes, ExpectedRevision: renameExpectedRevision})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	folderRenameCmd.ValidArgsFunction = folderPathCompletion(func() string { return *ctx.vaultPath })
 	folderRenameCmd.Flags().BoolVar(&renameDryRun, "dry-run", false, "Preview the plan only; do not write folders or the registry")
 	folderRenameCmd.Flags().BoolVar(&renameYes, "yes", false, "Confirm folder rename")
+	folderRenameCmd.Flags().StringVar(&renameExpectedRevision, "expected-revision", "", "Require the current remote folder revision")
+	folderRenameCmd.Flags().StringVar(&renameOperationID, "operation-id", "", "Reuse an operation ID for a remote mutation retry")
+	folderRenameCmd.Flags().StringVar(&renameIdempotencyKey, "idempotency-key", "", "Reuse an idempotency key for a remote mutation retry")
 
 	folderMoveCmd := &cobra.Command{Use: "move <path> <target-parent>", Short: "Move a vault folder to the target parent folder", RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
@@ -139,7 +145,10 @@ func init() {
 		CommandPath: "folder rename",
 		Method:      "Pinax.Folder.Rename",
 		ArgParams:   []string{"path", "target_path"},
-		Flags:       []remoteParamSpec{b("dry_run", "dry-run"), b("yes", "yes")},
+		Flags: []remoteParamSpec{
+			s("expected_revision", "expected-revision"), b("dry_run", "dry-run"), b("yes", "yes"),
+			s("operation_id", "operation-id"), s("idempotency_key", "idempotency-key"),
+		},
 	})
 	registerRemoteCommand(remoteCommandSpec{
 		CommandPath: "folder move",

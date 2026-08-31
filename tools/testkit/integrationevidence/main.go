@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, or dsh-pane")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, or dsh-pane")
 	flag.Parse()
 	runID := time.Now().UTC().Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid())
 	config := buildConfigForProfile(*profile, runID, os.Stdout, os.Stderr)
@@ -88,6 +88,21 @@ func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evid
 	if profile == "agent-continuity" {
 		return buildAgentContinuityConfig(runID, stdout, stderr)
 	}
+	if profile == "personal-assistant-grounding" {
+		return buildPersonalAssistantGroundingConfig(runID, stdout, stderr)
+	}
+	if profile == "prompt-catalog" {
+		return buildPromptCatalogConfig(runID, stdout, stderr)
+	}
+	if profile == "mcp-protocol" {
+		return buildMCPProtocolConfig(runID, stdout, stderr)
+	}
+	if profile == "sdk-security" {
+		return buildSDKSecurityConfig(runID, stdout, stderr)
+	}
+	if profile == "operation-recovery" {
+		return buildOperationRecoveryConfig(runID, stdout, stderr)
+	}
 	if profile == "identity-benchmark" {
 		return evidence.Config{
 			RunID:             runID,
@@ -120,6 +135,98 @@ func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evid
 			"manifest_v2_migration":     true,
 			"agent_proof_receipts":      true,
 			"two_device_kernel":         true,
+		},
+	}
+}
+
+func buildPersonalAssistantGroundingConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:     runID,
+		ParentDir: filepath.Join("temp", "integration-test-runs"),
+		Command: []string{
+			"go", "test",
+			"./internal/agentcontext",
+			"./internal/agentmemory",
+			"./internal/app",
+			"./internal/mcpserver",
+			"./tests/e2e",
+			"-run", "PersonalAssistant|ProposalSources|AgentMemoryTransportParity",
+			"-count=1",
+		},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             "e2e",
+		ExtraChecks: map[string]any{
+			"four_state_grounding":           true,
+			"canonical_source_invariants":    true,
+			"proposal_source_round_trip":     true,
+			"deleted_source_suppression":     true,
+			"delete_index_refresh":           true,
+			"mcp_additive_contract":          true,
+			"canonical_memory_preserved":     true,
+			"transport_parity_valid_sources": true,
+		},
+	}
+}
+
+func buildMCPProtocolConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           []string{"go", "test", "./internal/mcpserver", "./internal/cli", "./cmd/pinax", "./tests/e2e", "-run", "MCPProtocolLifecycle|MCPTransportParity|Stdout|Stderr|JSONRPC|Signal|Panic|ToolSchema|StructuredContent|ResourceTemplate|ModernProtocol|ProtocolNegotiation|InitializeAcceptsLegacy", "-count=1"},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             "e2e",
+		ExtraChecks: map[string]any{
+			"current_protocol_discovery": true,
+			"legacy_initialize":          true,
+			"manifest_parity":            true,
+			"resource_read":              true,
+			"tool_call":                  true,
+			"stdout_jsonrpc_only":        true,
+		},
+	}
+}
+
+func buildSDKSecurityConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           []string{"go", "test", "./pkg/pinaxclient", "./internal/remoteapi", "./internal/connection", "./internal/cli", "./cmd/pinax", "-run", "TokenFile|BaseURL|Timeout|Redirect|ResponseLimit|Malformed2xx|TypedError|Manifest|Readiness|Operation|RemoteModeTokenSources|Connection", "-count=1"},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             "component",
+		ExtraChecks: map[string]any{
+			"secure_token_file":        true,
+			"owner_mode_resolution":    true,
+			"redirect_rejected":        true,
+			"bounded_io_and_timeout":   true,
+			"typed_error_redaction":    true,
+			"compatibility_facade":     true,
+			"credential_header_only":   true,
+			"absolute_path_not_logged": true,
+		},
+	}
+}
+
+func buildOperationRecoveryConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           []string{"go", "test", "./pkg/pinaxclient", "./internal/remoteapi", "./internal/cli", "./tests/e2e", "-run", "Ambiguous|NoBlindRetry|ReplaySafe|RemoteMutationRecovery|OperationReconcile", "-count=1"},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             "e2e",
+		ExtraChecks: map[string]any{
+			"response_loss_single_apply": true,
+			"finalize_crash_reconcile":   true,
+			"same_operation_identity":    true,
+			"no_blind_mutation_retry":    true,
+			"evidence_redacted":          true,
 		},
 	}
 }
@@ -162,6 +269,27 @@ func buildAgentContinuityConfig(runID string, stdout, stderr io.Writer) evidence
 			"continuity_evidence":        true,
 			"repository_source_resolver": true,
 			"cross_runtime_handoff":      true,
+		},
+	}
+}
+
+// buildPromptCatalogConfig 构造 prompt repository import 的 integration evidence profile。
+func buildPromptCatalogConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           []string{"go", "test", "./internal/promptbridge/...", "./internal/architecture", "./internal/cli", "./internal/app", "./internal/promptasset", "./cmd/pinax", "./tests/e2e", "-run", "PromptCatalog|PromptBridge|PromptRepository|PromptInstall", "-count=1"},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		ExtraChecks: map[string]any{
+			"repository_shared_store":  true,
+			"catalog_provider_free":    true,
+			"rights_gated_install":     true,
+			"conflict_plan":            true,
+			"effective_scope_policy":   true,
+			"source_adapters_offline":  true,
+			"catalog_quarantine":       true,
+			"body_input_secret_backup": true,
 		},
 	}
 }

@@ -142,6 +142,7 @@ func TableNames() []string {
 		AgentConflictRow{}.TableName(),
 		AgentPrincipalRow{}.TableName(),
 		AgentProposalRow{}.TableName(),
+		AgentProposalSourceRow{}.TableName(),
 		AgentHandoffRow{}.TableName(),
 		AgentFeedbackRow{}.TableName(),
 	}

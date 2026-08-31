@@ -115,6 +115,29 @@ func TestLocalBackendSnapshotRecordsLedgerIndexAndFileFacts(t *testing.T) {
 	}
 }
 
+func TestInspectSnapshotFreshnessIsReadOnlyAndDetectsContentChanges(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("# before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := NewLocalBackend().Snapshot(ctx, SnapshotRequest{Root: root, Message: "freshness"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, currentHash, err := InspectSnapshotFreshness(ctx, root, snapshot.SnapshotID)
+	if err != nil || !fresh || currentHash != snapshot.ContentHash {
+		t.Fatalf("freshness = %v current=%q snapshot=%q err=%v", fresh, currentHash, snapshot.ContentHash, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("# after\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fresh, currentHash, err = InspectSnapshotFreshness(ctx, root, snapshot.SnapshotID)
+	if err != nil || fresh || currentHash == snapshot.ContentHash {
+		t.Fatalf("changed freshness = %v current=%q snapshot=%q err=%v", fresh, currentHash, snapshot.ContentHash, err)
+	}
+}
+
 func TestLocalBackendSnapshotStoresReadableContentObjects(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {

@@ -17,6 +17,19 @@ func TestAgentMemoryTransportParity(t *testing.T) {
 	ctx := context.Background()
 	vault := t.TempDir()
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "default"}
+	mainSvc := app.NewService()
+	if _, err := mainSvc.InitVault(ctx, app.InitVaultRequest{VaultPath: vault, Title: "Transport parity"}); err != nil {
+		t.Fatal(err)
+	}
+	sourceNote, err := mainSvc.CreateNote(ctx, app.CreateNoteRequest{
+		VaultPath: vault,
+		Title:     "Parity source",
+		Body:      "Source for transport parity evidence.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceNoteID := sourceNote.Facts["note_id"]
 
 	// 1. Seed a confirmed memory via app service (shared underlying store)
 	svc := app.NewAgentMemoryService()
@@ -28,7 +41,7 @@ func TestAgentMemoryTransportParity(t *testing.T) {
 		Kind:      agentprotocol.MemoryKindFact,
 		Subject:   "ParityCheck",
 		Summary:   "same fact across all transports",
-		Sources:   agentprotocol.SourceRefList{{Kind: "note", Ref: "n1"}},
+		Sources:   agentprotocol.SourceRefList{{Kind: agentprotocol.SourceKindNote, Ref: sourceNoteID}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +66,6 @@ func TestAgentMemoryTransportParity(t *testing.T) {
 	}
 
 	// 3. Transport B: MCP server
-	mainSvc := app.NewService()
 	mcpServer := mcpserver.NewServer(mainSvc, vault)
 	mcpResp, err := mcpServer.Handle(ctx, mcpserver.Request{
 		ID:     1,

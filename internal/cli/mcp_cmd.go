@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -14,7 +13,10 @@ func addMCPCommands(root *cobra.Command, ctx commandBuildContext) {
 		Use:   "serve",
 		Short: "Start the read-only MCP server over stdio",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return mcpserver.Serve(context.Background(), ctx.svc, *ctx.vaultPath, os.Stdin, cmd.OutOrStdout())
+			return mcpserver.ServeWithOptions(cmd.Context(), ctx.svc, *ctx.vaultPath, os.Stdin, cmd.OutOrStdout(), mcpserver.ServerOptions{
+				Manifest:    TransportManifestProjection,
+				Diagnostics: cmd.ErrOrStderr(),
+			})
 		},
 	})
 	root.AddCommand(mcpCmd)

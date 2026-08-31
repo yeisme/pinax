@@ -2,13 +2,13 @@ package agentadapter
 
 import "github.com/yeisme/pinax/internal/agentprotocol"
 
-// CohorsDescriptor 返回 Cohors reference adapter 的 descriptor fixture。
+// OrdoDescriptor 返回 Ordo reference adapter 的 descriptor fixture。
 // 与 Codex 共用 100% core schema；team-specific 信息放 Metadata。
-func CohorsDescriptor() agentprotocol.AdapterDescriptor {
+func OrdoDescriptor() agentprotocol.AdapterDescriptor {
 	return agentprotocol.AdapterDescriptor{
 		SchemaVersion:     agentprotocol.AdapterSchemaVersion,
-		AdapterID:         "cohors-reference",
-		Runtime:           "cohors",
+		AdapterID:         "ordo-reference",
+		Runtime:           "ordo",
 		SupportedVersions: []string{agentprotocol.SchemaVersion, agentprotocol.ContextSchemaVersion},
 		Capabilities: []agentprotocol.Capability{
 			agentprotocol.CapabilityRead,
@@ -23,15 +23,15 @@ func CohorsDescriptor() agentprotocol.AdapterDescriptor {
 		MaxContextChars:  8000,
 		Metadata: map[string]string{
 			"team_role":    "implementation-worker",
-			"trace_format": "cohors-trace-v1",
+			"trace_format": "ordo-trace-v1",
 			"experimental": "true",
 		},
 	}
 }
 
-// CohorsPrincipal 返回一个典型 Cohors adapter principal fixture。
-func CohorsPrincipal(agentID string) agentprotocol.Principal {
-	p := agentprotocol.DefaultAdapterPrincipal(agentID, "cohors")
+// OrdoPrincipal 返回一个典型 Ordo adapter principal fixture。
+func OrdoPrincipal(agentID string) agentprotocol.Principal {
+	p := agentprotocol.DefaultAdapterPrincipal(agentID, "ordo")
 	p.Capabilities = append(p.Capabilities, agentprotocol.CapabilityHandoff)
 	return p
 }

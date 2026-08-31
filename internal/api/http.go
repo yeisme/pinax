@@ -17,7 +17,10 @@ import (
 
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/transportmanifest"
 )
+
+type ManifestProvider func() (domain.Projection, error)
 
 type Server struct {
 	service      *app.Service
@@ -30,18 +33,22 @@ type Server struct {
 	exposeGroups []string
 	hideGroups   []string
 	tempSecret   string
-	// tokenFileErr is set when --token-file could not be loaded; the server
+	manifest     ManifestProvider
+	// tokenFileErr is set when the token store could not be loaded; the server
 	// then refuses every request instead of downgrading to an open temp token.
 	tokenFileErr error
 }
 
 type ServerOptions struct {
-	AllowWrite   bool
-	AuthMode     AuthMode
+	AllowWrite bool
+	AuthMode   AuthMode
+	TokenStore string
+	// TokenFile is the deprecated compatibility field for TokenStore.
 	TokenFile    string
 	ExposeGroups []string
 	HideGroups   []string
 	Logger       *zap.Logger
+	Manifest     ManifestProvider
 }
 
 type HTTPRPCRequest struct {
@@ -65,6 +72,10 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 		exposeGroups: options.ExposeGroups,
 		hideGroups:   options.HideGroups,
 		logger:       options.Logger,
+		manifest:     options.Manifest,
+	}
+	if s.manifest == nil {
+		s.manifest = transportmanifest.DefaultProjection
 	}
 	switch options.AuthMode {
 	case AuthModeTemp:
@@ -77,14 +88,24 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 		_ = store.Create(rec)
 		s.tokenStore = store
 		s.tempSecret = secret
-	case AuthModeTokenFile:
-		store, err := NewFileTokenStore(options.TokenFile)
+	case AuthModeTokenStore:
+		storePath := options.TokenStore
+		if storePath == "" {
+			storePath = options.TokenFile
+		}
+		if options.TokenStore != "" && options.TokenFile != "" {
+			s.tokenStore = nil
+			s.authMode = AuthModeTokenStore
+			s.tokenFileErr = fmt.Errorf("token store sources conflict")
+			break
+		}
+		store, err := NewFileTokenStore(storePath)
 		if err != nil {
 			// Fail loudly instead of silently downgrading to an unrestricted
-			// temp token: a typo'd --token-file must not produce a wide-open
+			// temp token: a typo'd store path must not produce a wide-open
 			// server. The server carries the error and refuses requests.
 			s.tokenStore = nil
-			s.authMode = AuthModeTokenFile
+			s.authMode = AuthModeTokenStore
 			s.tokenFileErr = err
 		} else {
 			s.tokenStore = store
@@ -109,6 +130,9 @@ func (s *Server) Handler() http.Handler {
 	}{
 		{"/", s.handleRoot, "capabilities"},
 		{"/workbench", s.handleWorkbenchPage, "capabilities"},
+		{"/v1/manifest", s.handleManifest, "capabilities"},
+		{"/v1/readiness", s.handleReadiness, "capabilities"},
+		{"/v1/operations/", s.handleOperations, "operations"},
 		{"/v1/capabilities", s.handleCapabilities, "capabilities"},
 		{"/v1/workbench/status", s.handleWorkbenchStatus, "capabilities"},
 		{"/v1/workbench/activity", s.handleWorkbenchActivity, "capabilities"},
@@ -192,11 +216,15 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 	projection := domain.NewProjection("api.root", "Pinax local API is running.")
 	projection.Facts["capabilities_url"] = "/v1/capabilities"
+	projection.Facts["manifest_url"] = "/v1/manifest"
+	projection.Facts["readiness_url"] = "/v1/readiness"
 	projection.Facts["routes_command"] = "pinax api routes --vault <vault> --json"
 	projection.Actions = []domain.Action{{Name: "list-routes", Command: "pinax api routes --vault <vault> --json"}}
 	projection.Data = map[string]any{
 		"service":          "pinax.local_api",
 		"capabilities_url": "/v1/capabilities",
+		"manifest_url":     "/v1/manifest",
+		"readiness_url":    "/v1/readiness",
 		"routes_command":   "pinax api routes --vault <vault> --json",
 		"schema_command":   "pinax api schema export --format openapi --vault <vault> --json",
 	}
@@ -367,7 +395,13 @@ func (s *Server) handleFolders(w http.ResponseWriter, r *http.Request) {
 	var callErr error
 	switch action {
 	case "rename":
-		projection, callErr = s.service.RenameFolder(r.Context(), app.FolderOperationRequest{VaultPath: s.vault, Path: folderPath, TargetPath: query.Get("target_path"), DryRun: boolQuery(query, "dry_run"), Yes: boolQuery(query, "yes"), RequireSnapshot: true})
+		projection, callErr = s.service.RenameFolderRemote(r.Context(), app.FolderOperationRequest{
+			VaultPath: s.vault, Path: folderPath, TargetPath: query.Get("target_path"), DryRun: boolQuery(query, "dry_run"),
+			Yes: boolQuery(query, "yes"), RequireSnapshot: true, ExpectedRevision: query.Get("expected_revision"),
+		}, app.RemoteOperationIdentity{
+			OperationID: r.Header.Get("X-Pinax-Operation-ID"), IdempotencyKey: r.Header.Get("Idempotency-Key"),
+			BindingID: "rest.folder.rename", Access: operationAccessFromRequest(r),
+		})
 	case "move":
 		projection, callErr = s.service.MoveFolder(r.Context(), app.FolderOperationRequest{VaultPath: s.vault, Path: folderPath, TargetParent: query.Get("target_parent"), DryRun: boolQuery(query, "dry_run"), Yes: boolQuery(query, "yes"), RequireSnapshot: true})
 	case "delete":
@@ -416,6 +450,55 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projection, err := s.service.APIRoutes(r.Context(), app.APIRequest{VaultPath: s.vault})
+	writeProjection(w, projection, err)
+}
+
+func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeProjectionStatus(w, domain.NewErrorProjection("api.manifest", &domain.CommandError{Code: "method_not_allowed", Message: "Transport manifest only supports GET"}), http.StatusMethodNotAllowed)
+		return
+	}
+	projection, err := s.manifest()
+	writeProjection(w, projection, err)
+}
+
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeProjectionStatus(w, domain.NewErrorProjection("connection.readiness", &domain.CommandError{Code: "method_not_allowed", Message: "Connection readiness only supports GET"}), http.StatusMethodNotAllowed)
+		return
+	}
+	projection := app.ConnectionReadinessProjection(app.ConnectionReadinessOptions{
+		Mode:           "local-vault",
+		Transport:      "loopback-http",
+		AuthMode:       authModeLabel(s.authMode),
+		OwnerAvailable: s.service != nil,
+	})
+	writeProjectionStatus(w, projection, http.StatusOK)
+}
+
+func (s *Server) handleOperations(w http.ResponseWriter, r *http.Request) {
+	value := strings.TrimPrefix(r.URL.Path, "/v1/operations/")
+	reconcile := strings.HasSuffix(value, ":reconcile")
+	operationID := strings.TrimSuffix(value, ":reconcile")
+	if operationID == "" || strings.Contains(operationID, "/") {
+		writeProjectionStatus(w, domain.NewErrorProjection("operation.show", &domain.CommandError{Code: "operation_not_found", Message: "Operation was not found"}), http.StatusNotFound)
+		return
+	}
+	request := app.OperationRequest{VaultPath: s.vault, OperationID: operationID, Access: operationAccessFromRequest(r)}
+	if reconcile {
+		if r.Method != http.MethodPost {
+			writeProjectionStatus(w, domain.NewErrorProjection("operation.reconcile", &domain.CommandError{Code: "method_not_allowed", Message: "Operation reconciliation only supports POST"}), http.StatusMethodNotAllowed)
+			return
+		}
+		projection, err := s.service.OperationReconcile(r.Context(), request)
+		writeProjection(w, projection, err)
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeProjectionStatus(w, domain.NewErrorProjection("operation.show", &domain.CommandError{Code: "method_not_allowed", Message: "Operation status only supports GET"}), http.StatusMethodNotAllowed)
+		return
+	}
+	projection, err := s.service.OperationShow(r.Context(), request)
 	writeProjection(w, projection, err)
 }
 
@@ -805,11 +888,19 @@ func (s *Server) handleInboxCapture(w http.ResponseWriter, r *http.Request) {
 		writeProjectionStatus(w, domain.NewErrorProjection("inbox.capture", &domain.CommandError{Code: "write_disabled", Message: "Remote writes are not enabled", Hint: "Use pinax api serve --allow-write"}), http.StatusForbidden)
 		return
 	}
-	if !boolQuery(r.URL.Query(), "yes") {
+	dryRun := boolQuery(r.URL.Query(), "dry_run")
+	if !boolQuery(r.URL.Query(), "yes") && !dryRun {
 		writeProjectionStatus(w, domain.NewErrorProjection("inbox.capture", &domain.CommandError{Code: "approval_required", Message: "Write confirmation is required", Hint: "Pass yes=true to confirm"}), http.StatusBadRequest)
 		return
 	}
-	projection, err := s.service.InboxCapture(r.Context(), app.CreateNoteRequest{VaultPath: s.vault, Title: r.URL.Query().Get("title"), Body: r.URL.Query().Get("body")})
+	projection, err := s.service.InboxCaptureRemote(r.Context(), app.CreateNoteRequest{
+		VaultPath: s.vault, Title: r.URL.Query().Get("title"), Body: r.URL.Query().Get("body"),
+		Tags: strings.FieldsFunc(r.URL.Query().Get("tags"), func(value rune) bool { return value == ',' }),
+		Slug: r.URL.Query().Get("slug"), DryRun: dryRun,
+	}, app.RemoteOperationIdentity{
+		OperationID: r.Header.Get("X-Pinax-Operation-ID"), IdempotencyKey: r.Header.Get("Idempotency-Key"),
+		BindingID: "rest.inbox.capture", Access: operationAccessFromRequest(r),
+	})
 	writeProjection(w, projection, err)
 }
 
@@ -992,7 +1083,17 @@ func (s *Server) handleRPC(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	projection, err := NewRPCDispatcherWithOptions(s.service, s.vault, DispatcherOptions{AllowWrite: s.allowWrite}).Call(r.Context(), RPCRequest{Method: req.Method, Params: req.Params})
+	projection, err := NewRPCDispatcherWithOptions(s.service, s.vault, DispatcherOptions{
+		AllowWrite: s.allowWrite,
+		Manifest:   s.manifest,
+		Readiness: app.ConnectionReadinessOptions{
+			Mode:           "local-vault",
+			Transport:      "loopback-http",
+			AuthMode:       authModeLabel(s.authMode),
+			OwnerAvailable: s.service != nil,
+		},
+		OperationAccess: operationAccessFromRequest(r),
+	}).Call(r.Context(), RPCRequest{Method: req.Method, Params: req.Params})
 	status := projectionHTTPStatus(projection, err)
 	writeProjectionStatus(w, projection, status)
 	s.logRPCRequest(start, req, route, status, projection)
@@ -1035,11 +1136,11 @@ func projectionHTTPStatus(projection domain.Projection, err error) int {
 	switch projection.Error.Code {
 	case "write_disabled", "insufficient_scope":
 		return http.StatusForbidden
-	case "rpc_method_not_found", "route_not_found", "note_not_found", "folder_not_found":
+	case "rpc_method_not_found", "route_not_found", "note_not_found", "folder_not_found", "operation_not_found":
 		return http.StatusNotFound
-	case "revision_conflict", "lock_held", "folder_path_conflict", "note_path_conflict":
+	case "revision_conflict", "lock_held", "folder_path_conflict", "note_path_conflict", "idempotency_conflict":
 		return http.StatusConflict
-	case "backend_unavailable", "transport_unavailable", "cloud_backend_unavailable":
+	case "backend_unavailable", "transport_unavailable", "cloud_backend_unavailable", "operation_store_unavailable":
 		return http.StatusServiceUnavailable
 	case "internal_error":
 		return http.StatusInternalServerError
@@ -1137,8 +1238,8 @@ func authModeLabel(mode AuthMode) string {
 	switch mode {
 	case AuthModeTemp:
 		return "temp-token"
-	case AuthModeTokenFile:
-		return "token-file"
+	case AuthModeTokenStore:
+		return "token-store"
 	case AuthModeNone:
 		return "none"
 	default:

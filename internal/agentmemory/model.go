@@ -139,6 +139,20 @@ type AgentProposalRow struct {
 
 func (AgentProposalRow) TableName() string { return "agent_proposals" }
 
+// AgentProposalSourceRow 持久化 proposal 的 bounded source refs，使来源在
+// proposal/review/approve 之间不丢失；正文不进入该表。
+type AgentProposalSourceRow struct {
+	ID         string    `gorm:"primaryKey;column:id" json:"id"`
+	ProposalID string    `gorm:"index;column:proposal_id" json:"proposal_id"`
+	Kind       string    `gorm:"index;column:kind" json:"kind"`
+	Ref        string    `gorm:"index;column:ref" json:"ref"`
+	Label      string    `gorm:"column:label" json:"label,omitempty"`
+	Span       string    `gorm:"column:span" json:"span,omitempty"`
+	CreatedAt  time.Time `gorm:"column:created_at" json:"created_at"`
+}
+
+func (AgentProposalSourceRow) TableName() string { return "agent_proposal_sources" }
+
 // AgentHandoffRow 持久化 cross-agent handoff。
 type AgentHandoffRow struct {
 	HandoffID               string                      `gorm:"primaryKey;column:handoff_id" json:"handoff_id"`

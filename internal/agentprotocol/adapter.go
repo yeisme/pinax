@@ -21,7 +21,7 @@ type AdapterDescriptor struct {
 	SupportsProposal  bool         `json:"supports_proposal"`
 	SupportsHandoff   bool         `json:"supports_handoff"`
 	SupportsFeedback  bool         `json:"supports_feedback"`
-	// Metadata 携带 optional runtime-specific 信息（如 Codex hook version、Cohors team role）。
+	// Metadata 携带 optional runtime-specific 信息（如 Codex hook version、Ordo team role）。
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 

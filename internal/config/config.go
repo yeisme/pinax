@@ -27,6 +27,7 @@ type Config struct {
 
 type RemoteConfig struct {
 	APIURL string `mapstructure:"api_url" yaml:"api_url" json:"api_url,omitempty"`
+	Mode   string `mapstructure:"mode" yaml:"mode" json:"mode,omitempty"`
 }
 
 type OutputConfig struct {
@@ -296,6 +297,9 @@ func configFromViper(v *viper.Viper, set map[string]bool) Config {
 	if set["remote.api_url"] {
 		cfg.Remote.APIURL = v.GetString("remote.api_url")
 	}
+	if set["remote.mode"] {
+		cfg.Remote.Mode = v.GetString("remote.mode")
+	}
 	if set["output.color"] {
 		cfg.Output.Color = v.GetString("output.color")
 	}
@@ -363,6 +367,7 @@ func configKeys() []string {
 	return []string{
 		"vault",
 		"remote.api_url",
+		"remote.mode",
 		"output.color",
 		"output.style",
 		"output.theme",
@@ -390,6 +395,7 @@ func settingsProjectionKeys() []string {
 	return []string{
 		"vault",
 		"remote.api_url",
+		"remote.mode",
 		"output.color",
 		"output.style",
 		"output.theme",
@@ -450,6 +456,8 @@ func envConfigKey(envKey string) string {
 		return "vault"
 	case "PINAX_API_URL":
 		return "remote.api_url"
+	case "PINAX_CONNECTION_MODE":
+		return "remote.mode"
 	case "PINAX_OUTPUT_COLOR", "NO_COLOR":
 		return "output.color"
 	case "PINAX_OUTPUT_STYLE":
@@ -513,6 +521,9 @@ func mergeConfig(dst *Config, src Config, isSet func(string) bool) {
 	}
 	if isSet("remote.api_url") {
 		dst.Remote.APIURL = src.Remote.APIURL
+	}
+	if isSet("remote.mode") {
+		dst.Remote.Mode = src.Remote.Mode
 	}
 	mergeOutput(&dst.Output, src.Output, isSet)
 	if isSet("editor.command") {
@@ -593,6 +604,7 @@ func applyEnv(cfg *Config, sources *SourceSet, env func(string) (string, bool)) 
 	}
 	apply("PINAX_VAULT", func(v string) { cfg.Vault = v })
 	apply("PINAX_API_URL", func(v string) { cfg.Remote.APIURL = v })
+	apply("PINAX_CONNECTION_MODE", func(v string) { cfg.Remote.Mode = v })
 	apply("PINAX_OUTPUT_COLOR", func(v string) { cfg.Output.Color = v })
 	apply("PINAX_OUTPUT_STYLE", func(v string) { cfg.Output.Style = v })
 	apply("PINAX_OUTPUT_THEME", func(v string) { cfg.Output.Theme = v })
@@ -627,6 +639,8 @@ func applyExplicitFlags(cfg *Config, sources *SourceSet, flags map[string]string
 			cfg.Vault = value
 		case "remote.api_url":
 			cfg.Remote.APIURL = value
+		case "remote.mode":
+			cfg.Remote.Mode = value
 		case "output.color":
 			cfg.Output.Color = value
 		case "output.style":
@@ -677,6 +691,12 @@ func (cfg Config) Validate() error {
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" || !oneOf(parsed.Scheme, "http", "https") {
 			return configInvalid("remote.api_url", cfg.Remote.APIURL)
 		}
+	}
+	if !oneOf(cfg.Remote.Mode, "", "local-vault", "remote-service", "self-hosted-service") {
+		return configInvalid("remote.mode", cfg.Remote.Mode)
+	}
+	if cfg.Remote.APIURL == "" && (cfg.Remote.Mode == "remote-service" || cfg.Remote.Mode == "self-hosted-service") {
+		return configInvalid("remote.mode", cfg.Remote.Mode)
 	}
 	if cfg.Search.Limit < 0 {
 		return configInvalid("search.limit", fmt.Sprint(cfg.Search.Limit))
@@ -818,6 +838,8 @@ func Value(cfg Config, key string) (string, bool) {
 		return cfg.Vault, true
 	case "remote.api_url":
 		return cfg.Remote.APIURL, true
+	case "remote.mode":
+		return cfg.Remote.Mode, true
 	case "output.color":
 		return cfg.Output.Color, true
 	case "output.style":

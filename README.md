@@ -69,10 +69,10 @@ Prerequisites:
 - Go 1.26.1 or newer, or download a prebuilt archive/package below.
 - Optional: [Task](https://taskfile.dev/) for `task check` and local development shortcuts.
 
-Anonymous install (no GitHub token; public mirror [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)):
+Anonymous install of the current stable release `v0.2.0` (no GitHub token; public mirror [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s pinax
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s -- pinax v0.2.0
 export PATH="$HOME/.yeisme/bin:$PATH"
 pinax version
 ```

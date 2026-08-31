@@ -1,18 +1,30 @@
-# Local REST/RPC Contract
+# Pinax REST/RPC owner contract
 
-Pinax's REST/RPC is a local projection adapter: it exposes existing application service projections to dashboards, agents, and local tools; it is not a public Internet hosted API, and it is not a remote Todo provider.
+Pinax REST/RPC 是 owner projection adapter：它把 application service 的 bounded projection 暴露给 dashboard、agent、remote CLI 与 SDK。`local-vault`、`remote-service`、`self-hosted-service` 表示 state owner mode；`embedded`、`loopback-http`、`https` 与 stdio MCP 表示 transport。mode 和 transport 必须分别解析，不能根据 URL 猜测并混写为一个字段。
 
 This centralized local API mode is intentionally separate from Pinax Cloud distributed sync. Remote API clients call into one server-side vault; Cloud Sync keeps a local vault on every device and uses a backend service only to coordinate encrypted revisions, blobs, and conflicts.
 
 The long-term client target is CLI capability parity through registered routes and RPC methods. This must evolve additively: new client-visible commands are added to the capability registry, unsupported commands keep returning `remote_command_unsupported`, and local runtime-control commands remain local-only unless a dedicated safe capability is designed. See [Client CLI Parity and Realtime Sync](./client-cli-parity-and-sync.md).
 
-- `pinax api serve --port 0 --vault ./my-notes` binds to `127.0.0.1` by default, and the authentication mode defaults to a temp token (generated in process memory and printed once to stderr); it supports long-lived tokens with `--token-file` and unauthenticated mode with `--no-auth`.
+- `pinax api serve --port 0 --vault ./my-notes` 默认绑定 `127.0.0.1`，认证默认使用仅存在于进程内并只在 stderr 输出一次的 temp token。长期 token 使用 canonical `--token-store <hashed-registry>`；旧服务端 `--token-file` 仅作为同语义 deprecated alias；`--no-auth` 强制 loopback。
 - Explicitly use `--allow-write` when folder, draft, inbox, sync, subproject, or memory mutation is needed. Dry-run memory capture remains non-persistent.
 - REST handlers and the RPC dispatcher only perform parameter parsing, status code mapping, and projection JSON serialization; they must not directly read or write Markdown, `.pinax/`, SQLite/GORM repositories, Git, or providers.
 - Auth middleware is a transport-layer concern and does not intrude into handler logic. Each route registers scope requirements by group.
 - `--expose` and `--hide` control the exposed route groups; routes that are not exposed return `route_not_found`.
 - Audit logs are written to `.pinax/events/api-audit.jsonl` and do not include token secrets, request bodies, or response bodies.
 - stdout/stderr, events, fixtures, and evidence must not contain tokens, Authorization headers, Cookies, webhook URLs, provider raw payloads, or complete body leaks.
+
+## Manifest 与 legacy registry
+
+Authoritative discovery 来自以下等价入口：
+
+```text
+pinax api manifest --vault ./my-notes --json
+GET /v1/manifest
+RPC Pinax.Transport.Manifest
+```
+
+三者返回同一排序、schema ref、binding availability 与 digest 的 `pinax.transport_manifest.v1`。新消费者应根据真实 binding 判断 capability 是否可执行。旧 `pinax api routes`、`GET /v1/capabilities`、legacy `surfaces` 与 capability fields 全部保留原语义；planned/future-owner capability 不得被放进 `available_surfaces`。
 
 ## Registry
 
@@ -67,6 +79,9 @@ Current stable discovery and read paths:
 ```text
 GET /
 GET /v1/capabilities
+GET /v1/manifest
+GET /v1/readiness
+GET /v1/operations/{operation_id}
 GET /v1/projects
 GET /v1/projects/{project}
 GET /v1/projects/{slug}/board?note_display=card
@@ -103,6 +118,9 @@ RPC Pinax.Memory.Context
 RPC Pinax.Memory.Stats
 RPC Pinax.Sync.Push
 RPC Pinax.Sync.Pull
+RPC Pinax.Transport.Manifest
+RPC Pinax.Connection.Readiness
+RPC Pinax.Operation.Get
 ```
 
 `project board` and `note read` return bounded `NoteDisplay` by default. `card/detail/context` does not output complete bodies; returning the local note body is allowed only with explicit `display=body`. `project board show` accepts optional `subproject`; when present, the adapter must return the same scoped projection as `pinax project board show <project> --subproject <slug> --json`.
@@ -165,6 +183,42 @@ RPC Pinax.Draft.Create/Promote/Archive/Discard
 
 inbox/draft writes are constrained by the same `--allow-write` and `yes=true` gates. `discard` is not a hard delete; it only sets `status=discarded`.
 
+### Recovery-enabled mutation
+
+首批带 durable operation recovery 的 mutation 是 `inbox.capture` 与 `folder.rename`。它们在既有 route/RPC 之上 additive 接收 operation identity：
+
+```text
+POST /v1/inbox:capture
+  X-Pinax-Operation-ID: <opaque-operation-id>
+  Idempotency-Key: <opaque-idempotency-key>
+
+POST /v1/folders/{path}:rename?target_path={new}&expected_revision={revision}&yes=true
+  X-Pinax-Operation-ID: <opaque-operation-id>
+  Idempotency-Key: <opaque-idempotency-key>
+
+RPC Pinax.Inbox.Capture
+  params.operation_id
+  params.idempotency_key
+
+RPC Pinax.Folder.Rename
+  params.operation_id
+  params.idempotency_key
+  params.expected_revision
+```
+
+Server 在 domain write 前将 principal/scope、binding、canonical request digest、operation id 与 idempotency key 的 redacted binding 写入 GORM operation ledger。相同 key 与相同 request 返回 durable outcome；相同 key 与不同 request 返回 `idempotency_conflict`。`folder.rename` 的 revision 不匹配返回 `revision_conflict`，fresh snapshot 缺失返回 `snapshot_required`，均不得执行 rename。
+
+Operation inspection/reconcile 是只读 owner evidence flow，不 replay mutation：
+
+```text
+GET  /v1/operations/{operation_id}
+POST /v1/operations/{operation_id}:reconcile
+RPC  Pinax.Operation.Get
+RPC  Pinax.Operation.Reconcile
+```
+
+Operation projection 使用 `pinax.operation.v1`，包含 bounded binding/status/retry/replay/reconcile facts、revision/resource/receipt refs 与 timestamps；不包含 note body、raw request、principal/scope digest、idempotency key、token 或 absolute vault path。scope mismatch 与 missing operation 返回相同 opaque `operation_not_found` shape，避免泄漏存在性。
+
 
 The default readonly server returns `write_disabled` for folder mutations and does not write to disk even if the request includes `yes=true`. After startup with `--allow-write`, non-dry-run mutations must still include `yes=true`; otherwise they return `approval_required`.
 
@@ -182,13 +236,32 @@ pinax note list --status active --limit 20 --json
 ```
 
 - `--api-url`, `PINAX_API_URL`, or user/project config key `remote.api_url` enables remote mode for supported commands. Precedence is explicit flag, environment variable, project config, user config, then default empty value.
-- `--api-token`, `--api-token-file`, `PINAX_API_TOKEN`, and `PINAX_API_TOKEN_FILE` configure a Bearer token. The token is sent only in the `Authorization` header and must not appear in stdout, stderr, test fixtures, projection errors, or configuration files.
+- `--api-token`, `--api-token-file`, `PINAX_API_TOKEN`, and `PINAX_API_TOKEN_FILE` configure a Bearer token. `--api-token-file` means exactly one plaintext bearer secret in an absolute owner-only `0600` regular file; it is not the server hashed registry. The token is sent only in the `Authorization` header and must not appear in stdout, stderr, test fixtures, projection errors, or configuration files.
 - An explicit `--vault` is rejected in remote mode with `remote_vault_conflict`; this prevents accidental fallback to a local vault.
 - Unsupported commands are rejected with `remote_command_unsupported`; remote mode must not silently execute unsupported commands locally.
 - When remote mode comes only from `remote.api_url`, local control/configuration commands (`config`, `api`, `token`, `profile`, `vault`, `cloud`, and `sync`) remain local so users can inspect/update endpoints and manage local-first Cloud Sync state without being hijacked by Remote API Mode.
 - Supported first-phase commands are the registered RPC capabilities for project board show, project subproject list/show/create, note list/read/show/preview, project item read and move/archive plan, folder list/show/create/rename/move/delete/adopt/repair, inbox list/show/capture/promote/discard, draft list/show/create/promote/archive/discard, memory list/capture/recall/context/stats, and explicit `sync push` / `sync pull`.
 - Full CLI parity is tracked as a capability-by-capability expansion, not a fallback to arbitrary local execution. Read/status/plan commands should be added before write/apply/deploy commands; risky writes must keep the same approval, snapshot, dry-run, receipt, and redaction gates as the CLI path.
 - `--json` renders the returned Projection envelope directly as JSON-only stdout; `--agent` renders the same Projection as key=value lines.
+
+Canonical remote client code 位于公开包 `pkg/pinaxclient`。它负责 strict URL、redirect rejection、request/response limit、secure token file、typed manifest/readiness/operation 与 ambiguous mutation recovery。`internal/remoteapi` 继续作为 additive compatibility facade，旧调用方不需要立即迁移，但不得在其中复制第二套安全或 retry 规则。
+
+当 mutation 遇到 timeout、reset、5xx、response read failure 或 malformed/oversized 2xx 时，client 必须先读取同一 `operation_id`，再按需 reconcile；不得生成第二个 operation/key，不得直接 local fallback。只有 durable terminal `failed && retryable && replay_safe` 才允许使用完全相同的 request/identity 最多重试一次。operation 不可见时返回 `mutation_outcome_unknown`，提示运行：
+
+```bash
+pinax operation show <operation-id> --api-url <url> --json
+pinax operation reconcile <operation-id> --api-url <url> --json
+```
+
+## Connection inspect、doctor 与 readiness
+
+```bash
+pinax connection inspect --json
+pinax connection doctor --json
+pinax connection readiness --json
+```
+
+`inspect` 只解析 non-sensitive descriptor，不发网络请求；`doctor` 只做 manifest/transport/auth/readiness probes，不执行 domain mutation、credential rotation 或 remote write；`readiness` 返回固定六层 `contract`、`transport`、`auth`、`owner`、`mutation_recovery`、`production`。每层独立使用 `ready|degraded|blocked|not_configured|not_applicable` 与 `exploratory|first-support|mature`，较低层 ready 不得自动推导 production ready。`GET /v1/readiness` 与 `Pinax.Connection.Readiness` 返回同一 projection。
 
 ## Transport Status
 
@@ -203,6 +276,9 @@ HTTP status expresses only transport semantics, and the body always remains a Pi
 | Missing remote write confirmation | non-2xx, currently `400` | `approval_required` |
 | readonly server receives a write route | non-2xx, currently `403` | `write_disabled` |
 | Missing version snapshot | non-2xx, currently `400` | `snapshot_required` |
+| Idempotency key is rebound to another request | non-2xx | `idempotency_conflict` |
+| Folder revision precondition differs | non-2xx | `revision_conflict` |
+| Operation evidence is insufficient | non-2xx or failed projection | `reconcile_required` |
 
 RPC unknown method returns a failed projection with `error.code=rpc_method_not_found`; the hint must prompt the user to check `pinax api routes`.
 
@@ -213,7 +289,8 @@ RPC unknown method returns a failed projection with `error.code=rpc_method_not_f
 - In temp-token auth mode, the generated temporary token is printed once to stderr as a startup log field. Request logs must not include Authorization headers, raw query strings, cookies, request bodies, response bodies, or provider payloads.
 - `GET /` returns a JSON discovery projection with links to `/v1/capabilities` and runnable `pinax api routes` / schema commands; it is the intended smoke-test path for `curl http://127.0.0.1:<port>/`.
 - `--readonly` is the explicit spelling of the default mode; `--allow-write` enables controlled mutation routes. The two cannot be used together.
-- `--token-file <path>`: loads a long-lived token from a file (scope is fine-grained to the route group).
+- `--token-store <path>`: canonical long-lived server auth input; loads a hashed token registry with fine-grained route-group scopes.
+- `--token-file <path>`: deprecated compatibility alias for the same hashed registry. It is mutually exclusive with `--token-store` and emits one path-free migration warning in human mode. It does not mean a client plaintext token file.
 - `--no-auth`: unauthenticated mode, with a forced loopback address check.
 - `--expose notes,inbox`: exposes only the specified route groups.
 - `--hide drafts,projects`: hides the specified route groups.

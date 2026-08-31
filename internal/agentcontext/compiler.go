@@ -207,6 +207,7 @@ func (c *Compiler) applyBudget(ranked []rankedEntry, req agentprotocol.ContextRe
 		Principal:     req.Principal,
 		Scope:         req.Scope,
 	}
+	seenSources := make(map[string]struct{})
 
 	maxItems := req.Budget.MaxItems
 	if maxItems <= 0 {
@@ -233,6 +234,14 @@ func (c *Compiler) applyBudget(ranked []rankedEntry, req agentprotocol.ContextRe
 		}
 		totalChars += entryChars
 		c.appendEntry(&pack, r.entry)
+		for _, source := range r.entry.Sources {
+			key := source.Kind + "\x00" + source.Ref
+			if _, ok := seenSources[key]; ok {
+				continue
+			}
+			seenSources[key] = struct{}{}
+			pack.Sources = append(pack.Sources, source)
+		}
 		count++
 	}
 

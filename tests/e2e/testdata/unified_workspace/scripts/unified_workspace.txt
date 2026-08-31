@@ -109,7 +109,7 @@ exec grep -q '/v1/database/views/{name}:render' api-routes.json
 exec grep -q 'task.adopt' api-routes.json
 exec grep -q 'graph.summary' api-routes.json
 
-exec sh -c 'printf "%s\n" "{\"id\":1,\"method\":\"tools/list\"}" "{\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"pinax.database.view.render\",\"arguments\":{\"name\":\"table-active\"}}}" | pinax mcp serve --vault vault > mcp.jsonl'
+exec sh -c 'printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"pinax-e2e\",\"version\":\"1\"}}}" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}" "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"pinax.database.view.render\",\"arguments\":{\"name\":\"table-active\"}}}" | pinax mcp serve --vault vault > mcp.jsonl'
 exec grep -q 'pinax.database.view.render' mcp.jsonl
 exec grep -q 'database_tab' mcp.jsonl
 

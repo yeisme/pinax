@@ -2,13 +2,15 @@
 
 ## 1. 决策摘要
 
-Pinax 后续定位为 **本地优先、供应商无关、可审计的通用 Agent 记忆系统**。它不隶属于 Codex、Claude Code、Cohors 或任何单一 Agent runtime；这些系统都通过 adapter 使用同一套记忆、上下文、handoff、反馈和审批合同。
+Pinax 后续定位为 **本地优先、供应商无关、可审计的通用 Agent 记忆系统**。它不隶属于 Codex、Claude Code、Ordo 或任何单一 Agent runtime；这些系统都通过 adapter 使用同一套记忆、上下文、handoff、反馈和审批合同。
 
 一句话目标：
 
 > Pinax 让不同 Agent 在不共享完整会话、不泄露原始私密内容、不直接污染长期知识的前提下，持续获得正确上下文，并沉淀有来源、可维护、可撤销的长期记忆。
 
 Codex 可以是第一个参考 adapter 和 dogfooding 客户端，但不能进入核心 schema、领域类型、存储路径、生命周期状态或 API 命名。
+
+当前六周产品验证由 [可信 Agent 工作连续性 PRD](./trusted-agent-continuity.md) 管理：首轮仅在 Pinax repository 中使用 Codex + Claude Code，验证“继续这个项目”的个人 UX、来源可信度、review 负担和用户明确 outcome。该验证不替代本 PRD 后续 Codex + Ordo、跨项目、四周 runtime stable gate，也不得据此把 provider-neutral memory runtime 标记为 stable。
 
 本 PRD 是探索性产品与架构方案，不新增当前可运行命令。所有 planned command、schema、tool 和 adapter 必须在后续 OpenSpec 中完成合同评审后才能实现和发布。
 
@@ -19,7 +21,7 @@ Codex 可以是第一个参考 adapter 和 dogfooding 客户端，但不能进�
 首要用户是拥有多个 Agent、多个项目和长期自动化工作流的单一知识资产所有者。直接消费者包括：
 
 - 编码 Agent，例如 Codex、Claude Code；
-- 多 Agent runtime，例如 Cohors；
+- 多 Agent runtime，例如 Ordo；
 - 通信与协作 Agent，通过独立的通信 adapter 接入；
 - 研究、创作、运营等领域 Agent；
 - 任何能调用 CLI、MCP、HTTP/RPC 或 SDK 的自定义 Agent。
@@ -82,7 +84,7 @@ SQLite/GORM memory ledger 可以持有结构化 memory state，但不能复制�
 ```mermaid
 flowchart TD
   A1[Codex Adapter]
-  A2[Cohors Adapter]
+  A2[Ordo Adapter]
   A3[Communication Adapter]
   A4[Generic MCP/HTTP/CLI Adapter]
   A1 --> P[Agent Memory Protocol]
@@ -101,7 +103,7 @@ flowchart TD
   L --> X[Encrypted Sync]
 ```
 
-核心依赖方向必须是 adapter → protocol → application service → domain/store。核心包不得 import Codex、Claude、Cohors 或其他 runtime-specific 类型。
+核心依赖方向必须是 adapter → protocol → application service → domain/store。核心包不得 import Codex、Claude、Ordo 或其他 runtime-specific 类型。
 
 ## 5. 通用 Agent Memory Protocol
 
@@ -335,7 +337,7 @@ MVP 优先提供通用 MCP tools：
 ### 7.3 Runtime adapters
 
 - **Codex adapter**：映射 `AGENTS.md`、skill、MCP、hooks 和 local memories 边界。
-- **Cohors adapter**：映射 team run、agent role、trace、handoff 和 shared task state。
+- **Ordo adapter**：映射 team run、agent role、trace、handoff 和 shared task state。
 - **Communication adapter**：把 provider-neutral conversation event、message reference 和 delivery receipt 转为 source/handoff，不嵌入聊天 provider SDK。
 - **Generic CLI adapter**：任何 Agent 通过 stdin/stdout JSON 调用。
 - **HTTP adapter**：未来远程 Agent 通过 scoped token 使用，不属于本地 MVP 必需项。
@@ -378,7 +380,7 @@ Runtime-specific installer 属于 adapter 子命令或独立 adapter package，�
 7. Local-first operation；Agent adapter 不可用时不破坏 memory ledger。
 8. 真实跨 Agent handoff dogfooding。
 
-推荐 reference adapters：Codex + Cohors。Codex 验证通用外部 Agent 接入，Cohors 验证 Yeisme 自有多 Agent runtime。
+推荐 reference adapters：Codex + Ordo。Codex 验证通用外部 Agent 接入，Ordo 验证 Yeisme 自有多 Agent runtime。
 
 ### 9.2 明确不做
 
@@ -396,7 +398,7 @@ Runtime-specific installer 属于 adapter 子命令或独立 adapter package，�
 ### 10.1 合同验收
 
 - 同一个 context request 通过 CLI、MCP 和 SDK 返回语义一致的 context pack。
-- Codex 和 Cohors adapter 不修改核心 schema 即可消费 context、提交 proposal 和交换 handoff。
+- Codex 和 Ordo adapter 不修改核心 schema 即可消费 context、提交 proposal 和交换 handoff。
 - Adapter-specific 字段只能出现在 descriptor/metadata extension，不能成为 memory 主键或 lifecycle 条件。
 - 未经批准的 proposal 不进入默认 confirmed recall。
 - Conflicting memories 同时返回并标记，不由 ranking 静默覆盖。
@@ -441,11 +443,11 @@ Runtime-specific installer 属于 adapter 子命令或独立 adapter package，�
 | 场景 | Producer | Consumer | 验证 |
 | --- | --- | --- | --- |
 | 编码任务继续 | Codex | Codex | 跨 session 召回 decision/task/failure |
-| 多 Agent 实现交接 | Cohors worker | Codex reviewer | handoff 可继续且 evidence 可定位 |
-| 用户偏好共享 | Communication adapter | Codex/Cohors | owner scope 正确，不泄漏原消息 |
+| 多 Agent 实现交接 | Ordo worker | Codex reviewer | handoff 可继续且 evidence 可定位 |
+| 用户偏好共享 | Communication adapter | Codex/Ordo | owner scope 正确，不泄漏原消息 |
 | 冲突事实 | 任意 Agent | 任意 Agent | 返回 conflict，不静默覆盖 |
 | 过期来源 | Source connector | Context compiler | freshness 降级并建议重新验证 |
-| Adapter 故障 | Codex adapter | Cohors | Cohors 仍可正常读写 proposal |
+| Adapter 故障 | Codex adapter | Ordo | Ordo 仍可正常读写 proposal |
 
 Integration、component、system 和 e2e 证据写入 `temp/integration-test-runs/<run-id>/`，保留 `summary.json`、`command.txt`、`stdout.log`、`stderr.log`、`env.json` 和 `artifacts/`。
 
@@ -473,12 +475,12 @@ Integration、component、system 和 e2e 证据写入 `temp/integration-test-run
 ### Phase 3：两个 Reference Adapter，两周
 
 - 实现 Codex adapter。
-- 实现 Cohors adapter。
+- 实现 Ordo adapter。
 - 验证两者不修改核心 schema 即可互相 handoff。
 
 ### Phase 4：真实 Dogfooding，四周
 
-- 在 Pinax、Cohors 和至少一个 Agent 子项目持续使用。
+- 在 Pinax、Ordo 和至少一个 Agent 子项目持续使用。
 - 每周审查 recall、precision、conflict、proposal 和 adapter failures。
 - 指标达到目标后再决定通信 adapter、source connectors 和 plugin 分发。
 
@@ -486,7 +488,7 @@ Integration、component、system 和 e2e 证据写入 `temp/integration-test-run
 
 | 风险 | 处理 |
 | --- | --- |
-| 为了通用而过度抽象 | 只以 Codex + Cohors 两个真实 adapter 验证扩展点，不先设计十种 runtime。 |
+| 为了通用而过度抽象 | 只以 Codex + Ordo 两个真实 adapter 验证扩展点，不先设计十种 runtime。 |
 | Memory ledger 与 Markdown 真源冲突 | 明确 source artifact truth 与 memory state truth 的分工。 |
 | 自动记忆污染 | Adapter 默认只能 propose；confirmed 需要 evidence 和 approval policy。 |
 | Context rot | task-aware retrieval、固定 budget、conflict/freshness 明示。 |
@@ -497,7 +499,7 @@ Integration、component、system 和 e2e 证据写入 `temp/integration-test-run
 实施前需要决定：
 
 1. 通用内核继续归属 `cli/pinax`，还是未来拆成独立 `agent/pinax-memory`/service owner；
-2. MVP 第二个 reference adapter 是否确定为 Cohors；
+2. MVP 第二个 reference adapter 是否确定为 Ordo；
 3. memory ledger 是否升级为 Pinax memory state 的 canonical truth；
 4. 哪些 evidence policy 允许自动 promotion；
 5. 跨设备 memory sync 是否进入 MVP，还是先保持单机。
@@ -518,4 +520,4 @@ openspec new change general-agent-memory-platform
 openspec new change pinax-agent-memory-runtime
 ```
 
-根 change 定义 provider-neutral protocol、owner 边界和 adapter handoff；Pinax change 实现 memory domain、context compiler、CLI/MCP/SDK、proposal lifecycle、evidence 和 dogfooding。Codex、Cohors、通信 adapter 的具体实现分别进入对应 owner，不把所有 runtime 代码塞进 `cli/pinax`。
+根 change 定义 provider-neutral protocol、owner 边界和 adapter handoff；Pinax change 实现 memory domain、context compiler、CLI/MCP/SDK、proposal lifecycle、evidence 和 dogfooding。Codex、Ordo、通信 adapter 的具体实现分别进入对应 owner，不把所有 runtime 代码塞进 `cli/pinax`。

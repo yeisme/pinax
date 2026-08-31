@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -249,6 +250,9 @@ func TestCLIRemoteModeTokenSourcesStayRedacted(t *testing.T) {
 	const secret = "pinax-remote-secret"
 	tokenFile := filepath.Join(t.TempDir(), "token.txt")
 	writeCLIFixture(t, tokenFile, secret+"\n")
+	if err := os.Chmod(tokenFile, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+secret {
 			t.Fatalf("authorization header = %q", got)

@@ -385,6 +385,8 @@ func summaryStatusLabel(status string) string {
 	switch status {
 	case "success":
 		return "Success"
+	case "succeeded":
+		return "Succeeded"
 	case "failed":
 		return "Failed"
 	case "partial":
@@ -710,6 +712,30 @@ func summaryFactLabel(key string) string {
 		"saved_path":               "Saved path",
 		"scan_duration_ms":         "Scan duration ms",
 		"schema_version":           "Schema version",
+		"manifest_digest":          "Manifest digest",
+		"digest":                   "Digest",
+		"bindings":                 "Bindings",
+		"operation_id":             "Operation ID",
+		"operation_status":         "Operation status",
+		"capability_id":            "Capability ID",
+		"binding_id":               "Binding ID",
+		"retryable":                "Retryable",
+		"replay_safe":              "Replay safe",
+		"reconcile_required":       "Reconcile required",
+		"receipt_ref":              "Receipt reference",
+		"resource_ref":             "Resource reference",
+		"revision_before":          "Revision before",
+		"revision_after":           "Revision after",
+		"idempotent_replay":        "Idempotent replay",
+		"recovered_from_operation": "Recovered from operation",
+		"overall_status":           "Overall status",
+		"overall_maturity":         "Overall maturity",
+		"contract_status":          "Contract status",
+		"transport_status":         "Transport status",
+		"auth_status":              "Auth status",
+		"owner_status":             "Owner status",
+		"mutation_recovery_status": "Mutation recovery status",
+		"production_status":        "Production status",
 		"scope":                    "Scope",
 		"scopes":                   "Scopes",
 		"secret_ref_configured":    "Secret ref configured",
@@ -827,6 +853,8 @@ func summaryHumanValue(_ string, value string) string {
 		return "No"
 	case "success":
 		return "Success"
+	case "succeeded":
+		return "Succeeded"
 	case "failed":
 		return "Failed"
 	case "partial":
@@ -853,6 +881,22 @@ func summaryHumanValue(_ string, value string) string {
 		return "Planned"
 	case "pending":
 		return "Pending"
+	case "ready":
+		return "Ready"
+	case "degraded":
+		return "Degraded"
+	case "blocked":
+		return "Blocked"
+	case "not_configured":
+		return "Not configured"
+	case "not_applicable":
+		return "Not applicable"
+	case "exploratory":
+		return "Exploratory"
+	case "first-support":
+		return "First support"
+	case "mature":
+		return "Mature"
 	case "applied":
 		return "Applied"
 	case "skipped":
@@ -928,6 +972,8 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummarySearchResults(w, theme, p.Data)
 	case "api.routes":
 		return renderSummaryAPIRoutes(w, theme, p.Data)
+	case "connection.readiness":
+		return renderSummaryConnectionReadiness(w, theme, p.Data)
 	case "note.list":
 		return renderSummaryNoteList(w, theme, p.Data, "notes")
 	case "inbox.list", "draft.list":
@@ -1080,6 +1126,78 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummarySyncConflictDiff(w, p.Data)
 	default:
 		return nil
+	}
+}
+
+func renderSummaryConnectionReadiness(w io.Writer, theme summaryTheme, data any) error {
+	root, ok := dataMap(data)
+	if !ok {
+		return nil
+	}
+	readiness, ok := dataMap(root["readiness"])
+	if !ok {
+		return nil
+	}
+	layers, ok := dataMap(readiness["layers"])
+	if !ok {
+		return nil
+	}
+	rows := make([][]string, 0, 6)
+	for _, name := range []string{"contract", "transport", "auth", "owner", "mutation_recovery", "production"} {
+		layer, ok := dataMap(layers[name])
+		if !ok {
+			continue
+		}
+		rows = append(rows, []string{
+			readinessLayerLabel(name),
+			summaryHumanValue("status", firstDataPathString(layer, "status")),
+			summaryHumanValue("maturity", firstDataPathString(layer, "maturity")),
+			joinedSummaryValues(layer["blockers"]),
+			joinedSummaryValues(layer["next_actions"]),
+		})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	return renderSummaryTable(w, theme, []string{"Layer", "Status", "Maturity", "Blockers", "Next action"}, rows)
+}
+
+func readinessLayerLabel(name string) string {
+	switch name {
+	case "contract":
+		return "Contract"
+	case "transport":
+		return "Transport"
+	case "auth":
+		return "Auth"
+	case "owner":
+		return "Owner"
+	case "mutation_recovery":
+		return "Mutation recovery"
+	case "production":
+		return "Production"
+	default:
+		return name
+	}
+}
+
+func joinedSummaryValues(value any) string {
+	switch typed := value.(type) {
+	case []string:
+		return strings.Join(typed, ", ")
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+				items = append(items, text)
+			}
+		}
+		return strings.Join(items, ", ")
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
 	}
 }
 

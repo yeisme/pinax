@@ -19,7 +19,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 ## 当前状态
 
 - 当前阶段：本地优先 notebook workflow 已可通过 CLI 使用，适合外部开发者评估。
-- 当前实现边界：支持 local init、vault validate、daily/inbox/draft、note add/create/list/read/edit/rename/move/archive/delete/tag、共享 `NoteDisplay`、project workspace/board、task adoption plan、长期学习项目初始化、组织维度浏览、database saved views 的 table/board/list/calendar render、saved-view Markdown tabs、SQLite/GORM index、search、`pinax note links`/`pinax note backlinks`/`pinax note orphans`、`search --link-target`、attachments、Markdown import/export、template create/render/validate/delete、metadata plan/apply、repair plan/apply、agent organize plan/list/apply、version snapshot、asset manifest registration/validation/planning、read-only dashboard repair/database-tab views、read-only MCP、localhost REST/RPC projection adapter，以及 server/file/S3/rclone Cloud Sync transport。Obsidian-style vault compatibility 是 preview。
+- 当前实现边界：支持 local init、vault validate、daily/inbox/draft、note add/create/list/read/edit/rename/move/archive/delete/tag、共享 `NoteDisplay`、project workspace/board、task adoption plan、长期学习项目初始化、组织维度浏览、database saved views 的 table/board/list/calendar render、saved-view Markdown tabs、SQLite/GORM index、search、双向 link graph、attachments、Markdown import/export、template、metadata/repair/organize proof loop、version snapshot、asset manifest、read-only dashboard、dual-era read-only stdio MCP、REST/RPC owner adapter、public `pkg/pinaxclient`、remote CLI，以及 server/file/S3/rclone Cloud Sync transport。首批 `inbox.capture`/`folder.rename` 已有 GORM operation ledger、idempotency、status/reconcile 与 ambiguous-outcome recovery；Obsidian-style vault compatibility 是 preview。
 - 用户可见 note path 使用 vault-relative canonical path。默认普通 note 是根级 `foo.md`，子目录 note 是 `work/foo.md`；历史 `notes/foo.md` 只作为 resolver-compatible 输入，不是 CLI、JSON、agent、record、search 或 MCP 的主要输出。
 - 计划和实现跟踪放在 `openspec/`；外部贡献者先读 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
@@ -46,9 +46,12 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - `pinax task adopt <item> --plan` 只预览 inferred checklist task adoption；只有 `--yes` 才写 task adoption ledger。
 - `pinax database view save|render` 存储 query/view 配置，并返回 bounded table、board、list、calendar 或 database-tab projection。Markdown `pinax-database-view <name>` fences 由 app service 渲染，不让 client 解析 `.pinax/**`，也不持久化 result rows。
 - `pinax note read/show --display card|detail|context|body`、project board、dashboard、MCP、REST 和 RPC 共用同一个 `NoteDisplay` projection；默认 bounded display 不输出完整 body。
-- `pinax api routes`、`pinax api status`、`pinax api schema export` 和 `pinax api serve --readonly --port 0` 是 local REST/RPC projection adapter。服务默认绑定 `127.0.0.1`，不提供 public hosted API、CORS、TLS、多用户权限或 token auth。
+- `pinax api routes`、`pinax api manifest`、`pinax api status`、`pinax api schema export` 和 `pinax api serve --readonly --port 0` 是 REST/RPC owner adapter。服务默认绑定 `127.0.0.1`，支持 temp token、canonical hashed `--token-store` 和强制 loopback `--no-auth`；不自动提供 public hosted API、CORS/TLS termination、多用户 permission backend 或 production readiness。
+- `local-vault`、`remote-service`、`self-hosted-service` 是 owner mode；`embedded`、`loopback-http`、`https` 与 stdio MCP 是 transport。使用 `pinax connection inspect|doctor|readiness` 检查 resolved descriptor、只读 probe 和六层 readiness，不把 loopback smoke 推导成 production ready。
+- 服务端 `--token-store` 读取 hashed registry；旧服务端 `--token-file` 仅为同语义 compatibility alias。客户端 `--api-token-file` 读取另一个 owner-only `0600` plaintext bearer file，两者绝不能复用同一文件。
+- Ambiguous remote mutation 先运行 `pinax operation show <operation-id> --json`，再按需运行 `pinax operation reconcile <operation-id> --json`；不得更换 identity blind retry 或 fallback 到本地写入。
 - Client CLI parity 和 realtime sync 是同一边界下的两条链路：Remote API Mode 让 CLI client 和本地工具通过已注册 capability 操作一台服务端 vault；`pinax sync daemon` 让多个本地 vault 通过加密 Cloud Sync revision 收敛。详见 [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)。
-- `pinax prompt` 存储可复用的 `yeisme.prompt_asset.v1` prompt assets，解析 `pinax://prompt/<id>` 引用，记录 Pinax-owned lifecycle decision，并导入 Eikona 等工具的 metadata-only usage feedback。
+- `pinax prompt` 存储可复用的 `yeisme.prompt_asset.v1` prompt assets，解析 `pinax://prompt/<id>` 引用，记录 Pinax-owned lifecycle decision，并导入 Eikona 等工具的 metadata-only usage feedback。实验性附加面：`pinax prompt repository` 通过共享 promptrepo store 管理用户级仓库 profile；`pinax prompt catalog` 提供 provider-free 的外部 catalog search/resolve/inspect/validate/preview，并仅在 rights/contract 允许 import/copy 时通过 `catalog install --yes` 创建本地 `draft` asset（详见 [prompt 命令文档](./commands/prompt.md)）。
 - Cloud Sync 是独立分布式同步设计：每台设备保留本地 vault，Cloud backend 协调 encrypted revision、blob 和 conflict。详见 [Cloud Sync Architecture](./architecture/cloud-sync-design.md)。
 
 ## 文档入口
@@ -65,7 +68,9 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [CLI Output Contract](./interfaces/cli-output-contract.md)
 - [DSH Pane Interface Contract](./interfaces/dsh-pane.md)
 - [Local REST/RPC Contract](./interfaces/remote-api-contract.md)
+- [Token 与 credential contract](./interfaces/auth-contract.md)
 - [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)
+- [Personal Assistant Grounding Handoff](./interfaces/personal-assistant-grounding-handoff.md)
 - [Demo Proof Loop](./demo-proof-loop.md)
 - [命令手册](./commands/README.md)
 - [本地开发运行手册](./operations/local-development.md)
@@ -99,6 +104,14 @@ go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 task check
 task release:check
 ```
+
+验证 remote mutation response-loss 与 crash-window reconcile：
+
+```bash
+task integration:operation-recovery
+```
+
+该入口把每次运行的脱敏证据写入 `temp/integration-test-runs/<run-id>/`，包括 `summary.json`、`command.txt`、stdout/stderr、env 与 artifacts。
 
 发布或交接 release artifact 前运行：
 

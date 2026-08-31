@@ -59,6 +59,7 @@ func (s *Store) autoMigrate(ctx context.Context) error {
 		&AgentConflictRow{},
 		&AgentPrincipalRow{},
 		&AgentProposalRow{},
+		&AgentProposalSourceRow{},
 		&AgentHandoffRow{},
 		&AgentHandoffSourceRow{},
 		&AgentFeedbackRow{},
@@ -247,7 +248,43 @@ func (s *Store) SaveProposal(ctx context.Context, p agentprotocol.Proposal, stat
 		ReviewReason:   string(reviewReason),
 		CreatedAt:      p.CreatedAt,
 	}
-	return s.db.WithContext(ctx).Save(&row).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&row).Error; err != nil {
+			return fmt.Errorf("save proposal row: %w", err)
+		}
+		if err := tx.Where("proposal_id = ?", p.ProposalID).Delete(&AgentProposalSourceRow{}).Error; err != nil {
+			return fmt.Errorf("clear proposal sources: %w", err)
+		}
+		for _, source := range p.Sources {
+			sourceRow := AgentProposalSourceRow{
+				ID:         sourceID(p.ProposalID, source),
+				ProposalID: p.ProposalID,
+				Kind:       source.Kind,
+				Ref:        source.Ref,
+				Label:      source.Label,
+				Span:       source.Span,
+				CreatedAt:  time.Now().UTC(),
+			}
+			if err := tx.Create(&sourceRow).Error; err != nil {
+				return fmt.Errorf("save proposal source: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// GetProposalSources 返回 proposal 的 bounded refs；不读取或返回 proposal
+// 正文。顺序按写入时间稳定。
+func (s *Store) GetProposalSources(ctx context.Context, proposalID string) (agentprotocol.SourceRefList, error) {
+	var rows []AgentProposalSourceRow
+	if err := s.db.WithContext(ctx).Where("proposal_id = ?", proposalID).Order("created_at ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("get proposal sources: %w", err)
+	}
+	sources := make(agentprotocol.SourceRefList, 0, len(rows))
+	for _, row := range rows {
+		sources = append(sources, agentprotocol.SourceRef{Kind: row.Kind, Ref: row.Ref, Label: row.Label, Span: row.Span})
+	}
+	return sources, nil
 }
 
 // UpdateProposalStatus 更新 proposal 的 review 结果。

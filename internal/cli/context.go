@@ -16,6 +16,7 @@ type commandBuildContext struct {
 	explainMode              *bool
 	vaultPath                *string
 	apiURL                   *string
+	connectionMode           *string
 	apiToken                 *string
 	apiTokenFile             *string
 	colorMode                *string

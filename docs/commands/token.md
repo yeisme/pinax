@@ -27,12 +27,16 @@ pinax token revoke tok_123 --vault ./my-notes --json
 pinax token rotate tok_123 --label local-agent-rotated --vault ./my-notes --json
 ```
 
-Use the token without storing it in project files:
+Use the token without storing it in project files. The server store and client bearer file are intentionally different files:
 
 ```bash
-pinax api serve --vault ./my-notes --readonly --port 8787 --token-file ~/.config/pinax/local-agent.token
-pinax search "release workflow" --api-url http://127.0.0.1:8787 --api-token-file ~/.config/pinax/local-agent.token --json
+pinax api serve --vault ./my-notes --readonly --port 8787 \
+  --token-store ./my-notes/.pinax/tokens/tokens.json
+pinax search "release workflow" --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer --json
 ```
+
+`--token-store` reads the hashed server registry. `--api-token-file` reads one plaintext bearer secret from an absolute owner-only `0600` regular file. The deprecated server `--token-file` is only an alias for `--token-store`; never point either server flag at the client bearer file.
 
 ## Safety Boundary
 

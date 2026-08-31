@@ -60,10 +60,10 @@ Agent plan 会绑定 object ID、observed path、expected content revision 和 r
 - Go 1.26.1 或更新版本，或下载下方预编译 archive。
 - 可选：[Task](https://taskfile.dev/)，用于 `task check` 等开发快捷命令。
 
-匿名安装（无需 GitHub token；公开镜像 [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)）：
+匿名安装当前稳定版 `v0.2.0`（无需 GitHub token；公开镜像 [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s pinax
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s -- pinax v0.2.0
 export PATH="$HOME/.yeisme/bin:$PATH"
 pinax version
 ```

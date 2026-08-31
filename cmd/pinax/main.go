@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,7 +20,9 @@ var version = "dev"
 
 func main() {
 	root := newRootCommand()
-	if err := root.Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := root.ExecuteContext(ctx); err != nil {
 		var commandErr *domain.CommandError
 		if !errors.As(err, &commandErr) {
 			fmt.Fprintln(os.Stderr, err)

@@ -44,12 +44,12 @@ func TestAgentMemoryCorePackagesAreProviderNeutral(t *testing.T) {
 }
 
 // TestAgentProtocolDoesNotImportRuntimeSDKs 确保协议包不引入
-// Codex、Cohors 或 connector runtime 代码。
+// Codex、Ordo 或 connector runtime 代码。
 func TestAgentProtocolDoesNotImportRuntimeSDKs(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	runtimePrefixes := []string{
 		"codex",
-		"cohors",
+		"ordo",
 		"connector",
 		"ntn",
 		"lark",

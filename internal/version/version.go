@@ -139,6 +139,20 @@ func (LocalBackend) Snapshot(ctx context.Context, req SnapshotRequest) (Snapshot
 	return snapshot, nil
 }
 
+// InspectSnapshotFreshness compares the current vault content with a stored
+// local snapshot without writing content objects or other version metadata.
+func InspectSnapshotFreshness(ctx context.Context, root, revision string) (bool, string, error) {
+	snapshot, err := loadSnapshot(root, revision)
+	if err != nil {
+		return false, "", err
+	}
+	currentHash, err := currentVaultContentHash(ctx, root)
+	if err != nil {
+		return false, "", err
+	}
+	return snapshot.ContentHash != "" && snapshot.ContentHash == currentHash, currentHash, nil
+}
+
 func (LocalBackend) ChangedSince(_ context.Context, req ChangedSinceRequest) ([]ChangedPath, error) {
 	return nil, changedPathsUnavailableError("local", req.SinceRevision)
 }
@@ -410,6 +424,73 @@ func hashVault(ctx context.Context, root string) (int, int64, string, []ChangedP
 		facts = append(facts, ChangedPath{Path: file.path, ObjectKind: versionObjectKind(file.path), ContentHash: file.sum, SizeBytes: file.size, ModifiedUnix: file.modified, Evidence: []string{file.object}})
 	}
 	return len(files), total, hex.EncodeToString(h.Sum(nil)), facts, nil
+}
+
+func currentVaultContentHash(ctx context.Context, root string) (string, error) {
+	type fileHash struct {
+		path string
+		sum  string
+	}
+	files := []fileHash{}
+	matcher, err := vaultignore.Load(root)
+	if err != nil {
+		return "", err
+	}
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if entry.IsDir() {
+			if matcher.Ignored(rel, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if matcher.Ignored(rel, false) {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		h := sha256.New()
+		_, copyErr := io.Copy(h, f)
+		closeErr := f.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		files = append(files, fileHash{path: rel, sum: hex.EncodeToString(h.Sum(nil))})
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
+	h := sha256.New()
+	for _, file := range files {
+		_, _ = io.WriteString(h, file.path)
+		_, _ = io.WriteString(h, "\x00")
+		_, _ = io.WriteString(h, file.sum)
+		_, _ = io.WriteString(h, "\n")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func versionObjectKind(rel string) domain.VaultObjectKind {

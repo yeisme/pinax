@@ -7,6 +7,8 @@ import (
 )
 
 func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
+	var operationID string
+	var idempotencyKey string
 	inboxCmd := &cobra.Command{
 		Use:   "inbox",
 		Short: "Manage inbox capture and triage workflows",
@@ -36,6 +38,8 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	inboxCaptureCmd.Flags().StringVar(ctx.noteSlug, "slug", "", "Filename slug")
 	inboxCaptureCmd.Flags().BoolVar(ctx.noteDryRun, "dry-run", false, "Preview the capture without modifying files")
 	inboxCaptureCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm remote capture when using --api-url")
+	inboxCaptureCmd.Flags().StringVar(&operationID, "operation-id", "", "Reuse an operation ID for a remote mutation retry")
+	inboxCaptureCmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "Reuse an idempotency key for a remote mutation retry")
 	inboxCmd.AddCommand(inboxCaptureCmd)
 
 	// 2. inbox list
@@ -255,7 +259,10 @@ func init() {
 		CommandPath: "inbox capture",
 		Method:      "Pinax.Inbox.Capture",
 		ArgParams:   []string{"title"},
-		Flags:       []remoteParamSpec{s("body", "body"), b("dry_run", "dry-run"), b("yes", "yes")},
+		Flags: []remoteParamSpec{
+			s("body", "body"), csv("tags", "tags"), s("slug", "slug"), b("dry_run", "dry-run"), b("yes", "yes"),
+			s("operation_id", "operation-id"), s("idempotency_key", "idempotency-key"),
+		},
 	})
 	registerRemoteCommand(remoteCommandSpec{
 		CommandPath: "inbox promote",

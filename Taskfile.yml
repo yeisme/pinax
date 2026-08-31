@@ -55,6 +55,26 @@ tasks:
     cmds:
       - go run ./tools/testkit/integrationevidence --profile agent-continuity
 
+  integration:prompt-catalog:
+    desc: Run federated prompt catalog integration tests with redacted evidence.
+    cmds:
+      - go run ./tools/testkit/integrationevidence --profile prompt-catalog
+
+  integration:mcp-protocol:
+    desc: Run current and legacy MCP protocol lifecycle tests with redacted evidence.
+    cmds:
+      - go run ./tools/testkit/integrationevidence --profile mcp-protocol
+
+  integration:sdk-security:
+    desc: Run public SDK transport and secure token file tests with redacted evidence.
+    cmds:
+      - go run ./tools/testkit/integrationevidence --profile sdk-security
+
+  integration:operation-recovery:
+    desc: Run remote mutation recovery process tests with redacted evidence.
+    cmds:
+      - go run ./tools/testkit/integrationevidence --profile operation-recovery
+
   integration:agent-continuity:dogfood:
     desc: Run ten redacted continuity samples against an isolated copy of a real vault.
     cmds:

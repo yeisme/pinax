@@ -289,7 +289,7 @@ func TestHandoff_Validate(t *testing.T) {
 	valid := Handoff{
 		SchemaVersion: HandoffSchemaVersion,
 		HandoffID:     "h_1",
-		FromPrincipal: DefaultAdapterPrincipal("p_cohors", "cohors"),
+		FromPrincipal: DefaultAdapterPrincipal("p_ordo", "ordo"),
 		ToPrincipal:   DefaultAdapterPrincipal("p_codex", "codex"),
 		Scope:         Scope{Kind: ScopeKindProject, ID: "proj_1"},
 		Objective:     "Review implementation slice",

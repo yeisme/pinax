@@ -29,6 +29,7 @@ import (
 	"github.com/yeisme/pinax/internal/identity"
 	noteindex "github.com/yeisme/pinax/internal/index"
 	"github.com/yeisme/pinax/internal/markdownnote"
+	"github.com/yeisme/pinax/internal/promptbridge"
 	notesearch "github.com/yeisme/pinax/internal/search"
 	"github.com/yeisme/pinax/internal/templateengine"
 	pinaxversion "github.com/yeisme/pinax/internal/version"
@@ -38,6 +39,7 @@ type Service struct {
 	versionBackend    pinaxversion.VersionBackend
 	identityAllocator *identity.Allocator
 	now               func() time.Time
+	promptBridge      *promptbridge.Bridge
 }
 
 func NewService() *Service { return NewServiceWithVersionBackend(pinaxversion.NewLocalBackend()) }
@@ -602,6 +604,24 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	if pathErr != nil {
 		return errorProjection("note.new", pathErr), pathErr
 	}
+	if strings.TrimSpace(req.PlannedPath) != "" {
+		planned := filepath.ToSlash(strings.TrimSpace(req.PlannedPath))
+		if filepath.Ext(planned) != ".md" {
+			err := &domain.CommandError{Code: "note_path_invalid", Message: "Planned note path must use the .md extension"}
+			return domain.NewErrorProjection("note.new", err), err
+		}
+		if _, err := safeJoin(root, planned); err != nil {
+			return errorProjection("note.new", err), err
+		}
+		plannedAbs, _ := safeJoin(root, planned)
+		if _, err := os.Stat(plannedAbs); err == nil {
+			commandErr := &domain.CommandError{Code: "note_path_conflict", Message: "Planned note path already exists", Hint: "Reconcile the original operation before creating a new identity"}
+			return domain.NewErrorProjection("note.new", commandErr), commandErr
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return errorProjection("note.new", err), err
+		}
+		rel = planned
+	}
 	if body == "" {
 		body = "# " + req.Title + "\n"
 	}
@@ -612,9 +632,17 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		}
 		body = rendered
 	}
-	noteID, err := s.allocateObjectID(identity.KindNote, root, rel)
-	if err != nil {
-		return errorProjection("note.new", err), err
+	noteID := strings.TrimSpace(req.ObjectID)
+	if noteID != "" {
+		if _, err := identity.ParseObjectID(noteID); err != nil {
+			commandErr := &domain.CommandError{Code: "note_id_invalid", Message: "Planned note identity is invalid"}
+			return domain.NewErrorProjection("note.new", commandErr), commandErr
+		}
+	} else {
+		noteID, err = s.allocateObjectID(identity.KindNote, root, rel)
+		if err != nil {
+			return errorProjection("note.new", err), err
+		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	content := buildNoteContentWithObjectID(noteID, req.Title, req.Project, folder, kind, cleanTags(req.Tags), req.Status, now, body)
@@ -720,7 +748,17 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	projection.Facts["index_updated"] = "true"
 	projection.Evidence = []string{dailyIndexRel, filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
 	note := domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}
-	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteCreated, "note.new:"+note.ID+":"+rel, note, "")
+	recordIdempotency := strings.TrimSpace(req.RecordIdempotencyKey)
+	if recordIdempotency == "" {
+		recordIdempotency = "note.new:" + note.ID + ":" + rel
+	}
+	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteCreated, recordIdempotency, note, "", func(event *domain.RecordEvent) {
+		for _, evidence := range req.RecordEvidence {
+			if value := strings.TrimSpace(evidence); value != "" {
+				event.Evidence = append(event.Evidence, value)
+			}
+		}
+	})
 	if recordErr != nil {
 		return errorProjection("note.new", recordErr), recordErr
 	}

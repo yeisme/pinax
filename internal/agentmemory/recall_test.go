@@ -130,13 +130,20 @@ func TestStore_CountByScope(t *testing.T) {
 
 func TestTableNames(t *testing.T) {
 	names := TableNames()
-	if len(names) != 7 {
-		t.Fatalf("expected 7 tables, got %d", len(names))
+	if len(names) != 8 {
+		t.Fatalf("expected 8 tables, got %d", len(names))
 	}
+	foundProposalSources := false
 	for _, n := range names {
 		if n == "" {
 			t.Error("empty table name")
 		}
+		if n == (AgentProposalSourceRow{}).TableName() {
+			foundProposalSources = true
+		}
+	}
+	if !foundProposalSources {
+		t.Fatalf("missing proposal source table %q", (AgentProposalSourceRow{}).TableName())
 	}
 }
 

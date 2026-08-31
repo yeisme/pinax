@@ -201,6 +201,174 @@ func TestRemoteModeMapsCreateApprovalPreviewFlags(t *testing.T) {
 	}
 }
 
+func TestRemoteInboxCaptureGeneratesOrPreservesMutationIdentity(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	seen := make([]map[string]any, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var rpc struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+			t.Fatal(err)
+		}
+		seen = append(seen, rpc.Params)
+		projection := domain.NewProjection("inbox.capture", "captured")
+		projection.Facts["operation_status"] = "succeeded"
+		_ = json.NewEncoder(w).Encode(projection)
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+	t.Setenv("NO_COLOR", "")
+
+	command := NewRootCommand("test")
+	command.SetOut(&bytes.Buffer{})
+	command.SetArgs([]string{"inbox", "capture", "Generated identity", "--yes", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	command = NewRootCommand("test")
+	command.SetOut(&bytes.Buffer{})
+	command.SetArgs([]string{"inbox", "capture", "Preserved identity", "--yes", "--operation-id", "op-user-provided", "--idempotency-key", "idem-user-provided", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || strings.TrimSpace(seen[0]["operation_id"].(string)) == "" || strings.TrimSpace(seen[0]["idempotency_key"].(string)) == "" {
+		t.Fatalf("generated identity params = %#v", seen)
+	}
+	if seen[1]["operation_id"] != "op-user-provided" || seen[1]["idempotency_key"] != "idem-user-provided" {
+		t.Fatalf("provided identity was not preserved: %#v", seen[1])
+	}
+}
+
+func TestRemoteInboxCaptureRejectsPartialMutationIdentityBeforeRequest(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_ = json.NewEncoder(w).Encode(domain.NewProjection("inbox.capture", "unexpected"))
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+
+	command := NewRootCommand("test")
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"inbox", "capture", "Partial identity", "--yes", "--operation-id", "op-only", "--json"})
+	if err := command.Execute(); err == nil || !strings.Contains(output.String(), `"code":"operation_identity_required"`) {
+		t.Fatalf("partial identity error=%v output=%s", err, output.String())
+	}
+	if requests != 0 {
+		t.Fatalf("partial identity reached owner: requests=%d", requests)
+	}
+}
+
+func TestRemoteMutationAmbiguousOutcomeUsesOperationWithoutBlindRetry(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	rpcCount := 0
+	statusCount := 0
+	operationID := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v1/rpc":
+			rpcCount++
+			var rpc struct {
+				Params map[string]any `json:"params"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+				t.Fatal(err)
+			}
+			operationID, _ = rpc.Params["operation_id"].(string)
+			_, _ = w.Write([]byte("{"))
+		case operationID != "" && r.URL.Path == "/v1/operations/"+operationID:
+			statusCount++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"spec_version": "1.0", "command": "operation.show", "status": "success",
+				"data": map[string]any{"operation": map[string]any{
+					"schema_version": "pinax.operation.v1", "operation_id": operationID,
+					"capability_id": "inbox.capture", "binding_id": "rpc.inbox.capture", "status": "succeeded",
+					"retryable": false, "replay_safe": false, "reconcile_required": false,
+					"result":     map[string]any{"path": "inbox/recovered.md", "note_id": "note-recovered"},
+					"created_at": "2026-08-25T00:00:00Z", "updated_at": "2026-08-25T00:00:01Z", "accepted_at": "2026-08-25T00:00:00Z",
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+	t.Setenv("NO_COLOR", "")
+
+	command := NewRootCommand("test")
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetArgs([]string{"inbox", "capture", "Recover ambiguous", "--yes", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("remote recovery: %v output=%s", err, output.String())
+	}
+	if rpcCount != 1 || statusCount != 1 || operationID == "" {
+		t.Fatalf("counts rpc=%d status=%d operation=%q", rpcCount, statusCount, operationID)
+	}
+	if !strings.Contains(output.String(), `"operation_id":"`+operationID+`"`) || !strings.Contains(output.String(), `"recovered_from_operation":"true"`) {
+		t.Fatalf("recovery output=%s", output.String())
+	}
+}
+
+func TestRemoteFolderRenamePreflightsRevisionAndGeneratesIdentity(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	seen := make([]map[string]any, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var rpc struct {
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&rpc); err != nil {
+			t.Fatal(err)
+		}
+		if rpc.Method != "Pinax.Folder.Rename" {
+			t.Fatalf("method = %q", rpc.Method)
+		}
+		seen = append(seen, rpc.Params)
+		projection := domain.NewProjection("folder.rename", "folder rename")
+		if rpc.Params["dry_run"] == true {
+			projection.Facts["revision_before"] = "sha256:" + strings.Repeat("a", 64)
+			projection.Facts["snapshot_id"] = "local-snapshot"
+		} else {
+			projection.Facts["operation_status"] = "succeeded"
+		}
+		_ = json.NewEncoder(w).Encode(projection)
+	}))
+	defer server.Close()
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "remote:\n  api_url: "+server.URL+"\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("PINAX_API_URL", "")
+
+	command := NewRootCommand("test")
+	command.SetOut(&bytes.Buffer{})
+	command.SetArgs([]string{"folder", "rename", "spaces/source", "spaces/target", "--yes", "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0]["dry_run"] != true || seen[0]["operation_id"] != "" || seen[0]["idempotency_key"] != "" {
+		t.Fatalf("preflight params = %#v", seen)
+	}
+	wantRevision := "sha256:" + strings.Repeat("a", 64)
+	if seen[1]["expected_revision"] != wantRevision || strings.TrimSpace(seen[1]["operation_id"].(string)) == "" || strings.TrimSpace(seen[1]["idempotency_key"].(string)) == "" {
+		t.Fatalf("apply params = %#v", seen[1])
+	}
+}
+
 func TestRemoteModeMapsMemoryCommands(t *testing.T) {
 	root := t.TempDir()
 	xdg := filepath.Join(root, "xdg")

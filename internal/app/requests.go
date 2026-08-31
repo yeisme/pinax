@@ -209,6 +209,12 @@ type CreateNoteRequest struct {
 	Slug       string
 	Status     string
 	DryRun     bool
+	// The following fields are internal recovery inputs. Public and legacy
+	// callers leave them empty and retain the existing note creation behavior.
+	PlannedPath          string
+	ObjectID             string
+	RecordIdempotencyKey string
+	RecordEvidence       []string
 }
 
 type TemplateRequest struct {

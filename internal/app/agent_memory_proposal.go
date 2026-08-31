@@ -184,11 +184,7 @@ func (s *AgentMemoryService) AgentMemoryReject(ctx context.Context, vaultPath, p
 	return st.UpdateProposalStatus(ctx, proposalID, agentprotocol.ProposalStatusRejected, agentprotocol.ProposalStatusReason(reason), "")
 }
 
-// getProposalSources 读取 proposal 关联的 sources（从 proposal row 的 scope 推断或独立存储）。
-// 当前实现：proposal 不独立存 source row，approve 时从 proposal 内容推断。
+// getProposalSources 读取 proposal 关联的 bounded source refs。
 func (s *AgentMemoryService) getProposalSources(ctx context.Context, st *agentmemory.Store, proposalID string) (agentprotocol.SourceRefList, error) {
-	// proposal sources 在当前模型中通过 proposal→memory 传递；
-	// 如果需要更完整追踪，可在 AgentProposalRow 中增加 sources JSON 列。
-	// 当前返回空列表，由调用方补充，或由 approve 逻辑从 prop 提取。
-	return nil, nil
+	return st.GetProposalSources(ctx, proposalID)
 }

@@ -31,7 +31,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.23
 	github.com/spf13/pflag v1.0.9
 	github.com/yeisme/credentialctl v0.0.0
+	github.com/yeisme/promptrepo v0.3.0
 	golang.org/x/crypto v0.54.0
+	golang.org/x/sys v0.47.0
 )
 
 require (
@@ -93,7 +95,6 @@ require (
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
 	gorm.io/datatypes v1.2.4 // indirect

@@ -521,6 +521,191 @@ func TestMCPStdioStandardHandshakeKeepsLegacyProjection(t *testing.T) {
 	}
 }
 
+func TestMCPModernProtocolDiscoveryAndOperations(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "Modern MCP"}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServerWithOptions(svc, root, ServerOptions{StrictLifecycle: true})
+	meta := map[string]any{
+		"_meta": map[string]any{
+			protocolVersionMetaKey:                       "2026-07-28",
+			"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+		},
+	}
+
+	discover, err := server.Handle(ctx, Request{ID: "discover", Method: "server/discover", Params: meta})
+	if err != nil {
+		t.Fatalf("server/discover: %v", err)
+	}
+	if discover.Result["resultType"] != "complete" || !containsStringValue(discover.Result["supportedVersions"], modernProtocolVersion) {
+		t.Fatalf("discover result = %#v", discover.Result)
+	}
+
+	tools, err := server.Handle(ctx, Request{ID: "tools", Method: "tools/list", Params: meta})
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	if len(tools.Tools) != 0 || tools.Result["resultType"] != "complete" || tools.Result["cacheScope"] != "public" {
+		t.Fatalf("modern tools/list result = %#v", tools)
+	}
+	if listed, ok := tools.Result["tools"].([]map[string]any); !ok || len(listed) == 0 {
+		t.Fatalf("modern tools/list tools = %#v", tools.Result["tools"])
+	}
+
+	resources, err := server.Handle(ctx, Request{ID: "resources", Method: "resources/list", Params: meta})
+	if err != nil {
+		t.Fatalf("resources/list: %v", err)
+	}
+	listedResources, ok := resources.Result["resources"].([]Resource)
+	if !ok || len(listedResources) == 0 {
+		t.Fatalf("modern resources/list resources = %#v", resources.Result["resources"])
+	}
+	for _, resource := range listedResources {
+		if strings.Contains(resource.URI, "{") {
+			t.Fatalf("modern resources/list contains template %q", resource.URI)
+		}
+	}
+
+	templates, err := server.Handle(ctx, Request{ID: "templates", Method: "resources/templates/list", Params: meta})
+	if err != nil {
+		t.Fatalf("resources/templates/list: %v", err)
+	}
+	listedTemplates, ok := templates.Result["resourceTemplates"].([]map[string]any)
+	if !ok || len(listedTemplates) == 0 {
+		t.Fatalf("modern resource templates = %#v", templates.Result)
+	}
+	for _, template := range listedTemplates {
+		if !strings.Contains(fmt.Sprint(template["uriTemplate"]), "{") {
+			t.Fatalf("resource template is not parameterized: %#v", template)
+		}
+	}
+
+	readParams := map[string]any{
+		"uri":   "pinax://manifest",
+		"_meta": meta["_meta"],
+	}
+	manifest, err := server.Handle(ctx, Request{ID: "manifest", Method: "resources/read", Params: readParams})
+	if err != nil {
+		t.Fatalf("resources/read manifest: %v", err)
+	}
+	if manifest.Result["resultType"] != "complete" || manifest.Result["cacheScope"] != "private" {
+		t.Fatalf("modern resources/read result = %#v", manifest.Result)
+	}
+
+	callParams := map[string]any{
+		"name":      "pinax.git.snapshot_plan",
+		"arguments": map[string]any{},
+		"_meta":     meta["_meta"],
+	}
+	call, err := server.Handle(ctx, Request{ID: "call", Method: "tools/call", Params: callParams})
+	if err != nil {
+		t.Fatalf("tools/call: %v", err)
+	}
+	if call.Result["resultType"] != "complete" || call.Result["isError"] != false {
+		t.Fatalf("modern tools/call result = %#v", call.Result)
+	}
+}
+
+func TestMCPProtocolNegotiationRejectsUnsupportedVersions(t *testing.T) {
+	t.Parallel()
+
+	server := NewServerWithOptions(app.NewService(), t.TempDir(), ServerOptions{StrictLifecycle: true})
+	_, modernErr := server.Handle(context.Background(), Request{
+		ID:     1,
+		Method: "server/discover",
+		Params: map[string]any{"_meta": map[string]any{protocolVersionMetaKey: "1900-01-01"}},
+	})
+	assertMCPProtocolError(t, modernErr, -32022, "1900-01-01", modernProtocolVersion)
+
+	_, legacyErr := server.Handle(context.Background(), Request{
+		ID:     2,
+		Method: "initialize",
+		Params: map[string]any{"protocolVersion": "1900-01-01"},
+	})
+	assertMCPProtocolError(t, legacyErr, -32602, "1900-01-01", defaultLegacyProtocolVersion)
+
+	_, metadataErr := server.Handle(context.Background(), Request{
+		ID:     3,
+		Method: "server/discover",
+		Params: map[string]any{"_meta": map[string]any{protocolVersionMetaKey: modernProtocolVersion}},
+	})
+	mcpErr, ok := metadataErr.(*MCPError)
+	if !ok || mcpErr.Code != -32602 || mcpErr.Data["legacy_code"] != "client_capabilities_required" {
+		t.Fatalf("missing client capabilities error = %#v", metadataErr)
+	}
+}
+
+func TestMCPLifecycleRejectsLegacyInventoryBeforeInitialize(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"
+	if err := Serve(context.Background(), app.NewService(), t.TempDir(), strings.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	responses := parseMCPFrameResponses(t, out.String())
+	if len(responses) != 1 || responses[0].Error == nil || responses[0].Error.Data["legacy_code"] != "server_not_initialized" {
+		t.Fatalf("pre-initialize response = %#v", responses)
+	}
+}
+
+func TestMCPInitializeAcceptsLegacyAllowlist(t *testing.T) {
+	t.Parallel()
+
+	for _, version := range legacyProtocolVersions {
+		version := version
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			server := NewServerWithOptions(app.NewService(), t.TempDir(), ServerOptions{StrictLifecycle: true})
+			response, err := server.Handle(context.Background(), Request{
+				ID:     1,
+				Method: "initialize",
+				Params: map[string]any{"protocolVersion": version},
+			})
+			if err != nil {
+				t.Fatalf("initialize %s: %v", version, err)
+			}
+			if response.Result["protocolVersion"] != version {
+				t.Fatalf("initialize version = %#v", response.Result)
+			}
+		})
+	}
+}
+
+func assertMCPProtocolError(t *testing.T, err error, wantCode int, requested, supported string) {
+	t.Helper()
+	mcpErr, ok := err.(*MCPError)
+	if !ok {
+		t.Fatalf("error = %T %v, want MCPError", err, err)
+	}
+	if mcpErr.Code != wantCode || mcpErr.Data["requested"] != requested || !containsStringValue(mcpErr.Data["supported"], supported) {
+		t.Fatalf("protocol error = %#v", mcpErr)
+	}
+}
+
+func containsStringValue(value any, target string) bool {
+	switch values := value.(type) {
+	case []string:
+		for _, value := range values {
+			if value == target {
+				return true
+			}
+		}
+	case []any:
+		for _, value := range values {
+			if value == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func parseMCPFrameResponses(t *testing.T, out string) []Response {
 	t.Helper()
 	var responses []Response

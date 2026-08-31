@@ -1,6 +1,9 @@
 package redaction
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 var (
 	authorizationPattern = regexp.MustCompile(`(?i)Authorization:\s*Bearer\s+[^\s]+`)
@@ -24,5 +27,19 @@ func Cloud(input string) string {
 	out = secretAccessKeyPattern.ReplaceAllString(out, "${1}[REDACTED]")
 	out = passwordPattern.ReplaceAllString(out, "${1}[REDACTED]")
 	out = apiKeyPattern.ReplaceAllString(out, "${1}[REDACTED]")
+	return out
+}
+
+// Credentials redacts standard credential shapes and any exact secret values
+// already known to the caller. It is intended for diagnostics and evidence,
+// never as a substitute for keeping secrets out of those surfaces entirely.
+func Credentials(input string, secrets ...string) string {
+	out := Cloud(input)
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		out = strings.ReplaceAll(out, secret, "[REDACTED]")
+	}
 	return out
 }

@@ -19,10 +19,10 @@
 go install github.com/yeisme/pinax/cmd/pinax@latest
 ```
 
-**方式 B：公开镜像安装器（无需 Go、无需 GitHub token）**
+**方式 B：公开镜像安装当前稳定版 `v0.2.0`（无需 Go、无需 GitHub token）**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s pinax
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s -- pinax v0.2.0
 export PATH="$HOME/.yeisme/bin:$PATH"
 ```
 

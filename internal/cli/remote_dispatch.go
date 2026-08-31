@@ -2,9 +2,10 @@ package cli
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
-	"github.com/yeisme/pinax/internal/remoteapi"
+	"github.com/yeisme/pinax/pkg/pinaxclient"
 )
 
 // remoteFlagKind selects how a cobra flag value is converted into an RPC param.
@@ -41,19 +42,35 @@ type remoteCommandSpec struct {
 // commands. It replaces the remoteRPCRequestForCommand switch and feeds
 // remoteSupportedRPCMethods, so the RPC mapping, the coverage report, and the
 // command definitions can no longer drift apart silently.
-var remoteCommandRegistry = map[string]remoteCommandSpec{}
+var (
+	remoteCommandRegistryMu sync.RWMutex
+	remoteCommandRegistry   = map[string]remoteCommandSpec{}
+)
 
 // registerRemoteCommand registers a spec; specs live next to the command
 // definitions in the *_cmd.go files that own them.
 func registerRemoteCommand(spec remoteCommandSpec) {
+	remoteCommandRegistryMu.Lock()
+	defer remoteCommandRegistryMu.Unlock()
 	remoteCommandRegistry[spec.CommandPath] = spec
+}
+
+func remoteCommandRegistrySnapshot() map[string]remoteCommandSpec {
+	remoteCommandRegistryMu.RLock()
+	defer remoteCommandRegistryMu.RUnlock()
+	snapshot := make(map[string]remoteCommandSpec, len(remoteCommandRegistry))
+	for path, spec := range remoteCommandRegistry {
+		snapshot[path] = spec
+	}
+	return snapshot
 }
 
 // remoteSupportedRPCMethods returns the command path → RPC method mapping used
 // by the coverage report.
 func remoteSupportedRPCMethods() map[string]string {
-	methods := make(map[string]string, len(remoteCommandRegistry))
-	for path, spec := range remoteCommandRegistry {
+	registry := remoteCommandRegistrySnapshot()
+	methods := make(map[string]string, len(registry))
+	for path, spec := range registry {
 		methods[path] = spec.Method
 	}
 	return methods
@@ -61,14 +78,16 @@ func remoteSupportedRPCMethods() map[string]string {
 
 // remoteRPCRequestForCommand assembles the RPC request for a command instance
 // from the registry, enforcing positional arity.
-func remoteRPCRequestForCommand(cmd *cobra.Command, args []string) (remoteapi.RPCRequest, bool) {
+func remoteRPCRequestForCommand(cmd *cobra.Command, args []string) (pinaxclient.RPCRequest, bool) {
 	commandPath := strings.TrimPrefix(cmd.CommandPath(), "pinax ")
+	remoteCommandRegistryMu.RLock()
 	spec, ok := remoteCommandRegistry[commandPath]
+	remoteCommandRegistryMu.RUnlock()
 	if !ok {
-		return remoteapi.RPCRequest{}, false
+		return pinaxclient.RPCRequest{}, false
 	}
 	if len(args) != len(spec.ArgParams) {
-		return remoteapi.RPCRequest{}, false
+		return pinaxclient.RPCRequest{}, false
 	}
 	params := map[string]any{}
 	for key, value := range spec.Const {
@@ -84,7 +103,7 @@ func remoteRPCRequestForCommand(cmd *cobra.Command, args []string) (remoteapi.RP
 		}
 		params[param.Key] = value
 	}
-	return remoteapi.RPCRequest{Method: spec.Method, Params: params}, true
+	return pinaxclient.RPCRequest{Method: spec.Method, Params: params}, true
 }
 
 func remoteFlagValue(cmd *cobra.Command, param remoteParamSpec) (any, bool) {

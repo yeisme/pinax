@@ -1,4 +1,4 @@
-// Package agentadapter 提供 reference adapter harness，验证 Codex 和 Cohors adapter
+// Package agentadapter 提供 reference adapter harness，验证 Codex 和 Ordo adapter
 // 能力协商、context request 渲染、proposal/handoff 转换和 failure isolation。
 //
 // runtime-specific hook/config/plugin 不进入本包；只验证 common schema 100% 共用。

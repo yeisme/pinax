@@ -100,7 +100,7 @@ func TestContinuitySourceProcessE2E(t *testing.T) {
 	handoffID, err := svc.AgentHandoffCreate(ctx, app.AgentHandoffCreateRequest{
 		VaultPath:    vault,
 		From:         principal,
-		To:           agentadapter.CohorsPrincipal("ordo-e2e"),
+		To:           agentadapter.OrdoPrincipal("ordo-e2e"),
 		Scope:        scope,
 		Objective:    "source coverage e2e",
 		CurrentState: "handoff with mixed repository sources",
@@ -181,7 +181,7 @@ func TestContinuityCrossRuntimeCheckpointResumeE2E(t *testing.T) {
 	defer func() { _ = svc.Close() }()
 
 	codex := agentadapter.CodexPrincipal("codex-e2e")
-	claude := agentadapter.CohorsPrincipal("claude-e2e")
+	claude := agentadapter.OrdoPrincipal("claude-e2e")
 
 	sourceRev := "abc123def456"
 	sources := agentprotocol.SourceRefList{{Kind: agentprotocol.SourceKindRepository, Ref: "docs/design.md", Span: "rev:" + sourceRev}}
@@ -299,7 +299,7 @@ func TestContinuityThreeTaskClassDogfoodE2E(t *testing.T) {
 	defer func() { _ = svc.Close() }()
 
 	codex := agentadapter.CodexPrincipal("codex-dogfood")
-	claude := agentadapter.CohorsPrincipal("claude-dogfood")
+	claude := agentadapter.OrdoPrincipal("claude-dogfood")
 
 	classes := []string{"implementation_debugging", "product_spec_docs", "release_operations"}
 	runtimes := [][2]string{{"codex", "claude-code"}, {"claude-code", "codex"}, {"codex", "claude-code"}}

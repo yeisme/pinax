@@ -9,7 +9,48 @@ import (
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/pkg/pinaxclient"
 )
+
+func TestClientParityPublicAndCompatibilityFacade(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rpc" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"spec_version": "1.0",
+			"mode":         "json",
+			"command":      "folder.list",
+			"status":       "success",
+			"facts":        map[string]string{"count": "2"},
+			"data":         map[string]any{"folders": []string{"a", "b"}},
+		})
+	}))
+	defer server.Close()
+
+	request := RPCRequest{Method: "Pinax.Folder.List"}
+	publicClient, err := pinaxclient.New(pinaxclient.Config{BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireProjection, err := publicClient.CallRPC(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyProjection, err := NewClient(Config{BaseURL: server.URL}).Call(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacyProjection.SpecVersion != wireProjection.SpecVersion || legacyProjection.Mode != wireProjection.Mode || legacyProjection.Command != wireProjection.Command || legacyProjection.Status != wireProjection.Status || legacyProjection.Facts["count"] != wireProjection.Facts["count"] {
+		t.Fatalf("public=%#v legacy=%#v", wireProjection, legacyProjection)
+	}
+	data, ok := legacyProjection.Data.(map[string]any)
+	if !ok || len(data["folders"].([]any)) != 2 {
+		t.Fatalf("legacy data projection = %#v", legacyProjection.Data)
+	}
+}
 
 func TestClientPingAndCapabilitiesUseReadEndpoints(t *testing.T) {
 	seen := map[string]bool{}
@@ -120,6 +161,41 @@ func TestClientInvalidResponsesUseRedactedProjection(t *testing.T) {
 	}
 	if strings.Contains(body, secret) || strings.Contains(body, "Authorization") {
 		t.Fatalf("invalid response error leaked secret/header: %s", body)
+	}
+}
+
+func TestClientMutationFacadeRecoversAmbiguousOutcomeWithoutBlindRetry(t *testing.T) {
+	identity := MutationIdentity{OperationID: "op_facade_ambiguous", IdempotencyKey: "idem_facade_ambiguous"}
+	rpcCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/rpc":
+			rpcCount++
+			_, _ = w.Write([]byte("{"))
+		case "/v1/operations/" + identity.OperationID:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"spec_version": "1.0", "command": "operation.show", "status": "success",
+				"data": map[string]any{"operation": map[string]any{
+					"schema_version": "pinax.operation.v1", "operation_id": identity.OperationID,
+					"capability_id": "inbox.capture", "binding_id": "rpc.inbox.capture", "status": "succeeded",
+					"retryable": false, "replay_safe": false, "reconcile_required": false,
+					"created_at": "2026-08-25T00:00:00Z", "updated_at": "2026-08-25T00:00:01Z", "accepted_at": "2026-08-25T00:00:00Z",
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := NewClient(Config{BaseURL: server.URL})
+	projection, err := client.CallMutation(context.Background(), RPCRequest{Method: "Pinax.Inbox.Capture", Params: map[string]any{
+		"title": "facade", "operation_id": identity.OperationID, "idempotency_key": identity.IdempotencyKey,
+	}}, identity)
+	if err != nil || projection.Facts["operation_id"] != identity.OperationID || projection.Facts["recovered_from_operation"] != "true" {
+		t.Fatalf("projection=%#v err=%v", projection, err)
+	}
+	if rpcCount != 1 {
+		t.Fatalf("facade blindly retried mutation: %d", rpcCount)
 	}
 }
 

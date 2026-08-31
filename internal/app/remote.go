@@ -62,7 +62,7 @@ func RemoteCapabilities() []domain.RemoteCapability {
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.list", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.folder.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"invalid_folder_purpose"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.show", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.folder.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"folder_not_found", "unsafe_folder_path"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.create", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.create", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.folder.create.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "unsafe_folder_path", "invalid_folder_purpose", "folder_path_conflict"}},
-		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.rename", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.rename", Readonly: false, BodyAllowed: false, ApprovalRequired: true, SnapshotRequired: true, RequestSchema: "pinax.folder.rename.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "unsafe_folder_path", "folder_not_found", "folder_path_conflict", "invalid_folder_target"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.rename", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.rename", Readonly: false, BodyAllowed: false, ApprovalRequired: true, SnapshotRequired: true, RequestSchema: "pinax.folder.rename.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "snapshot_required", "expected_revision_required", "revision_conflict", "unsafe_folder_path", "folder_not_found", "folder_path_conflict", "invalid_folder_target", "operation_identity_required", "idempotency_conflict", "operation_store_unavailable", "reconcile_required"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.move", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.move", Readonly: false, BodyAllowed: false, ApprovalRequired: true, SnapshotRequired: true, RequestSchema: "pinax.folder.move.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "unsafe_folder_path", "folder_not_found", "folder_path_conflict", "invalid_folder_target"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.delete", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.delete", Readonly: false, BodyAllowed: false, ApprovalRequired: true, SnapshotRequired: true, RequestSchema: "pinax.folder.delete.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "unsafe_folder_path", "folder_not_found", "folder_not_empty", "empty_only_required"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "folder.adopt", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "folder.adopt", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.folder.adopt.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "unsafe_folder_path", "folder_not_found", "invalid_folder_purpose"}},
@@ -70,7 +70,7 @@ func RemoteCapabilities() []domain.RemoteCapability {
 		// Inbox capabilities
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.list", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "inbox.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.inbox.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"index_unavailable"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.show", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "inbox.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.inbox.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"note_not_found"}},
-		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.capture", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.capture", Readonly: false, BodyAllowed: true, ApprovalRequired: true, RequestSchema: "pinax.inbox.capture.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.capture", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.capture", Readonly: false, BodyAllowed: true, ApprovalRequired: true, RequestSchema: "pinax.inbox.capture.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "operation_identity_required", "idempotency_conflict", "operation_store_unavailable", "reconcile_required"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.promote", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.promote", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.inbox.promote.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition", "note_path_conflict"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.discard", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.discard", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.inbox.discard.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition"}},
 		// Draft capabilities
@@ -105,6 +105,10 @@ func RemoteCapabilities() []domain.RemoteCapability {
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "version.snapshot", Surfaces: []string{"cli"}, Command: "version.snapshot", Readonly: false, BodyAllowed: false, ApprovalRequired: false, UIGroup: "proof.gate", BodyExposureDefault: "none", WriteGate: "write", CopyCommand: "pinax version snapshot --vault <vault> --message <message> --json", LocalOnlyReason: "cli-proof-loop", RequestSchema: "pinax.version.snapshot.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"vault_not_initialized", "version_backend_unavailable"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "version.restore", Surfaces: []string{"cli"}, Command: "version.restore", Readonly: true, BodyAllowed: false, UIGroup: "proof.gate", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax version restore <path> --revision HEAD --plan --vault <vault> --json", LocalOnlyReason: "cli-proof-loop", RequestSchema: "pinax.version.restore.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"revision_not_found", "path_not_found"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "api.routes", Surfaces: []string{"cli"}, Command: "api.routes", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax api routes --vault <vault> --json", LocalOnlyReason: "cli-discovery", RequestSchema: "pinax.api.routes.request.v1", ResponseSchema: "pinax.projection.v1"},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "transport.manifest", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "api.manifest", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax api manifest --json", RequestSchema: "pinax.transport_manifest.request.v1", ResponseSchema: "pinax.transport_manifest.v1"},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "connection.readiness", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "connection.readiness", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax connection readiness --json", RequestSchema: "pinax.connection_readiness.request.v1", ResponseSchema: "pinax.connection_readiness.v1"},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "operation.show", Surfaces: []string{"cli", "rest", "rpc"}, Command: "operation.show", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax operation show <operation-id> --json", RequestSchema: "pinax.operation.show.request.v1", ResponseSchema: "pinax.operation.v1", Errors: []string{"operation_not_found", "operation_store_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "operation.reconcile", Surfaces: []string{"cli", "rest", "rpc"}, Command: "operation.reconcile", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "reconcile_only", CopyCommand: "pinax operation reconcile <operation-id> --json", RequestSchema: "pinax.operation.reconcile.request.v1", ResponseSchema: "pinax.operation.v1", Errors: []string{"operation_not_found", "operation_store_unavailable", "reconcile_required"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "api.schema.export", Surfaces: []string{"cli"}, Command: "api.schema.export", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax api schema export --format openapi --vault <vault> --json", LocalOnlyReason: "cli-discovery", RequestSchema: "pinax.api.schema.export.request.v1", ResponseSchema: "pinax.projection.v1"},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "mcp.serve", Surfaces: []string{"cli"}, Command: "mcp.serve", Readonly: true, BodyAllowed: false, UIGroup: "workbench.status", BodyExposureDefault: "none", WriteGate: "readonly", CopyCommand: "pinax mcp serve --vault <vault>", LocalOnlyReason: "cli-discovery", RequestSchema: "pinax.mcp.serve.request.v1", ResponseSchema: "pinax.projection.v1"},
 	}
@@ -118,13 +122,17 @@ func RemoteCapabilities() []domain.RemoteCapability {
 func releaseCoreCapabilityIDs() map[string]bool {
 	return map[string]bool{
 		// Vault bootstrap / discover.
-		"vault.init":        true,
-		"vault.validate":    true,
-		"vault.stats":       true,
-		"vault.doctor":      true,
-		"api.routes":        true,
-		"api.schema.export": true,
-		"mcp.serve":         true,
+		"vault.init":           true,
+		"vault.validate":       true,
+		"vault.stats":          true,
+		"vault.doctor":         true,
+		"api.routes":           true,
+		"transport.manifest":   true,
+		"connection.readiness": true,
+		"operation.show":       true,
+		"operation.reconcile":  true,
+		"api.schema.export":    true,
+		"mcp.serve":            true,
 		// Capture.
 		"note.add":             true,
 		"inbox.capture":        true,
@@ -239,6 +247,10 @@ func RemoteRoutes() []domain.RemoteRoute {
 		byID[cap.ID] = cap
 	}
 	return []domain.RemoteRoute{
+		remoteRoute("rest.transport.manifest", "rest", "GET", "/v1/manifest", "", byID["transport.manifest"]),
+		remoteRoute("rest.connection.readiness", "rest", "GET", "/v1/readiness", "", byID["connection.readiness"]),
+		remoteRoute("rest.operation.show", "rest", "GET", "/v1/operations/{operation_id}", "", byID["operation.show"]),
+		remoteRoute("rest.operation.reconcile", "rest", "POST", "/v1/operations/{operation_id}:reconcile", "", byID["operation.reconcile"]),
 		remoteRoute("rest.workbench.status", "rest", "GET", "/v1/workbench/status", "", byID["workbench.status"]),
 		remoteRoute("rest.workbench.activity.list", "rest", "GET", "/v1/workbench/activity", "", byID["workbench.activity.list"]),
 		remoteRoute("rest.workbench.activity.show", "rest", "GET", "/v1/workbench/activity/{event_id}", "", byID["workbench.activity.show"]),
@@ -284,6 +296,10 @@ func RemoteRoutes() []domain.RemoteRoute {
 		remoteRoute("rest.draft.archive", "rest", "POST", "/v1/drafts/{ref}:archive", "", byID["draft.archive"]),
 		remoteRoute("rest.draft.discard", "rest", "POST", "/v1/drafts/{ref}:discard", "", byID["draft.discard"]),
 		// RPC routes
+		remoteRoute("rpc.transport.manifest", "rpc", "CALL", "", "Pinax.Transport.Manifest", byID["transport.manifest"]),
+		remoteRoute("rpc.connection.readiness", "rpc", "CALL", "", "Pinax.Connection.Readiness", byID["connection.readiness"]),
+		remoteRoute("rpc.operation.show", "rpc", "CALL", "", "Pinax.Operation.Get", byID["operation.show"]),
+		remoteRoute("rpc.operation.reconcile", "rpc", "CALL", "", "Pinax.Operation.Reconcile", byID["operation.reconcile"]),
 		remoteRoute("rpc.workbench.status", "rpc", "CALL", "", "Pinax.Workbench.Status", byID["workbench.status"]),
 		remoteRoute("rpc.agent.context", "rpc", "CALL", "", "Pinax.Agent.Context", byID["agent.context"]),
 		remoteRoute("rpc.agent.memory.recall", "rpc", "CALL", "", "Pinax.Agent.Memory.Recall", byID["agent.memory.recall"]),
@@ -415,33 +431,17 @@ func (s *Service) APISchemaExport(_ context.Context, req APIRequest) (domain.Pro
 		return domain.NewErrorProjection("api.schema.export", err), err
 	}
 	routes := RemoteRoutes()
-	schema := map[string]any{"openapi": "3.1.0", "info": map[string]any{"title": "Pinax Local API", "version": "v1"}, "paths": map[string]any{}}
-	paths := schema["paths"].(map[string]any)
-	for _, route := range routes {
-		if route.Surface == "rest" && route.Path != "" {
-			pathItem, ok := paths[route.Path].(map[string]any)
-			if !ok {
-				pathItem = map[string]any{}
-				paths[route.Path] = pathItem
-			}
-			pathItem[strings.ToLower(route.Method)] = map[string]any{
-				"operationId":               route.RouteID,
-				"x-pinax-command":           route.Command,
-				"x-pinax-capability":        route.CapabilityID,
-				"x-pinax-release-core":      route.ReleaseCore,
-				"x-pinax-readonly":          route.Readonly,
-				"x-pinax-body-allowed":      route.BodyAllowed,
-				"x-pinax-approval-required": route.ApprovalRequired,
-				"x-pinax-snapshot-required": route.SnapshotRequired,
-				"x-pinax-ui-group":          route.UIGroup,
-				"x-pinax-body-exposure":     route.BodyExposureDefault,
-				"x-pinax-write-gate":        route.WriteGate,
-			}
-		}
+	schema, schemaErr := BuildOpenAPI()
+	if schemaErr != nil {
+		err := &domain.CommandError{Code: "api_schema_invalid", Message: "api schema could not be generated", Hint: "Run pinax api routes --json and inspect transport contract errors"}
+		return domain.NewErrorProjection("api.schema.export", err), err
 	}
 	projection := domain.NewProjection("api.schema.export", "API schema exported.")
 	projection.Facts["format"] = format
 	projection.Facts["routes"] = fmt.Sprint(len(routes))
+	if digest, digestErr := OpenAPIDigest(schema); digestErr == nil {
+		projection.Facts["schema_digest"] = digest
+	}
 	projection.Data = map[string]any{"schema": schema, "routes": routes}
 	return projection, nil
 }

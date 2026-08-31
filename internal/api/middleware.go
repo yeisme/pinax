@@ -2,25 +2,34 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/operation"
 )
+
+type operationAccessContextKey struct{}
 
 // AuthMode defines the authentication mode for the API server.
 type AuthMode int
 
 const (
-	AuthModeUnset     AuthMode = iota // zero value: no auth (tests)
-	AuthModeTemp                      // default: temp token in memory
-	AuthModeTokenFile                 // --token-file: long-lived tokens from file
-	AuthModeNone                      // --no-auth: no auth, loopback only
+	AuthModeUnset      AuthMode = iota // zero value: no auth (tests)
+	AuthModeTemp                       // default: temp token in memory
+	AuthModeTokenStore                 // --token-store: hashed long-lived token registry
+	AuthModeNone                       // --no-auth: no auth, loopback only
 )
+
+// AuthModeTokenFile is the deprecated compatibility name for
+// AuthModeTokenStore. The value and behavior are intentionally identical.
+const AuthModeTokenFile = AuthModeTokenStore
 
 // RouteInfo describes a route's group and method for scope checking.
 type RouteInfo struct {
@@ -35,6 +44,8 @@ var routeGroupMap = map[string]RouteInfo{
 	"/":                       {Group: "capabilities", Method: "GET", Readonly: true},
 	"/workbench":              {Group: "capabilities", Method: "GET", Action: "workbench.ui", Readonly: true},
 	"/v1/capabilities":        {Group: "capabilities", Method: "GET", Readonly: true},
+	"/v1/readiness":           {Group: "capabilities", Method: "GET", Action: "connection.readiness", Readonly: true},
+	"/v1/operations/":         {Group: "operations", Method: "GET", Action: "operation.show", Readonly: true},
 	"/v1/workbench/status":    {Group: "capabilities", Method: "GET", Action: "workbench.status", Readonly: true},
 	"/v1/workbench/activity":  {Group: "capabilities", Method: "GET", Action: "activity.list", Readonly: true},
 	"/v1/workbench/activity/": {Group: "capabilities", Method: "GET", Action: "activity.show", Readonly: true},
@@ -123,6 +134,13 @@ func lookupRouteInfo(path string, method string) (RouteInfo, bool) {
 		info.Action = inboxRouteAction(path)
 		return info, true
 	}
+	if strings.HasPrefix(path, "/v1/operations/") {
+		info := routeGroupMap["/v1/operations/"]
+		if strings.HasSuffix(path, ":reconcile") {
+			info.Action = "operation.reconcile"
+		}
+		return info, true
+	}
 	if strings.HasPrefix(path, "/v1/drafts/") {
 		info := routeGroupMap["/v1/drafts/"]
 		info.Readonly = method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
@@ -198,7 +216,7 @@ func requiredScopeForRoute(method string, route RouteInfo) TokenScope {
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.tokenFileErr != nil {
-			writeAuthError(w, "token_store_unavailable", "The configured token file could not be loaded; refusing requests instead of downgrading authentication", http.StatusServiceUnavailable)
+			writeAuthError(w, "token_store_unavailable", "The configured token store could not be loaded; refusing requests instead of downgrading authentication", http.StatusServiceUnavailable)
 			return
 		}
 		info, knownRoute := s.lookupRequestRouteInfo(r)
@@ -209,7 +227,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		// No auth configured (AuthModeUnset, used by tests): pass through
 		if s.authMode == AuthModeUnset {
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, s.withOperationAccess(r, "auth-unset"))
 			return
 		}
 
@@ -223,7 +241,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 				return
 			}
 			recorder := &auditStatusRecorder{ResponseWriter: w}
-			next.ServeHTTP(recorder, r)
+			next.ServeHTTP(recorder, s.withOperationAccess(r, "no-auth-loopback"))
 			status := recorder.status
 			if status == 0 {
 				status = http.StatusOK
@@ -262,13 +280,29 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		recorder := &auditStatusRecorder{ResponseWriter: w}
-		next.ServeHTTP(recorder, r)
+		next.ServeHTTP(recorder, s.withOperationAccess(r, record.ID))
 		status := recorder.status
 		if status == 0 {
 			status = http.StatusOK
 		}
 		s.writeAudit(record.ID, r.Method, r.URL.Path, string(required), group, status)
 	})
+}
+
+func (s *Server) withOperationAccess(r *http.Request, principalID string) *http.Request {
+	access := app.OperationAccess{
+		PrincipalDigest: operation.IdentityDigest("api-principal", principalID),
+		ScopeDigest:     operation.IdentityDigest("pinax-vault", filepath.Clean(s.vault)),
+	}
+	return r.WithContext(context.WithValue(r.Context(), operationAccessContextKey{}, access))
+}
+
+func operationAccessFromRequest(r *http.Request) app.OperationAccess {
+	if r == nil {
+		return app.OperationAccess{}
+	}
+	access, _ := r.Context().Value(operationAccessContextKey{}).(app.OperationAccess)
+	return access
 }
 
 // extractBearerToken extracts the token from the Authorization header.

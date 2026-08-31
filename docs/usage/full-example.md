@@ -112,10 +112,13 @@ curl -s http://127.0.0.1:8787/v1/capabilities
 需要写入 API 时，必须显式启用写能力和 token，且 token 存在用户级位置或环境变量中，不写入仓库：
 
 ```bash
-pinax token create --label local-agent --scope read --expires 30d --vault ./my-notes --json
-pinax api serve --vault ./my-notes --allow-write --port 8787 --token-file ~/.config/pinax/local-agent.token
+pinax token create --label local-agent --scope read,write --expires 30d --vault ./my-notes
+pinax api serve --vault ./my-notes --allow-write --port 8787 \
+  --token-store ./my-notes/.pinax/tokens/tokens.json
 curl -X POST 'http://127.0.0.1:8787/v1/memory:capture?yes=true' -H 'Content-Type: application/json' -H "Authorization: Bearer $PINAX_API_TOKEN" -d '{"type":"fact","subject":"pinax","object":"confirmed write through API"}'
 ```
+
+服务端 `--token-store` 指向 hashed registry；客户端 bearer secret 通过 `PINAX_API_TOKEN` 或另一个 owner-only `--api-token-file` 提供，不能与 server registry 使用同一文件。
 
 MCP surface 是只读 bounded projection：
 

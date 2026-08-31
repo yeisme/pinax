@@ -154,6 +154,30 @@ func (s *Service) Replay(ctx context.Context) (domain.LedgerState, error) {
 	return state, nil
 }
 
+// FindEventByIdempotency performs a read-only lookup in the append-only event
+// log. Operation reconciliation uses it as proof and never replays a mutation.
+func (s *Service) FindEventByIdempotency(ctx context.Context, idempotencyKey string) (domain.RecordEvent, bool, error) {
+	if err := ctxErr(ctx); err != nil {
+		return domain.RecordEvent{}, false, err
+	}
+	key := strings.TrimSpace(idempotencyKey)
+	if key == "" {
+		return domain.RecordEvent{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	events, err := s.readEvents()
+	if err != nil {
+		return domain.RecordEvent{}, false, err
+	}
+	for _, event := range events {
+		if event.IdempotencyKey == key {
+			return event, true, nil
+		}
+	}
+	return domain.RecordEvent{}, false, nil
+}
+
 func materialize(events []domain.RecordEvent) (domain.LedgerState, error) {
 	state := domain.LedgerState{SchemaVersion: RegistrySchemaVersion, Records: map[string]domain.NoteRecord{}, Tombstones: map[string]domain.Tombstone{}, Version: domain.LedgerVersion{SchemaVersion: SchemaVersion}}
 	for _, event := range events {

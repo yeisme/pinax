@@ -15,27 +15,27 @@ Pinax (`cli/pinax`) owns the canonical Agent memory runtime:
 
 ## Pinax does NOT own
 
-Runtime-specific adapter implementation is **not owned by Pinax**. Pinax ships reference adapter fixtures (`internal/agentadapter/codex.go`, `internal/agentadapter/cohors.go`) that prove the common schema is portable, but does not implement:
+Runtime-specific adapter implementation is **not owned by Pinax**. Pinax ships reference adapter fixtures (`internal/agentadapter/codex.go`, `internal/agentadapter/ordo.go`) that prove the common schema is portable, but does not implement:
 
 - **Codex runtime integration**: Codex plugin install, hooks, config parsing, subprocess management, trace path handling, and plugin packaging belong to the Codex owner.
-- **Cohors runtime integration**: Cohors team run, role assignment, trace format parsing, and team state management belong to the Cohors owner (`cli/cohors`).
+- **Ordo runtime integration**: Ordo team run, role assignment, trace format parsing, and team state management belong to the Ordo owner (`agent/ordo`).
 
-## Cohors consumer handoff
+## Ordo consumer handoff
 
-When Cohors implements its Pinax memory adapter, it should:
+When Ordo implements its Pinax memory adapter, it should:
 
 1. Import `pkg/agentmemory` (the experimental Go SDK) or call `pinax agent` CLI / `pinax.agent.*` MCP tools.
 2. Use the common schema (`yeisme.agent_memory.v1`, `yeisme.agent_context_pack.v1`, `yeisme.agent_handoff.v1`) — do **not** invent new core fields. Team-specific data goes in adapter metadata.
-3. Respect the proposal-first contract: Cohors workers default to `propose` capability; confirmed memory mutation requires owner approval or explicit policy.
+3. Respect the proposal-first contract: Ordo workers default to `propose` capability; confirmed memory mutation requires owner approval or explicit policy.
 4. Contribute feedback via `pinax agent feedback add` — feedback does not rewrite memory content.
 
-**Trigger condition**: Cohors should implement its adapter when it needs cross-agent handoff (e.g., Cohors worker → Codex reviewer) or shared memory across its team runtime. Until then, the reference fixture in `internal/agentadapter/cohors.go` proves compatibility without requiring Cohors runtime code in Pinax.
+**Trigger condition**: Ordo should implement its adapter when it needs cross-agent handoff (e.g., Ordo worker → Codex reviewer) or shared memory across its team runtime. Until then, the reference fixture in `internal/agentadapter/ordo.go` proves compatibility without requiring Ordo runtime code in Pinax.
 
 ## Stable-from criteria
 
 The agent memory runtime remains `experimental` until:
 
-- Two reference adapters (Codex + Cohors) are implemented and tested against real runtime code.
+- Two reference adapters (Codex + Ordo) are implemented and tested against real runtime code.
 - Four weeks of product dogfooding evidence is collected (task 8.5).
 - Transport parity is verified across CLI/MCP/REST-RPC/SDK (task 6.5).
 

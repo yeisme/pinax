@@ -31,15 +31,16 @@ type FolderRequest struct {
 }
 
 type FolderOperationRequest struct {
-	VaultPath       string
-	Path            string
-	TargetPath      string
-	TargetParent    string
-	Purpose         string
-	DryRun          bool
-	Yes             bool
-	EmptyOnly       bool
-	RequireSnapshot bool
+	VaultPath        string
+	Path             string
+	TargetPath       string
+	TargetParent     string
+	Purpose          string
+	DryRun           bool
+	Yes              bool
+	EmptyOnly        bool
+	RequireSnapshot  bool
+	ExpectedRevision string
 }
 
 type FolderRepairRequest struct {
@@ -201,7 +202,34 @@ func (s *Service) RenameFolder(_ context.Context, req FolderOperationRequest) (d
 	if pathErr != nil {
 		return domain.NewErrorProjection("folder.rename", pathErr), pathErr
 	}
-	return applyFolderMove(root, "folder.rename", sourcePath, targetPath, req.DryRun, req.Yes, req.RequireSnapshot, "renamed")
+	revisionBefore, snapshotID, revisionErr := folderRenameRevision(root, sourcePath, targetPath)
+	if revisionErr != nil {
+		return errorProjection("folder.rename", revisionErr), revisionErr
+	}
+	if expected := strings.TrimSpace(req.ExpectedRevision); expected != "" && expected != revisionBefore {
+		err := &domain.CommandError{Code: "revision_conflict", Message: "Folder rename revision is stale", Hint: "Run a new dry-run and retry with its revision_before value"}
+		projection := domain.NewErrorProjection("folder.rename", err)
+		projection.Facts["expected_revision"] = expected
+		projection.Facts["current_revision"] = revisionBefore
+		return projection, err
+	}
+	projection, err := applyFolderMove(root, "folder.rename", sourcePath, targetPath, req.DryRun, req.Yes, req.RequireSnapshot, "renamed")
+	projection.Facts["revision_before"] = revisionBefore
+	if snapshotID != "" {
+		projection.Facts["snapshot_id"] = snapshotID
+		projection.Facts["snapshot_ref"] = "snapshot:" + snapshotID
+	}
+	if err != nil || req.DryRun {
+		return projection, err
+	}
+	revisionAfter, _, revisionErr := folderRenameRevision(root, sourcePath, targetPath)
+	if revisionErr != nil {
+		projection.Status = "partial"
+		projection.Facts["revision_after_status"] = "unavailable"
+		return projection, nil
+	}
+	projection.Facts["revision_after"] = revisionAfter
+	return projection, nil
 }
 
 func (s *Service) MoveFolder(_ context.Context, req FolderOperationRequest) (domain.Projection, error) {

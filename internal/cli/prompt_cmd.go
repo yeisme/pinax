@@ -120,5 +120,8 @@ func addPromptCommands(root *cobra.Command, ctx commandBuildContext) {
 	feedbackCmd.AddCommand(feedbackImportCmd)
 	promptCmd.AddCommand(feedbackCmd)
 
+	addPromptRepositoryCommands(promptCmd, ctx)
+	addPromptCatalogCommands(promptCmd, ctx)
+
 	root.AddCommand(promptCmd)
 }

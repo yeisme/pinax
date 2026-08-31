@@ -8,6 +8,7 @@ import (
 	"github.com/yeisme/pinax/internal/agentprotocol"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/transportmanifest"
 )
 
 type RPCRequest struct {
@@ -16,14 +17,20 @@ type RPCRequest struct {
 }
 
 type RPCDispatcher struct {
-	service    *app.Service
-	vault      string
-	allowWrite bool
-	agentMem   *app.AgentMemoryService
+	service         *app.Service
+	vault           string
+	allowWrite      bool
+	agentMem        *app.AgentMemoryService
+	manifest        ManifestProvider
+	readiness       app.ConnectionReadinessOptions
+	operationAccess app.OperationAccess
 }
 
 type DispatcherOptions struct {
-	AllowWrite bool
+	AllowWrite      bool
+	Manifest        ManifestProvider
+	Readiness       app.ConnectionReadinessOptions
+	OperationAccess app.OperationAccess
 }
 
 func NewRPCDispatcher(service *app.Service, vault string) *RPCDispatcher {
@@ -31,11 +38,39 @@ func NewRPCDispatcher(service *app.Service, vault string) *RPCDispatcher {
 }
 
 func NewRPCDispatcherWithOptions(service *app.Service, vault string, options DispatcherOptions) *RPCDispatcher {
-	return &RPCDispatcher{service: service, vault: vault, allowWrite: options.AllowWrite, agentMem: app.NewAgentMemoryService()}
+	manifest := options.Manifest
+	if manifest == nil {
+		manifest = transportmanifest.DefaultProjection
+	}
+	readiness := options.Readiness
+	if readiness.Transport == "" {
+		readiness = app.ConnectionReadinessOptions{Mode: "local-vault", Transport: "loopback-http", OwnerAvailable: service != nil}
+	}
+	operationAccess := options.OperationAccess
+	if operationAccess.PrincipalDigest == "" && operationAccess.ScopeDigest == "" {
+		operationAccess.OwnerLocal = true
+	}
+	return &RPCDispatcher{service: service, vault: vault, allowWrite: options.AllowWrite, agentMem: app.NewAgentMemoryService(), manifest: manifest, readiness: readiness, operationAccess: operationAccess}
 }
 
 func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projection, error) {
 	switch req.Method {
+	case "Pinax.Transport.Manifest":
+		projection, err := d.manifest()
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Connection.Readiness":
+		projection := app.ConnectionReadinessProjection(d.readiness)
+		projection.Mode = "json"
+		return projection, nil
+	case "Pinax.Operation.Get":
+		projection, err := d.service.OperationShow(ctx, app.OperationRequest{VaultPath: d.vault, OperationID: stringParam(req.Params, "operation_id"), Access: d.operationAccess})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Operation.Reconcile":
+		projection, err := d.service.OperationReconcile(ctx, app.OperationRequest{VaultPath: d.vault, OperationID: stringParam(req.Params, "operation_id"), Access: d.operationAccess})
+		projection.Mode = "json"
+		return projection, err
 	case "Pinax.Workbench.Status":
 		writeMode := "remote_readonly"
 		if d.allowWrite {
@@ -157,7 +192,14 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		if projection, err := d.ensureWriteAllowed("folder.rename", req.Params); err != nil {
 			return projection, err
 		}
-		projection, err := d.service.RenameFolder(ctx, app.FolderOperationRequest{VaultPath: d.vault, Path: stringParam(req.Params, "path"), TargetPath: stringParam(req.Params, "target_path"), DryRun: boolParam(req.Params, "dry_run"), Yes: boolParam(req.Params, "yes"), RequireSnapshot: true})
+		projection, err := d.service.RenameFolderRemote(ctx, app.FolderOperationRequest{
+			VaultPath: d.vault, Path: stringParam(req.Params, "path"), TargetPath: stringParam(req.Params, "target_path"),
+			DryRun: boolParam(req.Params, "dry_run"), Yes: boolParam(req.Params, "yes"), RequireSnapshot: true,
+			ExpectedRevision: stringParam(req.Params, "expected_revision"),
+		}, app.RemoteOperationIdentity{
+			OperationID: stringParam(req.Params, "operation_id"), IdempotencyKey: stringParam(req.Params, "idempotency_key"),
+			BindingID: "rpc.folder.rename", Access: d.operationAccess,
+		})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Folder.Move":
@@ -198,7 +240,13 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		if projection, err := d.ensureWriteAllowed("inbox.capture", req.Params); err != nil {
 			return projection, err
 		}
-		projection, err := d.service.InboxCapture(ctx, app.CreateNoteRequest{VaultPath: d.vault, Title: stringParam(req.Params, "title"), Body: stringParam(req.Params, "body"), DryRun: boolParam(req.Params, "dry_run")})
+		projection, err := d.service.InboxCaptureRemote(ctx, app.CreateNoteRequest{
+			VaultPath: d.vault, Title: stringParam(req.Params, "title"), Body: stringParam(req.Params, "body"),
+			Tags: stringSliceParam(req.Params, "tags"), Slug: stringParam(req.Params, "slug"), DryRun: boolParam(req.Params, "dry_run"),
+		}, app.RemoteOperationIdentity{
+			OperationID: stringParam(req.Params, "operation_id"), IdempotencyKey: stringParam(req.Params, "idempotency_key"),
+			BindingID: "rpc.inbox.capture", Access: d.operationAccess,
+		})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Inbox.Promote":

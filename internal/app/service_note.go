@@ -589,7 +589,7 @@ func (s *Service) DeleteNote(ctx context.Context, req NoteDeleteRequest) (domain
 			return errorProjection("note.delete", recordErr), recordErr
 		}
 		applyRecordEventFacts(&projection, recordEvent)
-		return projection, nil
+		return finalizeNoteDeleteIndex(root, projection), nil
 	}
 	trashRel, err := uniqueTrashRel(root, note.Path, time.Now().UTC())
 	if err != nil {
@@ -614,7 +614,21 @@ func (s *Service) DeleteNote(ctx context.Context, req NoteDeleteRequest) (domain
 		return errorProjection("note.delete", recordErr), recordErr
 	}
 	applyRecordEventFacts(&projection, recordEvent)
-	return projection, nil
+	return finalizeNoteDeleteIndex(root, projection), nil
+}
+
+func finalizeNoteDeleteIndex(root string, projection domain.Projection) domain.Projection {
+	if err := refreshIndex(root); err != nil {
+		projection.Status = "partial"
+		projection.Facts["index_status"] = "stale"
+		projection.Actions = append(projection.Actions, domain.Action{
+			Name:    "rebuild_index",
+			Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(root)),
+		})
+		return projection
+	}
+	projection.Facts["index_updated"] = "true"
+	return projection
 }
 
 func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Projection, error) {

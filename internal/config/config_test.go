@@ -95,6 +95,57 @@ func TestLoadMergesRemoteAPIURLFromConfigEnvAndFlags(t *testing.T) {
 	}
 }
 
+func TestConnectionModePrecedenceIsFlagEnvProjectUser(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user.yaml")
+	project := filepath.Join(root, "vault", ".pinax", "config.yaml")
+	writeConfigFixture(t, user, "remote:\n  api_url: https://user.example.test\n  mode: remote-service\n")
+	writeConfigFixture(t, project, "remote:\n  api_url: https://project.example.test\n  mode: self-hosted-service\n")
+
+	result, err := Load(LoadOptions{
+		VaultPath:         filepath.Join(root, "vault"),
+		UserConfigPath:    user,
+		ProjectConfigPath: project,
+		Env: mapEnv(map[string]string{
+			"PINAX_API_URL":         "https://env.example.test",
+			"PINAX_CONNECTION_MODE": "remote-service",
+		}),
+		ExplicitFlags: map[string]string{
+			"remote.api_url": "https://flag.example.test",
+			"remote.mode":    "self-hosted-service",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.Remote.APIURL != "https://flag.example.test" || result.Config.Remote.Mode != "self-hosted-service" {
+		t.Fatalf("remote config = %#v", result.Config.Remote)
+	}
+	modeSource := ""
+	for _, setting := range result.Settings {
+		if setting.Key == "remote.mode" {
+			modeSource = setting.Source
+		}
+	}
+	if modeSource != "flag" {
+		t.Fatalf("remote.mode source = %q", modeSource)
+	}
+}
+
+func TestConnectionModeRejectsUnknownValueAndRemoteWithoutEndpoint(t *testing.T) {
+	for _, body := range []string{
+		"remote:\n  mode: guessed-service\n",
+		"remote:\n  mode: remote-service\n",
+	} {
+		root := t.TempDir()
+		user := filepath.Join(root, "config.yaml")
+		writeConfigFixture(t, user, body)
+		if _, err := Load(LoadOptions{VaultPath: root, UserConfigPath: user, Env: mapEnv(map[string]string{})}); err == nil || ErrorCode(err) != "config_invalid" {
+			t.Fatalf("body=%q error=%v", body, err)
+		}
+	}
+}
+
 func TestValidateRejectsInvalidRemoteAPIURL(t *testing.T) {
 	root := t.TempDir()
 	user := filepath.Join(root, "config.yaml")

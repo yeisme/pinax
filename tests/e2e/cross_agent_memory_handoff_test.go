@@ -9,7 +9,7 @@ import (
 	"github.com/yeisme/pinax/internal/app"
 )
 
-// TestCrossAgentMemoryHandoff 验证 Cohors → Codex 和 Codex → Cohors
+// TestCrossAgentMemoryHandoff 验证 Ordo → Codex 和 Codex → Ordo
 // 能通过 common handoff schema 完成交接。
 func TestCrossAgentMemoryHandoff(t *testing.T) {
 	t.Parallel()
@@ -21,22 +21,22 @@ func TestCrossAgentMemoryHandoff(t *testing.T) {
 
 	harness := agentadapter.NewHarness([]string{agentprotocol.SchemaVersion, agentprotocol.ContextSchemaVersion})
 
-	// 场景 1: Cohors worker produces handoff → Codex reviewer consumes
+	// 场景 1: Ordo worker produces handoff → Codex reviewer consumes
 	codexDesc := agentadapter.CodexDescriptor()
-	cohorsDesc := agentadapter.CohorsDescriptor()
+	ordoDesc := agentadapter.OrdoDescriptor()
 
 	// Negotiate both adapters
 	if _, err := harness.Negotiate(codexDesc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityHandoff}); err != nil {
 		t.Fatalf("codex negotiate: %v", err)
 	}
-	if _, err := harness.Negotiate(cohorsDesc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityHandoff}); err != nil {
-		t.Fatalf("cohors negotiate: %v", err)
+	if _, err := harness.Negotiate(ordoDesc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityHandoff}); err != nil {
+		t.Fatalf("ordo negotiate: %v", err)
 	}
 
-	// Cohors worker → Codex reviewer handoff
-	cohorsProducer := agentadapter.CohorsPrincipal("cohors-worker-1")
+	// Ordo worker → Codex reviewer handoff
+	ordoProducer := agentadapter.OrdoPrincipal("ordo-worker-1")
 	codexConsumer := agentadapter.CodexPrincipal("codex-reviewer-1")
-	handoff1 := harness.ConvertHandoff(cohorsProducer, codexConsumer, scope,
+	handoff1 := harness.ConvertHandoff(ordoProducer, codexConsumer, scope,
 		"Review GORM Gen migration slice",
 		[]string{"chose GORM Gen for typed DAO", "upgraded dbresolver to v1.6.2"},
 		[]string{"waiting on gorm v1.31 compatibility check"})
@@ -53,14 +53,14 @@ func TestCrossAgentMemoryHandoff(t *testing.T) {
 		FollowUps:    []string{"verify guard_test.go passes"},
 	})
 	if err != nil {
-		t.Fatalf("cohors→codex handoff: %v", err)
+		t.Fatalf("ordo→codex handoff: %v", err)
 	}
 	if handoffID1 == "" {
 		t.Fatal("expected handoff ID")
 	}
 
-	// 场景 2: Codex reviewer → Cohors worker (reverse handoff)
-	handoff2 := harness.ConvertHandoff(codexConsumer, cohorsProducer, scope,
+	// 场景 2: Codex reviewer → Ordo worker (reverse handoff)
+	handoff2 := harness.ConvertHandoff(codexConsumer, ordoProducer, scope,
 		"Code review feedback for GORM Gen slice",
 		[]string{"approved migration approach"},
 		[]string{})
@@ -73,7 +73,7 @@ func TestCrossAgentMemoryHandoff(t *testing.T) {
 		Decisions: handoff2.Decisions,
 	})
 	if err != nil {
-		t.Fatalf("codex to cohors handoff: %v", err)
+		t.Fatalf("codex to ordo handoff: %v", err)
 	}
 	if handoffID2 == "" {
 		t.Fatal("expected second handoff ID")

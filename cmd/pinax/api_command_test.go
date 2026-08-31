@@ -1,10 +1,76 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/api"
+	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/cli"
 )
+
+func TestAPIManifestCLIAndServerParity(t *testing.T) {
+	root := t.TempDir()
+	cliOutput := runCLI(t, "api", "manifest", "--json")
+	cliProjection := decodeAPIManifestProjection(t, []byte(cliOutput))
+
+	service := app.NewService()
+	if _, err := service.InitVault(context.Background(), app.InitVaultRequest{VaultPath: root, Title: "Manifest parity"}); err != nil {
+		t.Fatal(err)
+	}
+	server := api.NewServerWithOptions(service, root, api.ServerOptions{Manifest: cli.TransportManifestProjection})
+
+	restRecorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(restRecorder, httptest.NewRequest(http.MethodGet, "/v1/manifest", nil))
+	if restRecorder.Code != http.StatusOK {
+		t.Fatalf("GET /v1/manifest status = %d body=%s", restRecorder.Code, restRecorder.Body.String())
+	}
+	restProjection := decodeAPIManifestProjection(t, restRecorder.Body.Bytes())
+
+	rpcRecorder := httptest.NewRecorder()
+	rpcBody := bytes.NewBufferString(`{"method":"Pinax.Transport.Manifest"}`)
+	server.Handler().ServeHTTP(rpcRecorder, httptest.NewRequest(http.MethodPost, "/v1/rpc", rpcBody))
+	if rpcRecorder.Code != http.StatusOK {
+		t.Fatalf("Pinax.Transport.Manifest status = %d body=%s", rpcRecorder.Code, rpcRecorder.Body.String())
+	}
+	rpcProjection := decodeAPIManifestProjection(t, rpcRecorder.Body.Bytes())
+
+	cliManifest := cliProjection["data"].(map[string]any)["manifest"]
+	if !reflect.DeepEqual(cliManifest, restProjection["data"].(map[string]any)["manifest"]) ||
+		!reflect.DeepEqual(cliManifest, rpcProjection["data"].(map[string]any)["manifest"]) {
+		t.Fatal("CLI, REST and RPC manifest payloads differ")
+	}
+	for name, projection := range map[string]map[string]any{"cli": cliProjection, "rest": restProjection, "rpc": rpcProjection} {
+		if projection["command"] != "api.manifest" || projection["status"] != "success" {
+			t.Fatalf("%s projection identity = %#v", name, projection)
+		}
+		facts := projection["facts"].(map[string]any)
+		if facts["schema_version"] != "pinax.transport_manifest.v1" || !strings.HasPrefix(fmt.Sprint(facts["digest"]), "sha256:") {
+			t.Fatalf("%s manifest facts = %#v", name, facts)
+		}
+	}
+}
+
+func decodeAPIManifestProjection(t *testing.T, encoded []byte) map[string]any {
+	t.Helper()
+	var projection map[string]any
+	if err := json.Unmarshal(encoded, &projection); err != nil {
+		t.Fatalf("decode manifest projection: %v\n%s", err, encoded)
+	}
+	data, ok := projection["data"].(map[string]any)
+	if !ok || data["manifest"] == nil {
+		t.Fatalf("manifest projection data = %#v", projection["data"])
+	}
+	return projection
+}
 
 func TestAPIServeMachineModesAreQuietAndWriteModeConflictIsStable(t *testing.T) {
 	t.Parallel()
@@ -21,6 +87,44 @@ func TestAPIServeMachineModesAreQuietAndWriteModeConflictIsStable(t *testing.T) 
 	stdout, stderr, err := runCLISeparate("api", "serve", "--readonly", "--allow-write", "--vault", root, "--json")
 	if err == nil || stderr != "" || !strings.Contains(stdout, "write_mode_conflict") {
 		t.Fatalf("api serve write mode conflict err=%v stderr=%q stdout=%s", err, stderr, stdout)
+	}
+}
+
+func TestAPIServeTokenStoreAndTokenFileCompatibilityOutputContract(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	canonicalStore := filepath.Join(root, "canonical-store.json")
+	legacyStore := filepath.Join(root, "legacy-secret-path-store.json")
+
+	stdout, stderr, err := runCLISeparate("api", "serve", "--token-store", canonicalStore, "--token-file", legacyStore, "--json")
+	if err == nil || stderr != "" || !strings.Contains(stdout, "auth_mode_conflict") || strings.Contains(stdout, canonicalStore) || strings.Contains(stdout, legacyStore) {
+		t.Fatalf("store conflict err=%v stdout=%s stderr=%q", err, stdout, stderr)
+	}
+	stdout, stderr, err = runCLISeparate("api", "serve", "--token-store", canonicalStore, "--no-auth", "--json")
+	if err == nil || stderr != "" || !strings.Contains(stdout, "auth_mode_conflict") || strings.Contains(stdout, canonicalStore) {
+		t.Fatalf("no-auth conflict err=%v stdout=%s stderr=%q", err, stdout, stderr)
+	}
+
+	stdout, stderr, err = runAPIServeUntilCanceled(t, root, "api", "serve", "--port", "0", "--vault", root, "--token-file", legacyStore)
+	if err != nil || stdout != "" || !strings.Contains(stderr, "Deprecated: server --token-file") || !strings.Contains(stderr, "--token-store <hashed-token-store>") || strings.Contains(stderr, legacyStore) {
+		t.Fatalf("legacy alias err=%v stdout=%q stderr=%s", err, stdout, stderr)
+	}
+
+	stdout, stderr, err = runAPIServeUntilCanceled(t, root, "api", "serve", "--port", "0", "--vault", root, "--token-file", legacyStore, "--events")
+	if err != nil || stderr != "" || strings.Contains(stdout, "Deprecated:") || strings.Contains(stdout, legacyStore) {
+		t.Fatalf("legacy events err=%v stdout=%s stderr=%q", err, stdout, stderr)
+	}
+	for _, event := range parseNDJSONEvents(t, stdout) {
+		if event["type"] == nil {
+			t.Fatalf("invalid event: %#v", event)
+		}
+	}
+
+	help := runCLI(t, "api", "serve", "--help")
+	for _, want := range []string{"--token-store", "--token-file", "hashed token registry"} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("api serve help missing %q: %s", want, help)
+		}
 	}
 }
 
@@ -71,7 +175,7 @@ func TestAPIRoutesHumanOutputListsEndpointsCLI(t *testing.T) {
 		t.Fatalf("api routes human output should not be JSON:\n%s", out)
 	}
 	agentOut := runCLI(t, "api", "routes", "--vault", root, "--agent")
-	for _, want := range []string{"command=api.routes", "fact.routes=", "route.1.method=GET", "route.1.path=/v1/workbench/status", "route.1.command=workbench.status"} {
+	for _, want := range []string{"command=api.routes", "fact.routes=", "route.1.id=rest.transport.manifest", "route.1.path=/v1/manifest", "route.2.id=rest.connection.readiness", "route.2.path=/v1/readiness", "route.5.id=rest.workbench.status", "route.5.path=/v1/workbench/status"} {
 		if !strings.Contains(agentOut, want) {
 			t.Fatalf("api routes agent output missing %q:\n%s", want, agentOut)
 		}
@@ -94,6 +198,34 @@ func TestAPIRoutesJSONExposesReleaseCoreCapabilitiesCLI(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("api routes --json release core discovery missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestAPISchemaExportCLIEmitsSemanticOpenAPIAndDigest(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	out := runCLI(t, "api", "schema", "export", "--format", "openapi", "--vault", root, "--json")
+	var projection map[string]any
+	if err := json.Unmarshal([]byte(out), &projection); err != nil {
+		t.Fatalf("decode api schema export: %v\n%s", err, out)
+	}
+	data, _ := projection["data"].(map[string]any)
+	document, _ := data["schema"].(map[string]any)
+	if err := app.ValidateOpenAPI(document); err != nil {
+		t.Fatalf("CLI OpenAPI is invalid: %v", err)
+	}
+	digest, err := app.OpenAPIDigest(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, _ := projection["facts"].(map[string]any)
+	if facts["schema_digest"] != digest {
+		t.Fatalf("CLI schema digest = %#v, want %q", facts["schema_digest"], digest)
+	}
+	components, _ := document["components"].(map[string]any)
+	if components["schemas"] == nil || components["securitySchemes"] == nil {
+		t.Fatalf("CLI OpenAPI components = %#v", components)
 	}
 }
 

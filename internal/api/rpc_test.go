@@ -379,6 +379,10 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 	}
 
 	fixtures := map[string]RPCRequest{
+		"rpc.transport.manifest":        {Method: "Pinax.Transport.Manifest"},
+		"rpc.connection.readiness":      {Method: "Pinax.Connection.Readiness"},
+		"rpc.operation.show":            {Method: "Pinax.Operation.Get", Params: map[string]any{"operation_id": "op-registry-missing"}},
+		"rpc.operation.reconcile":       {Method: "Pinax.Operation.Reconcile", Params: map[string]any{"operation_id": "op-registry-missing"}},
 		"rpc.workbench.status":          {Method: "Pinax.Workbench.Status", Params: map[string]any{"workspace": "work"}},
 		"rpc.workbench.activity.list":   {Method: "Pinax.Workbench.Activity.List", Params: map[string]any{"limit": 1}},
 		"rpc.workbench.activity.show":   {Method: "Pinax.Workbench.Activity.Show", Params: map[string]any{"event_id": activityEntries[0].EventID}},

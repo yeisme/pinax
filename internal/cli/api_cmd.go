@@ -18,7 +18,8 @@ import (
 func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	var readonly bool
 	var allowWrite bool
-	var tokenFile string
+	var tokenStore string
+	var legacyTokenFile string
 	var noAuth bool
 	var exposeGroups string
 	var hideGroups string
@@ -40,6 +41,10 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	root.AddCommand(schemaAliasCmd)
 
 	apiCmd := &cobra.Command{Use: "api", Short: "Manage the local REST/RPC projection adapter"}
+	manifestCmd := &cobra.Command{Use: "manifest", Short: "Show the authoritative transport manifest", RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := TransportManifestProjection()
+		return ctx.renderProjection(cmd, projection, err)
+	}}
 	routesCmd := &cobra.Command{Use: "routes", Short: "List local API capabilities", RunE: func(cmd *cobra.Command, args []string) error {
 		projection, err := ctx.svc.APIRoutes(cmd.Context(), app.APIRequest{VaultPath: *ctx.vaultPath})
 		return ctx.renderProjection(cmd, projection, err)
@@ -52,20 +57,30 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 		if readonly && allowWrite {
 			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "write_mode_conflict", "api serve cannot use --readonly and --allow-write together", "Keep only one write-mode flag")
 		}
+		if tokenStore != "" && legacyTokenFile != "" {
+			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "auth_mode_conflict", "api serve cannot use --token-store and --token-file together", "Keep --token-store and remove the deprecated --token-file alias")
+		}
+		if noAuth && (tokenStore != "" || legacyTokenFile != "") {
+			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "auth_mode_conflict", "api serve cannot combine --no-auth with a token store", "Keep only one authentication-mode flag")
+		}
 		mode := ctx.outputMode()
 		if mode == output.ModeJSON || mode == output.ModeAgent {
 			return renderCommandError(cmd, mode, "api.serve", "unsupported_output_mode", "api serve is long-running and does not support this output mode yet", "Use --events, or remove machine-output flags and read the URL from stderr")
 		}
 
 		authMode := api.AuthModeTemp
-		if tokenFile != "" {
-			authMode = api.AuthModeTokenFile
+		selectedTokenStore := tokenStore
+		if selectedTokenStore == "" {
+			selectedTokenStore = legacyTokenFile
+		}
+		if selectedTokenStore != "" {
+			authMode = api.AuthModeTokenStore
 		}
 		if noAuth {
 			authMode = api.AuthModeNone
 		}
-		if noAuth && tokenFile != "" {
-			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "auth_mode_conflict", "api serve cannot use --no-auth and --token-file together", "Keep only one authentication-mode flag")
+		if legacyTokenFile != "" && mode != output.ModeEvents {
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Deprecated: server --token-file names a hashed token registry; use: pinax api serve --token-store <hashed-token-store> [other flags]")
 		}
 
 		var exposeList, hideList []string
@@ -79,9 +94,10 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 		options := api.ServerOptions{
 			AllowWrite:   allowWrite,
 			AuthMode:     authMode,
-			TokenFile:    tokenFile,
+			TokenStore:   selectedTokenStore,
 			ExposeGroups: exposeList,
 			HideGroups:   hideList,
+			Manifest:     TransportManifestProjection,
 		}
 		if mode == output.ModeEvents {
 			return serveAPIEvents(cmd, ctx, options)
@@ -93,11 +109,13 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	serveCmd.Flags().BoolVar(&readonly, "readonly", false, "Start in read-only mode (default)")
 	serveCmd.Flags().BoolVar(&allowWrite, "allow-write", false, "Allow remote writes to controlled mutation routes such as folder")
 	serveCmd.Flags().IntVar(ctx.dashboardPort, "port", 0, "localhost port; 0 assigns automatically")
-	serveCmd.Flags().StringVar(&tokenFile, "token-file", "", "Load a long-lived token from a file")
+	serveCmd.Flags().StringVar(&tokenStore, "token-store", "", "Load a hashed long-lived token registry")
+	serveCmd.Flags().StringVar(&legacyTokenFile, "token-file", "", "Deprecated alias for --token-store (hashed token registry)")
 	serveCmd.Flags().BoolVar(&noAuth, "no-auth", false, "No-auth mode (forces loopback)")
 	serveCmd.Flags().StringVar(&exposeGroups, "expose", "", "Expose only the specified route groups (comma-separated)")
 	serveCmd.Flags().StringVar(&hideGroups, "hide", "", "Hide the specified route groups (comma-separated)")
-	apiCmd.AddCommand(routesCmd, statusCmd, newSchemaCmd("pinax api schema export --format openapi --vault ./my-notes --json"), serveCmd)
+	apiCmd.AddCommand(manifestCmd, routesCmd, statusCmd, newSchemaCmd("pinax api schema export --format openapi --vault ./my-notes --json"), serveCmd)
+	registerRemoteCommand(remoteCommandSpec{CommandPath: "api manifest", Method: "Pinax.Transport.Manifest"})
 	root.AddCommand(apiCmd)
 	addTokenCommands(root, ctx)
 }

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -314,6 +315,49 @@ func TestLocalAPIRPCTransportDispatchesProjectionEnvelope(t *testing.T) {
 	}
 }
 
+func TestLocalAPIReadinessHasSixLayersAndRESTMatchesRPC(t *testing.T) {
+	t.Parallel()
+	server := NewServer(app.NewService(), t.TempDir())
+
+	rest := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rest, httptest.NewRequest(http.MethodGet, "/v1/readiness", nil))
+	if rest.Code != http.StatusOK {
+		t.Fatalf("readiness response: status=%d body=%s", rest.Code, rest.Body.String())
+	}
+
+	rpc := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rpc, httptest.NewRequest(http.MethodPost, "/v1/rpc", strings.NewReader(`{"id":"readiness-1","method":"Pinax.Connection.Readiness"}`)))
+	if rpc.Code != http.StatusOK {
+		t.Fatalf("readiness rpc response: status=%d body=%s", rpc.Code, rpc.Body.String())
+	}
+
+	var restProjection, rpcProjection struct {
+		Command string `json:"command"`
+		Data    struct {
+			Readiness app.ConnectionReadiness `json:"readiness"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rest.Body.Bytes(), &restProjection); err != nil {
+		t.Fatalf("decode REST readiness: %v", err)
+	}
+	if err := json.Unmarshal(rpc.Body.Bytes(), &rpcProjection); err != nil {
+		t.Fatalf("decode RPC readiness: %v", err)
+	}
+	if restProjection.Command != "connection.readiness" || rpcProjection.Command != restProjection.Command {
+		t.Fatalf("readiness commands differ: REST=%q RPC=%q", restProjection.Command, rpcProjection.Command)
+	}
+	if len(restProjection.Data.Readiness.Layers) != 6 || !reflect.DeepEqual(restProjection.Data.Readiness, rpcProjection.Data.Readiness) {
+		t.Fatalf("readiness transport mismatch: REST=%#v RPC=%#v", restProjection.Data.Readiness, rpcProjection.Data.Readiness)
+	}
+	production := restProjection.Data.Readiness.Layers[app.ReadinessLayerProduction]
+	if production.Status == "ready" {
+		t.Fatalf("local HTTP fixture overclaimed production readiness: %#v", production)
+	}
+	if restProjection.Data.Readiness.Layers[app.ReadinessLayerMutationRecovery].Status != "blocked" {
+		t.Fatalf("remote mutation recovery should remain blocked: %#v", restProjection.Data.Readiness)
+	}
+}
+
 func TestLocalAPIRPCErrorsAndWriteGateUseProjectionEnvelope(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -494,6 +538,10 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 		wantStatus  int
 		wantCommand string
 	}{
+		"rest.transport.manifest":        {method: http.MethodGet, path: "/v1/manifest", wantStatus: http.StatusOK, wantCommand: "api.manifest"},
+		"rest.connection.readiness":      {method: http.MethodGet, path: "/v1/readiness", wantStatus: http.StatusOK, wantCommand: "connection.readiness"},
+		"rest.operation.show":            {method: http.MethodGet, path: "/v1/operations/op-registry-missing", wantStatus: http.StatusNotFound, wantCommand: "operation.show"},
+		"rest.operation.reconcile":       {method: http.MethodPost, path: "/v1/operations/op-registry-missing:reconcile", wantStatus: http.StatusNotFound, wantCommand: "operation.reconcile"},
 		"rest.workbench.status":          {method: http.MethodGet, path: "/v1/workbench/status", wantStatus: http.StatusOK, wantCommand: "workbench.status"},
 		"rest.workbench.activity.list":   {method: http.MethodGet, path: "/v1/workbench/activity?limit=1", wantStatus: http.StatusOK, wantCommand: "activity.list"},
 		"rest.workbench.activity.show":   {method: http.MethodGet, path: "/v1/workbench/activity/" + activityEventID, wantStatus: http.StatusOK, wantCommand: "activity.show"},
@@ -1000,6 +1048,56 @@ func TestAuthIntegration_FileTokenStoreFullFlow(t *testing.T) {
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("expected 200 with file token, got %d: %s", res.Code, res.Body.String())
+	}
+}
+
+func TestAuthIntegration_TokenStoreCanonicalAndTokenFileCompatibility(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	root := t.TempDir()
+	svc := app.NewService()
+	if _, err := svc.InitVault(ctx, app.InitVaultRequest{VaultPath: root, Title: "TokenStore"}); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(root, ".pinax", "tokens", "tokens.json")
+	store, err := NewFileTokenStore(tokenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, secret := GenerateTokenRecord("canonical", map[TokenScope]ScopeTarget{ScopeRead: {}}, "", "test")
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, options := range []ServerOptions{
+		{AuthMode: AuthModeTokenStore, TokenStore: tokenPath},
+		{AuthMode: AuthModeTokenFile, TokenFile: tokenPath},
+	} {
+		server := NewServerWithOptions(svc, root, options)
+		request := httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil)
+		request.Header.Set("Authorization", "Bearer "+secret)
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("options=%#v status=%d body=%s", options, response.Code, response.Body.String())
+		}
+		if authModeLabel(server.authMode) != "token-store" {
+			t.Fatalf("auth mode label = %q", authModeLabel(server.authMode))
+		}
+	}
+}
+
+func TestTokenStoreAndTokenFileConflictFailsClosed(t *testing.T) {
+	t.Parallel()
+	server := NewServerWithOptions(app.NewService(), t.TempDir(), ServerOptions{
+		AuthMode:   AuthModeTokenStore,
+		TokenStore: "/canonical/store.json",
+		TokenFile:  "/legacy/store.json",
+	})
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/capabilities", nil))
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "token_store_unavailable") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

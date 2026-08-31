@@ -23,6 +23,7 @@ import (
 	"github.com/yeisme/pinax/internal/output"
 	"github.com/yeisme/pinax/internal/remoteapi"
 	"github.com/yeisme/pinax/internal/vaultregistry"
+	"github.com/yeisme/pinax/pkg/pinaxclient"
 	"golang.org/x/term"
 )
 
@@ -74,8 +75,11 @@ func NewRootCommand(version string) *cobra.Command {
 	return NewRootCommandWithDeps(Deps{Version: version})
 }
 
-func NewRootCommandWithDeps(deps Deps) *cobra.Command {
+func init() {
 	cobra.EnableCommandSorting = false
+}
+
+func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	svc := deps.Service
 	if svc == nil {
 		svc = app.NewService()
@@ -90,6 +94,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var explainMode bool
 	var vaultPath string
 	var apiURL string
+	var connectionMode string
 	var apiToken string
 	var apiTokenFile string
 	var colorMode string
@@ -218,7 +223,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	var feishuText string
 	var deliveryDryRun bool
 
-	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, outputStyle: &outputStyle, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, s3AddressingStyle: &s3AddressingStyle, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseViewLanguage: &databaseViewLanguage, databaseViewDisplay: &databaseViewDisplay, databaseViewGroupBy: &databaseViewGroupBy, databaseViewCalendar: &databaseViewCalendar, databaseViewBoardColumn: &databaseViewBoardColumn, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, syncPreview: &syncPreview, syncLimit: &syncLimit, syncLimitSet: &syncLimitSet, syncContentDiff: &syncContentDiff, syncProgress: &syncProgress, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchEngine: &searchEngine, searchLazyIndex: &searchLazyIndex, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, planFromPeriod: &planFromPeriod, planTaskReview: &planTaskReview, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
+	ctx := commandBuildContext{svc: svc, version: version, jsonMode: &jsonMode, agentMode: &agentMode, eventsMode: &eventsMode, explainMode: &explainMode, vaultPath: &vaultPath, apiURL: &apiURL, connectionMode: &connectionMode, apiToken: &apiToken, apiTokenFile: &apiTokenFile, colorMode: &colorMode, outputStyle: &outputStyle, themeName: &themeName, renderWidth: &renderWidth, markdownStyle: &markdownStyle, configResult: &configResult, renderOptions: &renderOptions, yes: &yes, snapshotMessage: &snapshotMessage, title: &title, projectName: &projectName, projectDescription: &projectDescription, projectNotesPrefix: &projectNotesPrefix, storageRoot: &storageRoot, s3Bucket: &s3Bucket, s3Region: &s3Region, s3Prefix: &s3Prefix, s3Endpoint: &s3Endpoint, s3Profile: &s3Profile, s3AddressingStyle: &s3AddressingStyle, noteProject: &noteProject, noteGroup: &noteGroup, noteFolder: &noteFolder, noteKind: &noteKind, noteTags: &noteTags, noteTemplate: &noteTemplate, noteBody: &noteBody, noteFrom: &noteFrom, noteDir: &noteDir, noteSlug: &noteSlug, noteStatus: &noteStatus, noteUseStdin: &noteUseStdin, noteDryRun: &noteDryRun, noteOpen: &noteOpen, noteView: &noteView, noteDisplay: &noteDisplay, noteRefreshRendered: &noteRefreshRendered, noteSnapshot: &noteSnapshot, noteRuns: &noteRuns, noteListTag: &noteListTag, noteListProject: &noteListProject, noteListStatus: &noteListStatus, noteListSort: &noteListSort, noteListPathPrefix: &noteListPathPrefix, noteListProperties: &noteListProperties, noteStrictProperties: &noteStrictProperties, noteListCreatedAfter: &noteListCreatedAfter, noteListUpdatedBefore: &noteListUpdatedBefore, noteRecent: &noteRecent, noteLimit: &noteLimit, noteEditor: &noteEditor, noteHard: &noteHard, journalDate: &journalDate, journalPrev: &journalPrev, journalNext: &journalNext, templateSourcePath: &templateSourcePath, templateBody: &templateBody, templateUseStdin: &templateUseStdin, templateOverwrite: &templateOverwrite, templateEngine: &templateEngine, templateSaveRun: &templateSaveRun, templateRun: &templateRun, templateRuns: &templateRuns, renderKeep: &renderKeep, renderDryRun: &renderDryRun, templateVars: &templateVars, queryLazyIndex: &queryLazyIndex, queryCursor: &queryCursor, databaseViewQuery: &databaseViewQuery, databaseViewColumns: &databaseViewColumns, databaseViewLanguage: &databaseViewLanguage, databaseViewDisplay: &databaseViewDisplay, databaseViewGroupBy: &databaseViewGroupBy, databaseViewCalendar: &databaseViewCalendar, databaseViewBoardColumn: &databaseViewBoardColumn, databaseSchemaType: &databaseSchemaType, databaseSchemaValues: &databaseSchemaValues, syncTarget: &syncTarget, syncDryRun: &syncDryRun, syncBaseRevision: &syncBaseRevision, syncRemoteRevision: &syncRemoteRevision, syncPreview: &syncPreview, syncLimit: &syncLimit, syncLimitSet: &syncLimitSet, syncContentDiff: &syncContentDiff, syncProgress: &syncProgress, cloudEndpoint: &cloudEndpoint, cloudWorkspace: &cloudWorkspace, cloudDevice: &cloudDevice, cloudSecretRef: &cloudSecretRef, cloudEncryptionSecretRef: &cloudEncryptionSecretRef, staleAfter: &staleAfter, repairSave: &repairSave, repairPlanID: &repairPlanID, organizeSave: &organizeSave, searchLinkTarget: &searchLinkTarget, searchHasAttachment: &searchHasAttachment, searchCreatedAfter: &searchCreatedAfter, searchUpdatedAfter: &searchUpdatedAfter, searchAllowStale: &searchAllowStale, searchEngine: &searchEngine, searchLazyIndex: &searchLazyIndex, searchAt: &searchAt, searchChangedSince: &searchChangedSince, searchRevision: &searchRevision, searchIncludeDirty: &searchIncludeDirty, importConflict: &importConflict, importDryRun: &importDryRun, dashboardPort: &dashboardPort, backendName: &backendName, backendRoot: &backendRoot, backendRemote: &backendRemote, planFromPeriod: &planFromPeriod, planTaskReview: &planTaskReview, planDryRun: &planDryRun, planSave: &planSave, briefingTopic: &briefingTopic, briefingSource: &briefingSource, briefingLimit: &briefingLimit, briefingDryRun: &briefingDryRun, feishuWebhook: &feishuWebhook, feishuSecretRef: &feishuSecretRef, feishuTitle: &feishuTitle, feishuText: &feishuText, deliveryDryRun: &deliveryDryRun}
 
 	cmd := &cobra.Command{
 		Use:           "pinax",
@@ -247,6 +252,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&vaultPath, "vault", ".", "Pinax vault path")
 	_ = cmd.RegisterFlagCompletionFunc("vault", vaultFlagCompletion)
 	cmd.PersistentFlags().StringVar(&apiURL, "api-url", "", "Remote Pinax API URL; also PINAX_API_URL")
+	cmd.PersistentFlags().StringVar(&connectionMode, "connection-mode", "", "Connection owner mode: local-vault, remote-service, or self-hosted-service")
 	cmd.PersistentFlags().StringVar(&apiToken, "api-token", "", "Remote Pinax API bearer token; prefer PINAX_API_TOKEN or --api-token-file")
 	cmd.PersistentFlags().StringVar(&apiTokenFile, "api-token-file", "", "Read remote Pinax API bearer token from a file")
 	cmd.PersistentFlags().StringVar(&colorMode, "color", "", "Human output color mode: auto, always, or never")
@@ -258,11 +264,14 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("output-style", staticCompletion("output-style", "table", "compact"))
 	_ = cmd.RegisterFlagCompletionFunc("theme", staticCompletion("theme", "pinax", "mono", "high-contrast", "custom"))
 	_ = cmd.RegisterFlagCompletionFunc("markdown-style", staticCompletion("markdown-style", "auto", "ascii", "dark", "light", "notty"))
+	_ = cmd.RegisterFlagCompletionFunc("connection-mode", staticCompletion("connection-mode", "local-vault", "remote-service", "self-hosted-service"))
 	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "cli.flag", "flag_error", err.Error(), cmd.CommandPath()+" --help")
 	})
 
 	addConfigCommands(cmd, ctx)
+	addConnectionCommands(cmd, ctx)
+	addOperationCommands(cmd, ctx)
 
 	addVersionCommands(cmd, ctx)
 	addBackupCommands(cmd, ctx)
@@ -384,6 +393,7 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"mcp":        "Automation and integrations",
 		"git":        "Automation and integrations",
 		"config":     "Configuration and maintenance",
+		"connection": "Configuration and maintenance",
 		"monitor":    "Configuration and maintenance",
 		"storage":    "Configuration and maintenance",
 		"index":      "Configuration and maintenance",
@@ -572,6 +582,7 @@ func explicitConfigFlags(cmd *cobra.Command) map[string]string {
 	}
 	add("vault", "vault")
 	add("api-url", "remote.api_url")
+	add("connection-mode", "remote.mode")
 	add("color", "output.color")
 	add("output-style", "output.style")
 	if cmd.CommandPath() != "pinax publish profile init" {
@@ -704,6 +715,13 @@ func runRemoteCommand(cmd *cobra.Command, args []string, ctx commandBuildContext
 	if !ok {
 		return renderCommandError(cmd, ctx.outputMode(), "remote.api", "remote_command_unsupported", "Command is not supported by remote API mode", "Run pinax api routes to list supported remote commands")
 	}
+	if remoteRPCMutationMethod(rpc.Method) && !remoteRPCBool(rpc.Params, "dry_run") {
+		operationID := strings.TrimSpace(remoteRPCString(rpc.Params, "operation_id"))
+		idempotencyKey := strings.TrimSpace(remoteRPCString(rpc.Params, "idempotency_key"))
+		if (operationID == "") != (idempotencyKey == "") {
+			return renderCommandError(cmd, ctx.outputMode(), remoteRPCMutationCommand(rpc.Method), "operation_identity_required", "Remote mutation identity is incomplete", "Provide both --operation-id and --idempotency-key, or omit both to generate a new pair")
+		}
+	}
 	token, err := remoteAPIToken(ctx)
 	if errors.Is(err, errRemoteTokenConflict) {
 		return renderCommandError(cmd, ctx.outputMode(), "remote.api", "remote_token_conflict", "Choose only one remote API token source", "Use only one of --api-token, --api-token-file, PINAX_API_TOKEN, or PINAX_API_TOKEN_FILE")
@@ -711,9 +729,95 @@ func runRemoteCommand(cmd *cobra.Command, args []string, ctx commandBuildContext
 	if err != nil {
 		return renderCommandError(cmd, ctx.outputMode(), "remote.api", "remote_api_token_unreadable", "Remote API token file could not be read", "Check --api-token-file permissions")
 	}
-	client := remoteapi.NewClient(remoteapi.Config{BaseURL: remoteAPIURL(ctx), Token: token})
-	projection, callErr := client.Call(cmd.Context(), rpc)
+	descriptor := resolvedConnectionDescriptor(cmd, ctx)
+	if descriptor.Status == "blocked" {
+		code, message, hint := connectionBlockerError(descriptor.Blockers)
+		return renderCommandError(cmd, ctx.outputMode(), "remote.api", code, message, hint)
+	}
+	client, clientErr := pinaxclient.New(pinaxclient.Config{BaseURL: remoteAPIURL(ctx), Token: token})
+	if clientErr != nil {
+		projection, callErr := remoteapi.Adapt(pinaxclient.Projection{}, clientErr)
+		return ctx.renderProjection(cmd, projection, callErr)
+	}
+	if rpc.Method == "Pinax.Folder.Rename" && !remoteRPCBool(rpc.Params, "dry_run") && strings.TrimSpace(remoteRPCString(rpc.Params, "expected_revision")) == "" {
+		preview := cloneRemoteRPCRequest(rpc)
+		preview.Params["dry_run"] = true
+		preview.Params["yes"] = false
+		preview.Params["operation_id"] = ""
+		preview.Params["idempotency_key"] = ""
+		previewProjection, previewErr := client.CallRPC(cmd.Context(), preview)
+		if previewErr != nil {
+			projection, callErr := remoteapi.Adapt(previewProjection, previewErr)
+			return ctx.renderProjection(cmd, projection, callErr)
+		}
+		expectedRevision := strings.TrimSpace(previewProjection.Facts["revision_before"])
+		if expectedRevision == "" {
+			return renderCommandError(cmd, ctx.outputMode(), "folder.rename", "upstream_invalid_response", "Folder rename preflight returned no revision", "Retry the dry-run and inspect the owner contract")
+		}
+		rpc.Params["expected_revision"] = expectedRevision
+	}
+	if remoteRPCMutationMethod(rpc.Method) && !remoteRPCBool(rpc.Params, "dry_run") && strings.TrimSpace(remoteRPCString(rpc.Params, "operation_id")) == "" {
+		identity, identityErr := pinaxclient.NewMutationIdentity()
+		if identityErr != nil {
+			return renderCommandError(cmd, ctx.outputMode(), remoteRPCMutationCommand(rpc.Method), "operation_identity_unavailable", "Remote mutation identity could not be generated", "Retry after a secure random source is available")
+		}
+		rpc.Params["operation_id"] = identity.OperationID
+		rpc.Params["idempotency_key"] = identity.IdempotencyKey
+	}
+	var wireProjection pinaxclient.Projection
+	var callErr error
+	if remoteRPCMutationMethod(rpc.Method) && !remoteRPCBool(rpc.Params, "dry_run") {
+		wireProjection, callErr = client.CallMutationRPC(cmd.Context(), rpc, pinaxclient.MutationIdentity{
+			OperationID: remoteRPCString(rpc.Params, "operation_id"), IdempotencyKey: remoteRPCString(rpc.Params, "idempotency_key"),
+		})
+	} else {
+		wireProjection, callErr = client.CallRPC(cmd.Context(), rpc)
+	}
+	projection, callErr := remoteapi.Adapt(wireProjection, callErr)
 	return ctx.renderProjection(cmd, projection, callErr)
+}
+
+func remoteRPCString(params map[string]any, key string) string {
+	value, _ := params[key].(string)
+	return value
+}
+
+func remoteRPCBool(params map[string]any, key string) bool {
+	value, _ := params[key].(bool)
+	return value
+}
+
+func remoteRPCMutationMethod(method string) bool {
+	return method == "Pinax.Inbox.Capture" || method == "Pinax.Folder.Rename"
+}
+
+func remoteRPCMutationCommand(method string) string {
+	if method == "Pinax.Folder.Rename" {
+		return "folder.rename"
+	}
+	return "inbox.capture"
+}
+
+func cloneRemoteRPCRequest(request pinaxclient.RPCRequest) pinaxclient.RPCRequest {
+	params := make(map[string]any, len(request.Params))
+	for key, value := range request.Params {
+		params[key] = value
+	}
+	return pinaxclient.RPCRequest{Method: request.Method, Params: params}
+}
+
+func connectionBlockerError(blockers []string) (string, string, string) {
+	for _, blocker := range blockers {
+		switch blocker {
+		case "tls_required":
+			return "tls_required", "Remote API endpoints must use HTTPS", "Use an HTTPS URL or a loopback HTTP URL"
+		case "credential_required":
+			return "credential_required", "Remote API mode requires a controlled credential source", "Use --api-token-file or PINAX_API_TOKEN_FILE"
+		case "connection_mode_endpoint_conflict", "connection_mode_invalid":
+			return "connection_mode_invalid", "Connection mode does not match the owner endpoint", "Use remote-service or self-hosted-service for non-loopback endpoints"
+		}
+	}
+	return "connection_blocked", "Connection policy blocked the remote request", "Run pinax connection doctor --json"
 }
 
 func remoteAPIURL(ctx commandBuildContext) string {
@@ -747,14 +851,14 @@ func remoteModeLocalCommand(cmd *cobra.Command, source string) bool {
 		return true
 	}
 	root, _, _ := strings.Cut(path, " ")
-	if root == "backup" || root == "capsa" || root == "sync" || root == "commands" {
+	if root == "backup" || root == "capsa" || root == "sync" || root == "commands" || root == "connection" {
 		return true
 	}
 	if source != "config" {
 		return false
 	}
 	switch root {
-	case "api", "backup", "commands", "config", "token", "profile", "vault", "completion", "help":
+	case "api", "backup", "commands", "config", "connection", "token", "profile", "vault", "completion", "help":
 		return true
 	default:
 		return false
@@ -794,7 +898,7 @@ func classifyRemoteCommand(commandPath string) RemoteCommandCoverageEntry {
 	}
 	root, _, _ := strings.Cut(rel, " ")
 	switch root {
-	case "api", "backup", "commands", "config", "token", "profile", "vault", "completion", "help":
+	case "api", "backup", "commands", "config", "connection", "token", "profile", "vault", "completion", "help":
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "local_runtime_or_configuration"}
 	case "cloud", "sync":
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "cloud_sync_runs_locally"}
@@ -839,11 +943,7 @@ func remoteAPIToken(ctx commandBuildContext) (string, error) {
 }
 
 func readRemoteAPITokenFile(path string) (string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(content)), nil
+	return pinaxclient.LoadTokenFile(path)
 }
 
 func stringFlag(cmd *cobra.Command, name string) string {

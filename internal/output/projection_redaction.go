@@ -1,6 +1,7 @@
 package output
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 
@@ -24,7 +25,9 @@ var (
 	// webhookURLPattern 匹配常见 webhook/callback URL。
 	webhookURLPattern = regexp.MustCompile(`(?i)https?://[^\s]*(webhook|callback|hooks?)[^\s]*`)
 	// providerPayloadPattern 匹配 provider payload 标记，避免输出原始 prompt/provider 包体。
-	providerPayloadPattern = regexp.MustCompile(`(?i)\b(raw_prompt|hidden_prompt|system_prompt|provider_payload)\b[^\n]*`)
+	providerPayloadPattern  = regexp.MustCompile(`(?i)\b(raw_prompt|hidden_prompt|system_prompt|provider_payload)\b[^\n]*`)
+	remoteUnixAbsPattern    = regexp.MustCompile(`/(tmp|var|home|Users|workspaces|root|opt|mnt|media|private)/[^\s"',:;)\]]*`)
+	remoteWindowsAbsPattern = regexp.MustCompile(`[A-Z]:\\[^\s"',:;)\]]*`)
 )
 
 const (
@@ -64,11 +67,67 @@ func ApplyProjectionRedaction(p *domain.Projection) {
 		p.Evidence[idx] = redactString(evidence)
 	}
 	if p.Data != nil {
-		p.Data = redactValue(p.Data)
+		if remoteContractProjection(p.Command) {
+			p.Data = redactRemoteContractData(p.Data)
+		} else {
+			p.Data = redactValue(p.Data)
+		}
 	}
 	if p.Error != nil {
 		p.Error.Message = redactString(p.Error.Message)
 		p.Error.Hint = redactString(p.Error.Hint)
+	}
+}
+
+var remoteContractSensitiveFields = map[string]bool{
+	"body": true, "content": true, "request": true, "request_body": true, "request_payload": true,
+	"principal_digest": true, "scope_digest": true, "idempotency_key": true,
+	"vault_path": true, "absolute_path": true,
+}
+
+func remoteContractProjection(command string) bool {
+	switch command {
+	case "api.manifest", "connection.doctor", "connection.readiness", "operation.show", "operation.reconcile", "inbox.capture", "folder.rename":
+		return true
+	default:
+		return false
+	}
+}
+
+func redactRemoteContractData(value any) any {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return redactValue(value)
+	}
+	var normalized any
+	if err := json.Unmarshal(payload, &normalized); err != nil {
+		return redactValue(value)
+	}
+	return redactRemoteContractValue(normalized)
+}
+
+func redactRemoteContractValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if remoteContractSensitiveFields[strings.ToLower(key)] || sensitiveFieldNames[strings.ToLower(key)] {
+				typed[key] = redactedValue
+				continue
+			}
+			typed[key] = redactRemoteContractValue(child)
+		}
+		return typed
+	case []any:
+		for index, child := range typed {
+			typed[index] = redactRemoteContractValue(child)
+		}
+		return typed
+	case string:
+		redacted := redactString(typed)
+		redacted = remoteUnixAbsPattern.ReplaceAllString(redacted, redactedPathValue)
+		return remoteWindowsAbsPattern.ReplaceAllString(redacted, redactedPathValue)
+	default:
+		return value
 	}
 }
 
