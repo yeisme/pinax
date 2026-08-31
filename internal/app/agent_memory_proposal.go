@@ -161,6 +161,8 @@ func (s *AgentMemoryService) AgentMemoryApprove(ctx context.Context, vaultPath, 
 }
 
 // AgentMemoryReject 拒绝一条 proposal。
+// 与 approve 对齐：action 前重新验证 proposal 状态，已消费（approved/
+// rejected/superseded）或缺失的 proposal 是 stale action，拒绝并要求 refresh。
 func (s *AgentMemoryService) AgentMemoryReject(ctx context.Context, vaultPath, proposalID string, reviewer agentprotocol.Principal, reason string) error {
 	ctx = ensureCtx(ctx)
 	if err := s.policy.CheckReview(reviewer); err != nil {
@@ -169,6 +171,15 @@ func (s *AgentMemoryService) AgentMemoryReject(ctx context.Context, vaultPath, p
 	st, err := s.storeFor(vaultPath)
 	if err != nil {
 		return err
+	}
+	propRow, err := s.AgentMemoryShowProposal(ctx, vaultPath, proposalID)
+	if err != nil {
+		return err
+	}
+	switch agentprotocol.ProposalStatus(propRow.Status) {
+	case agentprotocol.ProposalStatusApproved, agentprotocol.ProposalStatusRejected, agentprotocol.ProposalStatusSuperseded:
+		// 终态 proposal：任何新 action 都是 stale，必须失败而非假成功。
+		return fmt.Errorf("proposal %s is already consumed (status=%s); refresh the review inbox before acting", proposalID, propRow.Status)
 	}
 	return st.UpdateProposalStatus(ctx, proposalID, agentprotocol.ProposalStatusRejected, agentprotocol.ProposalStatusReason(reason), "")
 }

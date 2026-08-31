@@ -40,6 +40,10 @@ var (
 	tokenKVPattern       = regexp.MustCompile(`(?i)(token|api_key|apikey|secret|password|passwd|access_key|secret_key)\s*[:=]\s*[^\s,;"']+`)
 	// CLI 密钥旗标：--api-key <value>、--token <value> 等后面跟一个裸值。
 	secretFlagPattern = regexp.MustCompile(`(?i)(--api-key|--apikey|--token|--secret|--password|--passwd|--access-key|--secret-key)\s+[^\s,;"']+`)
+	// Integration fixtures use explicit sentinels to prove that private body,
+	// prompt, system-prompt and provider payload content cannot survive in an
+	// evidence bundle. This is a deterministic fixture guard, not a classifier.
+	sensitiveSentinelPattern = regexp.MustCompile(`(?i)(SECRET_BODY_SENTINEL|PRIVATE_BODY_SENTINEL|RAW_PROMPT_SENTINEL|HIDDEN_SYSTEM_PROMPT_SENTINEL|PROVIDER_PAYLOAD_SENTINEL)`)
 	// 绝对路径：Unix 和 Windows 风格。把 CWD 和临时目录前缀替换为占位符，
 	// 避免泄露开发机器的完整路径结构。
 	unixAbsPathPattern    = regexp.MustCompile(`/(tmp|var|home|Users|workspaces|root|opt|usr|etc|mnt|media|private)/[^\s"',:;)\]]*`)
@@ -53,6 +57,7 @@ type Redaction struct {
 	ScannedSurfaces  []string `json:"scanned_surfaces"`
 	ForbiddenClasses []string `json:"forbidden_classes"`
 	PathRedacted     bool     `json:"path_redacted"`
+	ScanPassed       bool     `json:"scan_passed"`
 }
 
 // forbiddenClasses 是 Redaction 报告的受保护敏感类别。
@@ -60,6 +65,7 @@ var forbiddenClasses = []string{
 	"authorization_header",
 	"bearer_token",
 	"secret_kv",
+	"body_prompt_payload_sentinel",
 	"absolute_path",
 }
 
@@ -71,6 +77,7 @@ func Redact(input string) string {
 	out = bearerTokenPattern.ReplaceAllString(out, "Bearer [REDACTED]")
 	out = tokenKVPattern.ReplaceAllString(out, "${1}=[REDACTED]")
 	out = secretFlagPattern.ReplaceAllString(out, "${1} [REDACTED]")
+	out = sensitiveSentinelPattern.ReplaceAllString(out, "[REDACTED_SENSITIVE_PAYLOAD]")
 	out = unixAbsPathPattern.ReplaceAllString(out, "[REDACTED_PATH]/")
 	out = windowsAbsPathPattern.ReplaceAllString(out, "[REDACTED_PATH]/")
 	return out
@@ -217,6 +224,15 @@ func Run(cfg Config) (Result, error) {
 		return Result{ExitCode: exitCode, RunDir: runDir}, fmt.Errorf("write stderr.log: %w", err)
 	}
 
+	// 写后再扫一遍实际 evidence files。Redact 必须是幂等的；若同一内容还能
+	// 被继续替换，说明 bundle 中仍残留了受保护形态。测试 sentinel 也通过
+	// 同一个规则进入失败路径。原命令已经失败时保留其退出码；原命令成功但
+	// scan 失败时使用 exit 1，避免把泄漏证据标为 passed。
+	redactionScanPassed, redactionScanIssueCount := scanRedactedRunDir(runDir)
+	if !redactionScanPassed && exitCode == 0 {
+		exitCode = 1
+	}
+
 	status := cfg.PassStatus
 	if status == "" {
 		status = "success"
@@ -225,9 +241,11 @@ func Run(cfg Config) (Result, error) {
 		status = "failed"
 	}
 	checks := map[string]any{
-		"stdout_bytes": len(redactedStdout),
-		"stderr_bytes": len(redactedStderr),
-		"redacted":     true,
+		"stdout_bytes":               len(redactedStdout),
+		"stderr_bytes":               len(redactedStderr),
+		"redacted":                   true,
+		"redaction_scan_passed":      redactionScanPassed,
+		"redaction_scan_issue_count": redactionScanIssueCount,
 	}
 	for k, v := range cfg.ExtraChecks {
 		checks[k] = v
@@ -238,6 +256,7 @@ func Run(cfg Config) (Result, error) {
 		ScannedSurfaces:  []string{"stdout", "stderr", "command", "env"},
 		ForbiddenClasses: forbiddenClasses,
 		PathRedacted:     true,
+		ScanPassed:       redactionScanPassed,
 	}
 	s := summary{
 		SchemaVersion: SchemaVersion,
@@ -279,6 +298,30 @@ func Run(cfg Config) (Result, error) {
 			Redaction:     s.Redaction,
 		},
 	}, nil
+}
+
+func scanRedactedRunDir(runDir string) (bool, int) {
+	issues := 0
+	_ = filepath.WalkDir(runDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			issues++
+			return nil
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			issues++
+			return nil
+		}
+		value := string(payload)
+		if Redact(value) != value {
+			issues++
+		}
+		return nil
+	})
+	return issues == 0, issues
 }
 
 // splitRedacted 对 argv 数组脱敏，保持 JSON 数组结构。密钥旗标（如 --api-key）

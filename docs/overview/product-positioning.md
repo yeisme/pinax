@@ -6,6 +6,8 @@ Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它让 A
 
 一句话定位：**Pinax 让 AI 安全操作你的私有知识库，并把它变成可审计的 agent brain；它不是另一个笔记应用，也不是另一个云端 silo。**
 
+当前公司级产品切入点不是继续扩展笔记命令面，而是 [可信 Agent 工作连续性](../product/trusted-agent-continuity.md)：让用户在 Codex 或 Claude Code 中说“继续这个项目”时，获得来源可核验的目标、进度、决定、阻塞和下一步，无需重新解释，也不会触发静默长期记忆写入。2026-08-29 至 2026-10-10 的六周窗口内，其他产品扩张暂停，现有广泛能力作为 retained platform foundation 保留。
+
 Pinax 的 answer layer 必须比普通搜索更进一步，但不能绕过安全边界：搜索返回候选，`memory context` 返回结构化事实，`kb context` 返回语义上下文，graph/query 返回关系证据，最终给 agent 的综合答案必须带来源、置信度、新鲜度和下一步命令，而不是把完整私密正文倾倒给模型。
 
 当前可运行的是 Agent Brain building blocks 加上只读 extractive answer preview，目标是先把本地 proof loop 和 bounded context 做扎实：

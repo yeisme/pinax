@@ -416,3 +416,20 @@ func TestSourceRefList(t *testing.T) {
 		t.Error("list with invalid ref should fail")
 	}
 }
+
+// TestSourceKindRepositoryAdditive 固化 repository SourceRef kind 是 additive
+// 常量：kind 稳定字符串，unknown kind 的 SourceRef 校验仍然通过（兼容旧消费者）。
+func TestRepositorySourceKindAdditive(t *testing.T) {
+	if SourceKindRepository != "repository" {
+		t.Fatalf("SourceKindRepository = %q, want repository", SourceKindRepository)
+	}
+	ref := SourceRef{Kind: SourceKindRepository, Ref: "docs/design.md", Span: "rev:abc123"}
+	if err := ref.Validate(); err != nil {
+		t.Fatalf("repository source ref must validate: %v", err)
+	}
+	// unknown kind 不做拒绝（由 consumer 按 unresolved 兼容处理）。
+	unknown := SourceRef{Kind: "future_kind_v2", Ref: "opaque"}
+	if err := unknown.Validate(); err != nil {
+		t.Fatalf("unknown kind must remain structurally valid: %v", err)
+	}
+}

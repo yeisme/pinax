@@ -93,6 +93,14 @@ func (o *Orchestrator) Compile(ctx context.Context, req ContinuityRequest) (Cont
 	// 阶段 6: next actions
 	nextActions := o.buildNextActions(req, pack, handoffStatus, o.handoffID(handoff))
 
+	now := time.Now().UTC()
+	// freshness 取支持本 pack 的真实 evidence 时间（handoff 创建时间），
+	// 而不是本次响应生成时刻；生成时刻单独放 GeneratedAt（additive）。
+	freshness := time.Time{}
+	if handoff != nil && handoff.CreatedAt.After(freshness) {
+		freshness = handoff.CreatedAt.UTC()
+	}
+
 	result := ContinuityPack{
 		SchemaVersion:  ContinuitySchemaVersion,
 		Principal:      req.Principal,
@@ -107,11 +115,133 @@ func (o *Orchestrator) Compile(ctx context.Context, req ContinuityRequest) (Cont
 		HandoffStatus:  handoffStatus,
 		HandoffID:      o.handoffID(handoff),
 		Truncated:      truncated,
-		Freshness:      time.Now().UTC(),
+		Freshness:      freshness,
+		GeneratedAt:    now,
 		NextActions:    nextActions,
 		Experimental:   true,
 	}
+	result.RefreshDerived()
 	return result, nil
+}
+
+// RefreshDerived 重新计算 FreshnessStatus/EvidenceStatus/PackStatus、
+// WarningCodes 和 RecommendedNextAction。
+//
+// 状态与排序规则（deterministic，中文注释）：
+//  1. warning 顺序固定：handoff_missing → decision_conflict → source_missing →
+//     source_stale → source_ambiguous → context_degraded → review_attention。conflict/source
+//     warning 是风险信号，不被 budget 截断，任何 renderer 不得丢弃。
+//  2. evidence_status：total=0 → not_measured；存在任何 unresolved →
+//     partial；全部 resolved → resolved。
+//  3. freshness_status：无 evidence → not_measured；最新 evidence 超出
+//     FreshnessPolicy（14 天）→ stale；否则 fresh。生成时刻不参与判断。
+//  4. pack_status：handoff 缺失、存在 conflict 或 evidence 非 resolved
+//     → partial；其余 ready。partial 不丢弃可信 section。
+//  5. recommended_next_action 只取一个：handoff 缺失优先给 checkpoint
+//     action（context-only resume 的恢复路径），其次 conflict、source、
+//     review attention，最后回退到第一个 drill-down action。
+func (p *ContinuityPack) RefreshDerived() {
+	// warning codes（固定顺序）
+	p.WarningCodes = nil
+	if p.HandoffStatus == HandoffStatusMissing {
+		p.WarningCodes = append(p.WarningCodes, WarningHandoffMissing)
+	}
+	if len(p.Conflicts) > 0 {
+		p.WarningCodes = append(p.WarningCodes, WarningDecisionConflict)
+	}
+	if p.SourceCoverage.Missing > 0 {
+		p.WarningCodes = append(p.WarningCodes, WarningSourceMissing)
+	}
+	if p.SourceCoverage.Stale > 0 {
+		p.WarningCodes = append(p.WarningCodes, WarningSourceStale)
+	}
+	if p.SourceCoverage.Ambiguous > 0 {
+		p.WarningCodes = append(p.WarningCodes, WarningSourceAmbiguous)
+	}
+	if p.HandoffStatus == HandoffStatusDegraded {
+		p.WarningCodes = append(p.WarningCodes, WarningContextDegraded)
+	}
+	if p.ReviewAttentionCount > 0 && p.ReviewAttention != nil {
+		p.WarningCodes = append(p.WarningCodes, WarningReviewAttention)
+	}
+
+	// evidence status
+	switch {
+	case p.SourceCoverage.Total == 0:
+		p.EvidenceStatus = EvidenceStatusNotMeasured
+	case p.SourceCoverage.Missing > 0 || p.SourceCoverage.Stale > 0 || p.SourceCoverage.Ambiguous > 0:
+		p.EvidenceStatus = EvidenceStatusPartial
+	default:
+		p.EvidenceStatus = EvidenceStatusResolved
+	}
+
+	// freshness status
+	switch {
+	case p.Freshness.IsZero():
+		p.FreshnessStatus = FreshnessStatusNotMeasured
+	case time.Since(p.Freshness) > FreshnessPolicy:
+		p.FreshnessStatus = FreshnessStatusStale
+	default:
+		p.FreshnessStatus = FreshnessStatusFresh
+	}
+
+	// pack status
+	if p.HandoffStatus == HandoffStatusMissing || len(p.Conflicts) > 0 || p.EvidenceStatus != EvidenceStatusResolved {
+		p.PackStatus = PackStatusPartial
+	} else {
+		p.PackStatus = PackStatusReady
+	}
+
+	// 单 next action（预算外，固定优先级）
+	p.RecommendedNextAction = p.selectRecommendedNextAction()
+}
+
+// selectRecommendedNextAction 按固定优先级选择一个推荐动作。
+func (p ContinuityPack) selectRecommendedNextAction() *agentprotocol.NextAction {
+	scopeStr := fmt.Sprintf("%s:%s", p.Scope.Kind, p.Scope.ID)
+	if p.HandoffStatus == HandoffStatusMissing {
+		return &agentprotocol.NextAction{
+			Name:    "Create a continuity checkpoint",
+			Command: fmt.Sprintf("pinax continue checkpoint --scope %s --objective \"<bounded objective>\"", scopeStr),
+			Reason:  "no handoff found for this scope; context-only resume",
+		}
+	}
+	if len(p.Conflicts) > 0 {
+		return &agentprotocol.NextAction{
+			Name:    "Resolve memory conflicts",
+			Command: fmt.Sprintf("pinax review --scope %s", scopeStr),
+			Reason:  "conflicting decisions exist in this scope",
+		}
+	}
+	if p.SourceCoverage.Missing > 0 || p.SourceCoverage.Stale > 0 || p.SourceCoverage.Ambiguous > 0 {
+		if p.HandoffID != "" {
+			return &agentprotocol.NextAction{
+				Name:    "Inspect source evidence",
+				Command: fmt.Sprintf("pinax agent handoff show %s", p.HandoffID),
+				Reason:  "at least one supporting source is stale or missing",
+			}
+		}
+		return &agentprotocol.NextAction{
+			Name:    "Inspect source evidence",
+			Command: "pinax continue status --repo .",
+			Reason:  "at least one supporting source is stale or missing",
+		}
+	}
+	if p.ReviewAttentionCount > 0 && p.ReviewAttention != nil {
+		return &agentprotocol.NextAction{
+			Name:    "Review pending memory item",
+			Command: fmt.Sprintf("pinax review --scope %s", scopeStr),
+			Reason:  "a pending review item may change the next action",
+		}
+	}
+	for _, action := range p.NextActions {
+		copied := action
+		return &copied
+	}
+	return &agentprotocol.NextAction{
+		Name:    "Get full context pack",
+		Command: fmt.Sprintf("pinax agent context --scope %s", scopeStr),
+	}
 }
 
 // selectHandoff 按显式 ID 或 scope 自动选择最近可消费 handoff。
@@ -301,6 +431,7 @@ func (o *Orchestrator) buildNextActions(req ContinuityRequest, pack agentprotoco
 }
 
 // degradedPack 在 context 编译失败时返回 bounded partial pack。
+// freshness 保持零值（not_measured），生成时刻单独记录。
 func (o *Orchestrator) degradedPack(req ContinuityRequest, handoff *agentmemory.AgentHandoffRow, hs HandoffStatus) ContinuityPack {
 	pack := ContinuityPack{
 		SchemaVersion: ContinuitySchemaVersion,
@@ -309,7 +440,7 @@ func (o *Orchestrator) degradedPack(req ContinuityRequest, handoff *agentmemory.
 		Task:          req.Task,
 		HandoffStatus: hs,
 		Experimental:  true,
-		Freshness:     time.Now().UTC(),
+		GeneratedAt:   time.Now().UTC(),
 		NextActions: []agentprotocol.NextAction{
 			{
 				Name:    "Retry context compilation",
@@ -321,7 +452,10 @@ func (o *Orchestrator) degradedPack(req ContinuityRequest, handoff *agentmemory.
 		pack.Objective = handoff.Objective
 		pack.CurrentState = handoff.CurrentState
 		pack.HandoffID = handoff.HandoffID
+		pack.Freshness = handoff.CreatedAt.UTC()
 	}
+	pack.WarningCodes = append(pack.WarningCodes, WarningContextDegraded)
+	pack.RefreshDerived()
 	return pack
 }
 
@@ -390,9 +524,10 @@ func (o *Orchestrator) totalSectionChars(sections []ContinuitySection) int {
 func SummaryLine(pack ContinuityPack) string {
 	parts := []string{}
 	if pack.Objective != "" {
+		objRunes := []rune(pack.Objective)
 		obj := pack.Objective
-		if len(obj) > 80 {
-			obj = obj[:77] + "..."
+		if len(objRunes) > 80 {
+			obj = string(objRunes[:77]) + "..."
 		}
 		parts = append(parts, fmt.Sprintf("objective: %s", obj))
 	}

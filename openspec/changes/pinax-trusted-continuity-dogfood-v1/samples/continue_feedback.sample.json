@@ -1,0 +1,1 @@
+{"spec_version":"1.0","mode":"json","command":"continue.feedback","status":"success","summary":"Continuity feedback recorded.","facts":{"event_kind":"outcome","experimental":"true","feedback_id":"cfb_2cd09cef3fe1e4fe","outcome":"trusted"},"data":{"feedback_id":"cfb_2cd09cef3fe1e4fe","event_kind":"outcome","outcome":"trusted"}}

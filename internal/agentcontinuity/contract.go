@@ -78,6 +78,8 @@ const (
 )
 
 // SourceCoverage 描述 continuity pack 中来源的解析情况。
+// Ambiguous 是 additive optional 分桶：ref 不能唯一解析时计入，
+// 同时整体视为 unresolved；旧 total/resolved/missing/stale 语义不变。
 type SourceCoverage struct {
 	// Total 是 pack 引用的来源总数。
 	Total int `json:"total"`
@@ -87,6 +89,8 @@ type SourceCoverage struct {
 	Missing int `json:"missing"`
 	// Stale 是存在但过期的来源数。
 	Stale int `json:"stale"`
+	// Ambiguous 是 ref 不能唯一解析的来源数（additive）。
+	Ambiguous int `json:"ambiguous,omitempty"`
 }
 
 // ResolvableRatio 返回来源可解析比例。
@@ -105,6 +109,55 @@ type ContinuitySection struct {
 	Truncated bool     `json:"truncated,omitempty"`
 	Omitted   int      `json:"omitted,omitempty"`
 }
+
+// ReviewAttention 是与当前 continuation 相关的单个 bounded review 提示。
+// 不含 proposal body；只有会改变 objective/decision/blocker/conflict/
+// recommended next action 的 pending item 才能进入。
+type ReviewAttention struct {
+	ItemID      string   `json:"item_id"`
+	Subject     string   `json:"subject"`
+	ReasonCodes []string `json:"reason_codes"`
+	Risk        string   `json:"risk"`
+}
+
+// 状态常量（additive English enum values，machine contract 稳定）。
+const (
+	// PackStatusReady 表示 handoff、决策与来源均可解析且无冲突。
+	PackStatusReady = "ready"
+	// PackStatusPartial 表示部分来源 missing/stale、存在 conflict 或
+	// handoff 缺失；其余可信 section 保留。
+	PackStatusPartial = "partial"
+
+	// EvidenceStatusResolved 表示全部 source 成功解析。
+	EvidenceStatusResolved = "resolved"
+	// EvidenceStatusPartial 表示至少一个 source stale/missing/ambiguous。
+	EvidenceStatusPartial = "partial"
+	// EvidenceStatusNotMeasured 表示 total=0（不得当成 100%）。
+	EvidenceStatusNotMeasured = "not_measured"
+
+	// FreshnessStatusFresh 表示最新 evidence 在 freshness policy 内。
+	FreshnessStatusFresh = "fresh"
+	// FreshnessStatusStale 表示 evidence observed/revision time 超出 policy。
+	FreshnessStatusStale = "stale"
+	// FreshnessStatusNotMeasured 表示没有可计算 freshness 的 evidence。
+	FreshnessStatusNotMeasured = "not_measured"
+
+	// FreshnessPolicy 是 evidence freshness 策略窗口（14 天）。
+	FreshnessPolicy = 14 * 24 * time.Hour
+)
+
+// 稳定 warning code（Resume Card 展示；conflict/source warning 不得被
+// budget 丢弃，排序固定以便 golden test）。
+const (
+	WarningHandoffMissing   = "handoff_missing"
+	WarningDecisionConflict = "decision_conflict"
+	WarningSourceMissing    = "source_missing"
+	WarningSourceStale      = "source_stale"
+	WarningSourceAmbiguous  = "source_ambiguous"
+	WarningContextDegraded  = "context_degraded"
+	WarningBindingMissing   = "binding_missing"
+	WarningReviewAttention  = "review_attention"
+)
 
 // ContinuityPack 是 orchestrator 产出的 bounded 产品 projection。
 // 它包含目标、关键决策、偏好、未完成事项、失败经验、冲突、来源和下一步命令。
@@ -132,8 +185,31 @@ type ContinuityPack struct {
 	HandoffID string `json:"handoff_id,omitempty"`
 	// Truncated 表示 pack 是否被 budget 截断。
 	Truncated bool `json:"truncated"`
-	// Freshness 描述 pack 中最新记忆的时间戳。
+	// Freshness 是支持本 pack 的最新 evidence 的 observed/revision 时间。
+	// 没有任何 evidence 时为零值；生成时刻见 GeneratedAt。
 	Freshness time.Time `json:"freshness"`
+	// GeneratedAt 是本次响应的生成时刻（additive；不得冒充 evidence freshness）。
+	GeneratedAt time.Time `json:"generated_at,omitempty"`
+	// FreshnessStatus 是 freshness 相对 policy 的状态（fresh|stale|not_measured）。
+	FreshnessStatus string `json:"freshness_status,omitempty"`
+	// EvidenceStatus 是 source evidence 的整体状态（resolved|partial|not_measured）。
+	EvidenceStatus string `json:"evidence_status,omitempty"`
+	// PackStatus 是 pack 整体状态（ready|partial）。
+	PackStatus string `json:"pack_status,omitempty"`
+	// WarningCodes 是稳定 warning 分类（bounded，固定排序）。
+	WarningCodes []string `json:"warning_codes,omitempty"`
+	// RecommendedNextAction 是首屏唯一推荐的下一步；其余 actions 在 NextActions。
+	RecommendedNextAction *agentprotocol.NextAction `json:"recommended_next_action,omitempty"`
+	// ReviewAttentionCount 是与当前 continuation 相关的 review item 数。
+	ReviewAttentionCount int `json:"review_attention_count,omitempty"`
+	// ReviewAttention 是唯一 inline 提示的 bounded review item（≤1）。
+	ReviewAttention *ReviewAttention `json:"review_attention,omitempty"`
+	// BindingStatus 是 binding 解析状态（additive，由 app 层填充）。
+	BindingStatus string `json:"binding_status,omitempty"`
+	// BindingIDDigest 是解析到的 binding 的 bounded digest（additive）。
+	BindingIDDigest string `json:"binding_id_digest,omitempty"`
+	// ContinuityRunID 是 opt-in recorded run 的 opaque ID（仅 --record-run）。
+	ContinuityRunID string `json:"continuity_run_id,omitempty"`
 	// NextActions 是安全的 drill-down 操作建议。
 	NextActions []agentprotocol.NextAction `json:"next_actions,omitempty"`
 	// Experimental 标记此 surface 为实验性。

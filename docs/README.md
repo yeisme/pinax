@@ -57,6 +57,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [文档设计](./overview/documentation-design.md)
 - [长期资料源笔记](./overview/durable-source-notes.md)
 - [产品定位](./overview/product-positioning.md)
+- [可信 Agent 工作连续性 PRD](./product/trusted-agent-continuity.md)
 - [通用 Agent 记忆系统 PRD](./product/general-agent-memory-prd.md)
 - [架构边界](./architecture/architecture-boundaries.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)

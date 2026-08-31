@@ -149,15 +149,19 @@ func buildAgentContinuityConfig(runID string, stdout, stderr io.Writer) evidence
 	return evidence.Config{
 		RunID:             runID,
 		ParentDir:         filepath.Join("temp", "integration-test-runs"),
-		Command:           []string{"go", "test", "./internal/agentcontinuity", "./internal/memoryinbox", "./internal/app", "./internal/dashboard", "./internal/output", "./cmd/pinax", "./tests/e2e", "-run", "Continuity|Inbox|Review|TrustCenter|CrossAgent|Redaction|Compile|Aggregate", "-count=1"},
+		Command:           []string{"go", "test", "./internal/agentcontinuity", "./internal/memoryinbox", "./internal/app", "./internal/dashboard", "./internal/output", "./cmd/pinax", "./tests/e2e", "-run", "Continuity|Continue|Inbox|Review|TrustCenter|CrossAgent|Redaction|Compile|Aggregate|Recorded|WeeklyReview|Feedback|LegacyDefault|Checkpoint", "-count=1"},
 		PassThroughStdout: stdout,
 		PassThroughStderr: stderr,
 		ExtraChecks: map[string]any{
-			"continuity_pack":  true,
-			"memory_inbox":     true,
-			"trust_center":     true,
-			"cross_agent_flow": true,
-			"credential_safe":  true,
+			"continuity_pack":            true,
+			"memory_inbox":               true,
+			"trust_center":               true,
+			"cross_agent_flow":           true,
+			"credential_safe":            true,
+			"continuity_binding":         true,
+			"continuity_evidence":        true,
+			"repository_source_resolver": true,
+			"cross_runtime_handoff":      true,
 		},
 	}
 }

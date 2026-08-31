@@ -11,7 +11,7 @@ func TestRunWritesCompleteRedactedFailureEvidenceWithOriginalExitCode(t *testing
 	result, err := Run(Config{
 		RunID:      "failure-evidence",
 		ParentDir:  parent,
-		Command:    []string{"sh", "-c", "printf 'Authorization: Bearer secret-token /tmp/private\n' >&2; exit 7"},
+		Command:    []string{"sh", "-c", "printf 'Authorization: Bearer secret-token /tmp/private RAW_PROMPT_SENTINEL\n' >&2; exit 7"},
 		Layer:      "component",
 		PassStatus: "passed",
 	})
@@ -31,10 +31,13 @@ func TestRunWritesCompleteRedactedFailureEvidenceWithOriginalExitCode(t *testing
 	if err != nil {
 		t.Fatalf("read stderr: %v", err)
 	}
-	for _, forbidden := range []string{"secret-token", "Authorization: Bearer", "/tmp/private"} {
+	for _, forbidden := range []string{"secret-token", "Authorization: Bearer", "/tmp/private", "RAW_PROMPT_SENTINEL"} {
 		if string(stderr) == "" || contains(string(stderr), forbidden) {
 			t.Fatalf("stderr contains forbidden %q: %s", forbidden, stderr)
 		}
+	}
+	if result.Summary.Checks["redaction_scan_passed"] != true || !result.Summary.Redaction.ScanPassed {
+		t.Fatalf("redaction scan = %#v", result.Summary)
 	}
 }
 
@@ -46,6 +49,17 @@ func TestRunUsesPassedStatusForSuccessfulComponentProfile(t *testing.T) {
 	}
 	if result.ExitCode != 0 || result.Summary.Status != "passed" || result.Summary.Layer != "component" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestScanRedactedRunDirRejectsResidualSensitivePayload(t *testing.T) {
+	runDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(runDir, "stdout.log"), []byte("Bearer raw-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	passed, issues := scanRedactedRunDir(runDir)
+	if passed || issues != 1 {
+		t.Fatalf("scan passed=%v issues=%d", passed, issues)
 	}
 }
 

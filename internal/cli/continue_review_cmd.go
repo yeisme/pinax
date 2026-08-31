@@ -8,14 +8,24 @@ import (
 	"github.com/yeisme/pinax/internal/agentcontinuity"
 	"github.com/yeisme/pinax/internal/agentprotocol"
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/continuitybinding"
+	"github.com/yeisme/pinax/internal/continuityevidence"
 	"github.com/yeisme/pinax/internal/domain"
 )
 
 // addContinueCommands 注册 experimental `pinax continue` intent facade。
 // 内部调用已有 AgentMemoryService.AgentContinuity，不改变旧 command tree。
+//
+// 兼容性（additive-only）：
+//  1. 旧 leaf 行为（显式 --vault/--scope/--task/--intent/--handoff）完全保留；
+//     binding 自动解析只在两个显式参数都未设置时介入。
+//  2. --record-run/--runtime/--task-class 是 opt-in receipt 能力；
+//     默认调用保持 read-only，不写任何 continuity evidence 表。
 func addContinueCommands(root *cobra.Command, ctx commandBuildContext) {
 	var task, scopeFlag, intent, handoffFlag string
 	var maxItems, maxChars int
+	var recordRun bool
+	var runtimeID, taskClass string
 
 	cmd := &cobra.Command{
 		Use:   "continue",
@@ -24,25 +34,74 @@ func addContinueCommands(root *cobra.Command, ctx commandBuildContext) {
 key decisions, preferences, open tasks, failed attempts, conflicts, and source refs.
 
 This is an experimental additive facade over 'pinax agent context'. Existing commands
-remain unchanged.`,
+remain unchanged. When the current Git worktree has a unique enabled continuity
+binding and no explicit --vault/--scope is given, the binding auto-resolves.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "default"}
-			if scopeFlag != "" {
-				scope = parseScope(scopeFlag)
+			// recorded run 的 enum 校验在任何写入之前完成（fail before write）。
+			if recordRun {
+				if runtimeID == "" || taskClass == "" {
+					return renderCommandError(cmd, ctx.outputMode(), "continue", "validation_failed",
+						"--record-run requires --runtime and --task-class",
+						"pinax continue --record-run --runtime codex --task-class implementation_debugging")
+				}
+				if !continuityevidence.ValidTaskClass(taskClass) {
+					return renderCommandError(cmd, ctx.outputMode(), "continue", "validation_failed",
+						"unknown task class: "+taskClass,
+						"valid: implementation_debugging, product_spec_docs, release_operations")
+				}
+			}
+
+			resolution, err := resolveContinueScope(cmd, ctx, scopeFlag)
+			if err != nil {
+				return renderAgentError(cmd, ctx, "continue", err)
+			}
+			repoRoot := ""
+			if resolution.BindingStatus == continuitybinding.StatusReady {
+				repoRoot = resolvedRepoRoot(cmd)
 			}
 			pack, err := agentSvc.AgentContinuity(cmd.Context(), app.ContinuityRequest{
-				VaultPath: agentVaultPath(ctx),
+				VaultPath: resolution.VaultPath,
 				Principal: agentPrincipal(),
-				Scope:     scope,
+				Scope:     resolution.Scope,
 				Task:      task,
 				Intent:    intent,
 				MaxItems:  maxItems,
 				MaxChars:  maxChars,
 				HandoffID: handoffFlag,
+				RepoRoot:  repoRoot,
 			})
 			if err != nil {
 				return renderAgentError(cmd, ctx, "continue", err)
 			}
+
+			// additive binding facts（旧 consumer 可忽略）。
+			if resolution.BindingStatus != "" {
+				pack.BindingStatus = string(resolution.BindingStatus)
+				pack.BindingIDDigest = resolution.BindingDigest
+			}
+
+			// opt-in run receipt：只在显式 --record-run 时写入。
+			if recordRun {
+				runID, err := agentSvc.ContinuityRecordRun(cmd.Context(), app.ContinuityRunRecord{
+					VaultPath:      resolution.VaultPath,
+					BindingDigest:  resolution.BindingDigest,
+					Scope:          resolution.Scope,
+					Runtime:        runtimeID,
+					TaskClass:      taskClass,
+					HandoffStatus:  string(pack.HandoffStatus),
+					SourceTotal:    pack.SourceCoverage.Total,
+					SourceResolved: pack.SourceCoverage.Resolved,
+					SourceStale:    pack.SourceCoverage.Stale,
+					SourceMissing:  pack.SourceCoverage.Missing,
+					WarningCodes:   pack.WarningCodes,
+					ProposalCount:  0,
+				})
+				if err != nil {
+					return renderAgentError(cmd, ctx, "continue", err)
+				}
+				pack.ContinuityRunID = runID
+			}
+
 			proj := domain.NewProjection("continue", "Continuity pack compiled.")
 			proj.Facts["schema_version"] = pack.SchemaVersion
 			proj.Facts["section_count"] = fmt.Sprintf("%d", pack.SectionCount())
@@ -53,8 +112,43 @@ remain unchanged.`,
 			if pack.Objective != "" {
 				proj.Facts["objective"] = truncateForFact(pack.Objective, 100)
 			}
+			// additive facts（旧 consumer 忽略新 key）。
+			if pack.BindingStatus != "" {
+				proj.Facts["binding_status"] = pack.BindingStatus
+			}
+			if pack.BindingIDDigest != "" {
+				proj.Facts["binding_id_digest"] = pack.BindingIDDigest
+			}
+			if pack.ContinuityRunID != "" {
+				proj.Facts["continuity_run_id"] = pack.ContinuityRunID
+			}
+			if pack.EvidenceStatus != "" {
+				proj.Facts["evidence_status"] = pack.EvidenceStatus
+			}
+			if pack.FreshnessStatus != "" {
+				proj.Facts["freshness_status"] = pack.FreshnessStatus
+			}
+			if pack.PackStatus != "" {
+				proj.Facts["pack_status"] = pack.PackStatus
+			}
+			if len(pack.WarningCodes) > 0 {
+				proj.Facts["warning_codes"] = strings.Join(pack.WarningCodes, ",")
+			}
+			if pack.RecommendedNextAction != nil {
+				proj.Facts["recommended_next_action"] = pack.RecommendedNextAction.Name
+			}
+			if pack.ReviewAttentionCount > 0 {
+				proj.Facts["review_attention_count"] = fmt.Sprintf("%d", pack.ReviewAttentionCount)
+			}
 			proj.Summary = agentcontinuity.SummaryLine(pack)
 			proj.Data = pack
+			if resolution.BindingStatus == continuitybinding.StatusMissing {
+				// 未绑定：一个 copyable bind action，不扫描其他 vault。
+				proj.Actions = append(proj.Actions, domain.Action{
+					Name:    "bind",
+					Command: "pinax continue bind --repo . --vault <vault-ref> --scope <kind:id>",
+				})
+			}
 			return ctx.renderProjection(cmd, proj, nil)
 		},
 	}
@@ -64,7 +158,25 @@ remain unchanged.`,
 	cmd.Flags().StringVar(&handoffFlag, "handoff", "", "Explicit handoff ID to consume (auto-select if empty)")
 	cmd.Flags().IntVar(&maxItems, "max-items", 20, "Maximum continuity pack items")
 	cmd.Flags().IntVar(&maxChars, "max-chars", 6000, "Maximum continuity pack characters")
+	cmd.Flags().BoolVar(&recordRun, "record-run", false, "Opt-in: record a continuity run receipt (default continue is read-only)")
+	cmd.Flags().StringVar(&runtimeID, "runtime", "", "Agent runtime descriptor for the recorded run (e.g. codex, claude-code)")
+	cmd.Flags().StringVar(&taskClass, "task-class", "", "Task class for the recorded run (implementation_debugging, product_spec_docs, release_operations)")
+	// additive experimental 子命令与 leaf RunE 共存：不带子命令时行为不变。
+	addContinueBindingSubcommands(cmd, ctx)
+	addContinueCheckpointSubcommand(cmd, ctx)
+	addContinueFeedbackSubcommand(cmd, ctx)
+	addContinueReportSubcommand(cmd, ctx)
 	root.AddCommand(cmd)
+}
+
+// resolvedRepoRoot 返回当前目录的 canonical worktree root（binding ready 时）。
+// 失败返回空串（repository source 将按 missing 计数，不影响旧路径）。
+func resolvedRepoRoot(cmd *cobra.Command) string {
+	root, err := continuitybinding.DetectWorktreeRoot(cmd.Context(), ".")
+	if err != nil {
+		return ""
+	}
+	return root
 }
 
 // addReviewCommands 注册 experimental `pinax review` intent facade。

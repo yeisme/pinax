@@ -108,6 +108,13 @@ func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptio
 	if p.Command == "note.preview" && p.Status == "success" && p.Error == nil {
 		return renderSummaryDataWithOptions(w, theme, p, opts)
 	}
+	// continue 的 human view 是 command-specific Resume Card（experimental UX
+	// refinement）；machine envelope/--json/--agent 不变，解码失败回退 generic。
+	if p.Command == "continue" && p.Status == "success" && p.Error == nil {
+		if err := renderResumeCard(w, theme, p); err == nil {
+			return nil
+		}
+	}
 	if p.Status == "success" && p.Error == nil {
 		if err := renderSummaryTable(w, theme, []string{"Highlights"}, [][]string{{defaultString(p.Summary, "-")}}); err != nil {
 			return err

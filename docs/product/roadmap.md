@@ -6,6 +6,7 @@
 
 - [产品定位](../overview/product-positioning.md)
 - [MVP 范围](./mvp-scope.md)
+- [可信 Agent 工作连续性 PRD](./trusted-agent-continuity.md)
 - [Release Packaging](../operations/release-packaging.md)
 - [Cloud Sync Architecture](../architecture/cloud-sync-design.md)
 
@@ -20,6 +21,21 @@ Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它不�
 3. **Cloud Sync 只协调密文** — 端侧 AES-256-GCM 加密，服务端只见 ciphertext revision，不保存明文、不执行本地工具。
 
 当前版本：**v0.2.0**。本地核心工作流已可用于日常使用，两个领域仍处于 Preview。
+
+## 2026-08-29 六周执行主线
+
+从 2026-08-29 至 2026-10-10，Pinax 唯一公司级产品主线是 **可信 Agent 工作连续性**：用户在 Codex 或 Claude Code 中说“继续这个项目”，即可获得上次目标、当前进度、关键决定、阻塞/冲突、一个推荐下一步和可核验来源，而无需重新解释。
+
+这一执行主线改变近期排序，但不删除下文的长期能力和毕业承诺。六周内：
+
+- 只推进 continuity UX、repository binding、source quality/freshness、review efficiency、install/diagnose/recovery、compatibility、blocking bugs 和真实 vault safety；
+- 暂停新的顶层 note/platform command、provider integration、团队协作、Web/desktop client、公共 onboarding/pricing 和通用平台扩张；
+- 首轮只 dogfood Pinax repository，但覆盖 Codex、Claude Code 和 implementation/debugging、product/spec/docs、release/operations 三类任务；
+- 至少完成 30 个真实 continuity loops，trusted rate ≥80%、source resolvability ≥95%、每周 review ≤5 分钟、silent confirmed writes = 0，才可判定 Go；
+- 单仓库结果不能证明跨项目 routing，所有报告必须保留 `cross_project_routing=unvalidated`；
+- 现有 action-capture canary 继续完成 2026-08-23 至 2026-09-05 固定窗口，生成 Go/Iterate/Stop receipt 后归档，不再扩张接口。
+
+具体产品体验和 OpenSpec 见 [可信 Agent 工作连续性 PRD](./trusted-agent-continuity.md)。
 
 ---
 
@@ -82,9 +98,9 @@ v1.0 GA 在以下三个条件**全部满足**后触发。v1.0 不新增功能特
 
 ---
 
-## v0.2 近期目标（next quarter）
+## v0.2 长期里程碑（六周 continuity freeze 期间暂停主动推进）
 
-v0.2 不引入新功能领域，核心是关闭三笔 P0 credit debt——这些是当前流程中的已知缺口，不关闭会持续侵蚀产品可信度。
+v0.2 不引入新功能领域，长期仍需关闭三笔 P0 credit debt——这些是当前流程中的已知缺口，不关闭会持续侵蚀产品可信度。六周 freeze 期间，只有直接阻塞 continuity、安全、兼容或真实 vault 使用的部分可以进入执行；其余保持 retained，不与 continuity 主线争夺优先级。
 
 | 优先级 | Debt | 反面案例 | 完成标准 |
 | --- | --- | --- | --- |
@@ -145,3 +161,5 @@ v0.2 不引入新功能领域，核心是关闭三笔 P0 credit debt——这些
 | **v1.0 GA** | 两个 Preview 全部 Supported；≥2 周 dogfooding 文档化；CLI ↔ backend 合同对齐验证 | C1 + C2 + C3 全部满足 |
 
 **关键判断**：v1.0 的风险不在功能缺失——功能已经存在——而在**验证证据不足**。Roadmap 的主线是把 fake-server 测试换成真实 transport dogfooding，把 "能用" 换成 "可承诺"。
+
+短期执行例外见本文“2026-08-29 六周执行主线”：在该窗口结束并形成唯一 Go/Iterate/Stop receipt 前，长期 GA 证据工作不自动获得更高优先级。
