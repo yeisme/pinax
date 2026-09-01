@@ -34,6 +34,7 @@ Boundary rules:
 | Package | Command family | Responsibility | Prohibited dependencies | Focused tests |
 | --- | --- | --- | --- | --- |
 | `internal/app/noteops` | note, folder, metadata, import, export, attachment | Note CRUD, metadata, tags, folders, imports, exports, attachments. | `internal/cli`, `internal/output`, direct stdout/stderr writes, provider token handling. | `go test ./internal/app ./cmd/pinax -run 'Note|Folder|Metadata|Import|Export|Attachment|Record' -count=1` |
+| `internal/app/knowledgeops` | knowledge export-projection | Dual-condition allowlist matching, refs-only projection entries, tombstone revocation, digest-diff incremental selection. | `internal/cli`, `internal/output`, direct stdout/stderr writes, provider token handling, Inferrum/txtai clients, vault or index writes. | `go test ./internal/app/knowledgeops ./internal/app ./cmd/pinax -run 'Knowledge' -count=1` |
 | `internal/app/searchops` | list, search, query, database views | App-level list/search/query orchestration and database view use cases. | `internal/cli`, `internal/output`, Cobra parsing, direct renderer calls. | `go test ./internal/app ./internal/index ./cmd/pinax -run 'Search|Query|Database|List' -count=1` |
 | `internal/app/vaultops` | init, validate, project, storage, stats, doctor, repair, organize | Vault setup, validation, maintenance, repair planning, repair apply, organization. | `internal/cli`, `internal/output`, cloud sync protocol ownership, direct user-visible rendering. | `go test ./internal/app ./cmd/pinax -run 'Vault|Init|Validate|Project|Storage|Stats|Doctor|Repair|Organize' -count=1` |
 | `internal/app/templateops` | template, journal, render run, index page | Template resolution, journal creation, render run orchestration, index page generation. | `internal/cli`, `internal/output`, version backend implementation, direct stdout/stderr writes. | `go test ./internal/app ./internal/templateengine ./cmd/pinax ./tests/e2e -run 'Template|Journal|Render|IndexPage' -count=1` |
@@ -50,6 +51,7 @@ Each app capability package must keep a `doc.go` with the same ownership fields.
 `app.Service` remains the CLI-facing compatibility facade. Current extracted logic includes:
 
 - `noteops`: note list predicate and tag/date filter helpers used by list/query flows.
+- `knowledgeops`: dual-condition allowlist matching, refs-only projection entries, tombstone revocation, and digest-diff incremental selection.
 - `searchops`: search request validation, result shaping, link-target filtering, fallback search filtering, and Pinax SQL parse/execute helpers.
 - `vaultops`: vault stats aggregation and index freshness classification.
 - `templateops`: query-result Markdown rendering for query-backed template blocks.

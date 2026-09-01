@@ -314,6 +314,14 @@ type ExportMarkdownRequest struct {
 	Status    string
 }
 
+type KnowledgeExportProjectionRequest struct {
+	VaultPath     string
+	Output        string
+	Allowlist     []string
+	AllowlistFile string
+	FromPackage   string
+}
+
 type NoteListRequest struct {
 	VaultPath        string
 	Tags             []string

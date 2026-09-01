@@ -40,6 +40,17 @@ func TestBuildIdentityConfigUsesRequiredEvidenceDirectoryAndEntrypoint(t *testin
 	}
 }
 
+func TestBuildKnowledgeSourceAdapterProfile(t *testing.T) {
+	config := buildConfigForProfile("knowledge-source-adapter", "knowledge-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	if !strings.Contains(command, "./internal/app/knowledgeops") || !strings.Contains(command, "./cmd/pinax") || !strings.Contains(command, "Knowledge") {
+		t.Fatalf("knowledge evidence command = %s", command)
+	}
+	if config.ParentDir != "temp/integration-test-runs" || config.Layer != "component" || config.ExtraChecks["vault_readonly"] != true {
+		t.Fatalf("config = %#v", config)
+	}
+}
+
 func TestBuildDshPaneProfile(t *testing.T) {
 	config := buildConfigForProfile("dsh-pane", "pane-run", io.Discard, io.Discard)
 	command := strings.Join(config.Command, " ")

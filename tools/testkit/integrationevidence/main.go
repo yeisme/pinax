@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, or dsh-pane")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, dsh-pane, or knowledge-source-adapter")
 	flag.Parse()
 	runID := time.Now().UTC().Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid())
 	config := buildConfigForProfile(*profile, runID, os.Stdout, os.Stderr)
@@ -64,6 +64,9 @@ func buildConfig(runID string, stdout, stderr io.Writer) evidence.Config {
 }
 
 func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	if profile == "knowledge-source-adapter" {
+		return buildKnowledgeSourceAdapterConfig(runID, stdout, stderr)
+	}
 	if profile == "dsh-pane" {
 		return evidence.Config{
 			RunID:             runID,
@@ -135,6 +138,24 @@ func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evid
 			"manifest_v2_migration":     true,
 			"agent_proof_receipts":      true,
 			"two_device_kernel":         true,
+		},
+	}
+}
+
+func buildKnowledgeSourceAdapterConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           []string{"go", "test", "./internal/app/knowledgeops", "./cmd/pinax", "-run", "Knowledge", "-count=1"},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             "component",
+		ExtraChecks: map[string]any{
+			"default_empty_allowlist": true,
+			"dual_condition_export":   true,
+			"tombstone_incremental":   true,
+			"vault_readonly":          true,
 		},
 	}
 }

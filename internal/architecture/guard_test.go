@@ -13,6 +13,7 @@ const modulePath = "github.com/yeisme/pinax"
 
 var capabilityPackages = []string{
 	"noteops",
+	"knowledgeops",
 	"searchops",
 	"vaultops",
 	"templateops",

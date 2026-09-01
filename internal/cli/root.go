@@ -308,6 +308,7 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addDataviewCommands(cmd, ctx)
 	addDatabaseCommands(cmd, ctx)
 	addImportExportCommands(cmd, ctx)
+	addKnowledgeCommands(cmd, ctx)
 
 	addProjectCommands(cmd, ctx)
 	addTrashCommands(cmd, ctx)
@@ -360,6 +361,7 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"template":   "Note workflows",
 		"import":     "Note workflows",
 		"export":     "Note workflows",
+		"knowledge":  "Automation and integrations",
 		"search":     "Find and organize",
 		"memory":     "Organization and search",
 		"brain":      "Organization and search",

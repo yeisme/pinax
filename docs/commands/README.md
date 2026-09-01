@@ -63,6 +63,7 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Note workflow | [`pinax note`](./note.md) | Create, read, edit, move, archive, delete, tag, and view links for notes. |
 | Note workflow | [`pinax import markdown`](./import.md) | Bring external Markdown files or directories into the vault. |
 | Note workflow | [`pinax export markdown`](./export.md) | Export a Markdown bundle by criteria. |
+| Automation and integration | [`pinax knowledge`](./knowledge.md) | Export an allowlisted, refs-only knowledge projection for Inferrum ingestion. |
 | Note workflow | [`pinax template`](./template.md) | Manage Markdown templates and template rendering records. |
 | Organization and retrieval | [`pinax view`](./view.md) | Save and reuse a set of note filtering criteria. |
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
@@ -124,6 +125,7 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Restore from a local backup | `pinax backup restore notes/example.md --revision <snapshot_id> --plan --vault work` |
 | Hand off semantic context | `pinax export markdown ./temp/rag-export --vault work --json` |
 | Export Markdown for external RAG | `pinax export markdown ./temp/rag-export --vault work --json` |
+| Export an allowlisted Inferrum projection | `pinax knowledge export-projection --output ./projection.json --allowlist notes/public.md --vault work --json` |
 | Recall agent memory with ranking evidence | `pinax memory recall "release workflow" --entity pinax --vault work --json` |
 | Manage directories | `pinax folder create spaces/research --purpose notes --vault ./my-notes` |
 | View vault health | `pinax vault doctor --vault ./my-notes` |
@@ -144,6 +146,7 @@ Agent Brain is a staged capability, not a hosted/team backend. Current workflows
 | Ingest | `pinax import markdown ./source --dry-run --vault ./my-notes --json` | implemented |
 | Memory context | `pinax memory context "prepare for Alice meeting" --entity alice --limit 12 --vault ./my-notes --agent` | implemented |
 | External RAG context | `pinax export markdown ./temp/rag-export --vault ./my-notes --json` | external owner |
+| Allowlisted knowledge projection | `pinax knowledge export-projection --output ./projection.json --vault ./my-notes --json` | implemented |
 | Search | `pinax search "Alice" --vault ./my-notes --json` | implemented |
 | Graph evidence | `pinax note backlinks "Alice" --vault ./my-notes --json` and `pinax graph query --kind technique --match storyboard --vault ./my-notes --json` | implemented |
 | Query/database rows | `pinax query run 'SELECT title, status FROM notes WHERE status = "active" LIMIT 20' --lazy-index --vault ./my-notes --json` | implemented |

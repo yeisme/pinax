@@ -23,6 +23,7 @@ Export Markdown and let an external RAG system own the semantic pipeline:
 
 ```bash
 pinax export markdown <output-dir> --vault ./my-notes --json
+pinax knowledge export-projection --output ./projection.json --vault ./my-notes --json
 pinax search "local text query" --vault ./my-notes --json
 ```
 
