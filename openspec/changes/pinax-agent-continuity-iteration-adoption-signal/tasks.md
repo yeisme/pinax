@@ -23,9 +23,15 @@
 
 ## 4. 两周真实使用与指标决策
 
+Status 2026-09-03（编码会话只读取证）: canary 窗口 2026-08-23→2026-09-05 进行中（第 12/14 天）。只读运行 recorder：`pinax-action-canary report --week 1 --json`（窗口 2026-08-23..08-29，已结束）`captures=0`、unconfirmed_writes=0；`--week 2`（08-30..09-05，进行中）`captures=0`；`self-test` PASS（redaction/state machine/denominators/not_measured）。空分母下 metrics 保持 `not_measured`，行为符合合同。4.1 需 ≥10 次真实行动项捕获、≥4 个不同日期，只能由用户真实使用产生；编码会话不得伪造捕获或用测试事件污染新窗口（本 change 自身约束），故 4.1-4.4 全部 [external-gate skipped]。
+
 Status 2026-08-23: 4.1-4.4 依赖两周真实使用 canary。原 08-10 窗口的环境与数据已被重置清除；**canary 环境已于 2026-08-23 重建**（lane-2 状态恢复）：personal profile 的 pinax MCP 已注册且两平台工具过滤仅暴露 `pinax.agent.context|memory_recall|handoff_read`（`hermes tools list --platform cli|feishu` 验证），`pinax-action-capture` Skill（productivity/local/enabled，会话内可见），重写的 `pinax-action-canary` recorder（init/begin/preview/revise/create/completion/review/report + self-test PASS，脱敏 digest-only，空分母 not_measured），`memory.write_approval=true`，新 14 天窗口 **2026-08-23→2026-09-05**。剩余阻塞仅为真实使用：≥10 次行动项捕获、跨 ≥4 个不同日期（recorder 分母自动累计）；4.2-4.4 依次依赖。本会话不伪造 dogfood 指标，也未用测试事件污染新窗口。3.2（rollback）已于 2026-08-23 在隔离 profile 完成并勾选。
 
 - [ ] 4.1 Owner: personal-dogfood；Scope: 两周真实工作；Dependencies: 3.1；Lane: D；完成至少 10 次行动项捕获，覆盖至少 4 个不同日期，并通过 recorder 记录预览修改、来源、延迟、确认与创建结果；Verification: `pinax-action-canary report --week 1` 与 `--week 2`；Expected: 每个指标有明确分母，未确认写入为 0；Failure re-check: 区分入口不可发现、上下文质量、模型延迟和外部 writer 失败。
+  Status 2026-09-03: [external-gate skipped] — 真实使用门控：当前分母 captures=0（week1 已结束为 0；week2 至 2026-09-03 为 0，距窗口结束仅 2 天且需跨 ≥4 个不同日期）。无本地可完成子项；report/recorder 本身已验证可用。
 - [ ] 4.2 Owner: memory-dogfood；Scope: 已完成重要任务；Dependencies: 4.1；Lane: D；对重要完成任务提出结果摘要并通过现有 Pinax proposal/review 判断是否沉淀；Verification: recorder report + Pinax review receipt；Expected: 一次性日志不沉淀，长期决定/经验/约束只有审阅通过后进入 Pinax；Failure re-check: 检查 proposal source、修改/拒绝路径和 silent promotion。
+  Status 2026-09-03: [external-gate skipped] — 依赖 4.1 的 ≥10 次真实捕获；当前无已完成重要任务的 proposal 可评审（proposals count=0）。
 - [ ] 4.3 Owner: product-analysis；Scope: canary report；Dependencies: 4.1-4.2；Lane: decision；计算预览零/一次修改率、来源可打开率、未确认写入、重复/错误率、预览延迟中位数、重要完成任务提案率和每周主动使用天数；Verification: recorder `report --json` 与人工抽样；Expected: 报告 known bias、异常值、分母和缺失指标；Failure re-check: 禁止用任务总数或命令量代替行动闭环。
+  Status 2026-09-03: [external-gate skipped] — 依赖 4.1-4.2 真实分母；空分母下 report 已验证输出 `not_measured` 而非伪造指标。
 - [ ] 4.4 Owner: CEO/product；Scope: Go/Iterate/Stop receipt；Dependencies: 4.3；Lane: final；按 spec 预登记门槛决定是否评估 `intent=action_capture`、只优化 retrieval/review 或停止集成扩张；Verification: 新 decision receipt + `openspec validate pinax-agent-continuity-iteration-adoption-signal --strict`；Expected: 只有全部门槛通过才创建接口固化 change，任何后续接口保持 provider-neutral；Failure re-check: 缺少证据则保持 experimental，不默认 Go。
+  Status 2026-09-03: [external-gate skipped] — 决策窗口 2026-09-05 未结束；按预登记门槛，缺证据保持 experimental、不默认 Go。
