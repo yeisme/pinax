@@ -1,0 +1,57 @@
+name: Reusable Release Check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  GO_TEST_TIMEOUT: 30m
+
+jobs:
+  check:
+    name: task check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Set up Node.js for OpenSpec
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Set up Bun for Pinax web renderer
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install Pinax web renderer dependencies
+        working-directory: web/pinax-web-renderer
+        run: bun install --frozen-lockfile
+      - name: Install OpenSpec CLI
+        run: npm install --global @fission-ai/openspec@1.6.0
+      - name: Setup Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.45.4
+      - name: Install golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          "$(go env GOPATH)/bin/golangci-lint" --version
+      - name: GoReleaser check
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "v2.17.0"
+          args: check
+      - name: Task check
+        run: task check

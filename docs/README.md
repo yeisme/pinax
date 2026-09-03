@@ -120,3 +120,7 @@ task release:package:validate
 ```
 
 Package validation target 会以 snapshot/no-publish 模式运行 GoReleaser，验证 checksums，smoke 一个解压后的 archive，检查 SBOM artifact，并在 Linux package inspection 工具不可用时给出明确跳过信息。
+
+## CI/CD
+
+- [模块化、分级 CI/CD](delivery/ci-cd.md)：quick、full、integration、release 的触发场景、真实命令和权限边界。

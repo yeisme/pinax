@@ -1,0 +1,86 @@
+name: Reusable Release Publish
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: publish tagged release
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    timeout-minutes: 45
+    env:
+      HAS_RELEASE_APP: ${{ vars.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v1.42.3
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          "$(go env GOPATH)/bin/syft" version
+      - name: Validate release tag
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'Pinax releases must use vX.Y.Z tags, got %s\n' "$GITHUB_REF_NAME"
+            exit 1
+          fi
+      - name: Mint package-manager publisher token
+        id: publisher-token
+        if: env.HAS_RELEASE_APP == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: yeisme
+          repositories: |
+            homebrew-tap
+            scoop-bucket
+      - name: Check package-manager publisher token
+        env:
+          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
+        run: |
+          if [ -z "$PUBLISHER_TOKEN" ]; then
+            printf 'release environment secret PUBLISHER_TOKEN is required for Homebrew/Scoop publication\n'
+            exit 1
+          fi
+      - name: GoReleaser release
+        uses: goreleaser/goreleaser-action@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
+        with:
+          distribution: goreleaser
+          version: "v2.17.0"
+          args: release --clean
+      - name: Notify yeisme-dist
+        env:
+          GH_TOKEN: ${{ secrets.DIST_SYNC_TOKEN }}
+        run: |
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::warning::skip dist notify: DIST_SYNC_TOKEN is not set"
+            exit 0
+          fi
+          gh api repos/yeisme/yeisme-dist/dispatches --input - <<'EOF'
+          {"event_type":"product-release","client_payload":{"product":"pinax"}}
+          EOF
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-dist-${{ github.ref_name }}
+          path: dist/
+          retention-days: 30

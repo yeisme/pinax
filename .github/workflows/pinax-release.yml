@@ -15,178 +15,21 @@ env:
 jobs:
   check:
     name: task check
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Set up Node.js (for OpenSpec)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Set up Bun (for Pinax web renderer)
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install Pinax web renderer dependencies
-        working-directory: web/pinax-web-renderer
-        run: bun install --frozen-lockfile
-
-      - name: Install OpenSpec CLI
-        run: npm install -g @fission-ai/openspec
-
-      - name: Setup Task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-
-      - name: Install golangci-lint
-        run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.0
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          "$(go env GOPATH)/bin/golangci-lint" --version
-
-      - name: goreleaser check
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: "v2.17.0"
-          args: check
-
-      - name: task check
-        run: task check
-
+    uses: ./.github/workflows/reusable-release-check.yml
   snapshot:
     name: snapshot build (no release)
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    needs: check
     permissions:
       contents: read
-    needs: check
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: goreleaser snapshot
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: "v2.17.0"
-          args: release --snapshot --clean --skip=publish
-
-      - name: upload snapshot artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: snapshot-dist-${{ github.run_id }}
-          path: dist/
-          retention-days: 7
-
+    uses: ./.github/workflows/reusable-release-snapshot.yml
   release:
     name: publish tagged release
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: release
+    needs: check
     permissions:
       contents: write
-    env:
-      HAS_RELEASE_APP: ${{ vars.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
-    needs: check
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Install Syft
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v1.42.3
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          "$(go env GOPATH)/bin/syft" version
-
-      - name: Validate release tag
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
-            printf 'Pinax releases must use vX.Y.Z tags, got %s\n' "$GITHUB_REF_NAME"
-            exit 1
-          fi
-
-      - name: Mint package-manager publisher token
-        id: publisher-token
-        if: env.HAS_RELEASE_APP == 'true'
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          owner: yeisme
-          repositories: |
-            homebrew-tap
-            scoop-bucket
-
-      - name: Check package-manager publisher token
-        env:
-          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
-        run: |
-          if [ -z "$PUBLISHER_TOKEN" ]; then
-            printf 'release environment secret PUBLISHER_TOKEN is required for Homebrew/Scoop publication\n'
-            exit 1
-          fi
-
-      - name: goreleaser release
-        uses: goreleaser/goreleaser-action@v6
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISHER_TOKEN: ${{ steps.publisher-token.outputs.token || secrets.PUBLISHER_TOKEN }}
-        with:
-          distribution: goreleaser
-          version: "v2.17.0"
-          args: release --clean
-
-      - name: Notify yeisme-dist
-        env:
-          GH_TOKEN: ${{ secrets.DIST_SYNC_TOKEN }}
-        run: |
-          if [[ -z "${GH_TOKEN}" ]]; then
-            echo "::warning::skip dist notify: DIST_SYNC_TOKEN is not set"
-            exit 0
-          fi
-          gh api repos/yeisme/yeisme-dist/dispatches --input - <<'EOF'
-          {"event_type":"product-release","client_payload":{"product":"pinax"}}
-          EOF
-
-      - name: upload release artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: release-dist-${{ github.ref_name }}
-          path: dist/
-          retention-days: 30
+    uses: ./.github/workflows/reusable-release-publish.yml
+    secrets: inherit

@@ -1,0 +1,37 @@
+name: Reusable Release Snapshot
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: snapshot build (no release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "v2.17.0"
+          args: release --snapshot --clean --skip=publish
+      - name: Upload snapshot artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snapshot-dist-${{ github.run_id }}
+          path: dist/
+          retention-days: 7
