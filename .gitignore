@@ -28,7 +28,6 @@ temp/
 
 # Code intelligence
 .codegraph/
-docs/superpowers/
 
 # Notes directory for testing
 /notes/
