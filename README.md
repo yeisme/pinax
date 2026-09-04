@@ -88,17 +88,18 @@ tar xzf pinax.tar.gz
 
 Windows uses a `.zip` archive instead of `.tar.gz`. See the release page for the full asset list (`darwin`, `linux`, `windows` × `x86_64`, `aarch64`), `checksums.txt`, source archives, and archive SBOMs.
 
-Install with Homebrew after a tagged release publishes the formula:
+Install the current public release with Homebrew on macOS or Linux:
 
 ```bash
-brew install yeisme/tap/pinax
+brew tap yeisme/dist https://github.com/yeisme/yeisme-dist
+brew install --cask yeisme/dist/pinax
 pinax version
 ```
 
-Install with Scoop after a tagged release publishes the bucket manifest:
+Install the current public release with Scoop on Windows:
 
 ```powershell
-scoop bucket add yeisme https://github.com/yeisme/scoop-bucket
+scoop bucket add yeisme-dist https://github.com/yeisme/yeisme-dist
 scoop install pinax
 pinax version
 ```

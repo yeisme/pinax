@@ -60,7 +60,31 @@ Agent plan 会绑定 object ID、observed path、expected content revision 和 r
 - Go 1.26.1 或更新版本，或下载下方预编译 archive。
 - 可选：[Task](https://taskfile.dev/)，用于 `task check` 等开发快捷命令。
 
-从源码安装：
+通过公开镜像匿名安装当前稳定版 `v0.2.0`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yeisme/yeisme-dist/main/install.sh | bash -s -- pinax
+export PATH="$HOME/.yeisme/bin:$PATH"
+pinax version
+```
+
+macOS 或 Linux 可使用 Homebrew：
+
+```bash
+brew tap yeisme/dist https://github.com/yeisme/yeisme-dist
+brew install --cask yeisme/dist/pinax
+pinax version
+```
+
+Windows 可使用 Scoop：
+
+```powershell
+scoop bucket add yeisme-dist https://github.com/yeisme/yeisme-dist
+scoop install pinax
+pinax version
+```
+
+从源码安装需要能够访问私有 module 仓库：
 
 ```bash
 go install github.com/yeisme/pinax/cmd/pinax@latest
@@ -70,8 +94,8 @@ go install github.com/yeisme/pinax/cmd/pinax@latest
 
 ```bash
 # linux x86_64（请按你的平台调整 os/arch：darwin、windows；x86_64、aarch64）
-curl -L -o pinax.tar.gz https://github.com/yeisme/pinax/releases/download/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
-curl -L -o checksums.txt https://github.com/yeisme/pinax/releases/download/v0.2.0/checksums.txt
+curl -L -o pinax.tar.gz https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/pinax_0.2.0_linux_x86_64.tar.gz
+curl -L -o checksums.txt https://github.com/yeisme/yeisme-dist/releases/download/pinax/v0.2.0/checksums.txt
 sha256sum -c checksums.txt --ignore-missing
 tar xzf pinax.tar.gz
 ./pinax version
@@ -279,4 +303,4 @@ openspec validate --all
 
 ## 许可证
 
-当前还没有选择公开开源许可证。在项目 owner 添加 `LICENSE` 文件前，请不要假设代码已授予再分发或复用权利。
+Pinax 使用 [MIT License](./LICENSE)。
