@@ -133,8 +133,8 @@ func addPromptCatalogCommands(promptCmd *cobra.Command, ctx commandBuildContext)
 		Use:   "catalog",
 		Short: "Discover and verify prompts in federated repositories",
 		Long:  "Search, resolve, inspect, validate, preview, and install prompts from federated repositories through the public promptrepo contracts. `pinax prompt search` stays local-vault-only; this group is the external catalog surface. Inspect, validate, and preview make zero provider calls and zero durable writes, never expose template bodies, and install only rights-permitted templates as local drafts.",
-		Example: "pinax prompt catalog search \"中文播客\" --json\n" +
-			"pinax prompt catalog inspect promptrepo://official/audio/podcast@1.0.0?locale=zh-CN --json\n" +
+		Example: "pinax prompt catalog search \"meeting summary\" --json\n" +
+			"pinax prompt catalog inspect promptrepo://official/audio/podcast@1.0.0?locale=en --json\n" +
 			"pinax prompt catalog install promptrepo://official/audio/podcast@1.0.0 --yes --vault ./my-notes --json",
 	}
 
@@ -233,7 +233,7 @@ func addPromptCatalogCommands(promptCmd *cobra.Command, ctx commandBuildContext)
 		cmd.Flags().StringSliceVar(&deny, "deny", nil, "Exclude these repositories for this command (deny wins)")
 	}
 	for _, cmd := range []*cobra.Command{showCmd, resolveCmd, inspectCmd, validateCmd, previewCmd, installCmd} {
-		cmd.Flags().StringVar(&locale, "locale", "", "Locale for this command (default zh-CN)")
+		cmd.Flags().StringVar(&locale, "locale", "", "Locale for this command (default en)")
 	}
 	for _, cmd := range []*cobra.Command{inspectCmd, validateCmd, previewCmd, installCmd} {
 		cmd.Flags().StringVar(&role, "role", "", "Template role (defaults to main)")

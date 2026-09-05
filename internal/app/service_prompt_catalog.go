@@ -336,7 +336,7 @@ func (s *Service) PromptCatalogSearch(ctx context.Context, req PromptCatalogRequ
 	if err != nil {
 		return promptRepositoryError(command, err)
 	}
-	locale := promptbridge.EffectiveLocale(req.Locale)
+	locale := promptbridge.EffectiveLocaleForRef(req.Ref, req.Locale)
 	result, err := bridge.Search(ctx, promptrepo.SearchRequest{Query: strings.TrimSpace(req.Query), Locale: locale, Tags: req.Tags})
 	if err != nil {
 		return promptRepositoryError(command, err)
@@ -434,7 +434,7 @@ func (s *Service) promptCatalogDetails(ctx context.Context, command, summary, op
 		err := &domain.CommandError{Code: "argument_required", Message: command + " requires a promptrepo:// ref or template address", Hint: "pinax prompt catalog show promptrepo://<repository>/<package>/<solution>@<version> --json"}
 		return domain.NewErrorProjection(command, err), err
 	}
-	locale := promptbridge.EffectiveLocale(req.Locale)
+	locale := promptbridge.EffectiveLocaleForRef(req.Ref, req.Locale)
 	resolved, err := bridge.Resolve(ctx, promptrepo.ResolveRequest{Ref: strings.TrimSpace(req.Ref), Locale: locale})
 	if err != nil {
 		return promptRepositoryError(command, err)
@@ -481,7 +481,7 @@ func (s *Service) PromptCatalogInspect(ctx context.Context, req PromptCatalogReq
 		err := &domain.CommandError{Code: "argument_required", Message: "prompt catalog inspect requires a ref", Hint: "pinax prompt catalog inspect <promptrepo:// ref> --json"}
 		return domain.NewErrorProjection(command, err), err
 	}
-	locale := promptbridge.EffectiveLocale(req.Locale)
+	locale := promptbridge.EffectiveLocaleForRef(req.Ref, req.Locale)
 	contract, contractVerified := s.resolveCatalogContract(ctx, bridge, req, locale)
 	result, err := bridge.Inspect(ctx, promptrepo.InspectRequest{Ref: strings.TrimSpace(req.Ref), Locale: locale, Role: req.Role, Selector: req.Selector, Contract: contract})
 	if err != nil {
@@ -512,7 +512,7 @@ func (s *Service) PromptCatalogValidate(ctx context.Context, req PromptCatalogRe
 	if bridgeErr != nil {
 		return promptRepositoryError(command, bridgeErr)
 	}
-	locale := promptbridge.EffectiveLocale(req.Locale)
+	locale := promptbridge.EffectiveLocaleForRef(req.Ref, req.Locale)
 	contract, contractVerified := s.resolveCatalogContract(ctx, bridge, req, locale)
 	validation, err := bridge.Validate(ctx, promptrepo.ValidateRequest{Ref: strings.TrimSpace(req.Ref), Locale: locale, Role: req.Role, Contract: contract, Values: values})
 	if err != nil {
@@ -547,7 +547,7 @@ func (s *Service) PromptCatalogPreview(ctx context.Context, req PromptCatalogReq
 	if bridgeErr != nil {
 		return promptRepositoryError(command, bridgeErr)
 	}
-	locale := promptbridge.EffectiveLocale(req.Locale)
+	locale := promptbridge.EffectiveLocaleForRef(req.Ref, req.Locale)
 	contract, contractVerified := s.resolveCatalogContract(ctx, bridge, req, locale)
 	result, err := bridge.Preview(ctx, promptrepo.PreviewRequest{Ref: strings.TrimSpace(req.Ref), Locale: locale, Role: req.Role, Selector: req.Selector, Contract: contract, Values: values})
 	if err != nil {
@@ -658,7 +658,7 @@ func (s *Service) PromptCatalogInstall(ctx context.Context, req PromptCatalogReq
 	if err != nil {
 		return promptRepositoryError(command, err)
 	}
-	locale := promptbridge.EffectiveLocale(req.Locale)
+	locale := promptbridge.EffectiveLocaleForRef(req.Ref, req.Locale)
 
 	// Exact resolve first: the plan must bind to one exact snapshot.
 	resolved, err := bridge.Resolve(ctx, promptrepo.ResolveRequest{Ref: strings.TrimSpace(req.Ref), Locale: locale})

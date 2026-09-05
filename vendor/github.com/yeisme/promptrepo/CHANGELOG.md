@@ -2,6 +2,62 @@
 
 All notable changes to this module are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Additive `UITemplateAddress` parser/formatter for the independent
+  `kind=ui-template` family without widening released `TemplateAddress`
+  behavior.
+- Body-safe `UITemplateBundleV1`, slot/security/limit DTOs, stable error codes,
+  canonical length-delimited content digests, and exact snapshot binding.
+- Bounded HTML element/attribute allowlists with lexer/explicit-structure
+  validation, plus CSS tokenizer/parser validation that rejects executable,
+  external, malformed, framework-directed, comment-obfuscated, and escaped
+  syntax without sanitizer rewriting.
+- Optional inspector/loader contracts and a pure-Go local filesystem fixture
+  loader with path containment, symlink, tamper, and redaction checks.
+- Graph Kit structured-document conformance tests that prove a manifest and
+  all exact child documents resolve from one immutable Git commit/catalog
+  snapshot, with descriptor, source, canonical digest, and selector lineage.
+- Fail-closed Graph Kit coverage for missing children and digest drift, reusing
+  the existing mutable-revision, path-containment, and body-redaction guards;
+  no graph-specific public API or network protocol was added.
+
+### Compatibility
+
+- Existing `Ref`, `TemplateAddress`, `TemplateRole`, `Client`, catalog/state
+  schemas, structured document contracts, and frozen catalog digests are
+  unchanged. The per-bundle safety ceilings do not impose a global asset-count
+  limit.
+
+## [0.4.0] - 2026-08-24
+
+### Added
+
+- Additive structured document descriptor, loader, and selector contracts for
+  Markdown, text, JSON, YAML, and JSONL without changing `Client`,
+  `TemplateRole`, `TemplateContent`, or `source.Adapter`.
+- Strict duplicate-key, UTF-8, size, depth, YAML JSON-subset, JSONL record-ID,
+  and selector validation with stable additive error codes.
+- RFC 8785 canonical digests for JSON/YAML and per-record canonical JSONL
+  segment digests, while preserving the existing source digest meaning.
+- Body-safe `LoadedDocument` and `SelectedDocument` projections plus exact
+  schema/compiler lineage and local file source integration tests.
+- Additive `RepositorySetReader` and `PolicyEvaluator` contracts for ephemeral
+  user/organization/project/session composition without changing `Client` or
+  durable state.
+- Deterministic preference ordering separated from deny-wins health, policy,
+  operation, trust, rights, and capability admission.
+- Stable cross-project operation IDs and a body-free, credential-safe
+  `ManagementProjection` for human/agent/JSON/YAML/event renderers.
+
+### Compatibility
+
+- This release is additive development only. Existing v0.3 template
+  read/render/preview behavior remains unchanged and no state migration is
+  introduced.
+
 ## [0.3.0] - 2026-08-23
 
 ### Added

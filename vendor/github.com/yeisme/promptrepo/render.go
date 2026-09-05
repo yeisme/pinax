@@ -31,8 +31,15 @@ func RenderTemplate(request RenderRequest) (RenderResult, error) {
 		result.Ready = false
 		return result, nil
 	}
+	definitions := make(map[string]InputDefinition, len(request.Inputs))
+	for _, input := range request.Inputs {
+		definitions[input.Name] = input
+	}
 	for _, placeholder := range placeholders {
 		if _, ok := validation.Value(placeholder.name); !ok {
+			if definition, declared := definitions[placeholder.name]; declared && !definition.Required {
+				continue
+			}
 			result.Issues = append(result.Issues, InputIssue{Code: CodeTemplatePlaceholder, Field: placeholder.name, Message: "template placeholder is not declared or ready"})
 		}
 	}
@@ -47,8 +54,9 @@ func RenderTemplate(request RenderRequest) (RenderResult, error) {
 			previous = placeholders[index-1].end
 		}
 		builder.WriteString(request.Template[previous:placeholder.start])
-		value, _ := validation.Value(placeholder.name)
-		builder.WriteString(fmt.Sprint(value))
+		if value, ok := validation.Value(placeholder.name); ok {
+			builder.WriteString(fmt.Sprint(value))
+		}
 		if index == len(placeholders)-1 {
 			builder.WriteString(request.Template[placeholder.end:])
 		}

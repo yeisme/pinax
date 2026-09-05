@@ -31,7 +31,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.23
 	github.com/spf13/pflag v1.0.9
 	github.com/yeisme/credentialctl v0.3.0
-	github.com/yeisme/promptrepo v0.3.0
+	github.com/yeisme/promptrepo v0.5.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/sys v0.47.0
 )
@@ -69,6 +69,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/gowebpki/jcs v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
@@ -88,6 +89,7 @@ require (
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.uber.org/multierr v1.10.0 // indirect

@@ -28,12 +28,22 @@ func (f *fakeClient) ListRepositories(context.Context, promptrepo.ListRepositori
 	return f.page, nil
 }
 
-func TestEffectiveLocaleDefaultsToChinese(t *testing.T) {
-	if got := EffectiveLocale(""); got != "zh-CN" {
-		t.Fatalf("default locale = %q, want zh-CN", got)
+func TestEffectiveLocaleDefaultsToEnglish(t *testing.T) {
+	if got := EffectiveLocale(""); got != "en" {
+		t.Fatalf("default locale = %q, want en", got)
 	}
 	if got := EffectiveLocale("  en  "); got != "en" {
 		t.Fatalf("session locale = %q, want en", got)
+	}
+}
+
+func TestEffectiveLocaleForRefPreservesExactAddress(t *testing.T) {
+	ref := "promptrepo://official/general/summary@1.0.0?kind=template&locale=zh-CN&role=main"
+	if got := EffectiveLocaleForRef(ref, ""); got != "zh-CN" {
+		t.Fatalf("exact ref locale = %q", got)
+	}
+	if got := EffectiveLocaleForRef(ref, "en"); got != "en" {
+		t.Fatalf("explicit override locale = %q", got)
 	}
 }
 

@@ -99,13 +99,13 @@ func safeTemplateAddressPath(value string) bool {
 }
 
 func validTemplateSelector(value string) bool {
-	for _, prefix := range []string{"heading:", "json-pointer:", "yaml-pointer:"} {
+	for _, prefix := range []string{"heading:", "json-pointer:", "yaml-pointer:", "jsonl-id:"} {
 		if strings.HasPrefix(value, prefix) {
 			part := strings.TrimPrefix(value, prefix)
 			if part == "" || strings.ContainsAny(part, "\x00\n\r") {
 				return false
 			}
-			if prefix != "heading:" && !strings.HasPrefix(part, "/") {
+			if (prefix == "json-pointer:" || prefix == "yaml-pointer:") && !strings.HasPrefix(part, "/") {
 				return false
 			}
 			return true

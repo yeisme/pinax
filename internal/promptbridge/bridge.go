@@ -22,7 +22,7 @@ import (
 
 // DefaultLocale is the catalog locale Pinax requests unless the command
 // overrides it for the current session only.
-const DefaultLocale = "zh-CN"
+const DefaultLocale = "en"
 
 // Consumer identifies Pinax in promptrepo stage receipts.
 const Consumer = "pinax"
@@ -336,10 +336,22 @@ func (b *Bridge) ResolveTemplateContract(ctx context.Context, request promptrepo
 }
 
 // EffectiveLocale resolves the locale for a command: session overrides win,
-// otherwise the Pinax zh-CN default.
+// otherwise the Pinax Agent-template English default.
 func EffectiveLocale(sessionLocale string) string {
 	if trimmed := strings.TrimSpace(sessionLocale); trimmed != "" {
 		return trimmed
+	}
+	return DefaultLocale
+}
+
+// EffectiveLocaleForRef preserves the locale carried by an exact solution or
+// template address when the caller did not provide an explicit override.
+func EffectiveLocaleForRef(ref, sessionLocale string) string {
+	if trimmed := strings.TrimSpace(sessionLocale); trimmed != "" {
+		return trimmed
+	}
+	if parsed, err := promptrepo.ParseRef(strings.TrimSpace(ref)); err == nil && parsed.Locale != "" {
+		return parsed.Locale
 	}
 	return DefaultLocale
 }

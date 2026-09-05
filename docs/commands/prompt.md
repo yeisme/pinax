@@ -5,7 +5,9 @@
 The command group has two surfaces:
 
 1. **Local Prompt Vault** (default): `prompt create|import|search|show|resolve|lifecycle|feedback` operate on Pinax-owned local assets only.
-2. **Federated Catalog** (experimental, additive): `prompt repository` and `prompt catalog` discover, verify, and — when rights permit — install external prompts through the public `github.com/yeisme/promptrepo` SDK.
+2. **Federated Catalog** (experimental, additive): `prompt repository` and `prompt catalog` discover, verify, and — when rights permit — install external prompts through the public `github.com/yeisme/promptrepo v0.5.0` SDK.
+
+Federated catalog 的 Agent 模板默认使用 `locale=en`。中文笔记和资料可以继续作为输入值，最终笔记语言由用户内容和模板字段决定；中文模板译文只供人类审阅，不参与 preview 或安装。
 
 ## Subcommands
 
@@ -23,7 +25,7 @@ The command group has two surfaces:
 | `prompt repository show <id>` / `doctor <id>` | Show a profile / report repository health. | Does not write. |
 | `prompt repository remove <id>` / `enable <id>` / `disable <id>` | Remove or toggle a shared profile. | Writes shared promptrepo state only. |
 | `prompt repository sync [<id>...] --all` | Refresh repository snapshots; digest-mismatched catalogs are quarantined and the last good snapshot keeps serving. | Writes shared promptrepo snapshots. |
-| `prompt catalog search [query]` | Search the federated catalog across enabled repositories (default locale `zh-CN`). | Does not write; `provider_calls=0`. |
+| `prompt catalog search [query]` | Search the federated catalog across enabled repositories (default locale `en`). | Does not write; `provider_calls=0`. |
 | `prompt catalog show <ref>` / `resolve <ref>` | Show or exactly resolve a `promptrepo://<repo>/<package>/<solution>@<version>` ref or template address. | Does not write; `provider_calls=0`. |
 | `prompt catalog inspect <ref>` | Inspect verified contract inputs and provenance (Field/Required/Default/Allowed style facts). | Does not write; `provider_calls=0`, `durable_writes=0`. |
 | `prompt catalog validate <ref> --values <file>` | Validate input values against the verified template contract; values never appear in output. | Does not write; `provider_calls=0`. |
@@ -58,13 +60,18 @@ Agent output is intentionally bounded: it includes decision-essential facts such
 ## Federated Catalog Workflows
 
 ```bash
-# Register and synchronize a shared repository (profiles are cross-CLI).
+# Register the official repository and synchronize the shared cross-CLI profile.
+pinax prompt repository add official --source github://yeisme/prompt-templates --trust official --json
+pinax prompt repository sync official --json
+pinax prompt catalog inspect 'promptrepo://official/general/structured-summary-beta@2.0.0-beta.1?locale=en' --json
+
+# Team and personal repositories remain additive.
 pinax prompt repository add team --source file:///path/to/catalog --trust verified --json
 pinax prompt repository sync --all --json
 
 # Discover and verify through the federated catalog.
 pinax prompt catalog search "中文播客" --json
-pinax prompt catalog inspect promptrepo://team/audio/podcast@1.0.0?locale=zh-CN --json
+pinax prompt catalog inspect promptrepo://team/audio/podcast@1.0.0?locale=en --json
 pinax prompt catalog preview promptrepo://team/audio/podcast@1.0.0 --values ./inputs.json --json
 
 # Install as a Pinax-owned draft (plan first, then confirm).
@@ -91,6 +98,8 @@ When the same local asset ID already exists with different content, the command 
 ### Scope policy (experimental)
 
 Catalog commands compose an effective repository set from user (shared store), organization (Template Registry projection, not yet wired), project (workspace binding, not yet wired), and session scopes. More specific pin lists override broader ones, and a deny at any scope always wins. Session-only `--repository`/`--deny` flags affect the current command only.
+
+Pinax 与 Auctra、Eikona、Scaena、Sonora 统一使用 `PROMPTREPO_HOME` / `PROMPTREPO_CACHE` 定位共享用户级 profile 与 snapshot。v0.5 的方案 DAG 与提示包合同不会自动导入 Pinax vault；只有现有 rights-gated `catalog install --yes` 可以创建 Pinax-owned draft。
 
 ## Boundaries
 
