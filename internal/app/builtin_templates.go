@@ -75,11 +75,11 @@ func builtInNoteTemplates() map[string]string {
 		// Project brief 模板只保留目标、范围、风险和Next，适合作为Project入口页。
 		"project.brief": builtInNoteTemplate("project.brief", "Project Brief", []string{"Project", "Plan"}, []string{"project", "brief"}, "focused", false, "projects/{{ .Title }}.md", map[string]string{"kind": "project", "status": "active"}, []string{"# {{ .Title }}", "", "## Goals", "", "## Scope", "", "## Risks", "", "## Next Steps", ""}),
 		// Video Learning模板保留来源、观点、例子和待查问题，避免转录全文。
-		"learning.video": builtInNoteTemplate("learning.video", "视频笔记", []string{"视频学习", "课程笔记", "Video Learning", "视频"}, []string{"video", "learning", "视频", "课程"}, "starter", true, "learning/videos/{{ .Title | slug }}.md", map[string]string{"kind": "learning", "status": "active", "tags": "learning,video"}, []string{"# {{ .Title }}", "", "## 来源信息", "", "- 链接：{{ .Vars.url }}", "- 作者/频道：", "- 发布时间：", "- 观看时间：", "", "## 一句话结论", "", "## 关键观点", "", "- ", "", "## 证据或例子", "", "- ", "", "## 可复用片段", "", "- ", "", "## 待查问题", "", "- ", "", "## 相关笔记", "", "- "}),
+		"learning.video": builtInNoteTemplate("learning.video", "视频笔记", []string{"视频学习", "课程笔记", "Video Learning", "视频"}, []string{"video", "learning", "视频", "课程"}, "starter", true, "learning/videos/{{ .Title | slug }}.md", map[string]string{"kind": "learning", "status": "active", "tags": "learning,video"}, []string{"# {{ .Title }}", "", "## 来源信息", "", "- 链接：{{ .Vars.url }}", "- 作者/频道：", "- 发布时间：", "- 观看时间：", "", "## 一句话结论", "", "## 关键观点", "", "- ", "", "## 证据或例子", "", "- ", "", "## 可复用片段", "", "- ", "", "## 待查问题", "", "- ", "", "## 相关笔记", "", "- "}, requiredURLVariable("原视频或课程 URL")),
 		// Book Learning模板保留章节脉络、摘录、实践和反对意见，适合长文渐进阅读。
 		"learning.book":                builtInNoteTemplate("learning.book", "书籍长文阅读", []string{"书籍阅读", "长文阅读", "Learning", "Reading"}, []string{"book", "reading", "书籍", "长文", "阅读"}, "starter", true, "learning/books/{{ .Title | slug }}.md", map[string]string{"kind": "learning", "status": "active", "tags": "learning,book"}, []string{"# {{ .Title }}", "", "## 书籍信息", "", "- 作者：", "- 版本/来源：", "- 阅读时间：", "", "## 章节脉络", "", "## 关键观点", "", "- ", "", "## 摘录", "", "- ", "", "## 可以实践的地方", "", "- ", "", "## 反对意见或疑问", "", "- ", "", "## 相关笔记", "", "- "}),
 		"learning.term":                builtInNoteTemplate("learning.term", "术语卡", []string{"术语卡", "概念卡", "Learning Term"}, []string{"learning", "term", "术语", "概念", "名词"}, "starter", true, "learning/terms/{{ .Title | slug }}.md", map[string]string{"kind": "learning", "status": "active", "tags": "learning,term"}, []string{"# {{ .Title }}", "", "## 定义", "", "- ", "", "## 使用场景", "", "- ", "", "## 常见误解", "", "- ", "", "## 来源", "", "- ", "", "## 相关术语", "", "- "}),
-		"learning.source":              builtInNoteTemplate("learning.source", "学习资料来源", []string{"资料来源", "课程来源", "Learning Source"}, []string{"learning", "source", "资料", "来源", "课程"}, "starter", true, "learning/sources/{{ .Title | slug }}.md", map[string]string{"kind": "reference", "status": "active", "tags": "learning,source"}, []string{"# {{ .Title }}", "", "## 来源信息", "", "- 链接：{{ .Vars.url }}", "- 作者/机构：", "- 发布时间：", "- 记录时间：{{ date \"2006-01-02\" }}", "", "## 可信度", "", "- ", "", "## 关键内容", "", "- ", "", "## 待核验", "", "- "}),
+		"learning.source":              builtInNoteTemplate("learning.source", "学习资料来源", []string{"资料来源", "课程来源", "Learning Source"}, []string{"learning", "source", "资料", "来源", "课程"}, "starter", true, "learning/sources/{{ .Title | slug }}.md", map[string]string{"kind": "reference", "status": "active", "tags": "learning,source"}, []string{"# {{ .Title }}", "", "## 来源信息", "", "- 链接：{{ .Vars.url }}", "- 作者/机构：", "- 发布时间：", "- 记录时间：{{ date \"2006-01-02\" }}", "", "## 可信度", "", "- ", "", "## 关键内容", "", "- ", "", "## 待核验", "", "- "}, requiredURLVariable("学习资料来源 URL")),
 		"learning.practice_log":        builtInNoteTemplate("learning.practice_log", "练习记录", []string{"练习记录", "实践记录", "Learning Practice"}, []string{"learning", "practice", "练习", "实践", "记录"}, "focused", false, "learning/practice/{{ .Title | slug }}.md", map[string]string{"kind": "learning", "status": "active", "tags": "learning,practice"}, []string{"# {{ .Title }}", "", "## 练习目标", "", "## 方法", "", "- ", "", "## 结果", "", "- ", "", "## 错误", "", "- ", "", "## 下次调整", "", "- "}),
 		"learning.weekly_review":       builtInNoteTemplate("learning.weekly_review", "学习周复盘", []string{"周复盘", "学习复盘", "Weekly Learning Review"}, []string{"learning", "weekly", "review", "周复盘", "复盘"}, "focused", false, "learning/reviews/{{ .Title | slug }}.md", map[string]string{"kind": "review", "status": "active", "tags": "learning,weekly-review"}, []string{"# {{ .Title }}", "", "## 本周学习", "", "- ", "", "## 已掌握", "", "- ", "", "## 仍然模糊", "", "- ", "", "## 错误与修正", "", "- ", "", "## 下周动作", "", "- "}),
 		"learning.case_review":         builtInNoteTemplate("learning.case_review", "学习案例复盘", []string{"案例复盘", "案例学习", "Learning Case Review"}, []string{"learning", "case", "review", "案例", "复盘"}, "focused", false, "learning/cases/{{ .Title | slug }}.md", map[string]string{"kind": "case_review", "status": "active", "tags": "learning,case-review"}, []string{"# {{ .Title }}", "", "## 案例背景", "", "## 观察", "", "- ", "", "## 当时判断", "", "- ", "", "## 结果", "", "- ", "", "## 学到什么", "", "- ", "", "## 后续问题", "", "- "}),
@@ -107,13 +107,13 @@ func builtInNoteTemplates() map[string]string {
 		"reading.novel":      builtInNoteTemplate("reading.novel", "小说阅读笔记", []string{"小说阅读", "Novel Reading", "阅读"}, []string{"novel", "reading", "小说", "阅读"}, "focused", false, "reading/novels/{{ .Title | slug }}.md", map[string]string{"kind": "reading", "status": "active", "tags": "reading,novel"}, []string{"# {{ .Title }}", "", "## 作品信息", "", "- 作者：", "- 类型：", "- 阅读进度：", "", "## 阅读动机", "", "## 人物关系", "", "## 叙事结构", "", "## 主题", "", "## 技法摘录", "", "- ", "", "## 阅读感受", "", "## 相关笔记", "", "- "}),
 		"writing.novel":      builtInNoteTemplate("writing.novel", "小说创作笔记", []string{"写小说", "小说创作", "Novel Writing"}, []string{"novel", "writing", "写小说", "创作", "小说"}, "focused", false, "writing/novels/{{ .Title | slug }}.md", map[string]string{"kind": "writing", "status": "active", "tags": "writing,novel"}, []string{"# {{ .Title }}", "", "## 核心概念", "", "## 主题承诺", "", "## 主角与欲望", "", "## 冲突", "", "## 世界规则", "", "## 章节骨架", "", "## 素材线索", "", "- ", "", "## 风险问题", "", "- "}),
 		// Source GitHub模板把外部仓库保存成可长期复查的资料源卡片；不联网抓取事实，只保留用户提供的URL和审稿结构。
-		"source.github": builtInNoteTemplate("source.github", "GitHub Source", []string{"External Source", "GitHub Repository", "Reference Curation"}, []string{"source", "github", "repo"}, "focused", false, "sources/github/{{ .Title | slug }}.md", map[string]string{"kind": "source", "status": "active", "tags": "source/github,reference/source"}, []string{"# {{ .Title }}", "", "Source: {{ .Vars.url }}", "", "## 一句话", "", "", "## Source facts", "", "- Repository: {{ .Vars.url }}", "- Maintainer:", "- License:", "- Last checked:", "", "## Canonical URLs", "", "- README: {{ .Vars.url }}", "- License:", "- Documentation:", "- Related repositories:", "", "## Use decision", "", "- Decision: review before production use", "- Allowed use:", "- Avoid:", "", "## Risk and boundary", "", "- Stability:", "- Legal/license:", "- Supply chain:", "", "## Verification", "", "- [ ] Recheck repository availability", "- [ ] Review license and usage boundary", "- [ ] Test only with explicit user approval", "", "## Related notes", "", "- ", "", "## Next actions", "", "- [ ] Decide whether this source belongs in a project workflow"}),
+		"source.github": builtInNoteTemplate("source.github", "GitHub Source", []string{"External Source", "GitHub Repository", "Reference Curation"}, []string{"source", "github", "repo"}, "focused", false, "sources/github/{{ .Title | slug }}.md", map[string]string{"kind": "source", "status": "active", "tags": "source/github,reference/source"}, []string{"# {{ .Title }}", "", "Source: {{ .Vars.url }}", "", "## 一句话", "", "", "## Source facts", "", "- Repository: {{ .Vars.url }}", "- Maintainer:", "- License:", "- Last checked:", "", "## Canonical URLs", "", "- README: {{ .Vars.url }}", "- License:", "- Documentation:", "- Related repositories:", "", "## Use decision", "", "- Decision: review before production use", "- Allowed use:", "- Avoid:", "", "## Risk and boundary", "", "- Stability:", "- Legal/license:", "- Supply chain:", "", "## Verification", "", "- [ ] Recheck repository availability", "- [ ] Review license and usage boundary", "- [ ] Test only with explicit user approval", "", "## Related notes", "", "- ", "", "## Next actions", "", "- [ ] Decide whether this source belongs in a project workflow"}, requiredURLVariable("GitHub repository URL")),
 		// Person Profile模板只保留关系、上下文和待跟进，避免收集无关个人信息。
 		"person.profile": builtInNoteTemplate("person.profile", "Person Profile", []string{"Person", "Relationship Follow-up"}, []string{"person", "profile"}, "focused", false, "people/{{ .Title }}.md", map[string]string{"kind": "person", "status": "active"}, []string{"# {{ .Title }}", "", "## Relationship", "", "## Context", "", "## Follow-up", "", "- "}),
 	}
 }
 
-func builtInNoteTemplate(name, title string, useCases, aliases []string, difficulty string, starter bool, pathPattern string, defaults map[string]string, body []string) string {
+func builtInNoteTemplate(name, title string, useCases, aliases []string, difficulty string, starter bool, pathPattern string, defaults map[string]string, body []string, variableSets ...map[string]templateengine.VariableMetadata) string {
 	scenarioID := workflowScenarioID(name)
 	maturity := workflowMaturity(name, templateengine.Metadata{Kind: "note_template"})
 	lines := []string{"---", "schema_version: pinax.template.v2", "kind: note_template", "template_kind: note_template", "name: " + name, "title: " + title, "engine: go-template", "scenario_id: " + scenarioID, "maturity: " + maturity, "lifecycle: published_executable", "pack:", "  id: " + difficulty, "  source: builtin", "  readiness: " + maturity, "intents:"}
@@ -140,7 +140,35 @@ func builtInNoteTemplate(name, title string, useCases, aliases []string, difficu
 	} else {
 		lines = append(lines, "  manual_review: false")
 	}
-	lines = append(lines, "  snapshot_required: false", "  receipt_required: false", "after_create_actions:", "  - name: proof_review", "    command: \"pinax proof loop run --vault <vault> --json\"", "defaults:")
+	lines = append(lines, "  snapshot_required: false", "  receipt_required: false", "after_create_actions:", "  - name: proof_review", "    command: \"pinax proof loop run --vault <vault> --json\"")
+	variables := map[string]templateengine.VariableMetadata{}
+	for _, variableSet := range variableSets {
+		for key, variable := range variableSet {
+			variables[key] = variable
+		}
+	}
+	variableKeys := make([]string, 0, len(variables))
+	for key := range variables {
+		variableKeys = append(variableKeys, key)
+	}
+	sort.Strings(variableKeys)
+	if len(variableKeys) > 0 {
+		lines = append(lines, "variables:")
+		for _, key := range variableKeys {
+			variable := variables[key]
+			lines = append(lines, "  "+key+":")
+			if variable.Required {
+				lines = append(lines, "    required: true")
+			}
+			if variable.Description != "" {
+				lines = append(lines, "    description: "+variable.Description)
+			}
+			if variable.Default != "" {
+				lines = append(lines, "    default: "+variable.Default)
+			}
+		}
+	}
+	lines = append(lines, "defaults:")
 	keys := make([]string, 0, len(defaults))
 	for key := range defaults {
 		keys = append(keys, key)
@@ -153,6 +181,12 @@ func builtInNoteTemplate(name, title string, useCases, aliases []string, difficu
 	lines = append(lines, body...)
 	lines = append(lines, "")
 	return strings.Join(lines, "\n")
+}
+
+func requiredURLVariable(description string) map[string]templateengine.VariableMetadata {
+	return map[string]templateengine.VariableMetadata{
+		"url": {Required: true, Description: description},
+	}
 }
 
 func TemplateCompletionItems(root, kind string, includeBuiltins, includeLocal bool) []string {

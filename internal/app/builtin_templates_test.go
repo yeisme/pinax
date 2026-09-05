@@ -107,6 +107,28 @@ func TestBuiltInNoteTemplatesCatalogMetadata(t *testing.T) {
 	}
 }
 
+func TestBuiltInURLNoteTemplatesDeclareRequiredURL(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"learning.video", "learning.source", "source.github"} {
+		doc, err := templateengine.ParseDocument(name, builtInTemplates()[name])
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		variable, ok := doc.Metadata.Variables["url"]
+		if !ok || !variable.Required || variable.Description == "" {
+			t.Fatalf("%s url variable contract = %#v", name, doc.Metadata.Variables)
+		}
+		meta := templateWorkflowMetadata(name, "builtin", doc.Metadata)
+		if got := requiredTemplateVariables(meta); len(got) != 1 || got[0] != "url" {
+			t.Fatalf("%s required variables = %#v", name, got)
+		}
+		completion := TemplateVariableCompletionItems(t.TempDir(), name)
+		if len(completion) != 1 || !strings.HasPrefix(completion[0], "url=\trequired string ") {
+			t.Fatalf("%s variable completion = %#v", name, completion)
+		}
+	}
+}
+
 func TestTemplateWorkflowMetadata(t *testing.T) {
 	t.Parallel()
 	meetingBody := builtInTemplates()["meeting.notes"]
