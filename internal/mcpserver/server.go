@@ -649,41 +649,6 @@ func validateToolArguments(tool Tool, args map[string]any) error {
 	return nil
 }
 
-func matchesToolArgumentSchema(value any, schema map[string]any) bool {
-	typeName, _ := schema["type"].(string)
-	switch typeName {
-	case "string":
-		stringValue, ok := value.(string)
-		if !ok {
-			return false
-		}
-		if enumValues := schemaStringList(schema["enum"]); len(enumValues) > 0 && !containsProtocolVersion(enumValues, stringValue) {
-			return false
-		}
-		return true
-	case "array":
-		values, ok := value.([]any)
-		if !ok {
-			return false
-		}
-		itemSchema, _ := schema["items"].(map[string]any)
-		for _, item := range values {
-			if !matchesToolArgumentSchema(item, itemSchema) {
-				return false
-			}
-		}
-		return true
-	case "boolean":
-		_, ok := value.(bool)
-		return ok
-	case "integer":
-		_, ok := value.(float64)
-		return ok
-	default:
-		return false
-	}
-}
-
 func schemaStringList(value any) []string {
 	switch values := value.(type) {
 	case []string:

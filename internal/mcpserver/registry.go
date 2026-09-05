@@ -54,6 +54,9 @@ func registeredTool(name, description, capabilityID, requestSchema string) toolR
 	if err != nil {
 		panic(err)
 	}
+	if err := validateSchemaKeywordSupport(input); err != nil {
+		panic(fmt.Sprintf("pinax MCP tool %s input schema uses keywords the validator does not implement: %v", name, err))
+	}
 	output, err := registry.Require(catalogschema.MCPToolResultV1)
 	if err != nil {
 		panic(err)
