@@ -30,7 +30,7 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.23
 	github.com/spf13/pflag v1.0.9
-	github.com/yeisme/credentialctl v0.0.0
+	github.com/yeisme/credentialctl v0.3.0
 	github.com/yeisme/promptrepo v0.3.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/sys v0.47.0
@@ -105,5 +105,3 @@ require (
 	modernc.org/memory v1.5.0 // indirect
 	modernc.org/sqlite v1.23.1 // indirect
 )
-
-replace github.com/yeisme/credentialctl => ../credentialctl

@@ -162,7 +162,7 @@ func (p *PromptSource) Secret(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, UnlockRequiredError("no controlling tty for prompt unlock")
 	}
-	defer tty.Close()
+	defer func() { _ = tty.Close() }()
 	out := p.out
 	if out == nil {
 		out = os.Stderr

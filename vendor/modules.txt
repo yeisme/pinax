@@ -327,7 +327,7 @@ github.com/subosito/gotenv
 # github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
 ## explicit; go 1.19
 github.com/xo/terminfo
-# github.com/yeisme/credentialctl v0.0.0 => ../credentialctl
+# github.com/yeisme/credentialctl v0.3.0
 ## explicit; go 1.25.0
 github.com/yeisme/credentialctl/internal/projectapp
 github.com/yeisme/credentialctl/internal/projectcrypto
@@ -518,4 +518,3 @@ modernc.org/memory
 # modernc.org/sqlite v1.23.1
 ## explicit; go 1.18
 modernc.org/sqlite/lib
-# github.com/yeisme/credentialctl => ../credentialctl
