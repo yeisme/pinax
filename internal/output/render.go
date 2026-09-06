@@ -27,6 +27,12 @@ const (
 	ModeExplain Mode = "explain"
 )
 
+// summaryListLimit bounds default human summary list rows (root
+// output-contract list advisory): bounded but on the order of the local list
+// itself, so an ordinary local catalog renders in full. Truncation always
+// prints a "showing N/M" hint with the --json escape hatch.
+const summaryListLimit = 20
+
 type RenderOptions struct {
 	Style      string
 	ColorMode  string
@@ -1261,8 +1267,8 @@ func renderSummaryPlanningSelectedTasks(w io.Writer, theme summaryTheme, data an
 		return err
 	}
 	limit := len(items)
-	if limit > 10 {
-		limit = 10
+	if limit > summaryListLimit {
+		limit = summaryListLimit
 	}
 	if len(items) > limit {
 		if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(items)); err != nil {
@@ -1377,8 +1383,13 @@ func renderSummaryNamedScalarList(w io.Writer, theme summaryTheme, title string,
 		return err
 	}
 	limit := len(items)
-	if limit > 10 {
-		limit = 10
+	if limit > summaryListLimit {
+		limit = summaryListLimit
+	}
+	if len(items) > limit {
+		if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(items)); err != nil {
+			return err
+		}
 	}
 	rows := make([][]string, 0, limit)
 	for _, item := range items[:limit] {
@@ -1910,8 +1921,13 @@ func renderSummaryRepairList(w io.Writer, theme summaryTheme, data any) error {
 		return err
 	}
 	limit := len(plans)
-	if limit > 10 {
-		limit = 10
+	if limit > summaryListLimit {
+		limit = summaryListLimit
+	}
+	if len(plans) > limit {
+		if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(plans)); err != nil {
+			return err
+		}
 	}
 	rows := make([][]string, 0, limit)
 	for _, plan := range plans[:limit] {
@@ -1981,8 +1997,13 @@ func renderSummaryProjectList(w io.Writer, theme summaryTheme, p domain.Projecti
 			return err
 		}
 		limit := len(registry.Projects)
-		if limit > 10 {
-			limit = 10
+		if limit > summaryListLimit {
+			limit = summaryListLimit
+		}
+		if len(registry.Projects) > limit {
+			if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(registry.Projects)); err != nil {
+				return err
+			}
 		}
 		rows := make([][]string, 0, limit)
 		for _, project := range registry.Projects[:limit] {
@@ -2028,8 +2049,13 @@ func renderSummarySubprojectList(w io.Writer, theme summaryTheme, p domain.Proje
 			return err
 		}
 		limit := len(items)
-		if limit > 10 {
-			limit = 10
+		if limit > summaryListLimit {
+			limit = summaryListLimit
+		}
+		if len(items) > limit {
+			if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(items)); err != nil {
+				return err
+			}
 		}
 		rows := make([][]string, 0, limit)
 		for _, item := range items[:limit] {
@@ -2116,8 +2142,8 @@ func renderSummaryDataList(w io.Writer, theme summaryTheme, data any, listPath [
 		return err
 	}
 	limit := len(items)
-	if limit > 10 {
-		limit = 10
+	if limit > summaryListLimit {
+		limit = summaryListLimit
 	}
 	if len(items) > limit {
 		if _, err := fmt.Fprintf(w, "  showing %d/%d\n", limit, len(items)); err != nil {

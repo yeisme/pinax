@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -660,5 +661,41 @@ func TestSummaryAndAgentRenderFolderPlanEffects(t *testing.T) {
 		if !strings.Contains(agent.String(), want) {
 			t.Fatalf("folder agent missing %q:\n%s", want, agent.String())
 		}
+	}
+}
+
+func TestSummaryListBoundShowsTwentyRowsWithHint(t *testing.T) {
+	t.Parallel()
+	projects := make([]domain.Project, 25)
+	for index := range projects {
+		slug := fmt.Sprintf("proj-%02d", index+1)
+		projects[index] = domain.Project{Slug: slug, Name: "Project " + slug, NotesPrefix: "notes/" + slug}
+	}
+	projection := domain.NewProjection("project.list", "Project list read.")
+	projection.Data = map[string]any{"registry": domain.ProjectRegistry{Projects: projects}}
+
+	var summary bytes.Buffer
+	if err := RenderWithOptions(&summary, ModeSummary, projection, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render summary: %v", err)
+	}
+	got := summary.String()
+	if !strings.Contains(got, "proj-20") {
+		t.Fatalf("summary must render row 20 under the default bound:\n%s", got)
+	}
+	if strings.Contains(got, "proj-21") {
+		t.Fatalf("summary must stop at the default bound:\n%s", got)
+	}
+	if !strings.Contains(got, "showing 20/25") {
+		t.Fatalf("summary must print the showing hint when truncated:\n%s", got)
+	}
+
+	small := domain.NewProjection("project.list", "Project list read.")
+	small.Data = map[string]any{"registry": domain.ProjectRegistry{Projects: projects[:12]}}
+	var summarySmall bytes.Buffer
+	if err := RenderWithOptions(&summarySmall, ModeSummary, small, RenderOptions{ColorMode: "never"}); err != nil {
+		t.Fatalf("render small summary: %v", err)
+	}
+	if gotSmall := summarySmall.String(); strings.Contains(gotSmall, "showing") || !strings.Contains(gotSmall, "proj-12") {
+		t.Fatalf("a 12-row list renders in full without a hint:\n%s", gotSmall)
 	}
 }
