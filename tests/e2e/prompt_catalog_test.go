@@ -115,7 +115,10 @@ func TestPromptCatalogRepositoryImportE2E(t *testing.T) {
 		t.Fatalf("search command = %#v", searchEnvelope)
 	}
 	facts := searchEnvelope["facts"].(map[string]any)
-	if facts["results"] != "6" || facts["locale"] != "zh-CN" || facts["provider_calls"] != "0" || facts["durable_writes"] != "0" {
+	// pinax-en-prompt-template-default-v1 把 catalog 默认 locale 从 zh-CN 迁到 en；
+	// 未显式传 --locale 的 federated search 报告请求 locale（en），卡片仍是仓库
+	// 默认 locale（zh-CN）。
+	if facts["results"] != "6" || facts["locale"] != "en" || facts["provider_calls"] != "0" || facts["durable_writes"] != "0" {
 		t.Fatalf("search facts = %#v", facts)
 	}
 	if facts["operation_id"] != "promptrepo.catalog.search.v1" {
