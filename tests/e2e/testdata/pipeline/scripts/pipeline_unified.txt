@@ -1,0 +1,101 @@
+# Unified pipeline UX e2e (pinax-pipeline-unified-ux-v1):
+# plan save → vault drift → plan_stale rejection → --allow-stale apply →
+# receipt in status → show plan + receipt forms → stage events contract.
+
+# ---------------------------------------------------------------------------
+# Stage 1: Init vault with a note whose frontmatter is incomplete.
+# ---------------------------------------------------------------------------
+exec pinax init vault --title Vault --json
+stdout '"command":"vault.init"'
+
+# A pinax note with incomplete frontmatter gives the metadata plan a concrete
+# operation (missing created/updated/status/tags fields).
+exec sh -c 'printf -- "---\nschema_version: pinax.note.v1\nnote_id: note_pipeline_alpha\ntitle: Alpha\n---\n\n# Alpha\n\nalpha body\n" > vault/notes/alpha.md'
+
+# ---------------------------------------------------------------------------
+# Stage 2: Save a metadata plan, then drift the vault after planning.
+# ---------------------------------------------------------------------------
+exec pinax metadata plan --vault vault --save --json
+stdout '"command":"metadata.plan"'
+stdout '"plan_id":"metadata-'
+stdout '"planned_updates":"1"'
+
+# The saved plan id is stable input for apply/show.
+exec sh -c 'pinax metadata plan --vault vault --save --json > plan.json'
+grep '"plan_id"' plan.json
+
+# Drift the vault after planning: another note changes.
+exec sh -c 'printf -- "---\nschema_version: pinax.note.v1\nnote_id: note_pipeline_alpha\ntitle: Alpha\nstatus: changed\n---\n\n# Alpha\n\ndrifted body\n" > vault/notes/alpha.md'
+
+# pipeline status marks the saved plan STALE without touching the vault.
+exec pinax pipeline status --vault vault --json
+stdout '"command":"pipeline.status"'
+stdout '"fresh":false'
+stdout '"fresh_reason":"plan_stale:vault_changed"'
+stdout '"readonly":true'
+
+# ---------------------------------------------------------------------------
+# Stage 3: stale apply is rejected; --allow-stale is the explicit escape hatch.
+# ---------------------------------------------------------------------------
+exec sh -c 'PLAN_ID=$(pinax pipeline status --vault vault --json | sed -n "s/.*\"plan_id\":\"\(metadata-[a-f0-9]*\)\".*/\1/p" | head -1); test -n "$PLAN_ID" && pinax metadata apply --vault vault --plan "$PLAN_ID" --yes --json > rejected.json; test $? -ne 0'
+grep '"code":"plan_stale"' rejected.json
+grep 'pinax metadata plan' rejected.json
+# No partial write: the drifted note is untouched.
+exec sh -c 'grep -q "drifted body" vault/notes/alpha.md'
+
+# With --allow-stale the same plan applies and writes a receipt.
+exec sh -c 'PLAN_ID=$(pinax pipeline status --vault vault --json | sed -n "s/.*\"plan_id\":\"\(metadata-[a-f0-9]*\)\".*/\1/p" | head -1); pinax metadata apply --vault vault --plan "$PLAN_ID" --yes --allow-stale --json > applied.json'
+grep '"command":"metadata.apply"' applied.json
+grep '"allow_stale":"true"' applied.json
+grep '"plan_stale_overridden"' applied.json
+grep '"receipt_id":"apply-' applied.json
+
+# ---------------------------------------------------------------------------
+# Stage 4: the receipt surfaces in pipeline status; show has two forms.
+# ---------------------------------------------------------------------------
+exec pinax pipeline status --vault vault --json
+stdout '"pipeline":"metadata"'
+stdout '"command":"metadata.apply"'
+stdout '"status":"applied"'
+
+exec pinax pipeline status --vault vault
+stdout 'Pending plans'
+stdout 'STALE'
+stdout 'Recent runs'
+stdout 'metadata.apply'
+
+exec sh -c 'PLAN_ID=$(pinax pipeline status --vault vault --json | sed -n "s/.*\"plan_id\":\"\(metadata-[a-f0-9]*\)\".*/\1/p" | head -1); pinax pipeline show "$PLAN_ID" --vault vault --json > show_plan.json'
+grep '"command":"pipeline.show"' show_plan.json
+grep '"kind":"metadata"' show_plan.json
+grep '"source_schema":"pinax.metadata_plan.v1"' show_plan.json
+grep '"metadata_write"' show_plan.json
+grep 'pinax metadata apply --vault' show_plan.json
+
+exec sh -c 'RECEIPT_ID=$(pinax pipeline status --vault vault --json | sed -n "s/.*\"receipt_id\":\"\(apply-[a-f0-9]*\)\".*/\1/p" | head -1); test -n "$RECEIPT_ID" && pinax pipeline show "$RECEIPT_ID" --vault vault --json > show_receipt.json'
+grep '"pipeline":"metadata"' show_receipt.json
+grep '"ledger_seq"' show_receipt.json
+grep '"changed_paths"' show_receipt.json
+
+# Unknown id is a stable error, never a fuzzy match.
+exec sh -c 'pinax pipeline show no-such-id --vault vault --json > unknown.json; test $? -ne 0'
+grep '"pipeline_id_not_found"' unknown.json
+grep 'pinax pipeline status' unknown.json
+
+# The apply commands reject a stale saved plan under --events with stage.failed.
+exec sh -c 'printf -- "---\nschema_version: pinax.note.v1\nnote_id: note_pipeline_alpha\ntitle: Alpha\nstatus: drifted-again\n---\n\n# Alpha\n\nmore drift\n" > vault/notes/alpha.md'
+exec sh -c 'PLAN_ID=$(pinax pipeline status --vault vault --json | sed -n "s/.*\"plan_id\":\"\(metadata-[a-f0-9]*\)\".*/\1/p" | head -1); pinax metadata apply --vault vault --plan "$PLAN_ID" --yes --events > events_failed.ndjson; test $? -ne 0'
+grep 'stage.failed' events_failed.ndjson
+grep '"reason":"plan_stale"' events_failed.ndjson
+grep 'pinax.pipeline.stage.v1' events_failed.ndjson
+
+# A fresh in-memory apply (no saved plan) succeeds and emits started+completed.
+exec sh -c 'printf -- "---\nschema_version: pinax.note.v1\nnote_id: note_pipeline_alpha\ntitle: Alpha\n---\n\n# Alpha\n\nfinal body\n" > vault/notes/alpha.md'
+exec sh -c 'pinax metadata apply --vault vault --yes --events > events_ok.ndjson'
+grep 'stage.started' events_ok.ndjson
+grep 'stage.completed' events_ok.ndjson
+
+# pipeline status/show stay read-only: no new plan storage mutations.
+exists vault/.pinax/metadata-plans
+exec sh -c 'pinax pipeline status --vault vault --json > before.json'
+exec sh -c 'pinax pipeline status --vault vault --json > after.json'
+cmp before.json after.json
