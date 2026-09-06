@@ -235,13 +235,42 @@ func inferLifecycleStatus(status, kind string) string {
 func noteRecordFromDomain(note domain.Note, modifiedUnix, size int64) NoteRecord {
 	filename := filepath.Base(note.Path)
 	ext := filepath.Ext(filename)
-	return NoteRecord{ObjectID: note.ID, Path: note.Path, NoteID: note.ID, Title: note.Title, Filename: filename, Stem: strings.TrimSuffix(filename, ext), Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, LifecycleStatus: inferLifecycleStatus(note.Status, note.Kind), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: noteSourceHash(note), ModifiedUnix: modifiedUnix, Size: size, IsSystem: isSystemIndexNote(note), ObjectKind: string(domain.VaultObjectKindNote), ManagedStatus: string(domain.ManagedStatusRegistered)}
+	return NoteRecord{ObjectID: note.ID, Path: note.Path, NoteID: note.ID, Title: note.Title, Filename: filename, Stem: strings.TrimSuffix(filename, ext), Project: noteProject(note), Group: noteProject(note), Folder: note.Folder, Kind: note.Kind, Status: note.Status, LifecycleStatus: inferLifecycleStatus(note.Status, note.Kind), CreatedAt: note.CreatedAt, UpdatedAt: note.UpdatedAt, SourceHash: noteSourceHash(note), ModifiedUnix: modifiedUnix, Size: size, IsSystem: isSystemIndexNote(note), ObjectKind: string(domain.VaultObjectKindNote), ManagedStatus: string(domain.ManagedStatusRegistered), TrustTier: domain.TrustTierOf(note.Trust), StaleAfter: noteTrustStaleAfter(note), VerifiedAtLatest: noteTrustVerifiedAtLatest(note)}
+}
+
+// noteTrustStaleAfter 返回信任信号的 stale_after 原始时间戳缓存（无则空）。
+func noteTrustStaleAfter(note domain.Note) string {
+	if note.Trust == nil {
+		return ""
+	}
+	return strings.TrimSpace(note.Trust.StaleAfter)
+}
+
+// noteTrustVerifiedAtLatest 返回最新 verified.at 缓存（无事件则空）。
+func noteTrustVerifiedAtLatest(note domain.Note) string {
+	if note.Trust == nil {
+		return ""
+	}
+	return note.Trust.LatestVerifiedAt()
 }
 
 func noteSourceHash(note domain.Note) string {
-	parts := []string{note.ID, note.Title, note.Path, strings.Join(note.Tags, ","), note.Body, note.Project, note.Folder, note.Kind, note.Status, note.CreatedAt, note.UpdatedAt}
+	parts := []string{note.ID, note.Title, note.Path, strings.Join(note.Tags, ","), note.Body, note.Project, note.Folder, note.Kind, note.Status, note.CreatedAt, note.UpdatedAt, noteTrustHash(note)}
 	h := sha1.Sum([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(h[:])
+}
+
+// noteTrustHash 把信任信号纳入 source hash，使 verify/信任字段变更能触发增量重投影。
+func noteTrustHash(note domain.Note) string {
+	if note.Trust == nil {
+		return ""
+	}
+	trust := note.Trust
+	parts := []string{trust.Generated.By, trust.Generated.At, trust.StaleAfter}
+	for _, event := range trust.Verified {
+		parts = append(parts, event.By, event.At, event.Note)
+	}
+	return strings.Join(parts, "\x00")
 }
 
 func noteTokens(note domain.Note) []tokenRecord {

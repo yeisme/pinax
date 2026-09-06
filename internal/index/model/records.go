@@ -34,6 +34,11 @@ type NoteRecord struct {
 	ModifiedUnix    int64
 	Size            int64
 	IsSystem        bool `gorm:"index"`
+	// TrustTier/StaleAfter/VerifiedAtLatest 是信任信号的派生缓存列：
+	// 由 frontmatter 重新派生可全量重建，永远不是第二真源。
+	TrustTier        string `gorm:"index"`
+	StaleAfter       string
+	VerifiedAtLatest string
 }
 
 // NoteTextRecord 保存 note 的正文文本投影，用于搜索摘要。

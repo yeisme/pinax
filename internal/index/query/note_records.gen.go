@@ -47,6 +47,9 @@ func newNoteRecord(db *gorm.DB, opts ...gen.DOOption) noteRecord {
 	_noteRecord.ModifiedUnix = field.NewInt64(tableName, "modified_unix")
 	_noteRecord.Size = field.NewInt64(tableName, "size")
 	_noteRecord.IsSystem = field.NewBool(tableName, "is_system")
+	_noteRecord.TrustTier = field.NewString(tableName, "trust_tier")
+	_noteRecord.StaleAfter = field.NewString(tableName, "stale_after")
+	_noteRecord.VerifiedAtLatest = field.NewString(tableName, "verified_at_latest")
 
 	_noteRecord.fillFieldMap()
 
@@ -56,27 +59,30 @@ func newNoteRecord(db *gorm.DB, opts ...gen.DOOption) noteRecord {
 type noteRecord struct {
 	noteRecordDo
 
-	ALL             field.Asterisk
-	ObjectID        field.String
-	Path            field.String
-	NoteID          field.String
-	Title           field.String
-	Filename        field.String
-	Stem            field.String
-	ObjectKind      field.String
-	ManagedStatus   field.String
-	Project         field.String
-	Group_          field.String
-	Folder          field.String
-	Kind            field.String
-	Status          field.String
-	LifecycleStatus field.String
-	CreatedAt       field.String
-	UpdatedAt       field.String
-	SourceHash      field.String
-	ModifiedUnix    field.Int64
-	Size            field.Int64
-	IsSystem        field.Bool
+	ALL              field.Asterisk
+	ObjectID         field.String
+	Path             field.String
+	NoteID           field.String
+	Title            field.String
+	Filename         field.String
+	Stem             field.String
+	ObjectKind       field.String
+	ManagedStatus    field.String
+	Project          field.String
+	Group_           field.String
+	Folder           field.String
+	Kind             field.String
+	Status           field.String
+	LifecycleStatus  field.String
+	CreatedAt        field.String
+	UpdatedAt        field.String
+	SourceHash       field.String
+	ModifiedUnix     field.Int64
+	Size             field.Int64
+	IsSystem         field.Bool
+	TrustTier        field.String
+	StaleAfter       field.String
+	VerifiedAtLatest field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -113,6 +119,9 @@ func (n *noteRecord) updateTableName(table string) *noteRecord {
 	n.ModifiedUnix = field.NewInt64(table, "modified_unix")
 	n.Size = field.NewInt64(table, "size")
 	n.IsSystem = field.NewBool(table, "is_system")
+	n.TrustTier = field.NewString(table, "trust_tier")
+	n.StaleAfter = field.NewString(table, "stale_after")
+	n.VerifiedAtLatest = field.NewString(table, "verified_at_latest")
 
 	n.fillFieldMap()
 
@@ -129,7 +138,7 @@ func (n *noteRecord) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (n *noteRecord) fillFieldMap() {
-	n.fieldMap = make(map[string]field.Expr, 20)
+	n.fieldMap = make(map[string]field.Expr, 23)
 	n.fieldMap["object_id"] = n.ObjectID
 	n.fieldMap["path"] = n.Path
 	n.fieldMap["note_id"] = n.NoteID
@@ -150,6 +159,9 @@ func (n *noteRecord) fillFieldMap() {
 	n.fieldMap["modified_unix"] = n.ModifiedUnix
 	n.fieldMap["size"] = n.Size
 	n.fieldMap["is_system"] = n.IsSystem
+	n.fieldMap["trust_tier"] = n.TrustTier
+	n.fieldMap["stale_after"] = n.StaleAfter
+	n.fieldMap["verified_at_latest"] = n.VerifiedAtLatest
 }
 
 func (n noteRecord) clone(db *gorm.DB) noteRecord {
