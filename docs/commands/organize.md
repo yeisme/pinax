@@ -78,6 +78,13 @@ pinax organize apply --vault ./my-notes --plan organize-abc123 --yes
 - A version snapshot exists, or `--snapshot-message` is passed so Pinax creates a snapshot first.
 - The saved plan still matches the current vault; if notes have changed, `plan_stale` is returned and the plan must be regenerated.
 
+### Plan Freshness 与 --allow-stale（plan 新鲜度）
+
+freshness 守卫比较 plan 记录的 facts 摘要与当前 vault 扫描指纹，两者不一致（或 plan 已过期）时 `apply` 返回稳定错误 `plan_stale` 并提示重新 `pinax organize plan --save`，不会产生部分写入；拒绝时 `--events` 输出 `stage.failed`（`reason=plan_stale`）。
+
+- `--allow-stale` 是显式逃生门：跳过 freshness 守卫照常 apply，投影附 `plan_stale_overridden` warning；`--yes` 与 snapshot 要求不变。
+- 跨管道统一视图与 freshness 徽标见 [pipeline](./pipeline.md)。
+
 ## What Gets Applied
 
 `organize plan --save` may generate multiple kinds of operations, for example:

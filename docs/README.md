@@ -87,6 +87,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [命令地图](./commands/README.md)：说明每个 root command 所属工作流。
 - [prompt](./commands/prompt.md)：说明 prompt asset lifecycle、`pinax://prompt/<id>` 解析、跨项目边界和 feedback import。
 - [organize](./commands/organize.md)：说明整理流程、写入边界和 `pinax organize plan/list/apply` 的 snapshot 保护。
+- [pipeline](./commands/pipeline.md)：说明统一管道交互面 `pinax pipeline status/show`、plan freshness 徽标与 `--allow-stale` 逃生门。
 - [version](./commands/version.md)、[asset](./commands/asset.md)、[index](./commands/index.md) 和其他 root commands 在 [命令手册](./commands/README.md) 中维护独立页面。
 
 ## 验证入口
