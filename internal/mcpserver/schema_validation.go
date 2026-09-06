@@ -102,11 +102,11 @@ func validateSchemaKeywordShape(path, key string, value any) error {
 			return fmt.Errorf("keyword %q at %s must be a number", key, path)
 		}
 	case "enum":
-		if schemaEnumList(value) == nil {
-			return fmt.Errorf("keyword %q at %s must be an array", key, path)
+		if values := schemaEnumList(value); len(values) == 0 {
+			return fmt.Errorf("keyword %q at %s must be a non-empty array", key, path)
 		}
 	case "required":
-		if schemaStringList(value) == nil {
+		if !schemaAllStrings(value) {
 			return fmt.Errorf("keyword %q at %s must be an array of strings", key, path)
 		}
 	}
@@ -120,6 +120,26 @@ func sortedSchemaKeys(node map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// schemaAllStrings reports whether value is a list whose members are all
+// strings. schemaStringList silently drops non-string members, so the guard
+// must reject them at publication or a malformed required list would
+// silently lose entries at validation time.
+func schemaAllStrings(value any) bool {
+	switch typed := value.(type) {
+	case []string:
+		return true
+	case []any:
+		for _, item := range typed {
+			if _, ok := item.(string); !ok {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // matchesToolArgumentSchema reports whether value satisfies the locked JSON

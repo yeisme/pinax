@@ -74,6 +74,16 @@ func TestValidateSchemaKeywordSupportRejectsUnsupportedKeywords(t *testing.T) {
 			needle: `keyword "minimum" at $/limit must be a number`,
 		},
 		{
+			name: "required with non-string member",
+			schema: map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties":           map[string]any{"query": map[string]any{"type": "string"}},
+				"required":             []any{"query", 1.0},
+			},
+			needle: `keyword "required" at $ must be an array of strings`,
+		},
+		{
 			name: "nested document identity",
 			schema: map[string]any{
 				"type":                 "object",
