@@ -67,7 +67,8 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Note workflow | [`pinax template`](./template.md) | Manage Markdown templates and template rendering records. |
 | Organization and retrieval | [`pinax view`](./view.md) | Save and reuse a set of note filtering criteria. |
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
-| Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target. |
+| Organization and retrieval | [`pinax search`](./search.md) | Search local notes, with support for filters such as tag, folder, kind, status, and link target, plus facet synthesis, trust/freshness filters, and `search show` detail cards. |
+| Organization and retrieval | [`pinax browse`](./browse.md) | Compose a read-only synthesized directory view with trust and freshness badges; never writes the vault or index. |
 | Organization and retrieval | [`pinax memory`](./memory.md) | Capture cited facts, decisions, events, and tasks for deterministic agent memory with explainable ranking signals. |
 | Organization and retrieval | [`pinax graph`](./graph.md) | Rebuild and query local knowledge graph projections for prompt/content assets. |
 | Organization and retrieval | [`pinax query`](./query.md) | Run controlled Pinax SQL queries against the local note database. |

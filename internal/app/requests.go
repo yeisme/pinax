@@ -21,8 +21,8 @@ type VaultRequest struct {
 	Query     string
 	// TrustFields 开启 metadata plan/apply 的 trust_fields 回填（显式 opt-in，
 	// 默认 plan 输出与既有行为完全一致）。
-	TrustFields bool
-	StaleAfter  string
+	TrustFields  bool
+	StaleAfter   string
 	AgentVersion string
 }
 
