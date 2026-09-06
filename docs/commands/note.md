@@ -19,6 +19,7 @@
 | `note delete <note> --yes` | Move to trash; `--hard --yes` truly deletes. | Writes vault. |
 | `note tag add|remove|set` | Update tags. | Writes Markdown frontmatter. |
 | `note tags|folders|kinds|groups` | View organization dimensions. | Does not write. |
+| `note verify <note>` | Append a human verification event to note trust frontmatter. | Writes Markdown frontmatter. |
 
 ## Creating and Reading
 
@@ -36,6 +37,20 @@ pinax note preview "Research Log" --vault ./my-notes
 `note read|show --display card|detail|context` returns bounded note metadata, excerpts, and `agent_context` without exposing the full note body. `--display body` is the explicit body exposure mode for source editing and review. Agent output stays compact and should not include full body content unless the caller explicitly selected body mode through JSON/detail workflows.
 
 `note preview` is optimized for direct reading. In default human mode it renders the preview body only; it does not print a separate success table such as `Local note read.`. If the rendered body is empty, a successful preview is silent. Use `--json` or `--agent` when automation needs the success envelope, note path, resolver facts, or render metadata.
+
+## Trust and Lifecycle Verification
+
+```bash
+pinax note verify "Auth Design" --actor human:ye --vault ./my-notes --json
+pinax note verify "Auth Design" --vault ./my-notes --json
+```
+
+`note verify` appends one entry to the optional `verified` frontmatter list following the OKF trust contract: `verified: [{by, at}]` with an ISO8601 UTC-offset timestamp, plus an optional one-line `note:` recorded through `--note`.
+
+- The actor defaults to the configured `identity` (`pinax config set identity <id>`, treated as `human:<id>`); without a configured identity the command fails closed with `actor_required` and requires an explicit `--actor`.
+- Verification is idempotent per actor per UTC day: a repeat call returns the existing event with `idempotent=true` and `writes=false` instead of appending a duplicate.
+- The write goes through the atomic YAML-node frontmatter patcher; body content and unrelated frontmatter keys (including comments) are preserved byte-for-byte.
+- Derived trust tiers (`unverified` / `machine` / `human`) and freshness (`stale_after`) are computed at consumption time and are never written back to frontmatter. `pinax metadata plan --trust-fields` backfills `generated`/`stale_after` through the normal plan/apply safety model.
 
 ## Individual Note Maintenance
 

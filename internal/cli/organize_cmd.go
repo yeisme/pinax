@@ -7,7 +7,7 @@ import (
 
 func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildContext) {
 	metadataCmd := &cobra.Command{Use: "metadata", Short: "Plan and apply note metadata"}
-	metadataCmd.AddCommand(&cobra.Command{
+	metadataPlanCmd := &cobra.Command{
 		Use:   "plan [query]",
 		Short: "Preview a metadata backfill plan",
 		Args:  cobra.MaximumNArgs(1),
@@ -16,21 +16,26 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 			if len(args) > 0 {
 				query = args[0]
 			}
-			projection, err := ctx.svc.PlanMetadata(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath, Query: query})
+			projection, err := ctx.svc.PlanMetadata(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath, Query: query, TrustFields: *ctx.metadataTrustFields, StaleAfter: *ctx.metadataTrustStaleAfter})
 			return ctx.renderProjection(cmd, projection, err)
 		},
-	})
+	}
+	metadataPlanCmd.Flags().BoolVar(ctx.metadataTrustFields, "trust-fields", false, "Include trust_fields backfill operations (generated, and stale_after with --stale-after)")
+	metadataPlanCmd.Flags().StringVar(ctx.metadataTrustStaleAfter, "stale-after", "", "Backfill stale_after on notes missing it; RFC3339 with UTC offset, for example 2026-12-01T00:00:00+00:00")
+	metadataCmd.AddCommand(metadataPlanCmd)
 	metadataApplyCmd := &cobra.Command{
 		Use:     "apply",
 		Short:   "Apply a metadata backfill plan",
 		Long:    "Apply a metadata backfill plan. This command writes local Markdown frontmatter and requires explicit --yes. Run pinax metadata plan first to review the plan.",
 		Example: "pinax metadata plan --vault ./my-notes --json\npinax metadata apply --vault ./my-notes --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.ApplyMetadata(cmd.Context(), app.ApplyRequest{VaultPath: *ctx.vaultPath, Yes: *ctx.yes})
+			projection, err := ctx.svc.ApplyMetadata(cmd.Context(), app.ApplyRequest{VaultPath: *ctx.vaultPath, Yes: *ctx.yes, TrustFields: *ctx.metadataTrustFields, StaleAfter: *ctx.metadataTrustStaleAfter, AgentVersion: ctx.version})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	metadataApplyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local writes")
+	metadataApplyCmd.Flags().BoolVar(ctx.metadataTrustFields, "trust-fields", false, "Apply trust_fields backfill operations (generated, and stale_after with --stale-after)")
+	metadataApplyCmd.Flags().StringVar(ctx.metadataTrustStaleAfter, "stale-after", "", "Backfill stale_after on notes missing it; RFC3339 with UTC offset, for example 2026-12-01T00:00:00+00:00")
 	metadataCmd.AddCommand(metadataApplyCmd)
 	root.AddCommand(metadataCmd)
 

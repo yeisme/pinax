@@ -17,7 +17,7 @@ func addSearchCommand(root *cobra.Command, ctx commandBuildContext) {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "note.search", "argument_required", "search requires a query", "pinax search <query> --vault <vault>")
 			}
-			projection, err := ctx.svc.SearchProjection(cmd.Context(), app.SearchRequest{VaultPath: *ctx.vaultPath, Query: args[0], Tags: splitCSV(*ctx.noteTags), Group: *ctx.noteGroup, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteStatus, CreatedAfter: *ctx.searchCreatedAfter, UpdatedAfter: *ctx.searchUpdatedAfter, LinkTarget: *ctx.searchLinkTarget, HasAttachment: *ctx.searchHasAttachment, Limit: *ctx.noteLimit, Sort: *ctx.noteListSort, AllowStale: *ctx.searchAllowStale, Engine: *ctx.searchEngine, LazyIndex: *ctx.searchLazyIndex, At: *ctx.searchAt, IncludeDirty: *ctx.searchIncludeDirty, ChangedSince: *ctx.searchChangedSince, Revision: *ctx.searchRevision})
+			projection, err := ctx.svc.SearchProjection(cmd.Context(), app.SearchRequest{VaultPath: *ctx.vaultPath, Query: args[0], Tags: splitCSV(*ctx.noteTags), Group: *ctx.noteGroup, Folder: *ctx.noteFolder, Kind: *ctx.noteKind, Status: *ctx.noteStatus, CreatedAfter: *ctx.searchCreatedAfter, UpdatedAfter: *ctx.searchUpdatedAfter, LinkTarget: *ctx.searchLinkTarget, HasAttachment: *ctx.searchHasAttachment, Limit: *ctx.noteLimit, Sort: *ctx.noteListSort, AllowStale: *ctx.searchAllowStale, Engine: *ctx.searchEngine, LazyIndex: *ctx.searchLazyIndex, At: *ctx.searchAt, IncludeDirty: *ctx.searchIncludeDirty, ChangedSince: *ctx.searchChangedSince, Revision: *ctx.searchRevision, Trust: *ctx.searchTrust, Stale: *ctx.searchStale, Facets: *ctx.searchFacets, TrustAware: searchTrustAwareRequested(cmd)})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -41,8 +41,38 @@ func addSearchCommand(root *cobra.Command, ctx commandBuildContext) {
 	searchCmd.Flags().StringVar(ctx.searchRevision, "revision", "", "Read the historical projection for the specified revision")
 	searchCmd.Flags().StringVar(ctx.noteListSort, "sort", "", "Sort: relevance, updated, created, title, or path")
 	_ = searchCmd.RegisterFlagCompletionFunc("sort", staticCompletion("sort", "relevance", "updated", "created", "title", "path"))
+	searchCmd.Flags().StringVar(ctx.searchTrust, "trust", "", "Filter by derived trust tier: unverified, machine, or human")
+	_ = searchCmd.RegisterFlagCompletionFunc("trust", staticCompletion("trust", "unverified", "machine", "human"))
+	searchCmd.Flags().StringVar(ctx.searchStale, "stale", "include", "Freshness filter: include, only, or exclude stale notes")
+	_ = searchCmd.RegisterFlagCompletionFunc("stale", staticCompletion("stale", "include", "only", "exclude"))
+	searchCmd.Flags().BoolVar(ctx.searchFacets, "facets", false, "Synthesize facet counts (tag, kind, status, folder, trust, fresh) from the full match set")
 	searchCmd.Flags().IntVar(ctx.noteLimit, "limit", 0, "Limit the number of results")
+	searchShowCmd := &cobra.Command{
+		Use:               "show <ref>",
+		Short:             "Show a one-stop bounded result detail card",
+		Example:           "pinax search show auth-design --vault ./my-notes",
+		ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return renderCommandError(cmd, ctx.outputMode(), "search.show", "argument_required", "search show requires a note reference", "pinax search show <ref> --vault <vault>")
+			}
+			projection, err := ctx.svc.SearchShow(cmd.Context(), app.SearchShowRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0]})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	searchCmd.AddCommand(searchShowCmd)
 	root.AddCommand(searchCmd)
+}
+
+// searchTrustAwareRequested 判定是否显式使用了信任面 flag（徽标/agent 字段只在该模式出现，
+// 默认输出与既有 golden 完全一致）。
+func searchTrustAwareRequested(cmd *cobra.Command) bool {
+	for _, flag := range []string{"trust", "stale", "facets"} {
+		if cmd.Flags().Changed(flag) {
+			return true
+		}
+	}
+	return false
 }
 
 func addQueryCommands(root *cobra.Command, ctx commandBuildContext) {

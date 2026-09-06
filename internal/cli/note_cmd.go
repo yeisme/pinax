@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/domain"
 )
 
 func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
@@ -395,8 +396,39 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 		noteTagCmd.AddCommand(noteTagOperationCmd)
 	}
 	noteCmd.AddCommand(noteTagCmd)
+
+	noteVerifyCmd := &cobra.Command{Use: "verify <note>", Short: "Append a human verification event to note trust frontmatter", Example: "pinax note verify \"Auth Design\" --actor human:ye --vault ./my-notes", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return renderCommandError(cmd, ctx.outputMode(), "note.verify", "argument_required", "note verify requires a note reference", "pinax note verify <note> [--actor human:<id>] --vault <vault>")
+		}
+		projection, err := ctx.svc.NoteVerify(cmd.Context(), app.NoteVerifyRequest{VaultPath: *ctx.vaultPath, NoteRef: args[0], Actor: defaultVerifyActor(cmd, ctx), Note: *ctx.noteVerifyNote})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
+	noteVerifyCmd.Flags().StringVar(ctx.noteVerifyActor, "actor", "", "Verification actor, for example human:ye (defaults to the configured identity)")
+	noteVerifyCmd.Flags().StringVar(ctx.noteVerifyNote, "note", "", "Optional one-line note recorded with the verification event")
+	noteCmd.AddCommand(noteVerifyCmd)
 	root.AddCommand(noteCmd)
 
+}
+
+// defaultVerifyActor resolves the note verify actor: explicit --actor wins;
+// otherwise the configured identity becomes human:<id> (identity values that
+// already carry an actor scheme are used verbatim). Empty means fail-closed.
+func defaultVerifyActor(cmd *cobra.Command, ctx commandBuildContext) string {
+	if actor := strings.TrimSpace(*ctx.noteVerifyActor); actor != "" {
+		return actor
+	}
+	identity := ""
+	if ctx.configResult != nil {
+		identity = strings.TrimSpace(ctx.configResult.Config.Identity)
+	}
+	if identity == "" {
+		return ""
+	}
+	if strings.Contains(identity, ":") {
+		return identity
+	}
+	return domain.ActorPrefixHuman + identity
 }
 
 func confirmNoteDelete(cmd *cobra.Command, noteRef string, hard bool) (bool, error) {

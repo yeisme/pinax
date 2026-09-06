@@ -19,6 +19,11 @@ type InitVaultRequest struct {
 type VaultRequest struct {
 	VaultPath string
 	Query     string
+	// TrustFields 开启 metadata plan/apply 的 trust_fields 回填（显式 opt-in，
+	// 默认 plan 输出与既有行为完全一致）。
+	TrustFields  bool
+	StaleAfter   string
+	AgentVersion string
 }
 
 type VaultIgnoreRequest struct {
@@ -187,10 +192,14 @@ type SearchRequest struct {
 	IncludeDirty  bool
 	ChangedSince  string
 	Revision      string
+	Trust         string
+	Stale         string
+	Facets        bool
+	TrustAware    bool
 }
 
 func toSearchOpsRequest(req SearchRequest) searchops.Request {
-	return searchops.Request{VaultPath: req.VaultPath, Query: req.Query, Tags: req.Tags, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, LinkTarget: req.LinkTarget, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: req.Sort, AllowStale: req.AllowStale, Engine: req.Engine, LazyIndex: req.LazyIndex, At: req.At, IncludeDirty: req.IncludeDirty, ChangedSince: req.ChangedSince, Revision: req.Revision}
+	return searchops.Request{VaultPath: req.VaultPath, Query: req.Query, Tags: req.Tags, Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, LinkTarget: req.LinkTarget, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: req.Sort, AllowStale: req.AllowStale, Engine: req.Engine, LazyIndex: req.LazyIndex, At: req.At, IncludeDirty: req.IncludeDirty, ChangedSince: req.ChangedSince, Revision: req.Revision, Trust: req.Trust, Stale: req.Stale, Facets: req.Facets, TrustAware: req.TrustAware}
 }
 
 type CreateNoteRequest struct {
@@ -365,6 +374,15 @@ type NoteTagRequest struct {
 	Tags      []string
 }
 
+// NoteVerifyRequest 是 pinax note verify 的请求。Actor 为空且未配置 identity 时
+// 必须由调用方 fail-closed；service 层再次校验，双保险。
+type NoteVerifyRequest struct {
+	VaultPath string
+	NoteRef   string
+	Actor     string
+	Note      string
+}
+
 type NotePropertyRequest struct {
 	VaultPath string
 	NoteRef   string
@@ -420,6 +438,9 @@ type ApplyRequest struct {
 	PlanID          string
 	Yes             bool
 	SnapshotMessage string
+	TrustFields     bool
+	StaleAfter      string
+	AgentVersion    string
 }
 
 type SyncRequest struct {

@@ -1,0 +1,122 @@
+# OKF trust & discovery full chain: verify -> facets -> trust/stale filters -> show -> browse read-only
+exec sh -c 'pinax init vault --title Vault --json > init.json'
+validate-json-envelope init.json
+validate-clean-stdout init.json
+
+# Refresh the index once so later --lazy-index off assertions have a baseline
+exec sh -c 'pinax index refresh --vault vault --json > refresh.json'
+validate-json-envelope refresh.json
+
+# note verify: fail-closed without actor (no identity configured here)
+! exec sh -c 'pinax note verify notes/architecture/auth-design.md --vault vault --json > actor_missing.json'
+grep actor_required actor_missing.json
+
+# note verify: append a human verification event
+exec sh -c 'pinax note verify notes/architecture/auth-design.md --actor human:ye --note reviewed --vault vault --json > verify.json'
+validate-json-envelope verify.json
+validate-clean-stdout verify.json
+grep '"trust":"human"' verify.json
+grep '"idempotent":"false"' verify.json
+
+# verify idempotency: same actor same day does not append again
+exec sh -c 'pinax note verify notes/architecture/auth-design.md --actor human:ye --vault vault --json > verify2.json'
+validate-json-envelope verify2.json
+grep '"idempotent":"true"' verify2.json
+grep '"writes":"false"' verify2.json
+
+# search --facets: full match set counts with trust and fresh groups
+exec sh -c 'pinax search auth --facets --vault vault --json > facets.json'
+validate-json-envelope facets.json
+validate-clean-stdout facets.json
+grep '"facets"' facets.json
+grep '"value":"human"' facets.json
+grep '"value":"stale"' facets.json
+
+# agent output carries facets.* and result trust/fresh fields
+exec sh -c 'pinax search auth --facets --vault vault --agent > facets_agent.txt'
+validate-agent-format facets_agent.txt
+grep 'facets.trust.human=1' facets_agent.txt
+grep 'facets.fresh.stale=1' facets_agent.txt
+grep 'result.1.trust=' facets_agent.txt
+grep 'result.1.fresh=' facets_agent.txt
+
+# trust filter narrows to a subset
+exec sh -c 'pinax search auth --trust human --vault vault --json > trust.json'
+validate-json-envelope trust.json
+grep 'notes/architecture/auth-design.md' trust.json
+! grep notes/architecture/auth-runbook.md trust.json
+
+# stale only returns the expired runbook
+exec sh -c 'pinax search auth --stale only --vault vault --json > stale.json'
+validate-json-envelope stale.json
+grep 'notes/architecture/auth-runbook.md' stale.json
+
+# search show detail card: trust panel + links + snippet, no body leak
+exec sh -c 'pinax search show notes/architecture/auth-design.md --vault vault --json > show.json'
+validate-json-envelope show.json
+validate-clean-stdout show.json
+grep '"tier":"human"' show.json
+grep '"latest_human_by":"human:ye"' show.json
+grep '"outgoing":1' show.json
+grep token show.json
+! grep 'full body marker that must not leak' show.json
+
+# browse read-only: --lazy-index off must not write .pinax/index.sqlite
+rm vault/.pinax/index.sqlite
+exec sh -c 'pinax browse notes/architecture --lazy-index off --vault vault --json > browse.json'
+validate-json-envelope browse.json
+validate-clean-stdout browse.json
+grep '"notes":3' browse.json
+! exists vault/.pinax/index.sqlite
+
+# browse error path: unknown folder fails closed with available folders
+! exec sh -c 'pinax browse notes/nonexistent --vault vault --json > browse_missing.json'
+grep browse_path_not_found browse_missing.json
+grep notes/architecture browse_missing.json
+
+-- vault/notes/architecture/auth-design.md --
+---
+schema_version: pinax.note.v1
+note_id: note_auth_design
+title: Auth Design
+tags: [auth, security]
+kind: reference
+status: stable
+description: token rotation must invalidate refresh grants
+---
+
+# Auth Design
+
+[[auth-runbook]] points at the runbook. full body marker that must not leak
+
+-- vault/notes/architecture/auth-runbook.md --
+---
+schema_version: pinax.note.v1
+note_id: note_auth_runbook
+title: Auth Runbook
+tags: [auth, ops]
+kind: runbook
+status: stable
+verified:
+  - by: agent:pinax/0.9.0
+    at: 2026-09-05T08:00:00+00:00
+stale_after: 2020-01-01T00:00:00+00:00
+---
+
+# Auth Runbook
+
+runbook rotation body
+
+-- vault/notes/architecture/auth-legacy.md --
+---
+schema_version: pinax.note.v1
+note_id: note_auth_legacy
+title: Auth Legacy
+tags: [auth]
+kind: decision
+status: draft
+---
+
+# Auth Legacy
+
+legacy auth decision body

@@ -64,3 +64,35 @@ func TestServiceBackedCommandTreeGapsCLI(t *testing.T) {
 		t.Fatalf("graph summary missing broken link count:\n%s", graphSummary)
 	}
 }
+
+func TestTrustDiscoveryCommandsCLI(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runCLI(t, "init", root, "--title", "Vault", "--json")
+	writeCLIFixture(t, filepath.Join(root, "notes", "auth.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_auth\ntitle: Auth\nkind: reference\n---\n\n# Auth\n\nauth body marker\n")
+
+	// note verify 写入验证事件后 search show 与 browse 都能看到信任面。
+	verify := runCLI(t, "note", "verify", "auth", "--actor", "human:ye", "--vault", root, "--json")
+	assertJSONCommandStatus(t, verify, "note.verify", "success")
+	if !strings.Contains(verify, "\"trust\":\"human\"") {
+		t.Fatalf("note verify trust fact missing:\n%s", verify)
+	}
+
+	show := runCLI(t, "search", "show", "auth", "--vault", root, "--json")
+	assertJSONCommandStatus(t, show, "search.show", "success")
+	if !strings.Contains(show, "\"tier\":\"human\"") {
+		t.Fatalf("search show trust panel missing:\n%s", show)
+	}
+
+	browse := runCLI(t, "browse", "notes", "--lazy-index", "off", "--vault", root, "--json")
+	assertJSONCommandStatus(t, browse, "browse", "success")
+	if !strings.Contains(browse, "\"path\":\"notes\"") {
+		t.Fatalf("browse notes view missing:\n%s", browse)
+	}
+
+	facets := runCLI(t, "search", "marker", "--facets", "--vault", root, "--json")
+	assertJSONCommandStatus(t, facets, "note.search", "success")
+	if !strings.Contains(facets, "\"facets\"") {
+		t.Fatalf("search facets missing:\n%s", facets)
+	}
+}

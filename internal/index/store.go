@@ -160,6 +160,8 @@ type SearchRequest struct {
 	HasAttachment bool
 	Limit         int
 	Sort          string
+	// IncludeTrustSignals 让结果项携带派生 trust/fresh（来自缓存列，消费时新鲜度判定）。
+	IncludeTrustSignals bool
 }
 
 type SearchResult struct {
@@ -177,6 +179,9 @@ type ResultItem struct {
 	Snippet         string      `json:"snippet"`
 	LinkCount       int         `json:"link_count"`
 	AttachmentCount int         `json:"attachment_count"`
+	// Trust/Fresh 是派生信任标注（omitempty：默认查询不改变既有 JSON 输出）。
+	Trust string `json:"trust,omitempty"`
+	Fresh string `json:"fresh,omitempty"`
 }
 
 var inlineTagPattern = regexp.MustCompile(`(^|\s)#([\pL\pN_/-]+)`)
@@ -1171,7 +1176,12 @@ func Search(root string, req SearchRequest) (SearchResult, error) {
 		if queryText != "" && score == 0 {
 			continue
 		}
-		items = append(items, ResultItem{Note: domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Tags: tagsByObjectID[record.ObjectID], Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, Score: score, MatchedFields: fields, Snippet: snippet(text, queryText), LinkCount: len(linksByObjectID[record.ObjectID]), AttachmentCount: len(attachmentsByObjectID[record.ObjectID])})
+		item := ResultItem{Note: domain.Note{ID: record.NoteID, Title: record.Title, Path: record.Path, Tags: tagsByObjectID[record.ObjectID], Project: record.Project, Folder: record.Folder, Kind: record.Kind, Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt}, Score: score, MatchedFields: fields, Snippet: snippet(text, queryText), LinkCount: len(linksByObjectID[record.ObjectID]), AttachmentCount: len(attachmentsByObjectID[record.ObjectID])}
+		if req.IncludeTrustSignals {
+			item.Trust = record.TrustTier
+			item.Fresh = noteRecordFreshness(record.StaleAfter)
+		}
+		items = append(items, item)
 	}
 	sortResults(items, req.Sort)
 	total := len(items)
@@ -1181,6 +1191,22 @@ func Search(root string, req SearchRequest) (SearchResult, error) {
 	}
 	items = items[:limit]
 	return SearchResult{Engine: "index", IndexStatus: "fresh", Total: total, Returned: len(items), Results: items}, nil
+}
+
+// noteRecordFreshness 从缓存的 stale_after 列推导新鲜度（消费时判定，不落盘派生结果）。
+func noteRecordFreshness(staleAfter string) string {
+	deadline := strings.TrimSpace(staleAfter)
+	if deadline == "" {
+		return domain.FreshnessFresh
+	}
+	parsed, err := time.Parse(time.RFC3339, deadline)
+	if err != nil {
+		return domain.FreshnessFresh
+	}
+	if !time.Now().UTC().Before(parsed) {
+		return domain.FreshnessStale
+	}
+	return domain.FreshnessFresh
 }
 
 type indexedTokenMatch struct {

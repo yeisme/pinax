@@ -684,6 +684,99 @@ func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Proje
 	return projection, nil
 }
 
+// NoteVerify 追加一条 verified 事件到 note frontmatter（OKF 信任合同）。
+//
+// - 幂等：同 actor 同 UTC 日已存在事件时不重复追加，返回既有事件。
+// - actor 必填（默认由 CLI 从配置 identity 解析，service 层再次 fail-closed）。
+// - 写入走 YAML 节点级 atomic patch（commitNoteContent），正文与其余 frontmatter 不变。
+func (s *Service) NoteVerify(ctx context.Context, req NoteVerifyRequest) (domain.Projection, error) {
+	command := "note.verify"
+	actor := strings.TrimSpace(req.Actor)
+	if actor == "" {
+		err := &domain.CommandError{Code: "actor_required", Message: "note verify requires an actor and no identity is configured", Hint: "Configure `pinax config set identity <id>` or pass --actor human:<id> explicitly"}
+		return domain.NewErrorProjection(command, err), err
+	}
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	notes, err := scanNotes(root)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	note, err := resolveNoteRef(notes, req.NoteRef)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	path, err := safeJoin(root, note.Path)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	signals, err := domain.ParseTrustSignals(content)
+	if err != nil {
+		commandErr := &domain.CommandError{Code: "trust_field_invalid", Message: fmt.Sprintf("%s in %s", err.Error(), note.Path), Hint: "Fix the existing trust timestamp to ISO8601 with UTC offset before verifying"}
+		return domain.NewErrorProjection(command, commandErr), commandErr
+	}
+	now := s.now()
+	if existing, ok := signals.FindVerifiedEventSameDay(actor, now); ok {
+		projection := domain.NewProjection(command, "Verification event already recorded today.")
+		projection.Facts["path"] = note.Path
+		projection.Facts["note_id"] = note.ID
+		projection.Facts["actor"] = actor
+		projection.Facts["at"] = existing.At
+		projection.Facts["idempotent"] = "true"
+		projection.Facts["trust"] = domain.TrustTierOf(&signals)
+		projection.Facts["writes"] = "false"
+		projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "event": existing, "idempotent": true}
+		return projection, nil
+	}
+	event := domain.TrustActorEvent{By: actor, At: now.UTC().Format(time.RFC3339), Note: strings.TrimSpace(req.Note)}
+	updated, err := domain.AppendTrustVerifiedEvent(content, event)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	if err := commitNoteContent(path, path, string(updated)); err != nil {
+		return errorProjection(command, err), err
+	}
+	updatedSignals, err := domain.ParseTrustSignals(updated)
+	if err != nil {
+		return errorProjection(command, err), err
+	}
+	note.Trust = &updatedSignals
+	appendEventWarned(root, command, "success", map[string]string{"path": note.Path, "actor": actor})
+	projection := domain.NewProjection(command, "Verification event appended.")
+	projection.Facts["path"] = note.Path
+	projection.Facts["note_id"] = note.ID
+	projection.Facts["actor"] = actor
+	projection.Facts["at"] = event.At
+	projection.Facts["idempotent"] = "false"
+	projection.Facts["trust"] = domain.TrustTierOf(&updatedSignals)
+	projection.Evidence = []string{note.Path}
+	parsed := parseNote(note.Path, string(updated))
+	parsed.Trust = &updatedSignals
+	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMetadataUpdated, "note.verify:"+parsed.ID+":"+actor+":"+now.UTC().Format("2006-01-02"), parsed, "")
+	if recordErr != nil {
+		return errorProjection(command, recordErr), recordErr
+	}
+	applyRecordEventFacts(&projection, recordEvent)
+	if err := applyRecordStateFacts(ctx, &projection, root, recordEvent.NoteID); err != nil {
+		return errorProjection(command, err), err
+	}
+	if err := refreshIndex(root); err != nil {
+		projection.Status = "partial"
+		projection.Facts["index_status"] = "stale"
+		projection.Actions = append(projection.Actions, domain.Action{Name: "rebuild_index", Command: fmt.Sprintf("pinax index rebuild --vault %s", shellQuote(root))})
+		return projection, nil
+	}
+	projection.Facts["index_updated"] = "true"
+	projection.Data = map[string]any{"note": noteGraphNoteSummary(note), "event": event, "idempotent": false}
+	return projection, nil
+}
+
 func (s *Service) PatchNoteProperty(ctx context.Context, req NotePropertyRequest) (domain.Projection, error) {
 	key, keyErr := normalizePropertyKey(req.Key)
 	if keyErr != nil {

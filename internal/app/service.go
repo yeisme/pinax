@@ -1252,6 +1252,10 @@ func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (result Se
 		endStep(err)
 		return SearchResult{}, err
 	}
+	if err := searchops.ValidateTrustFilters(searchReq); err != nil {
+		endStep(err)
+		return SearchResult{}, err
+	}
 	endStep(nil)
 	engine := searchops.NormalizedEngine(searchReq.Engine)
 	endStep = rec.BeginStep("notes.scan", nil)
@@ -1389,6 +1393,7 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 						ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: note.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
 					}
 					ops = append(ops, durableSourceMetadataOperations(note)...)
+					ops = append(ops, trustFieldsPlanOperations([]domain.Note{note}, req)...)
 				}
 				if !matchedNote {
 					ops = append(ops, domain.PlanOperation{Kind: "metadata_update", Path: candidate.Path, Reason: "Add missing Pinax frontmatter", Status: "planned"})
@@ -1414,6 +1419,7 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 		}
 		ops = append(ops, durableSourceMetadataOperations(note)...)
 	}
+	ops = append(ops, trustFieldsPlanOperations(notes, req)...)
 	boundOperations, err := bindPlanOperations(ctx, root, ops)
 	if err != nil {
 		return errorProjection("metadata.plan", err), err
@@ -1426,6 +1432,85 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 		projection.Actions = []domain.Action{{Name: "apply", Command: fmt.Sprintf("pinax metadata apply --vault %s --yes", shellQuote(root))}}
 	}
 	return projection, nil
+}
+
+// trustFieldsPlanOperations 为缺 generated（或指定 stale_after 时缺 stale_after）的
+// note 产出 trust_fields 回填操作。仅显式 --trust-fields 时纳入 plan。
+func trustFieldsPlanOperations(notes []domain.Note, req VaultRequest) []domain.PlanOperation {
+	if !req.TrustFields {
+		return nil
+	}
+	staleAfter := strings.TrimSpace(req.StaleAfter)
+	if staleAfter != "" {
+		if err := domain.ValidateTrustTimestamp("stale_after", staleAfter); err != nil {
+			return nil
+		}
+	}
+	operations := make([]domain.PlanOperation, 0)
+	for _, note := range notes {
+		missing := []string{}
+		if note.Trust == nil || !note.Trust.HasGenerated {
+			missing = append(missing, "generated")
+		}
+		if staleAfter != "" && (note.Trust == nil || strings.TrimSpace(note.Trust.StaleAfter) == "") {
+			missing = append(missing, "stale_after")
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		operations = append(operations, domain.PlanOperation{Kind: "trust_fields", Path: note.Path, Reason: "Backfill trust fields: " + strings.Join(missing, ", "), Status: "planned", Evidence: missing})
+	}
+	return operations
+}
+
+// applyTrustFieldsBackfill 执行 trust_fields 回填写（复用 EnsureTrustGenerated 的
+// YAML 节点级 patch + commitNoteContent 原子替换）。返回更新数量。
+func (s *Service) applyTrustFieldsBackfill(ctx context.Context, root string, notes []domain.Note, req ApplyRequest, changedPaths *[]string) (int, error) {
+	if !req.TrustFields {
+		return 0, nil
+	}
+	actor := "agent:pinax"
+	if version := strings.TrimSpace(req.AgentVersion); version != "" {
+		actor = "agent:pinax/" + version
+	}
+	applied := 0
+	for _, note := range notes {
+		needGenerated := note.Trust == nil || !note.Trust.HasGenerated
+		needStale := strings.TrimSpace(req.StaleAfter) != "" && (note.Trust == nil || strings.TrimSpace(note.Trust.StaleAfter) == "")
+		if !needGenerated && !needStale {
+			continue
+		}
+		path, err := safeJoin(root, note.Path)
+		if err != nil {
+			return applied, err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return applied, err
+		}
+		at := strings.TrimSpace(note.CreatedAt)
+		if _, err := time.Parse(time.RFC3339, at); err != nil {
+			at = s.now().UTC().Format(time.RFC3339)
+		}
+		updated, changed, err := domain.EnsureTrustGenerated(content, actor, at, strings.TrimSpace(req.StaleAfter))
+		if err != nil {
+			return applied, &domain.CommandError{Code: "trust_field_invalid", Message: fmt.Sprintf("%s in %s", err.Error(), note.Path), Hint: "Fix the existing trust timestamp before applying the trust_fields backfill"}
+		}
+		if !changed {
+			continue
+		}
+		if err := commitNoteContent(path, path, string(updated)); err != nil {
+			return applied, err
+		}
+		parsed := parseNote(note.Path, string(updated))
+		if _, err := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMetadataUpdated, "metadata.apply.trust:"+parsed.ID+":"+note.Path, parsed, ""); err != nil {
+			return applied, err
+		}
+		appendEventWarned(root, "metadata.apply", "success", map[string]string{"path": note.Path, "operation": "trust_fields"})
+		applied++
+		*changedPaths = append(*changedPaths, note.Path)
+	}
+	return applied, nil
 }
 
 func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.Projection, error) {
@@ -1479,8 +1564,15 @@ func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.P
 		changedPaths = append(changedPaths, note.Path)
 		appendEventWarned(root, "metadata.apply", "success", map[string]string{"path": note.Path})
 	}
+	trustApplied, trustErr := s.applyTrustFieldsBackfill(ctx, root, notes, req, &changedPaths)
+	if trustErr != nil {
+		return errorProjection("metadata.apply", trustErr), trustErr
+	}
 	projection := domain.NewProjection("metadata.apply", "Metadata applied.")
 	projection.Facts["applied_updates"] = fmt.Sprint(applied)
+	if req.TrustFields {
+		projection.Facts["trust_fields_updates"] = fmt.Sprint(trustApplied)
+	}
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "metadata.apply", "", "", beforeBindings, changedPaths)
 	if receiptErr != nil {
@@ -2838,6 +2930,11 @@ func scanNotes(root string) ([]domain.Note, error) {
 		if isSystemIndexNote(note) {
 			return nil
 		}
+		signals, trustErr := domain.ParseTrustSignals(content)
+		if trustErr != nil {
+			return &domain.CommandError{Code: "trust_field_invalid", Message: fmt.Sprintf("%s in %s", trustErr.Error(), filepath.ToSlash(rel)), Hint: "Fix the timestamp to ISO8601 with UTC offset, or remove the trust field"}
+		}
+		note.Trust = &signals
 		notes = append(notes, note)
 		return nil
 	})
@@ -2947,6 +3044,11 @@ func scanIndexRefreshNote(root, path string) indexRefreshScanItem {
 	if isSystemIndexNote(note) || isSystemJournalNote(note) {
 		return indexRefreshScanItem{path: rel}
 	}
+	signals, trustErr := domain.ParseTrustSignals(content)
+	if trustErr != nil {
+		return indexRefreshScanItem{path: rel, err: &domain.CommandError{Code: "trust_field_invalid", Message: fmt.Sprintf("%s in %s", trustErr.Error(), rel), Hint: "Fix the timestamp to ISO8601 with UTC offset, or remove the trust field"}}
+	}
+	note.Trust = &signals
 	if strings.TrimSpace(note.Path) == "" || strings.TrimSpace(note.ID) == "" {
 		return indexRefreshScanItem{path: rel, failedPath: rel}
 	}
