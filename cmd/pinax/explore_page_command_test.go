@@ -15,8 +15,8 @@ func buildExplorePageFixtureBundle(t *testing.T) app.ExploreBundle {
 	t.Helper()
 	root := t.TempDir()
 	notes := map[string]string{
-		"notes/auth-design.md": "---\nschema_version: pinax.note.v1\nnote_id: note_auth_design\ntitle: Auth Design\nkind: reference\ntags: [auth, security]\nsummary: Token rotation must invalidate refresh grants.\nupdated_at: 2026-09-01T10:00:00+00:00\ngenerated: {by: agent:pinax/0.9.0, at: 2026-09-01T08:00:00+00:00}\nverified: [{by: human:ye, at: 2026-09-01T10:30:00+00:00}]\nstale_after: 2030-01-01T00:00:00+00:00\n---\n\n# Auth Design\n\nVAULT_BODY_SENTINEL see [[Auth Runbook]] and [[Missing Page]].",
-		"notes/auth-runbook.md": "---\nschema_version: pinax.note.v1\nnote_id: note_auth_runbook\ntitle: Auth Runbook\nkind: runbook\ntags: [auth, ops]\nupdated_at: 2026-09-02T10:00:00+00:00\nverified: {by: machine:pinax/0.9.0, at: 2026-09-02T10:00:00+00:00}\n---\n\n# Auth Runbook\n\nVAULT_BODY_SENTINEL",
+		"notes/auth-design.md":    "---\nschema_version: pinax.note.v1\nnote_id: note_auth_design\ntitle: Auth Design\nkind: reference\ntags: [auth, security]\nsummary: Token rotation must invalidate refresh grants.\nupdated_at: 2026-09-01T10:00:00+00:00\ngenerated: {by: agent:pinax/0.9.0, at: 2026-09-01T08:00:00+00:00}\nverified: [{by: human:ye, at: 2026-09-01T10:30:00+00:00}]\nstale_after: 2030-01-01T00:00:00+00:00\n---\n\n# Auth Design\n\nVAULT_BODY_SENTINEL see [[Auth Runbook]] and [[Missing Page]].",
+		"notes/auth-runbook.md":   "---\nschema_version: pinax.note.v1\nnote_id: note_auth_runbook\ntitle: Auth Runbook\nkind: runbook\ntags: [auth, ops]\nupdated_at: 2026-09-02T10:00:00+00:00\nverified: {by: machine:pinax/0.9.0, at: 2026-09-02T10:00:00+00:00}\n---\n\n# Auth Runbook\n\nVAULT_BODY_SENTINEL",
 		"notes/gateway-design.md": "---\nschema_version: pinax.note.v1\nnote_id: note_gateway_design\ntitle: Gateway Design\nkind: decision\ntags: [gateway]\nupdated_at: 2026-08-30T09:00:00+00:00\nstale_after: 2026-01-01T00:00:00+00:00\n---\n\n# Gateway\n\nVAULT_BODY_SENTINEL links to [[Auth Design]]",
 	}
 	for rel, content := range notes {
@@ -57,9 +57,9 @@ func TestExplorePageContract(t *testing.T) {
 	}
 	body := string(page)
 	for _, want := range []string{
-		`<style>`,                     // CSS 全内联
-		`<script>`,                    // JS 全内联
-		`type="search"`,               // 客户端搜索
+		`<style>`,                               // CSS 全内联
+		`<script>`,                              // JS 全内联
+		`type="search"`,                         // 客户端搜索
 		`id="kind"`, `id="trust"`, `id="fresh"`, // kind/trust/fresh 过滤
 		`id="view-graph"`, `id="view-list"`, // 图/列表双布局
 		"prefers-reduced-motion", // reduced-motion 禁动画
@@ -67,7 +67,7 @@ func TestExplorePageContract(t *testing.T) {
 		"/explore/data.json",     // --no-embed 模式数据端点
 		"history.replaceState",   // URL hash 记录过滤态
 		"ArrowDown", "ArrowUp",   // 键盘导航
-		"Backlinks",              // backlinks 面板
+		"Backlinks", // backlinks 面板
 		"pinax.explore_bundle.v1",
 		"__PINAX_EXPLORE_DATA__",
 		"computeLayout", // 手写力导向布局（无外部库）

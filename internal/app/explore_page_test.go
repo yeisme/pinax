@@ -8,9 +8,9 @@ import (
 func TestExploreExternalRefScannerCatchesMarkupButNotScriptData(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name    string
-		page    string
-		leaks   []string
+		name  string
+		page  string
+		leaks []string
 	}{
 		{
 			name: "clean self-contained page",
@@ -21,18 +21,18 @@ func TestExploreExternalRefScannerCatchesMarkupButNotScriptData(t *testing.T) {
 			page: `<script>window.__D__ = JSON.parse("{\"title\":\"x href='https://evil.example/y'\"}");</script>`,
 		},
 		{
-			name: "img src external caught",
-			page: `<html><body><img src="https://cdn.example/logo.png"></body></html>`,
+			name:  "img src external caught",
+			page:  `<html><body><img src="https://cdn.example/logo.png"></body></html>`,
 			leaks: []string{"src=https://cdn.example/logo.png"},
 		},
 		{
-			name: "link href external caught",
-			page: `<html><head><link rel="stylesheet" href='http://fonts.example/x.css'></head></html>`,
+			name:  "link href external caught",
+			page:  `<html><head><link rel="stylesheet" href='http://fonts.example/x.css'></head></html>`,
 			leaks: []string{"href=http://fonts.example/x.css"},
 		},
 		{
-			name: "protocol relative caught",
-			page: `<html><script src="//cdn.example/lib.js"></script></html>`,
+			name:  "protocol relative caught",
+			page:  `<html><script src="//cdn.example/lib.js"></script></html>`,
 			leaks: []string{"src=//cdn.example/lib.js"},
 		},
 		{

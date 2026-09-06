@@ -58,7 +58,7 @@ func TestShareStartExploreOnceServesAllEndpoints(t *testing.T) {
 		t.Fatalf("write token file: %v", err)
 	}
 	vault := writeShareExploreVault(t, map[string]string{
-		"notes/auth-design.md": "---\nschema_version: pinax.note.v1\nnote_id: note_auth_design\ntitle: Auth Design\nkind: reference\ntags: [auth]\nsummary: rotation summary\nupdated_at: 2026-09-01T00:00:00+00:00\nverified: [{by: human:ye, at: 2026-09-01T01:00:00+00:00}]\n---\n\nEXPLORE_BODY_SENTINEL see [[Auth Runbook]] and [[Missing Page]].",
+		"notes/auth-design.md":  "---\nschema_version: pinax.note.v1\nnote_id: note_auth_design\ntitle: Auth Design\nkind: reference\ntags: [auth]\nsummary: rotation summary\nupdated_at: 2026-09-01T00:00:00+00:00\nverified: [{by: human:ye, at: 2026-09-01T01:00:00+00:00}]\n---\n\nEXPLORE_BODY_SENTINEL see [[Auth Runbook]] and [[Missing Page]].",
 		"notes/auth-runbook.md": "---\nschema_version: pinax.note.v1\nnote_id: note_auth_runbook\ntitle: Auth Runbook\nkind: runbook\nupdated_at: 2026-09-02T00:00:00+00:00\n---\n\nEXPLORE_BODY_SENTINEL",
 	})
 
@@ -78,15 +78,15 @@ func TestShareStartExploreOnceServesAllEndpoints(t *testing.T) {
 		t.Fatalf("envelope = %#v", envelope)
 	}
 	for key, want := range map[string]string{
-		"scope":              "vault-readonly",
-		"view":               "explore",
-		"auth":               "token-file",
-		"explore_nodes":      "2",
-		"explore_edges":      "2",
-		"explore_truncated":  "false",
-		"explore_embed":      "true",
-		"web_smoke":          "true",
-		"api_smoke":          "true",
+		"scope":             "vault-readonly",
+		"view":              "explore",
+		"auth":              "token-file",
+		"explore_nodes":     "2",
+		"explore_edges":     "2",
+		"explore_truncated": "false",
+		"explore_embed":     "true",
+		"web_smoke":         "true",
+		"api_smoke":         "true",
 	} {
 		if envelope.Facts[key] != want {
 			t.Fatalf("facts[%q] = %q want %q (facts %#v)", key, envelope.Facts[key], want, envelope.Facts)
