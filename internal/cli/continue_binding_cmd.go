@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/agentprotocol"
@@ -83,6 +84,13 @@ All flags are required: no cross-vault search, no implicit project creation.`,
 			if bindScope == "" {
 				return renderCommandError(cmd, ctx.outputMode(), "continue.bind", "argument_required",
 					"--scope <kind:id> is required", "pinax project list --vault <vault> --json")
+			}
+			// 显式 kind 必填：裸 id 不得静默落成 workspace:<id>，
+			// 否则 project:pinax 之类的笔误会绑定到不存在的命名空间。
+			if !strings.Contains(bindScope, ":") {
+				return renderCommandError(cmd, ctx.outputMode(), "continue.bind", "invalid_scope",
+					"--scope must be an explicit kind:id (project:<slug> or workspace:<id>), got bare id",
+					"pinax continue bind --vault <vault> --scope project:<slug>")
 			}
 			scope := parseScope(bindScope)
 			result, err := agentSvc.ContinuityBind(cmd.Context(), app.ContinuityBindingRequest{

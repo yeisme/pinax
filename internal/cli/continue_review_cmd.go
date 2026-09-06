@@ -57,7 +57,13 @@ binding and no explicit --vault/--scope is given, the binding auto-resolves.`,
 			}
 			repoRoot := ""
 			if resolution.BindingStatus == continuitybinding.StatusReady {
-				repoRoot = resolvedRepoRoot(cmd)
+				// binding ready 但 worktree 检测失败属于环境故障：显式失败，
+				// 不得把 repository source 全部记成 missing 污染 run receipt。
+				root, err := continuitybinding.DetectWorktreeRoot(cmd.Context(), ".")
+				if err != nil {
+					return renderAgentError(cmd, ctx, "continue", fmt.Errorf("binding ready but worktree root detection failed: %w", err))
+				}
+				repoRoot = root
 			}
 			pack, err := agentSvc.AgentContinuity(cmd.Context(), app.ContinuityRequest{
 				VaultPath: resolution.VaultPath,
@@ -167,16 +173,6 @@ binding and no explicit --vault/--scope is given, the binding auto-resolves.`,
 	addContinueFeedbackSubcommand(cmd, ctx)
 	addContinueReportSubcommand(cmd, ctx)
 	root.AddCommand(cmd)
-}
-
-// resolvedRepoRoot 返回当前目录的 canonical worktree root（binding ready 时）。
-// 失败返回空串（repository source 将按 missing 计数，不影响旧路径）。
-func resolvedRepoRoot(cmd *cobra.Command) string {
-	root, err := continuitybinding.DetectWorktreeRoot(cmd.Context(), ".")
-	if err != nil {
-		return ""
-	}
-	return root
 }
 
 // addReviewCommands 注册 experimental `pinax review` intent facade。
