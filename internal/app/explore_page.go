@@ -47,17 +47,25 @@ func RenderExplorePage(bundle ExploreBundle, embedData bool) ([]byte, error) {
 }
 
 var (
-	// exploreExternalAttrPattern 匹配 src=/href= 属性（自包含页面合同：零命中外链）。
-	exploreExternalAttrPattern = regexp.MustCompile(`(?i)\b(src|href)\s*=\s*["']([^"']*)["']`)
+	// exploreScriptBlockPattern / exploreStyleBlockPattern 剥离内联 <script>/<style>
+	// 的正文但保留开标签属性：内嵌数据经双重 JSON 编码（<>& 全转义）无法注入标记，
+	// 纯文本形如 href='https://…' 的标题内容只存在于脚本字符串中，不是属性；
+	// 而 <script src="//cdn…"> 的开标签属性仍必须被外链扫描捕获。
+	exploreScriptBlockPattern = regexp.MustCompile(`(?is)<script\b([^>]*)>.*?</script\s*>`)
+	exploreStyleBlockPattern  = regexp.MustCompile(`(?is)<style\b([^>]*)>.*?</style\s*>`)
+	// exploreExternalAttrPattern 匹配标记里残留的 src=/href= 属性（自包含页面
+	// 合同：零命中外链）。
+	exploreExternalAttrPattern = regexp.MustCompile(`(?is)\b(src|href)\s*=\s*["']([^"']*)["']`)
 	exploreExternalURLPattern  = regexp.MustCompile(`(?i)^(https?:)?//|://`)
 )
 
-// ScanExploreExternalRefs 扫描页面 HTML 的 src=/href= 属性，返回所有指向外部
-// （非相对路径）的引用。自包含合同要求零命中；share --once 冒烟与页面测试共用。
+// ScanExploreExternalRefs 扫描页面 HTML 标记里的 src=/href= 属性，返回所有指向
+// 外部（非相对路径）的引用。自包含合同要求零命中；share --once 冒烟与页面测试共用。
 func ScanExploreExternalRefs(pageHTML []byte) []string {
-	matches := exploreExternalAttrPattern.FindAllStringSubmatch(string(pageHTML), -1)
+	markup := exploreScriptBlockPattern.ReplaceAllString(string(pageHTML), "<script$1></script>")
+	markup = exploreStyleBlockPattern.ReplaceAllString(markup, "<style$1></style>")
 	external := make([]string, 0)
-	for _, match := range matches {
+	for _, match := range exploreExternalAttrPattern.FindAllStringSubmatch(markup, -1) {
 		value := strings.TrimSpace(match[2])
 		if value == "" || strings.HasPrefix(value, "#") {
 			continue

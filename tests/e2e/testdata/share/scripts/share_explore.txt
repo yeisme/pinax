@@ -1,0 +1,55 @@
+# Share explore verifies the vault-readonly explore view: --once three-endpoint smoke,
+# auth-missing 401, page external-ref scan, default-view regression, and body/token redaction.
+exec mkdir -p vault/notes
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_auth_design" "title: Auth Design" "kind: reference" "tags: [auth, security]" "summary: rotation summary" "updated_at: 2026-09-01T00:00:00+00:00" "verified: [{by: human:ye, at: 2026-09-01T01:00:00+00:00}]" "stale_after: 2030-01-01T00:00:00+00:00" "---" "" "# Auth Design" "" "VAULT_BODY_SENTINEL see [[Auth Runbook]] and [[Missing Page]]." > vault/notes/auth-design.md'
+
+exec sh -c 'printf "%s\n" "---" "schema_version: pinax.note.v1" "note_id: note_auth_runbook" "title: Auth Runbook" "kind: runbook" "tags: [auth, ops]" "updated_at: 2026-09-02T00:00:00+00:00" "verified: {by: machine:pinax/0.9.0, at: 2026-09-02T00:00:00+00:00}" "---" "" "# Auth Runbook" "" "VAULT_BODY_SENTINEL" > vault/notes/auth-runbook.md'
+
+exec sh -c 'printf "%s\n" "share-explore-token" > token.txt'
+
+# explore + published scope fails closed with a stable error.
+! exec sh -c 'pinax share start --view explore --scope published --host 127.0.0.1 --port 0 --readonly --out dist/site --vault vault --json > explore-scope-error.json'
+exec grep -q 'share_view_scope_invalid' explore-scope-error.json
+
+# invalid view fails closed.
+! exec sh -c 'pinax share start --view graph --scope vault-readonly --host 127.0.0.1 --port 0 --readonly --token-file token.txt --vault vault --json > explore-view-error.json'
+exec grep -q 'share_view_invalid' explore-view-error.json
+
+# explore once smoke: /explore + /explore/data.json + one bounded note preview + page
+# external-ref scan + unauthenticated 401 probe all pass; token and bodies never leak.
+exec sh -c 'pinax share start --view explore --scope vault-readonly --host 127.0.0.1 --port 0 --readonly --token-file token.txt --once --vault vault --json > explore.json'
+validate-json-envelope explore.json
+validate-clean-stdout explore.json
+exec grep -q '"command":"share.start"' explore.json
+exec grep -q '"scope":"vault-readonly"' explore.json
+exec grep -q '"view":"explore"' explore.json
+exec grep -q '"auth":"token-file"' explore.json
+exec grep -q '"explore_nodes":"2"' explore.json
+exec grep -q '"explore_edges":"2"' explore.json
+exec grep -q '"explore_truncated":"false"' explore.json
+exec grep -q '"web_smoke":"true"' explore.json
+exec grep -q '"api_smoke":"true"' explore.json
+! exec grep -q 'VAULT_BODY_SENTINEL\|share-explore-token\|token.txt' explore.json
+
+# no-embed mode still serves the page and data endpoint.
+exec sh -c 'pinax share start --view explore --scope vault-readonly --host 127.0.0.1 --port 0 --readonly --token-file token.txt --no-embed --once --vault vault --json > explore-no-embed.json'
+validate-json-envelope explore-no-embed.json
+exec grep -q '"explore_embed":"false"' explore-no-embed.json
+exec grep -q '"web_smoke":"true"' explore-no-embed.json
+
+# loopback --no-auth mode works without a token file.
+exec sh -c 'pinax share start --view explore --scope vault-readonly --host 127.0.0.1 --port 0 --readonly --no-auth --once --vault vault --json > explore-noauth.json'
+validate-json-envelope explore-noauth.json
+exec grep -q '"auth":"none"' explore-noauth.json
+exec grep -q '"web_smoke":"true"' explore-noauth.json
+! exec grep -q 'VAULT_BODY_SENTINEL' explore-noauth.json
+
+# default view (no --view) keeps the legacy vault-readonly surface: no explore facts.
+exec sh -c 'pinax share start --scope vault-readonly --host 127.0.0.1 --port 0 --readonly --token-file token.txt --once --vault vault --json > default.json'
+validate-json-envelope default.json
+exec grep -q '"scope":"vault-readonly"' default.json
+exec grep -q '"web_smoke":"true"' default.json
+exec grep -q '"api_smoke":"true"' default.json
+! exec grep -q 'explore' default.json
+! exec grep -q 'VAULT_BODY_SENTINEL\|share-explore-token' default.json

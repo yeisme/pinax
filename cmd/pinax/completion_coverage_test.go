@@ -48,6 +48,7 @@ func TestHighValueCompletionCoverageCLI(t *testing.T) {
 	assertCompletionContains(t, runCLI(t, "__complete", "sync", "conflicts", "show", "--vault", root, ""), "notes/research/alpha.20260625101010.conflict.md\tconflict", "ShellCompDirectiveNoFileComp")
 	assertCompletionContains(t, runCLI(t, "__complete", "note", "list", "--limit", ""), "10\tlimit", "25\tlimit", "50\tlimit", "ShellCompDirectiveNoFileComp")
 	assertCompletionContains(t, runCLI(t, "__complete", "note", "list", "--period", ""), "5h\tperiod", "daily\tperiod", "weekly\tperiod", "monthly\tperiod", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "share", "start", "--view", ""), "published\tview", "explore\tview", "ShellCompDirectiveNoFileComp")
 }
 
 func TestNoteOperationReferenceCompletionCLI(t *testing.T) {
