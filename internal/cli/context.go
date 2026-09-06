@@ -66,6 +66,8 @@ type commandBuildContext struct {
 	noteListProperties       *[]string
 	noteVerifyActor          *string
 	noteVerifyNote           *string
+	metadataTrustFields      *bool
+	metadataTrustStaleAfter  *string
 	noteStrictProperties     *bool
 	noteListCreatedAfter     *string
 	noteListUpdatedBefore    *string
