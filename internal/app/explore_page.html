@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pinax Vault Explore</title>
+<style>
+:root {
+  --bg: #10141a; --panel: #171c24; --panel-2: #1d242e; --line: #2a3340;
+  --text: #e6ebf2; --muted: #93a1b3; --accent: #5aa9e6; --accent-2: #7ee0c0;
+  --human: #7ee0c0; --machine: #f0c674; --unverified: #8a94a3; --stale: #e08d8d;
+  --broken: #6b7686; --danger: #e08d8d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); }
+body { display: flex; flex-direction: column; font-size: 14px; }
+header {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+header .brand { font-weight: 600; letter-spacing: 0.02em; margin-right: 6px; white-space: nowrap; }
+header .brand small { color: var(--muted); font-weight: 400; }
+input[type="search"], select, button {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none;
+}
+input[type="search"] { width: min(340px, 42vw); }
+input[type="search"]:focus, select:focus, button:focus-visible { border-color: var(--accent); }
+button { cursor: pointer; }
+button.active { border-color: var(--accent); color: var(--accent); }
+button.toggle-group { display: flex; gap: 0; padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+button.toggle-group > button { border: none; border-radius: 0; padding: 6px 12px; background: transparent; }
+button.toggle-group > button.active { background: var(--accent); color: #0d1117; }
+.kbd-hint { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+.kbd-hint kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; }
+.banner {
+  display: none; padding: 8px 14px; background: #3a2f18; color: var(--machine);
+  border-bottom: 1px solid var(--line); font-size: 13px;
+}
+.banner.show { display: block; }
+main { flex: 1; display: flex; min-height: 0; }
+#stage { flex: 1; min-width: 0; position: relative; }
+#stage svg { display: block; width: 100%; height: 100%; }
+.legend {
+  position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 12px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent); padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 6px; pointer-events: none;
+}
+.legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 3px 0 8px; }
+#list-wrap { display: none; overflow: auto; height: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+td.tags-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+tr { cursor: pointer; }
+tr:hover, tr.hovered { background: var(--panel-2); }
+tr.selected { background: #1c2a38; outline: 1px solid var(--accent); outline-offset: -1px; }
+.badge { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: 11px; border: 1px solid var(--line); }
+.badge.human { color: var(--human); border-color: var(--human); }
+.badge.machine { color: var(--machine); border-color: var(--machine); }
+.badge.unverified { color: var(--unverified); border-color: var(--unverified); }
+.badge.fresh { color: var(--accent-2); border-color: var(--accent-2); }
+.badge.stale { color: var(--stale); border-color: var(--stale); }
+#card {
+  width: 340px; flex: 0 0 340px; background: var(--panel); border-left: 1px solid var(--line);
+  overflow: auto; padding: 14px 16px;
+}
+#card h2 { margin: 0 0 4px; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+#card .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
+#card .tags { margin: 8px 0; }
+#card .tags .badge { margin: 0 4px 4px 0; }
+#card section { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
+#card section h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+#card section ul { margin: 0; padding: 0; list-style: none; }
+#card section li { padding: 3px 0; color: var(--text); cursor: pointer; overflow-wrap: anywhere; }
+#card section li:hover { color: var(--accent); }
+#card section li.broken-link { color: var(--broken); }
+#card .empty { color: var(--muted); }
+#card .preview { white-space: pre-wrap; font-size: 12.5px; line-height: 1.5; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin-top: 6px; overflow-wrap: anywhere; }
+#card .preview.error { color: var(--danger); }
+#card button.preview-btn { width: 100%; margin-top: 4px; }
+#card .counts { color: var(--muted); font-size: 12px; }
+.empty-state { color: var(--muted); padding: 24px; }
+footer { padding: 6px 14px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); background: var(--panel); }
+.node-circle { cursor: pointer; }
+.node-label { fill: var(--muted); font-size: 10px; pointer-events: none; }
+.edge-line { stroke: #3d4a5c; stroke-width: 1; }
+.edge-broken { stroke: var(--broken); stroke-width: 1; stroke-dasharray: 4 3; }
+.node-selected { stroke: var(--accent); stroke-width: 2.5; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body data-embed="on">
+<header>
+  <span class="brand">Pinax Explore <small id="vault-count"></small></span>
+  <input id="q" type="search" placeholder="Search title / tag / kind…  ( / )" aria-label="Search notes" autocomplete="off">
+  <select id="kind" aria-label="Filter by kind"><option value="">kind: all</option></select>
+  <select id="trust" aria-label="Filter by trust">
+    <option value="">trust: all</option>
+    <option value="human">human</option>
+    <option value="machine">machine</option>
+    <option value="unverified">unverified</option>
+  </select>
+  <select id="fresh" aria-label="Filter by freshness">
+    <option value="">fresh: all</option>
+    <option value="fresh">fresh</option>
+    <option value="stale">stale</option>
+  </select>
+  <span class="toggle-group" role="group" aria-label="Layout">
+    <button id="view-graph" class="active" type="button">Graph</button>
+    <button id="view-list" type="button">List</button>
+  </span>
+  <span class="kbd-hint"><kbd>/</kbd> search <kbd>↑</kbd><kbd>↓</kbd> move <kbd>Enter</kbd> open</span>
+</header>
+<div id="banner" class="banner" role="status"></div>
+<main>
+  <div id="stage">
+    <svg id="graph" role="img" aria-label="Note graph"></svg>
+    <div class="legend" id="legend">
+      trust:
+      <span class="dot" style="background:var(--human)"></span>human
+      <span class="dot" style="background:var(--machine)"></span>machine
+      <span class="dot" style="background:var(--unverified)"></span>unverified
+      · dashed = broken link
+    </div>
+    <div id="list-wrap"><table id="list"><thead><tr>
+      <th>Title</th><th>Kind</th><th>Trust</th><th>Fresh</th><th>Tags</th><th>Updated</th>
+    </tr></thead><tbody></tbody></table></div>
+    <div id="graph-empty" class="empty-state" style="display:none">No notes match the current filters.</div>
+  </div>
+  <aside id="card" aria-live="polite">
+    <div class="empty-state">Select a note to inspect its card.</div>
+  </aside>
+</main>
+<footer id="foot">pinax.explore_bundle.v1 · read-only · local</footer>
+<script>
+window.__PINAX_EXPLORE_DATA__ = JSON.parse("__PINAX_EXPLORE_BUNDLE_JSON__");
+</script>
+<script>
+(function () {
+  "use strict";
+  var bundle = window.__PINAX_EXPLORE_DATA__;
+  var stage = document.getElementById("stage");
+  var svg = document.getElementById("graph");
+  var listWrap = document.getElementById("list-wrap");
+  var listBody = document.querySelector("#list tbody");
+  var graphEmpty = document.getElementById("graph-empty");
+  var card = document.getElementById("card");
+  var banner = document.getElementById("banner");
+  var qInput = document.getElementById("q");
+  var kindSel = document.getElementById("kind");
+  var trustSel = document.getElementById("trust");
+  var freshSel = document.getElementById("fresh");
+  var viewGraphBtn = document.getElementById("view-graph");
+  var viewListBtn = document.getElementById("view-list");
+  var reducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var state = { q: "", kind: "", trust: "", fresh: "", view: "graph", sel: null, cursor: 0 };
+  var filtered = [];
+  var nodeIndex = {};
+  var layout = {};
+
+  // --- data bootstrap: embedded by default; --no-embed mode fetches data.json ---
+  function boot() {
+    if (bundle && bundle.nodes) { start(); return; }
+    loadJSON("/explore/data.json").then(function (data) { bundle = data; start(); }, function () {
+      banner.textContent = "Failed to load /explore/data.json.";
+      banner.classList.add("show");
+    });
+  }
+  function loadJSON(url) {
+    return fetch(url, { headers: authHeaders() }).then(function (resp) {
+      if (!resp.ok) { throw new Error("HTTP " + resp.status); }
+      return resp.json();
+    });
+  }
+  function authHeaders() {
+    var params = new URLSearchParams(window.location.search);
+    var token = params.get("token");
+    return token ? { "Authorization": "Bearer " + token } : {};
+  }
+
+  function start() {
+    bundle.nodes.forEach(function (n) { nodeIndex[n.id] = n; });
+    var kinds = {};
+    bundle.nodes.forEach(function (n) { if (n.kind) { kinds[n.kind] = true; } });
+    Object.keys(kinds).sort().forEach(function (k) {
+      var opt = document.createElement("option");
+      opt.value = k; opt.textContent = "kind: " + k;
+      kindSel.appendChild(opt);
+    });
+    document.getElementById("vault-count").textContent =
+      bundle.counts.nodes + " notes · " + bundle.counts.edges + " links";
+    if (bundle.counts && bundle.counts.truncated) {
+      banner.textContent = "Bundle truncated at capacity (" + bundle.counts.nodes +
+        " nodes / " + bundle.counts.edges + " edges). Switch to List view or narrow the filters to explore beyond the cap.";
+      banner.classList.add("show");
+    }
+    readHash();
+    bindEvents();
+    applyFilters();
+    render();
+  }
+
+  // --- URL hash filter state (#q=…&kind=…&trust=…&fresh=…&view=…&sel=…) ---
+  function readHash() {
+    var params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    state.q = params.get("q") || "";
+    state.kind = params.get("kind") || "";
+    state.trust = params.get("trust") || "";
+    state.fresh = params.get("fresh") || "";
+    var view = params.get("view");
+    state.view = (view === "list") ? "list" : "graph";
+    state.sel = params.get("sel") || null;
+    qInput.value = state.q; kindSel.value = state.kind; trustSel.value = state.trust; freshSel.value = state.fresh;
+  }
+  function writeHash() {
+    var params = new URLSearchParams();
+    if (state.q) { params.set("q", state.q); }
+    if (state.kind) { params.set("kind", state.kind); }
+    if (state.trust) { params.set("trust", state.trust); }
+    if (state.fresh) { params.set("fresh", state.fresh); }
+    params.set("view", state.view);
+    if (state.sel) { params.set("sel", state.sel); }
+    var hash = "#" + params.toString();
+    if (hash !== window.location.hash) { history.replaceState(null, "", hash); }
+  }
+
+  function bindEvents() {
+    qInput.addEventListener("input", function () { state.q = qInput.value; applyFilters(); render(); });
+    kindSel.addEventListener("change", function () { state.kind = kindSel.value; applyFilters(); render(); });
+    trustSel.addEventListener("change", function () { state.trust = trustSel.value; applyFilters(); render(); });
+    freshSel.addEventListener("change", function () { state.fresh = freshSel.value; applyFilters(); render(); });
+    viewGraphBtn.addEventListener("click", function () { setView("graph"); });
+    viewListBtn.addEventListener("click", function () { setView("list"); });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "/" && document.activeElement !== qInput) {
+        event.preventDefault(); qInput.focus(); qInput.select(); return;
+      }
+      if (event.key === "Escape" && document.activeElement === qInput) { qInput.blur(); return; }
+      if (document.activeElement === qInput && event.key === "Enter") {
+        event.preventDefault();
+        if (filtered.length > 0) { select(filtered[Math.min(state.cursor, filtered.length - 1)].id, true); }
+        return;
+      }
+      if (document.activeElement === qInput) { return; }
+      var tag = document.activeElement && document.activeElement.tagName;
+      if (tag === "SELECT" || tag === "BUTTON") { return; }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (filtered.length === 0) { return; }
+        state.cursor = event.key === "ArrowDown"
+          ? Math.min(state.cursor + 1, filtered.length - 1)
+          : Math.max(state.cursor - 1, 0);
+        select(filtered[state.cursor].id, true);
+      }
+      if (event.key === "Enter" && state.sel) { select(state.sel, true); }
+    });
+    window.addEventListener("hashchange", function () { readHash(); applyFilters(); render(); });
+    window.addEventListener("resize", function () { if (state.view === "graph") { layout = null; drawGraph(); } });
+  }
+
+  function setView(view) {
+    state.view = view;
+    viewGraphBtn.classList.toggle("active", view === "graph");
+    viewListBtn.classList.toggle("active", view === "list");
+    render();
+  }
+
+  // --- client-side search + facet filters (title/tags/kind substring; trust/fresh) ---
+  function applyFilters() {
+    var q = state.q.trim().toLowerCase();
+    filtered = bundle.nodes.filter(function (n) {
+      if (state.kind && n.kind !== state.kind) { return false; }
+      if (state.trust && n.trust !== state.trust) { return false; }
+      if (state.fresh && n.fresh !== state.fresh) { return false; }
+      if (!q) { return true; }
+      if ((n.title || "").toLowerCase().indexOf(q) >= 0) { return true; }
+      if ((n.kind || "").toLowerCase().indexOf(q) >= 0) { return true; }
+      return (n.tags || []).some(function (t) { return t.toLowerCase().indexOf(q) >= 0; });
+    });
+    if (state.sel && !nodeIndex[state.sel]) { state.sel = null; }
+    if (state.cursor >= filtered.length) { state.cursor = Math.max(0, filtered.length - 1); }
+  }
+
+  function render() {
+    viewGraphBtn.classList.toggle("active", state.view === "graph");
+    viewListBtn.classList.toggle("active", state.view === "list");
+    listWrap.style.display = state.view === "list" ? "block" : "none";
+    svg.style.display = state.view === "graph" ? "block" : "none";
+    document.getElementById("legend").style.display = state.view === "graph" ? "block" : "none";
+    if (state.view === "list") { renderList(); } else { drawGraph(); }
+    renderCard();
+    writeHash();
+  }
+
+  // --- list layout ---
+  function renderList() {
+    listBody.textContent = "";
+    graphEmpty.style.display = filtered.length === 0 ? "block" : "none";
+    var frag = document.createDocumentFragment();
+    filtered.forEach(function (n, index) {
+      var tr = document.createElement("tr");
+      if (n.id === state.sel) { tr.className = "selected"; }
+      tr.setAttribute("data-id", n.id);
+      tr.setAttribute("tabindex", "-1");
+      addCell(tr, n.title || n.id);
+      addCell(tr, n.kind || "");
+      addBadge(tr, n.trust);
+      addBadge(tr, n.fresh);
+      var tags = addCell(tr, (n.tags || []).join(", "));
+      tags.className = "tags-cell";
+      addCell(tr, (n.updated_at || "").slice(0, 10));
+      tr.addEventListener("click", function () { select(n.id, false); state.cursor = index; });
+      frag.appendChild(tr);
+    });
+    listBody.appendChild(frag);
+    var selected = listBody.querySelector("tr.selected");
+    if (selected) { selected.scrollIntoView({ block: "nearest", behavior: reducedMotion ? "auto" : "smooth" }); }
+  }
+  function addCell(tr, text) {
+    var td = document.createElement("td");
+    td.textContent = text;
+    tr.appendChild(td);
+    return td;
+  }
+  function addBadge(tr, value) {
+    var td = document.createElement("td");
+    var span = document.createElement("span");
+    span.className = "badge " + (value || "");
+    span.textContent = value || "";
+    td.appendChild(span);
+    tr.appendChild(td);
+  }
+
+  // --- hand-written force-directed layout (no external libraries) ---
+  function computeLayout(visible, visibleSet) {
+    var width = Math.max(600, stage.clientWidth);
+    var height = Math.max(400, stage.clientHeight);
+    var edges = visibleEdges(visibleSet);
+    var positions = {};
+    visible.forEach(function (n, i) {
+      var angle = 2 * Math.PI * i / Math.max(1, visible.length);
+      var radius = Math.min(width, height) * 0.35 * (0.5 + 0.5 * ((i * 2654435761) % 1000) / 1000);
+      positions[n.id] = { x: width / 2 + radius * Math.cos(angle), y: height / 2 + radius * Math.sin(angle) };
+    });
+    // 大 vault 兜底：超阈值的可见节点跳过 O(n^2) 迭代，退回确定性环形布局。
+    if (visible.length > 600 || visible.length === 0) { return { positions: positions, edges: edges, width: width, height: height }; }
+    var iterations = visible.length > 250 ? 120 : 200;
+    var vx = {}, vy = {};
+    visible.forEach(function (n) { vx[n.id] = 0; vy[n.id] = 0; });
+    var repulse = 2600, spring = 0.015, damping = 0.85;
+    for (var step = 0; step < iterations; step++) {
+      for (var a = 0; a < visible.length; a++) {
+        for (var b = a + 1; b < visible.length; b++) {
+          var pa = positions[visible[a].id], pb = positions[visible[b].id];
+          var dx = pa.x - pb.x, dy = pa.y - pb.y;
+          var distSq = dx * dx + dy * dy;
+          if (distSq < 1) { dx = 0.5; dy = 0.5; distSq = 0.5; }
+          var force = repulse / distSq;
+          var dist = Math.sqrt(distSq);
+          var fx = (dx / dist) * force, fy = (dy / dist) * force;
+          vx[visible[a].id] += fx; vy[visible[a].id] += fy;
+          vx[visible[b].id] -= fx; vy[visible[b].id] -= fy;
+        }
+      }
+      edges.forEach(function (e) {
+        if (!positions[e.to]) { return; }
+        var ps = positions[e.from], pt = positions[e.to];
+        var dx = pt.x - ps.x, dy = pt.y - ps.y;
+        var dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        var fx = dx * dist * spring, fy = dy * dist * spring;
+        vx[e.from] += fx; vy[e.from] += fy;
+        if (vx[e.to] !== undefined) { vx[e.to] -= fx; vy[e.to] -= fy; }
+      });
+      visible.forEach(function (n) {
+        var id = n.id;
+        vx[id] = (vx[id] + (width / 2 - positions[id].x) * 0.002) * damping;
+        vy[id] = (vy[id] + (height / 2 - positions[id].y) * 0.002) * damping;
+        positions[id].x = Math.min(width - 10, Math.max(10, positions[id].x + Math.max(-18, Math.min(18, vx[id]))));
+        positions[id].y = Math.min(height - 10, Math.max(10, positions[id].y + Math.max(-18, Math.min(18, vy[id]))));
+      });
+    }
+    return { positions: positions, edges: edges, width: width, height: height };
+  }
+
+  function visibleEdges(visibleSet) {
+    var out = [];
+    (bundle.edges || []).forEach(function (e) {
+      if (!visibleSet[e.from]) { return; }
+      if (!e.broken && !visibleSet[e.to]) { return; }
+      out.push(e);
+    });
+    return out;
+  }
+
+  function drawGraph() {
+    svg.textContent = "";
+    graphEmpty.style.display = filtered.length === 0 ? "block" : "none";
+    if (filtered.length === 0) { return; }
+    var visibleSet = {};
+    filtered.forEach(function (n) { visibleSet[n.id] = true; });
+    // 布局按过滤集缓存：选中/高亮变化不重算力导向坐标，避免节点跳动。
+    var signature = state.q + "|" + state.kind + "|" + state.trust + "|" + state.fresh + "|" +
+      filtered.map(function (n) { return n.id; }).join(",");
+    if (!layout || layout.signature !== signature) {
+      layout = computeLayout(filtered, visibleSet);
+      layout.signature = signature;
+    }
+    var NS = "http://www.w3.org/2000/svg";
+    var edgesG = document.createElementNS(NS, "g");
+    var nodesG = document.createElementNS(NS, "g");
+    var labelsG = document.createElementNS(NS, "g");
+    svg.appendChild(edgesG); svg.appendChild(nodesG); svg.appendChild(labelsG);
+    layout.edges.forEach(function (e, index) {
+      var ps = layout.positions[e.from];
+      if (!ps) { return; }
+      var line = document.createElementNS(NS, "line");
+      line.setAttribute("class", e.broken ? "edge-broken" : "edge-line");
+      line.setAttribute("x1", ps.x); line.setAttribute("y1", ps.y);
+      if (e.broken) {
+        // broken link：确定性方向的短虚线残端（OKF 容忍 broken links）。
+        var angle = 2 * Math.PI * ((index % 12) / 12);
+        line.setAttribute("x2", ps.x + 34 * Math.cos(angle));
+        line.setAttribute("y2", ps.y + 34 * Math.sin(angle));
+      } else {
+        var pt = layout.positions[e.to];
+        if (!pt) { return; }
+        line.setAttribute("x2", pt.x); line.setAttribute("y2", pt.y);
+      }
+      edgesG.appendChild(line);
+    });
+    filtered.forEach(function (n) {
+      var pos = layout.positions[n.id];
+      if (!pos) { return; }
+      var degree = 5;
+      var circle = document.createElementNS(NS, "circle");
+      circle.setAttribute("class", "node-circle");
+      circle.setAttribute("cx", pos.x); circle.setAttribute("cy", pos.y);
+      circle.setAttribute("r", degree);
+      circle.setAttribute("fill", trustColor(n.trust));
+      if (n.id === state.sel) { circle.setAttribute("class", "node-circle node-selected"); circle.setAttribute("r", degree + 2); }
+      circle.addEventListener("click", function () { select(n.id, false); });
+      nodesG.appendChild(circle);
+      if (filtered.length <= 120) {
+        var label = document.createElementNS(NS, "text");
+        label.setAttribute("class", "node-label");
+        label.setAttribute("x", pos.x + 8); label.setAttribute("y", pos.y + 3);
+        label.textContent = truncate(n.title || n.id, 24);
+        labelsG.appendChild(label);
+      }
+    });
+  }
+  function trustColor(trust) {
+    if (trust === "human") { return "#7ee0c0"; }
+    if (trust === "machine") { return "#f0c674"; }
+    return "#8a94a3";
+  }
+  function truncate(text, limit) { return text.length > limit ? text.slice(0, limit - 1) + "…" : text; }
+
+  // --- right-hand card: metadata + badges + backlinks/out/same-tag (no bodies) ---
+  function select(id, focusCard) {
+    if (!nodeIndex[id]) { return; }
+    state.sel = id;
+    var index = filtered.findIndex(function (n) { return n.id === id; });
+    if (index >= 0) { state.cursor = index; }
+    render();
+    if (focusCard) { card.focus && card.focus(); }
+  }
+
+  function renderCard() {
+    if (!state.sel || !nodeIndex[state.sel]) {
+      card.innerHTML = "";
+      var empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = filtered.length === 0 && bundle.nodes.length === 0
+        ? "This vault projection is empty."
+        : "Select a note to inspect its card.";
+      card.appendChild(empty);
+      return;
+    }
+    var n = nodeIndex[state.sel];
+    card.textContent = "";
+    var title = document.createElement("h2");
+    title.textContent = n.title || n.id;
+    card.appendChild(title);
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = n.kind + " · updated " + (n.updated_at || "unknown");
+    card.appendChild(meta);
+    var badges = document.createElement("div");
+    badges.className = "tags";
+    appendBadge(badges, n.trust);
+    appendBadge(badges, n.fresh);
+    card.appendChild(badges);
+    if ((n.tags || []).length > 0) {
+      var tags = document.createElement("div");
+      tags.className = "tags";
+      n.tags.forEach(function (t) { appendBadge(tags, null, t); });
+      card.appendChild(tags);
+    }
+    if (n.summary) {
+      var summary = document.createElement("p");
+      summary.textContent = n.summary;
+      card.appendChild(summary);
+    }
+
+    var backlinks = backlinksOf(n.id);
+    card.appendChild(linkSection("Backlinks (" + backlinks.length + ")", backlinks, false));
+    var outgoing = outgoingOf(n.id);
+    card.appendChild(linkSection("Out (" + outgoing.length + ")", outgoing, true));
+
+    var sameTag = sameTagNeighbors(n);
+    card.appendChild(linkSection("Same tag (" + sameTag.length + ")", sameTag, false));
+
+    var previewSection = document.createElement("section");
+    var previewHead = document.createElement("h3");
+    previewHead.textContent = "Preview";
+    var previewBtn = document.createElement("button");
+    previewBtn.type = "button";
+    previewBtn.className = "preview-btn";
+    previewBtn.textContent = "Load preview";
+    var previewBox = document.createElement("div");
+    previewBtn.addEventListener("click", function () {
+      previewBtn.disabled = true;
+      previewBox.className = "preview";
+      previewBox.textContent = "Loading…";
+      loadJSON("/explore/note/" + encodeURIComponent(n.id)).then(function (payload) {
+        previewBox.className = "preview";
+        previewBox.textContent = payload.preview || "(no preview available)";
+      }, function (err) {
+        previewBox.className = "preview error";
+        previewBox.textContent = String(err && err.message ? err.message : err);
+        if (/HTTP 401/.test(previewBox.textContent)) {
+          previewBox.textContent = "Auth required: open this page with ?token=<share token>.";
+        }
+      }).then(function () { previewBtn.disabled = false; });
+    });
+    previewSection.appendChild(previewHead);
+    previewSection.appendChild(previewBtn);
+    previewSection.appendChild(previewBox);
+    card.appendChild(previewSection);
+  }
+
+  function appendBadge(parent, value, raw) {
+    var span = document.createElement("span");
+    span.className = "badge " + (value || "");
+    span.textContent = raw || value || "";
+    parent.appendChild(span);
+  }
+
+  function linkSection(title, items, markBroken) {
+    var section = document.createElement("section");
+    var head = document.createElement("h3");
+    head.textContent = title;
+    section.appendChild(head);
+    if (items.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "none";
+      section.appendChild(empty);
+      return section;
+    }
+    var ul = document.createElement("ul");
+    items.slice(0, 50).forEach(function (item) {
+      var li = document.createElement("li");
+      if (item.broken && markBroken) { li.className = "broken-link"; }
+      li.textContent = item.label + (item.broken ? "  (broken)" : "");
+      if (item.id && nodeIndex[item.id]) {
+        li.addEventListener("click", function () { select(item.id, false); });
+      }
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    if (items.length > 50) {
+      var more = document.createElement("div");
+      more.className = "counts";
+      more.textContent = "+ " + (items.length - 50) + " more";
+      section.appendChild(more);
+    }
+    return section;
+  }
+
+  function backlinksOf(id) {
+    var out = [];
+    (bundle.edges || []).forEach(function (e) {
+      if (e.to === id && !e.broken && nodeIndex[e.from]) {
+        out.push({ id: e.from, label: nodeIndex[e.from].title || e.from });
+      }
+    });
+    return out;
+  }
+  function outgoingOf(id) {
+    var out = [];
+    (bundle.edges || []).forEach(function (e) {
+      if (e.from !== id) { return; }
+      if (e.broken) { out.push({ id: null, label: e.to, broken: true }); return; }
+      if (nodeIndex[e.to]) { out.push({ id: e.to, label: nodeIndex[e.to].title || e.to }); }
+    });
+    return out;
+  }
+  function sameTagNeighbors(n) {
+    if (!n.tags || n.tags.length === 0) { return []; }
+    var mine = {};
+    n.tags.forEach(function (t) { mine[t] = true; });
+    var out = [];
+    bundle.nodes.forEach(function (other) {
+      if (other.id === n.id) { return; }
+      if ((other.tags || []).some(function (t) { return mine[t]; })) {
+        out.push({ id: other.id, label: other.title || other.id });
+      }
+    });
+    return out.slice(0, 200);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

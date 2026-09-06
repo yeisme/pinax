@@ -3,6 +3,8 @@
 ### Requirement: Explore 数据投影 SHALL 有界且不含正文
 `pinax.explore_bundle.v1` SHALL 由 graph 与 index 投影合成：节点携带 id/title/kind/tags/派生 trust/fresh/有界 summary，边携带 broken 标记；MUST NOT 携带 note 正文、绝对路径或凭据。容量超限时 MUST fail-safe 截断并以 `truncated=true` 显式声明。
 
+冻结字段与上限：节点 `{id,title,kind,tags,trust,fresh,summary,updated_at}`、边 `{from,to,broken}`、顶层 `{schema_version:"pinax.explore_bundle.v1",generated_at,counts:{nodes,edges,truncated}}`；上限节点 5000、边 20000、title ≤160、summary ≤240、tags ≤8；summary 只来自 frontmatter summary/description（不从正文截取）；trust/fresh 缺字段时缺省 `unverified`/`fresh`。
+
 #### Scenario: 截断
 - **WHEN** vault 规模超过节点/边上限
 - **THEN** bundle MUST 截断至上限并置 `truncated=true`

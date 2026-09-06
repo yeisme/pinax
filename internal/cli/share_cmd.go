@@ -16,6 +16,8 @@ func addShareCommands(root *cobra.Command, ctx commandBuildContext) {
 	var noAuth bool
 	var tokenFile string
 	var once bool
+	var view string
+	var noEmbed bool
 
 	shareCmd := &cobra.Command{
 		Use:   "share",
@@ -25,7 +27,7 @@ func addShareCommands(root *cobra.Command, ctx commandBuildContext) {
 		Use:   "start",
 		Short: "Prepare a read-only local or LAN share endpoint",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.ShareStart(cmd.Context(), app.ShareRequest{VaultPath: *ctx.vaultPath, Profile: profile, Out: out, Scope: scope, Host: host, Port: port, AllowLAN: allowLAN, Readonly: readonly, NoAuth: noAuth, TokenFile: tokenFile, Once: once})
+			projection, err := ctx.svc.ShareStart(cmd.Context(), app.ShareRequest{VaultPath: *ctx.vaultPath, Profile: profile, Out: out, Scope: scope, Host: host, Port: port, AllowLAN: allowLAN, Readonly: readonly, NoAuth: noAuth, TokenFile: tokenFile, Once: once, View: view, NoEmbed: noEmbed})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
@@ -39,6 +41,9 @@ func addShareCommands(root *cobra.Command, ctx commandBuildContext) {
 	shareStartCmd.Flags().BoolVar(&noAuth, "no-auth", false, "Allow no auth on loopback only")
 	shareStartCmd.Flags().StringVar(&tokenFile, "token-file", "", "Token file for authenticated share access")
 	shareStartCmd.Flags().BoolVar(&once, "once", false, "Serve one share smoke request set and exit")
+	shareStartCmd.Flags().StringVar(&view, "view", "published", "Share view: published static surface or vault-readonly explore page")
+	shareStartCmd.Flags().BoolVar(&noEmbed, "no-embed", false, "Serve explore page without embedded data (fetch /explore/data.json)")
+	_ = shareStartCmd.RegisterFlagCompletionFunc("view", staticCompletion("view", "published", "explore"))
 	shareCmd.AddCommand(shareStartCmd)
 	root.AddCommand(shareCmd)
 }
