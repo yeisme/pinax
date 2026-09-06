@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/yeisme/pinax/internal/app/searchops"
@@ -25,15 +26,21 @@ func (s *Service) BrainAnswerPreview(ctx context.Context, req BrainAnswerRequest
 	if limit <= 0 {
 		limit = 5
 	}
-	searchProjection, err := s.SearchProjection(ctx, SearchRequest{VaultPath: req.VaultPath, Query: question, Limit: limit, Engine: "auto", LazyIndex: "auto"})
+	// 信任感知检索：lexical 候选必须携带派生 trust/fresh 标注（unverified/stale
+	// 显式标注且默认排序靠后，不剔除；citation-first 语义不变）。
+	searchProjection, err := s.SearchProjection(ctx, SearchRequest{VaultPath: req.VaultPath, Query: question, Limit: limit, Engine: "auto", LazyIndex: "auto", TrustAware: true})
 	if err != nil {
 		return errorProjection("brain.answer", err), err
 	}
 
 	contexts := []domain.AgentContext{}
 	indexStatus := searchProjection.Facts["index_status"]
+	trustByPath := map[string]domain.AgentBrainSource{}
 	if result, ok := searchProjection.Data.(searchops.Result); ok {
 		contexts = append(contexts, result.AgentContexts...)
+		for _, item := range result.Results {
+			trustByPath[item.Note.Path] = domain.AgentBrainSource{Trust: item.Trust, Fresh: item.Fresh}
+		}
 	}
 	bundle := BuildAgentBrainContextBundle(AgentBrainContextBundleRequest{
 		Task:     question,
@@ -49,7 +56,7 @@ func (s *Service) BrainAnswerPreview(ctx context.Context, req BrainAnswerRequest
 		SchemaVersion: domain.AgentBrainAnswerSchemaVersion,
 		Answer:        brainAnswerSummary(question, bundle),
 		Claims:        brainAnswerClaims(bundle.SemanticRefs),
-		Sources:       brainAnswerSources(bundle),
+		Sources:       brainAnswerSources(bundle, trustByPath),
 		OpenQuestions: brainOpenQuestions(question, bundle),
 		NextActions:   bundle.NextActions,
 		Cost: domain.AgentBrainCost{
@@ -106,7 +113,7 @@ func brainAnswerClaims(refs []domain.AgentContextRef) []domain.AgentBrainClaim {
 	return claims
 }
 
-func brainAnswerSources(bundle domain.AgentBrainContextBundle) []domain.AgentBrainSource {
+func brainAnswerSources(bundle domain.AgentBrainContextBundle, trustByPath map[string]domain.AgentBrainSource) []domain.AgentBrainSource {
 	refs := append([]domain.AgentContextRef{}, bundle.MemoryRefs...)
 	refs = append(refs, bundle.SemanticRefs...)
 	refs = append(refs, bundle.GraphRefs...)
@@ -119,9 +126,43 @@ func brainAnswerSources(bundle domain.AgentBrainContextBundle) []domain.AgentBra
 			continue
 		}
 		seen[key] = true
-		sources = append(sources, domain.AgentBrainSource(ref))
+		source := domain.AgentBrainSource{Kind: ref.Kind, ID: ref.ID, Path: ref.Path, Title: ref.Title}
+		if annotation, ok := trustByPath[ref.Path]; ok {
+			source.Trust = annotation.Trust
+			source.Fresh = annotation.Fresh
+		}
+		if source.Trust == "" {
+			source.Trust = domain.TrustTierUnverified
+		}
+		if source.Fresh == "" {
+			source.Fresh = domain.FreshnessFresh
+		}
+		sources = append(sources, source)
 	}
+	// 默认排序：human > machine > unverified；同级 fresh 优先；path 稳定 tie-break。
+	sort.SliceStable(sources, func(i, j int) bool {
+		rankI := brainSourceTrustRank(sources[i].Trust)
+		rankJ := brainSourceTrustRank(sources[j].Trust)
+		if rankI != rankJ {
+			return rankI < rankJ
+		}
+		if sources[i].Fresh != sources[j].Fresh {
+			return sources[i].Fresh != domain.FreshnessStale
+		}
+		return sources[i].Path < sources[j].Path
+	})
 	return sources
+}
+
+func brainSourceTrustRank(tier string) int {
+	switch tier {
+	case domain.TrustTierHuman:
+		return 0
+	case domain.TrustTierMachine:
+		return 1
+	default:
+		return 2
+	}
 }
 
 func brainOpenQuestions(question string, bundle domain.AgentBrainContextBundle) []string {

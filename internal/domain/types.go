@@ -85,6 +85,10 @@ type AgentBrainSource struct {
 	ID    string `json:"id,omitempty"`
 	Path  string `json:"path,omitempty"`
 	Title string `json:"title,omitempty"`
+	// Trust/Fresh 是候选的派生信任标注（OKF 对齐）：unverified/stale 候选显式标注
+	// 并默认排序靠后，绝不静默剔除。
+	Trust string `json:"trust,omitempty"`
+	Fresh string `json:"fresh,omitempty"`
 }
 
 type AgentBrainCost struct {

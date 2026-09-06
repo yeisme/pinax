@@ -1018,7 +1018,7 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 	case "plan.actions":
 		return renderSummaryNamedDataList(w, theme, "Action draft tasks", p.Data, []string{"draft", "tasks"}, []summaryListColumn{{Header: "Task ID", Path: "task_id", MaxWidth: 28}, {Header: "Kind", Path: "kind", MaxWidth: 12}, {Header: "Reason", Path: "reason", MaxWidth: 56}, {Header: "Confirm", Path: "requires_confirmation", MaxWidth: 10}})
 	case "brain.answer":
-		return renderSummaryNamedDataList(w, theme, "Brain sources", p.Data, []string{"sources"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 14}, {Header: "Path", Path: "path", MaxWidth: 48}, {Header: "Title", Path: "title", MaxWidth: 34}})
+		return renderSummaryNamedDataList(w, theme, "Brain sources", p.Data, []string{"sources"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 14}, {Header: "Path", Path: "path", MaxWidth: 44}, {Header: "Title", Path: "title", MaxWidth: 30}, {Header: "Trust", Path: "trust", MaxWidth: 12}, {Header: "Fresh", Path: "fresh", MaxWidth: 8}})
 	case "brain.maintenance_plan":
 		return renderSummaryNamedDataList(w, theme, "Brain maintenance operations", p.Data, []string{"operations"}, []summaryListColumn{{Header: "Kind", Path: "kind", MaxWidth: 28}, {Header: "Risk", Path: "risk", MaxWidth: 12}, {Header: "Status", Path: "status", MaxWidth: 14}, {Header: "Next action", Path: "next_action.command", MaxWidth: 58}})
 	case "note.orphans":

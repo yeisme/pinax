@@ -704,7 +704,7 @@ func appendBrainAgentLines(lines []string, p domain.Projection) []string {
 		}
 		for i, item := range items[:limit] {
 			prefix := fmt.Sprintf("brain_source.%d.", i+1)
-			for _, field := range []agentListField{{"kind", []string{"kind"}}, {"id", []string{"id"}}, {"path", []string{"path"}}, {"title", []string{"title"}}} {
+			for _, field := range []agentListField{{"kind", []string{"kind"}}, {"id", []string{"id"}}, {"path", []string{"path"}}, {"title", []string{"title"}}, {"trust", []string{"trust"}}, {"fresh", []string{"fresh"}}} {
 				value := firstDataPathString(item, field.Paths...)
 				if value != "" {
 					lines = append(lines, prefix+field.Key+"="+quoteAgentValue(value))
