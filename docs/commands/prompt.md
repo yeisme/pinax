@@ -61,7 +61,7 @@ Agent output is intentionally bounded: it includes decision-essential facts such
 
 ```bash
 # Register the official repository and synchronize the shared cross-CLI profile.
-pinax prompt repository add official --source github://yeisme/prompt-templates --trust official --json
+pinax prompt repository add official --source https://github.com/yeisme/prompt-templates --trust official --json
 pinax prompt repository sync official --json
 pinax prompt catalog inspect 'promptrepo://official/general/structured-summary-beta@2.0.0-beta.1?locale=en' --json
 
