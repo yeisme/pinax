@@ -998,6 +998,10 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryDataList(w, theme, p.Data, []string{"notes"}, []summaryListColumn{{Header: "Path", Path: "path", MaxWidth: 44}, {Header: "Size", Path: "size_bytes", MaxWidth: 12}, {Header: "Updated", Path: "updated_at", MaxWidth: 22}})
 	case "activity.list", "activity.tail":
 		return renderSummaryActivityList(w, theme, p.Data)
+	case "pipeline.status":
+		return renderSummaryPipelineStatus(w, theme, p.Data)
+	case "pipeline.show":
+		return renderSummaryPipelineShow(w, theme, p.Data)
 	case "monitor.runs", "monitor.tail":
 		return renderSummaryMonitorRuns(w, theme, p.Data)
 	case "sync.logs.list":
@@ -1670,6 +1674,223 @@ func remoteVaultRows(data any) []map[string]any {
 		}
 	}
 	return items
+}
+
+// renderSummaryPipelineStatus 渲染 pinax pipeline status 的 human 视图：
+// Pending plans（含 freshness 徽标与下一步命令）+ Recent runs + unreadable 条目。
+func renderSummaryPipelineStatus(w io.Writer, theme summaryTheme, data any) error {
+	root, _ := data.(map[string]any)
+	plans := dataListMaps(data, "plans")
+	nextCommands := stringSliceValue(root["next_commands"])
+	unreadable := dataListMaps(data, "unreadable")
+	receipts := dataListMaps(data, "receipts")
+	if len(plans) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "%s (%d)\n", theme.header.Render("Pending plans"), len(plans)); err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(plans))
+		for index, plan := range plans {
+			freshness := "fresh"
+			if fresh, ok := dataPathValue(plan, "fresh").(bool); !ok || !fresh {
+				freshness = "STALE"
+				if reason := firstDataPathString(plan, "fresh_reason"); reason != "" {
+					freshness = "STALE (" + reason + ")"
+				}
+			}
+			next := ""
+			if index < len(nextCommands) {
+				next = nextCommands[index]
+			}
+			rows = append(rows, []string{summaryCell(firstDataPathString(plan, "plan_id"), 28), summaryCell(firstDataPathString(plan, "kind"), 12), fmt.Sprint(dataPathValue(plan, "operations_total")), summaryCell(freshness, 24), summaryCell(next, 64)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Plan", "Kind", "Ops", "Freshness", "Next"}, rows); err != nil {
+			return err
+		}
+	}
+	if len(unreadable) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "%s (%d)\n", theme.header.Render("Unreadable plans"), len(unreadable)); err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(unreadable))
+		for _, item := range unreadable {
+			rows = append(rows, []string{summaryCell(firstDataPathString(item, "kind"), 12), summaryCell(firstDataPathString(item, "saved_path"), 40), summaryCell(firstDataPathString(item, "error"), 56)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Kind", "Saved path", "Error"}, rows); err != nil {
+			return err
+		}
+	}
+	if len(receipts) > 0 {
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "%s (%d)\n", theme.header.Render("Recent runs"), len(receipts)); err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(receipts))
+		for _, receipt := range receipts {
+			rows = append(rows, []string{summaryCell(firstDataPathString(receipt, "receipt_id"), 32), summaryCell(firstDataPathString(receipt, "pipeline"), 12), summaryCell(firstDataPathString(receipt, "command"), 18), summaryCell(firstDataPathString(receipt, "status"), 12), fmt.Sprint(dataPathValue(receipt, "changed_paths")), summaryCell(firstDataPathString(receipt, "created_at"), 22)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Receipt", "Pipeline", "Command", "Status", "Changed", "When"}, rows); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// renderSummaryPipelineShow 渲染 pinax pipeline show 的 human 视图：
+// plan 形态按 vault 写入 vs 元数据写入分组；receipt 形态展示 applied 事实。
+func renderSummaryPipelineShow(w io.Writer, theme summaryTheme, data any) error {
+	root := normalizeSummaryData(data)
+	if plan := firstDataMap(root, "plan"); plan != nil {
+		freshness := "fresh"
+		if fresh, ok := dataPathValue(plan, "fresh").(bool); !ok || !fresh {
+			freshness = "stale"
+			if reason := firstDataPathString(plan, "fresh_reason"); reason != "" {
+				freshness = "stale (" + reason + ")"
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+		header := fmt.Sprintf("%s · %s · %s · %s", firstDataPathString(plan, "plan_id"), firstDataPathString(plan, "kind"), firstDataPathString(plan, "source_schema"), freshness)
+		if digest := firstDataPathString(plan, "facts_digest"); digest != "" {
+			header += " (facts digest " + digest + ")"
+		}
+		if _, err := fmt.Fprintln(w, theme.header.Render(header)); err != nil {
+			return err
+		}
+		groups := []struct{ key, label string }{
+			{"vault_write", "Vault writes"},
+			{"metadata_write", "Metadata writes"},
+			{"manual_review", "Manual review"},
+		}
+		operations := dataListMaps(data, "operations")
+		for _, group := range groups {
+			rows := make([][]string, 0)
+			for _, op := range operations {
+				if firstDataPathString(op, "group") != group.key {
+					continue
+				}
+				rows = append(rows, []string{summaryCell(firstDataPathString(op, "kind"), 16), summaryCell(firstDataPathString(op, "path"), 44), summaryCell(firstDataPathString(op, "target"), 44), summaryCell(firstDataPathString(op, "reason"), 48)})
+			}
+			if len(rows) == 0 {
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "\n%s (%d)\n", theme.header.Render(group.label), len(rows)); err != nil {
+				return err
+			}
+			if err := renderSummaryTable(w, theme, []string{"Kind", "Path", "Target", "Reason"}, rows); err != nil {
+				return err
+			}
+		}
+		if paths := stringSliceValue(dataPathValue(root, "changed_paths")); len(paths) > 0 {
+			if _, err := fmt.Fprintf(w, "\n%s (%d)\n", theme.header.Render("Changed paths"), len(paths)); err != nil {
+				return err
+			}
+			rows := make([][]string, 0, len(paths))
+			for _, path := range paths {
+				rows = append(rows, []string{summaryCell(path, 72)})
+			}
+			if err := renderSummaryTable(w, theme, []string{"Path"}, rows); err != nil {
+				return err
+			}
+		}
+		if next := firstDataPathString(root, "next"); next != "" {
+			if _, err := fmt.Fprintf(w, "\nNext       %s\n", next); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	receipt := firstDataMap(root, "receipt")
+	if receipt == nil {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render(firstDataPathString(receipt, "receipt_id")+" · applied")); err != nil {
+		return err
+	}
+	rows := [][]string{
+		{"Command", summaryCell(firstDataPathString(receipt, "command"), 40)},
+		{"Status", summaryCell(firstDataPathString(receipt, "status"), 20)},
+	}
+	if planID := firstDataPathString(receipt, "plan_id"); planID != "" {
+		rows = append(rows, []string{"Plan", summaryCell(planID, 40)})
+	}
+	if snapshotID := firstDataPathString(receipt, "snapshot_id"); snapshotID != "" {
+		rows = append(rows, []string{"Snapshot", summaryCell(snapshotID, 40)})
+	}
+	if ledgerSeq := fmt.Sprint(dataPathValue(receipt, "ledger_seq")); ledgerSeq != "<nil>" {
+		rows = append(rows, []string{"Ledger seq", ledgerSeq})
+	}
+	if err := renderSummaryTable(w, theme, []string{"Field", "Value"}, rows); err != nil {
+		return err
+	}
+	if paths := stringSliceValue(dataPathValue(root, "changed_paths")); len(paths) > 0 {
+		if _, err := fmt.Fprintf(w, "\n%s (%d)\n", theme.header.Render("Changed paths"), len(paths)); err != nil {
+			return err
+		}
+		pathRows := make([][]string, 0, len(paths))
+		for _, path := range paths {
+			pathRows = append(pathRows, []string{summaryCell(path, 72)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Path"}, pathRows); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func firstDataMap(root map[string]any, key string) map[string]any {
+	if root == nil {
+		return nil
+	}
+	if typed, ok := root[key].(map[string]any); ok {
+		return typed
+	}
+	return nil
+}
+
+// normalizeSummaryData 把进程内构造的 Data（含 domain 类型）规范成
+// map[string]any，避免 human 渲染依赖具体 Go 类型。
+func normalizeSummaryData(data any) map[string]any {
+	if data == nil {
+		return nil
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	var root map[string]any
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil
+	}
+	return root
+}
+
+func stringSliceValue(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		if typed, ok := value.([]string); ok {
+			return typed
+		}
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			out = append(out, text)
+		}
+	}
+	return out
 }
 
 func renderSummaryRepairList(w io.Writer, theme summaryTheme, data any) error {
