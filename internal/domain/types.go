@@ -363,19 +363,22 @@ type Note struct {
 	Labels      []string          `json:"labels,omitempty"`
 	Body        string            `json:"body,omitempty"`
 	Frontmatter map[string]string `json:"-"`
-	Project     string            `json:"project,omitempty"`
-	Subproject  string            `json:"subproject,omitempty"`
-	Folder      string            `json:"folder,omitempty"`
-	Kind        string            `json:"kind,omitempty"`
-	Status      string            `json:"status,omitempty"`
-	BoardColumn string            `json:"board_column,omitempty"`
-	Milestone   string            `json:"milestone,omitempty"`
-	Priority    string            `json:"priority,omitempty"`
-	Due         string            `json:"due,omitempty"`
-	DueAt       string            `json:"due_at,omitempty"`
-	BlockedBy   []string          `json:"blocked_by,omitempty"`
-	CreatedAt   string            `json:"created_at,omitempty"`
-	UpdatedAt   string            `json:"updated_at,omitempty"`
+	// Trust 是 frontmatter 信任/生命周期字段的类型化投影（OKF 对齐）。
+	// 只在消费时派生分级，绝不写回 vault；nil 表示未解析或未携带字段。
+	Trust       *TrustSignals `json:"-"`
+	Project     string        `json:"project,omitempty"`
+	Subproject  string        `json:"subproject,omitempty"`
+	Folder      string        `json:"folder,omitempty"`
+	Kind        string        `json:"kind,omitempty"`
+	Status      string        `json:"status,omitempty"`
+	BoardColumn string        `json:"board_column,omitempty"`
+	Milestone   string        `json:"milestone,omitempty"`
+	Priority    string        `json:"priority,omitempty"`
+	Due         string        `json:"due,omitempty"`
+	DueAt       string        `json:"due_at,omitempty"`
+	BlockedBy   []string      `json:"blocked_by,omitempty"`
+	CreatedAt   string        `json:"created_at,omitempty"`
+	UpdatedAt   string        `json:"updated_at,omitempty"`
 }
 
 const ProjectWorkspaceSchemaVersion = "pinax.project_workspace.v1"

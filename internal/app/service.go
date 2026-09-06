@@ -2838,6 +2838,11 @@ func scanNotes(root string) ([]domain.Note, error) {
 		if isSystemIndexNote(note) {
 			return nil
 		}
+		signals, trustErr := domain.ParseTrustSignals(content)
+		if trustErr != nil {
+			return &domain.CommandError{Code: "trust_field_invalid", Message: fmt.Sprintf("%s in %s", trustErr.Error(), filepath.ToSlash(rel)), Hint: "Fix the timestamp to ISO8601 with UTC offset, or remove the trust field"}
+		}
+		note.Trust = &signals
 		notes = append(notes, note)
 		return nil
 	})
@@ -2947,6 +2952,11 @@ func scanIndexRefreshNote(root, path string) indexRefreshScanItem {
 	if isSystemIndexNote(note) || isSystemJournalNote(note) {
 		return indexRefreshScanItem{path: rel}
 	}
+	signals, trustErr := domain.ParseTrustSignals(content)
+	if trustErr != nil {
+		return indexRefreshScanItem{path: rel, err: &domain.CommandError{Code: "trust_field_invalid", Message: fmt.Sprintf("%s in %s", trustErr.Error(), rel), Hint: "Fix the timestamp to ISO8601 with UTC offset, or remove the trust field"}}
+	}
+	note.Trust = &signals
 	if strings.TrimSpace(note.Path) == "" || strings.TrimSpace(note.ID) == "" {
 		return indexRefreshScanItem{path: rel, failedPath: rel}
 	}
