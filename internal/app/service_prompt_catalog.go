@@ -793,15 +793,18 @@ func promptInstallConflict(command, localID string, existing noteindex.PromptAss
 	projection.Facts["conflict"] = "true"
 	projection.Facts["prompt_asset_id"] = localID
 	projection.Facts["existing_version"] = existing.CurrentVersionID
+	// 两侧统一为裸 hex：existing.PromptTemplateHash 是裸 sha256，而 catalog
+	// digest 带 sha256: 前缀；混排会让相同内容看起来不同，诱导不必要的 fork。
+	incomingDigest := strings.TrimPrefix(templateDigest, "sha256:")
 	projection.Facts["existing_digest"] = existing.PromptTemplateHash
-	projection.Facts["incoming_digest"] = templateDigest
+	projection.Facts["incoming_digest"] = incomingDigest
 	projection.Facts["available_plans"] = "keep-existing,side-by-side,fork-local,reject"
 	projection.Facts["selected_plan"] = "reject"
 	projection.Data = map[string]any{"conflict": map[string]any{
 		"prompt_asset_id":    localID,
 		"existing_version":   existing.CurrentVersionID,
 		"existing_digest":    existing.PromptTemplateHash,
-		"incoming_digest":    templateDigest,
+		"incoming_digest":    incomingDigest,
 		"available_plans":    []string{"keep-existing", "side-by-side", "fork-local", "reject"},
 		"selected_plan":      "reject",
 		"existing_unchanged": true,
@@ -818,11 +821,18 @@ func (s *Service) readVerifiedTemplateBody(ctx context.Context, bridge *promptbr
 		return "", "", err
 	}
 	templateDigest := content.Digest
+	matched := false
 	for _, template := range resolved.Solution.Templates {
 		if template.Role == content.Role && template.Locale == content.Locale {
 			templateDigest = template.Digest
+			matched = true
 			break
 		}
+	}
+	if !matched {
+		// catalog 未列出该 (role, locale)：无锚点可比对，fail closed，
+		// 不得退化成自比较后放行。
+		return "", "", &domain.CommandError{Code: promptbridge.CodeInstallBodyUnverifiable, Message: "Catalog does not list a template for the resolved role and locale", Hint: "Sync the repository and retry the install"}
 	}
 	if content.Digest != templateDigest {
 		return "", "", &domain.CommandError{Code: promptbridge.CodeInstallBodyUnverifiable, Message: "Template body digest does not match the catalog", Hint: "Sync the repository and retry the install"}
