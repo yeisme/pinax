@@ -29,15 +29,21 @@ func handoffSources(handoff *agentmemory.AgentHandoffRow) agentprotocol.SourceRe
 }
 
 func mergeSources(groups ...agentprotocol.SourceRefList) agentprotocol.SourceRefList {
-	seen := make(map[string]struct{})
+	seen := make(map[string]int)
 	var merged agentprotocol.SourceRefList
 	for _, group := range groups {
 		for _, source := range group {
 			key := source.Kind + "\x00" + source.Ref
-			if _, ok := seen[key]; ok {
+			if idx, ok := seen[key]; ok {
+				// 同 kind+ref 去重时保留更精确的变体：context pack 的无 span
+				// 引用不得覆盖 handoff 的 rev: 钉定，否则 pinned 漂移检测会
+				// 把 stale 误判成 resolved。
+				if merged[idx].Span == "" && source.Span != "" {
+					merged[idx] = source
+				}
 				continue
 			}
-			seen[key] = struct{}{}
+			seen[key] = len(merged)
 			merged = append(merged, source)
 		}
 	}
@@ -163,6 +169,9 @@ func (p *ContinuityPack) RefreshDerived() {
 	}
 	if p.ReviewAttentionCount > 0 && p.ReviewAttention != nil {
 		p.WarningCodes = append(p.WarningCodes, WarningReviewAttention)
+	}
+	if p.ReviewAttentionUnavailable {
+		p.WarningCodes = append(p.WarningCodes, WarningReviewAttentionUnavailable)
 	}
 
 	// evidence status

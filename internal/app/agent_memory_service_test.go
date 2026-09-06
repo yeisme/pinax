@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/agentmemory"
@@ -347,4 +348,39 @@ func TestAgentMemoryService_ProposalReviewFields(t *testing.T) {
 	// Verify vault path is resolved correctly
 	abs, _ := filepath.Abs(vault)
 	_ = abs // just ensure no panic
+}
+
+// TestAgentMemoryRejectAfterApproveFailsStale 覆盖并发/迟到的 reject：
+// approve 之后 reject 不得覆盖终态，必须以 stale action 失败。
+func TestAgentMemoryRejectAfterApproveFailsStale(t *testing.T) {
+	t.Parallel()
+	svc, vault := testAgentMemoryService(t)
+	ctx := context.Background()
+	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindWorkspace, ID: "ws_stale"}
+	facts, _, err := svc.AgentMemoryPropose(ctx, AgentMemoryProposeRequest{
+		VaultPath: vault, Principal: adapterPrincipal(), Scope: scope,
+		Kind: agentprotocol.MemoryKindDecision, Subject: "stale reject test",
+		Sources: agentprotocol.SourceRefList{{Kind: "note", Ref: "n1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approveFacts, err := svc.AgentMemoryApprove(ctx, vault, facts.ProposalID, ownerPrincipal())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if approveFacts.MemoryID == "" {
+		t.Fatal("approve must produce a memory id")
+	}
+	err = svc.AgentMemoryReject(ctx, vault, facts.ProposalID, ownerPrincipal(), "late")
+	if err == nil || !strings.Contains(err.Error(), "already consumed") {
+		t.Fatalf("late reject must fail as stale action: %v", err)
+	}
+	shown, err := svc.AgentMemoryShowProposal(ctx, vault, facts.ProposalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown.Status != string(agentprotocol.ProposalStatusApproved) {
+		t.Fatalf("terminal status must not be overwritten: %s", shown.Status)
+	}
 }

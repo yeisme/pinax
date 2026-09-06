@@ -154,6 +154,9 @@ func attachReviewAttention(ctx context.Context, s *AgentMemoryService, req Conti
 		Limit:     100,
 	})
 	if err != nil {
+		// 不阻塞主路径，但 0 条 attention 此时是"未测量"：
+		// 打 flag 让 RefreshDerived 写入 review_attention_unavailable。
+		pack.ReviewAttentionUnavailable = true
 		return
 	}
 	relevant := memoryinbox.RelevanceProjection(inbox.Items, pack.Objective, pack.CurrentState)

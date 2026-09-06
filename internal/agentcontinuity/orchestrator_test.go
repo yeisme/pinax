@@ -289,3 +289,57 @@ func TestCompile_NextActions(t *testing.T) {
 		t.Errorf("expected a context-related next action; got %+v", pack.NextActions)
 	}
 }
+
+// TestMergeSourcesKeepsHandoffRevisionPin 覆盖去重时保留更精确变体：
+// context pack 的无 span 引用不得覆盖 handoff 的 rev: 钉定。
+func TestMergeSourcesKeepsHandoffRevisionPin(t *testing.T) {
+	t.Parallel()
+	contextSources := agentprotocol.SourceRefList{
+		{Kind: agentprotocol.SourceKindRepository, Ref: "docs/spec.md"},
+		{Kind: agentprotocol.SourceKindNote, Ref: "note-a"},
+	}
+	handoffSources := agentprotocol.SourceRefList{
+		{Kind: agentprotocol.SourceKindRepository, Ref: "docs/spec.md", Span: "rev:abc123"},
+		{Kind: agentprotocol.SourceKindRepository, Ref: "docs/runbook.md", Span: "rev:def456"},
+	}
+	merged := mergeSources(contextSources, handoffSources)
+	if len(merged) != 3 {
+		t.Fatalf("merged = %#v", merged)
+	}
+	pinned := false
+	for _, source := range merged {
+		if source.Ref == "docs/spec.md" {
+			if source.Span != "rev:abc123" {
+				t.Fatalf("pinned span lost: %#v", source)
+			}
+			pinned = true
+		}
+	}
+	if !pinned {
+		t.Fatal("docs/spec.md missing from merged sources")
+	}
+	// 反向顺序：handoff 在前时保留原值不被降级。
+	mergedReverse := mergeSources(handoffSources, contextSources)
+	for _, source := range mergedReverse {
+		if source.Ref == "docs/spec.md" && source.Span != "rev:abc123" {
+			t.Fatalf("reverse merge downgraded pinned span: %#v", source)
+		}
+	}
+}
+
+// TestRefreshDerivedEmitsReviewAttentionUnavailable 覆盖 inbox 不可读时
+// warning code 必须出现，区分"未测量"与"没有待办"。
+func TestRefreshDerivedEmitsReviewAttentionUnavailable(t *testing.T) {
+	t.Parallel()
+	pack := ContinuityPack{ReviewAttentionUnavailable: true}
+	pack.RefreshDerived()
+	found := false
+	for _, code := range pack.WarningCodes {
+		if code == WarningReviewAttentionUnavailable {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warning codes = %#v", pack.WarningCodes)
+	}
+}

@@ -213,3 +213,90 @@ func TestWeeklyBurdenGateBoundary(t *testing.T) {
 		t.Fatal("weekly burden gate must fail when a week exceeds 300s")
 	}
 }
+
+func findReportGate(t *testing.T, report Report, gate string) ReportGate {
+	t.Helper()
+	for _, g := range report.Gates {
+		if g.Gate == gate {
+			return g
+		}
+	}
+	t.Fatalf("gate %q not found", gate)
+	return ReportGate{}
+}
+
+// TestWeeklyBurdenGateNotVacuouslyPassedWithoutReviews 覆盖零 weekly review：
+// 负担未知，Measured=false、Passed=false，不得当作 0s 通过。
+func TestWeeklyBurdenGateNotVacuouslyPassedWithoutReviews(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(6 * 7 * 24 * time.Hour)
+	var runs []ContinuityRunRow
+	var events []ContinuityFeedbackEventRow
+	classes := []string{"implementation_debugging", "product_spec_docs", "release_operations"}
+	for i := 0; i < 30; i++ {
+		runtime := "codex"
+		if i%2 == 1 {
+			runtime = "claude-code"
+		}
+		r, e := reportFixtureRuns(fmtSprintf("run_w_%d", i), runtime, classes[i%3], start.Add(time.Duration(i)*12*time.Hour), true)
+		runs = append(runs, r...)
+		events = append(events, e...)
+	}
+	// 不提交任何 weekly review 事件。
+	report := BuildReport(start, end, runs, events)
+	gate := findReportGate(t, report, "weekly_review_le_300s")
+	if gate.Measured || gate.Passed {
+		t.Fatalf("zero weekly reviews must not vacuously pass: %#v", gate)
+	}
+	if gate.Current != "no weekly reviews" {
+		t.Fatalf("current = %q", gate.Current)
+	}
+	if report.GoReady {
+		t.Fatal("go_ready must be false when weekly burden is unmeasured")
+	}
+}
+
+// TestSourceResolvabilityAnyZeroSourceRunNotMeasured 覆盖预注册口径：
+// 任一 run total=0 时整体 not_measured，即使其余 run 全部 resolved。
+func TestSourceResolvabilityAnyZeroSourceRunNotMeasured(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(6 * 7 * 24 * time.Hour)
+	var runs []ContinuityRunRow
+	var events []ContinuityFeedbackEventRow
+	for i := 0; i < 10; i++ {
+		r, e := reportFixtureRuns(fmtSprintf("run_s_%d", i), "codex", "implementation_debugging", start.Add(time.Duration(i)*time.Hour), true)
+		runs = append(runs, r...)
+		events = append(events, e...)
+	}
+	runs = append(runs, sampleRun("run_s_zero", "codex", "implementation_debugging", start.Add(11*time.Hour)))
+	runs[len(runs)-1].SourceTotal = 0
+	runs[len(runs)-1].SourceResolved = 0
+
+	report := BuildReport(start, end, runs, events)
+	if report.SourceResolvability.Measured {
+		t.Fatalf("any run with total=0 must make the metric not_measured: %#v", report.SourceResolvability)
+	}
+	gate := findReportGate(t, report, "source_resolvability_ge_95pct")
+	if gate.Measured || gate.Passed {
+		t.Fatalf("source gate must fail when metric is not_measured: %#v", gate)
+	}
+}
+
+// TestRuntimeCoverageSortedDeterministic 覆盖 runtime_coverage 输出排序稳定。
+func TestRuntimeCoverageSortedDeterministic(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(6 * 7 * 24 * time.Hour)
+	runs := []ContinuityRunRow{
+		sampleRun("run_r_1", "codex", "implementation_debugging", start),
+		sampleRun("run_r_2", "claude-code", "implementation_debugging", start.Add(time.Hour)),
+	}
+	for i := 0; i < 10; i++ {
+		report := BuildReport(start, end, runs, nil)
+		if len(report.RuntimeCoverage) != 2 || report.RuntimeCoverage[0] != "claude-code" || report.RuntimeCoverage[1] != "codex" {
+			t.Fatalf("runtime coverage must be sorted deterministically: %#v", report.RuntimeCoverage)
+		}
+	}
+}

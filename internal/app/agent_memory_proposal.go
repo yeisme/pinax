@@ -141,12 +141,19 @@ func (s *AgentMemoryService) AgentMemoryApprove(ctx context.Context, vaultPath, 
 	if err := m.Validate(); err != nil {
 		return ApproveFacts{}, err
 	}
-	if err := st.SaveMemory(ctx, m); err != nil {
+	// 原子认领：条件更新 status → approved 只在仍处于 approval/conflict
+	// required 时成立。并发 reject 会在这里输掉，memory 不会被创建，
+	// 避免出现 "confirmed memory 已落库但 proposal 标记 rejected" 的证据错配。
+	claimed, err := st.UpdateProposalStatusFrom(ctx, proposalID,
+		[]agentprotocol.ProposalStatus{agentprotocol.ProposalStatusApprovalRequired, agentprotocol.ProposalStatusConflictRequired},
+		agentprotocol.ProposalStatusApproved, agentprotocol.ReasonValid, memoryID)
+	if err != nil {
 		return ApproveFacts{}, err
 	}
-
-	// 更新 proposal status
-	if err := st.UpdateProposalStatus(ctx, proposalID, agentprotocol.ProposalStatusApproved, agentprotocol.ReasonValid, memoryID); err != nil {
+	if !claimed {
+		return ApproveFacts{}, fmt.Errorf("proposal %s is already consumed (status=%s); refresh the review inbox before acting", proposalID, propRow.Status)
+	}
+	if err := st.SaveMemory(ctx, m); err != nil {
 		return ApproveFacts{}, err
 	}
 
@@ -181,7 +188,22 @@ func (s *AgentMemoryService) AgentMemoryReject(ctx context.Context, vaultPath, p
 		// 终态 proposal：任何新 action 都是 stale，必须失败而非假成功。
 		return fmt.Errorf("proposal %s is already consumed (status=%s); refresh the review inbox before acting", proposalID, propRow.Status)
 	}
-	return st.UpdateProposalStatus(ctx, proposalID, agentprotocol.ProposalStatusRejected, agentprotocol.ProposalStatusReason(reason), "")
+	// 原子拒绝：与上面的读检查配合，条件更新兜底并发窗口（读后另一个
+	// action 已消费 proposal）。输掉竞态时按 stale action 失败，不假成功。
+	claimed, err := st.UpdateProposalStatusFrom(ctx, proposalID,
+		[]agentprotocol.ProposalStatus{
+			agentprotocol.ProposalStatusDraftSaved,
+			agentprotocol.ProposalStatusApprovalRequired,
+			agentprotocol.ProposalStatusConflictRequired,
+		},
+		agentprotocol.ProposalStatusRejected, agentprotocol.ProposalStatusReason(reason), "")
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		return fmt.Errorf("proposal %s is already consumed (status=%s); refresh the review inbox before acting", proposalID, propRow.Status)
+	}
+	return nil
 }
 
 // getProposalSources 读取 proposal 关联的 bounded source refs。

@@ -298,6 +298,31 @@ func (s *Store) UpdateProposalStatus(ctx context.Context, proposalID string, sta
 	return s.db.WithContext(ctx).Model(&AgentProposalRow{}).Where("proposal_id = ?", proposalID).Updates(updates).Error
 }
 
+// UpdateProposalStatusFrom 是带状态前置条件的原子 review 结果更新：
+// 只有 proposal 仍处于 from 集合之一时才写入。RowsAffected != 1 说明
+// proposal 已被并发 action 消费（approve 与 reject 竞态），返回 false，
+// 调用方必须以 stale action 失败，不得假成功。
+func (s *Store) UpdateProposalStatusFrom(ctx context.Context, proposalID string, from []agentprotocol.ProposalStatus, status agentprotocol.ProposalStatus, reviewReason agentprotocol.ProposalStatusReason, resultingMemoryID string) (bool, error) {
+	fromValues := make([]string, 0, len(from))
+	for _, value := range from {
+		fromValues = append(fromValues, string(value))
+	}
+	updates := map[string]any{
+		"status":              string(status),
+		"review_reason":       string(reviewReason),
+		"resulting_memory_id": resultingMemoryID,
+		"reviewed_at":         time.Now().UTC(),
+	}
+	result := s.db.WithContext(ctx).Model(&AgentProposalRow{}).
+		Where("proposal_id = ?", proposalID).
+		Where("status IN ?", fromValues).
+		Updates(updates)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // ListProposals 按 scope 列出 proposal。
 func (s *Store) ListProposals(ctx context.Context, scope agentprotocol.Scope) ([]AgentProposalRow, error) {
 	var rows []AgentProposalRow

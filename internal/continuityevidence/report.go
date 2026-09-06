@@ -1,6 +1,7 @@
 package continuityevidence
 
 import (
+	"sort"
 	"time"
 )
 
@@ -103,6 +104,7 @@ func BuildReport(windowStart, windowEnd time.Time, runs []ContinuityRunRow, even
 	runtimes := map[string]struct{}{}
 	classIndex := map[TaskClass]int{}
 	sourceTotal, sourceResolved := 0, 0
+	anyZeroSourceRun := false
 	silentWrites := 0
 	for i := range runs {
 		run := runs[i]
@@ -144,6 +146,11 @@ func BuildReport(windowStart, windowEnd time.Time, runs []ContinuityRunRow, even
 		}
 		sourceTotal += run.SourceTotal
 		sourceResolved += run.SourceResolved
+		// 预注册口径：任一 run total=0 时整体 not_measured，绝不把
+		// 零来源 run 从分母中静默剔除后当成 100%。
+		if run.SourceTotal == 0 {
+			anyZeroSourceRun = true
+		}
 		silentWrites += run.SilentConfirmedWriteCnt
 	}
 	report.SilentConfirmedWriteCount = silentWrites
@@ -151,6 +158,8 @@ func BuildReport(windowStart, windowEnd time.Time, runs []ContinuityRunRow, even
 	for runtime := range runtimes {
 		report.RuntimeCoverage = append(report.RuntimeCoverage, runtime)
 	}
+	// map 迭代无序；输出合同要求确定性排序。
+	sort.Strings(report.RuntimeCoverage)
 
 	// trusted rate：分母为全部有 outcome 的 run。
 	outcomeDenominator := 0
@@ -165,7 +174,7 @@ func BuildReport(windowStart, windowEnd time.Time, runs []ContinuityRunRow, even
 			Total:    outcomeDenominator,
 		}
 	}
-	if sourceTotal > 0 {
+	if sourceTotal > 0 && !anyZeroSourceRun {
 		report.SourceResolvability = RateValue{
 			Measured: true,
 			Ratio:    float64(sourceResolved) / float64(sourceTotal),
@@ -176,13 +185,20 @@ func BuildReport(windowStart, windowEnd time.Time, runs []ContinuityRunRow, even
 
 	report.WeeklyReviews = aggregateWeeklyReviews(events)
 
+	// 零 weekly review 时负担未知，不得空泛通过（vacuous pass）：
+	// Measured=false → Passed=false → Go 不成立。
+	weeklyMeasured := len(report.WeeklyReviews) > 0
+	weeklyCurrent := maxWeeklySeconds(report.WeeklyReviews)
+	if !weeklyMeasured {
+		weeklyCurrent = "no weekly reviews"
+	}
 	report.Gates = []ReportGate{
 		{Gate: "sample_ge_30", Measured: true, Current: itoa(report.CompletedLoops), Threshold: ">=30", Passed: report.CompletedLoops >= 30},
 		{Gate: "runtime_coverage_codex_and_claude", Measured: true, Current: joinSorted(report.RuntimeCoverage), Threshold: "codex,claude-code", Passed: containsAll(report.RuntimeCoverage, "codex", "claude-code")},
 		{Gate: "task_class_coverage", Measured: true, Current: classNames(report.ClassCoverage), Threshold: "3 classes", Passed: len(report.ClassCoverage) >= 3},
 		{Gate: "trusted_rate_ge_80pct", Measured: report.TrustedRate.Measured, Current: ratioString(report.TrustedRate), Threshold: ">=0.8", Passed: report.TrustedRate.Measured && report.TrustedRate.Ratio >= 0.8},
 		{Gate: "source_resolvability_ge_95pct", Measured: report.SourceResolvability.Measured, Current: ratioString(report.SourceResolvability), Threshold: ">=0.95 and total>0", Passed: report.SourceResolvability.Measured && report.SourceResolvability.Ratio >= 0.95},
-		{Gate: "weekly_review_le_300s", Measured: true, Current: maxWeeklySeconds(report.WeeklyReviews), Threshold: "<=300s/week", Passed: weeklyBurdenPassed(report.WeeklyReviews)},
+		{Gate: "weekly_review_le_300s", Measured: weeklyMeasured, Current: weeklyCurrent, Threshold: "<=300s/week", Passed: weeklyMeasured && weeklyBurdenPassed(report.WeeklyReviews)},
 		{Gate: "silent_confirmed_writes_eq_0", Measured: true, Current: itoa(report.SilentConfirmedWriteCount), Threshold: "=0", Passed: report.SilentConfirmedWriteCount == 0},
 		{Gate: "cross_project_routing", Measured: true, Current: report.CrossProjectRouting, Threshold: "unvalidated", Passed: true},
 	}

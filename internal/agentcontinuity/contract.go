@@ -157,6 +157,9 @@ const (
 	WarningContextDegraded  = "context_degraded"
 	WarningBindingMissing   = "binding_missing"
 	WarningReviewAttention  = "review_attention"
+	// WarningReviewAttentionUnavailable 表示 inbox 状态不可读（IO/store 故障），
+	// 0 条 review attention 是"未测量"而不是"没有待办"。
+	WarningReviewAttentionUnavailable = "review_attention_unavailable"
 )
 
 // ContinuityPack 是 orchestrator 产出的 bounded 产品 projection。
@@ -204,6 +207,9 @@ type ContinuityPack struct {
 	ReviewAttentionCount int `json:"review_attention_count,omitempty"`
 	// ReviewAttention 是唯一 inline 提示的 bounded review item（≤1）。
 	ReviewAttention *ReviewAttention `json:"review_attention,omitempty"`
+	// ReviewAttentionUnavailable 表示 inbox 状态不可读：0 条 attention 是
+	// 未测量而非没有待办，receipt 必须携带 warning code 以区分两者。
+	ReviewAttentionUnavailable bool `json:"review_attention_unavailable,omitempty"`
 	// BindingStatus 是 binding 解析状态（additive，由 app 层填充）。
 	BindingStatus string `json:"binding_status,omitempty"`
 	// BindingIDDigest 是解析到的 binding 的 bounded digest（additive）。
