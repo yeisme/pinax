@@ -350,7 +350,7 @@ func TestMetadataPlanSuggestsDurableSourceFields(t *testing.T) {
 		t.Fatalf("create source candidate note: %v", err)
 	}
 
-	plan, err := svc.PlanMetadata(ctx, VaultRequest{VaultPath: root, Query: "iptv-org/iptv"})
+	plan, err := svc.PlanMetadata(ctx, MetadataPlanRequest{VaultPath: root, Query: "iptv-org/iptv"})
 	if err != nil {
 		t.Fatalf("metadata plan: %v", err)
 	}

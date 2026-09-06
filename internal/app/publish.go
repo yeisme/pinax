@@ -603,6 +603,14 @@ func (s *Service) PublishPlan(ctx context.Context, req PublishRequest) (domain.P
 }
 
 func (s *Service) PublishBuild(ctx context.Context, req PublishRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindPublish, "", "", "build")
+	projection, err := s.publishBuild(ctx, req, tracker)
+	tracker.setRunID(projection.Facts["run_id"])
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "selected_count", "asset_count"))
+	return projection, err
+}
+
+func (s *Service) publishBuild(ctx context.Context, req PublishRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.build", err), err
@@ -646,6 +654,7 @@ func (s *Service) PublishBuild(ctx context.Context, req PublishRequest) (domain.
 		return errorProjection("publish.build", err), err
 	}
 	started := time.Now().UTC()
+	tracker.begin()
 	if profile.Target == domain.PublishTargetGitHubPages && profile.Renderer == domain.PublishRendererHugo {
 		return s.publishBuildHugoPages(ctx, root, outDir, profile, plan, notes, started)
 	}
@@ -682,7 +691,8 @@ func (s *Service) PublishBuild(ctx context.Context, req PublishRequest) (domain.
 		return errorProjection("publish.build", err), err
 	}
 	finished := time.Now().UTC()
-	receiptRel, err := publishops.WritePublishReceipt(root, domain.PublishReceipt{RunID: publishRunID(finished), ProfileName: profile.Name, Target: profile.Target, Renderer: profile.Renderer, StartedAt: started.Format(time.RFC3339), FinishedAt: finished.Format(time.RFC3339), DurationMS: finished.Sub(started).Milliseconds(), Counts: map[string]int{"selected": publishItemCount(plan.Selected, "note"), "assets": publishItemCount(plan.Selected, "asset"), "violations": len(plan.Violations)}, OutputHash: outputHash, RedactionSummary: map[string]string{"scan_findings": fmt.Sprint(len(scan.Findings))}, DeployStatus: "not_deployed"})
+	buildRunID := publishRunID(finished)
+	receiptRel, err := publishops.WritePublishReceipt(root, domain.PublishReceipt{RunID: buildRunID, ProfileName: profile.Name, Target: profile.Target, Renderer: profile.Renderer, StartedAt: started.Format(time.RFC3339), FinishedAt: finished.Format(time.RFC3339), DurationMS: finished.Sub(started).Milliseconds(), Counts: map[string]int{"selected": publishItemCount(plan.Selected, "note"), "assets": publishItemCount(plan.Selected, "asset"), "violations": len(plan.Violations)}, OutputHash: outputHash, RedactionSummary: map[string]string{"scan_findings": fmt.Sprint(len(scan.Findings))}, DeployStatus: "not_deployed"})
 	if err != nil {
 		return errorProjection("publish.build", err), err
 	}
@@ -699,6 +709,7 @@ func (s *Service) PublishBuild(ctx context.Context, req PublishRequest) (domain.
 	projection.Facts["asset_count"] = fmt.Sprint(publishItemCount(plan.Selected, "asset"))
 	projection.Facts["scan_findings"] = fmt.Sprint(len(scan.Findings))
 	projection.Facts["output_hash"] = outputHash
+	projection.Facts["run_id"] = buildRunID
 	projection.Facts["manifest_path"] = "pinax-publish-manifest.json"
 	if profile.Target == domain.PublishTargetLocal {
 		projection.Facts["manifest_path"] = "pinax-data/manifest.json"
@@ -771,6 +782,7 @@ func (s *Service) publishBuildHugoPages(ctx context.Context, root, outDir string
 	projection.Facts["scan_findings"] = fmt.Sprint(len(scan.Findings))
 	projection.Facts["staging_scan_findings"] = fmt.Sprint(len(stageScan.Findings))
 	projection.Facts["output_hash"] = outputHash
+	projection.Facts["run_id"] = runID
 	projection.Facts["theme"] = staging.Theme
 	projection.Facts["staging_files"] = fmt.Sprint(staging.FilesWritten)
 	projection.Facts["manifest_path"] = filepath.ToSlash(filepath.Join(stageRel, "data", "pinax", "manifest.json"))
@@ -819,6 +831,13 @@ func (s *Service) PublishThemeEject(ctx context.Context, req PublishRequest) (do
 }
 
 func (s *Service) PublishDeploy(ctx context.Context, req PublishRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindPublish, "", "", "deploy")
+	projection, err := s.publishDeploy(ctx, req, tracker)
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "files"))
+	return projection, err
+}
+
+func (s *Service) publishDeploy(ctx context.Context, req PublishRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	profile, issues, err := readPublishProfileRequest(req)
 	if err != nil {
 		return errorProjection("publish.deploy", err), err
@@ -887,6 +906,7 @@ func (s *Service) PublishDeploy(ctx context.Context, req PublishRequest) (domain
 	if projection, err := validatePublishDeployInput(root, outDir, profile); err != nil {
 		return projection, err
 	}
+	tracker.begin()
 	if policy.Mode == domain.PublishDeployModeGist {
 		result, err := publishDeployGist(ctx, root, outDir, policy)
 		if err != nil {

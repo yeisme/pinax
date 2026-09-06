@@ -337,6 +337,8 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 
 	addMetadataRepairOrganizeCommands(cmd, ctx)
 
+	addPipelineCommands(cmd, ctx)
+
 	addProofCommands(cmd, ctx)
 
 	addPlanningCommands(cmd, ctx)
@@ -386,6 +388,7 @@ func annotateRootHelpGroups(cmd *cobra.Command) {
 		"organize":   "Organization and search",
 		"metadata":   "Organization and search",
 		"repair":     "Organization and search",
+		"pipeline":   "Organization and search",
 		"plan":       "Automation and integrations",
 		"prompt":     "Automation and integrations",
 		"collection": "Automation and integrations",

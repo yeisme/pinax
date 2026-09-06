@@ -19,11 +19,6 @@ type InitVaultRequest struct {
 type VaultRequest struct {
 	VaultPath string
 	Query     string
-	// TrustFields 开启 metadata plan/apply 的 trust_fields 回填（显式 opt-in，
-	// 默认 plan 输出与既有行为完全一致）。
-	TrustFields  bool
-	StaleAfter   string
-	AgentVersion string
 }
 
 type VaultIgnoreRequest struct {
@@ -96,6 +91,9 @@ type RepairApplyRequest struct {
 	PlanID          string
 	Yes             bool
 	SnapshotMessage string
+	// AllowStale 显式放行 plan_stale 守卫（逃生门）；其余守卫（--yes、snapshot）
+	// 不受影响。
+	AllowStale bool
 }
 
 type OrganizeSuggestRequest struct {
@@ -438,9 +436,13 @@ type ApplyRequest struct {
 	PlanID          string
 	Yes             bool
 	SnapshotMessage string
-	TrustFields     bool
-	StaleAfter      string
-	AgentVersion    string
+	// TrustFields 开启 apply 期 trust_fields 回填（显式 opt-in）。
+	TrustFields  bool
+	StaleAfter   string
+	AgentVersion string
+	// AllowStale 显式放行 plan_stale 守卫（逃生门）；其余守卫（--yes、snapshot）
+	// 不受影响。
+	AllowStale bool
 }
 
 type SyncRequest struct {

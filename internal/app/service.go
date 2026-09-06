@@ -1354,7 +1354,7 @@ func parseUserDate(value string) (time.Time, error) {
 	return time.Parse("2006-01-02", value)
 }
 
-func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Projection, error) {
+func (s *Service) PlanMetadata(ctx context.Context, req MetadataPlanRequest) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("metadata.plan", err), err
@@ -1405,11 +1405,16 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 		projection.Facts["writes"] = "false"
 		projection.Facts["candidates"] = fmt.Sprint(len(candidates))
 		projection.Facts["planned_updates"] = fmt.Sprint(len(ops))
+		if req.Save {
+			if err := s.saveMetadataPlanProjection(ctx, root, query, ops, &projection); err != nil {
+				return errorProjection("metadata.plan", err), err
+			}
+		}
 		projection.Data = map[string]any{"operations": ops, "candidates": candidates}
 		if len(candidates) == 1 && candidates[0].ObjectKind == "file" {
 			projection.Actions = []domain.Action{{Name: "adopt", Command: fmt.Sprintf("pinax record adopt %s --plan --vault %s --json", shellQuote(query), shellQuote(root))}}
 		} else if len(ops) > 0 {
-			projection.Actions = []domain.Action{{Name: "apply", Command: fmt.Sprintf("pinax metadata apply --vault %s --yes", shellQuote(root))}}
+			projection.Actions = []domain.Action{metadataApplyAction(root, projection)}
 		}
 		return projection, nil
 	}
@@ -1427,16 +1432,21 @@ func (s *Service) PlanMetadata(ctx context.Context, req VaultRequest) (domain.Pr
 	ops = boundOperations
 	projection := domain.NewProjection("metadata.plan", "Metadata plan generated.")
 	projection.Facts["planned_updates"] = fmt.Sprint(len(ops))
+	if req.Save {
+		if err := s.saveMetadataPlanProjection(ctx, root, "", ops, &projection); err != nil {
+			return errorProjection("metadata.plan", err), err
+		}
+	}
 	projection.Data = map[string]any{"operations": ops}
 	if len(ops) > 0 {
-		projection.Actions = []domain.Action{{Name: "apply", Command: fmt.Sprintf("pinax metadata apply --vault %s --yes", shellQuote(root))}}
+		projection.Actions = []domain.Action{metadataApplyAction(root, projection)}
 	}
 	return projection, nil
 }
 
 // trustFieldsPlanOperations 为缺 generated（或指定 stale_after 时缺 stale_after）的
 // note 产出 trust_fields 回填操作。仅显式 --trust-fields 时纳入 plan。
-func trustFieldsPlanOperations(notes []domain.Note, req VaultRequest) []domain.PlanOperation {
+func trustFieldsPlanOperations(notes []domain.Note, req MetadataPlanRequest) []domain.PlanOperation {
 	if !req.TrustFields {
 		return nil
 	}
@@ -1461,6 +1471,43 @@ func trustFieldsPlanOperations(notes []domain.Note, req VaultRequest) []domain.P
 		operations = append(operations, domain.PlanOperation{Kind: "trust_fields", Path: note.Path, Reason: "Backfill trust fields: " + strings.Join(missing, ", "), Status: "planned", Evidence: missing})
 	}
 	return operations
+}
+
+// saveMetadataPlanProjection 生成并保存 pinax.metadata_plan.v1，回填 plan 头 facts。
+func (s *Service) saveMetadataPlanProjection(_ context.Context, root, query string, ops []domain.PlanOperation, projection *domain.Projection) error {
+	now := s.currentTimeUTC()
+	sourceFacts, err := buildMetadataPlanSourceFacts(root)
+	if err != nil {
+		return err
+	}
+	plan := domain.MetadataPlan{
+		SchemaVersion: pipelineMetadataPlanSchemaVersion,
+		PlanID:        metadataPlanID(root, ops, now),
+		CreatedAt:     now.Format(time.RFC3339),
+		ExpiresAt:     now.Add(24 * time.Hour).Format(time.RFC3339),
+		VaultRoot:     root,
+		SourceCommand: "pinax metadata plan",
+		SourceFacts:   sourceFacts,
+		Query:         query,
+		Operations:    ops,
+		Status:        "planned",
+	}
+	if err := saveMetadataPlan(root, &plan); err != nil {
+		return err
+	}
+	projection.Facts["plan_id"] = plan.PlanID
+	projection.Facts["saved_path"] = plan.SavedPath
+	projection.Evidence = []string{plan.SavedPath}
+	return nil
+}
+
+// metadataApplyAction 给出 metadata plan 的下一步 apply 动作：已保存 plan 用
+// --plan 精确消费，未保存 plan 保持既有单命令提示。
+func metadataApplyAction(root string, projection domain.Projection) domain.Action {
+	if planID := projection.Facts["plan_id"]; planID != "" {
+		return domain.Action{Name: "apply", Command: fmt.Sprintf("pinax metadata apply --vault %s --plan %s --yes", shellQuote(root), shellQuote(planID))}
+	}
+	return domain.Action{Name: "apply", Command: fmt.Sprintf("pinax metadata apply --vault %s --yes", shellQuote(root))}
 }
 
 // applyTrustFieldsBackfill 执行 trust_fields 回填写（复用 EnsureTrustGenerated 的
@@ -1513,7 +1560,15 @@ func (s *Service) applyTrustFieldsBackfill(ctx context.Context, root string, not
 	return applied, nil
 }
 
+
 func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindMetadata, strings.TrimSpace(req.PlanID), "", "apply")
+	projection, err := s.applyMetadata(ctx, req, tracker)
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "applied_updates", "skipped"))
+	return projection, err
+}
+
+func (s *Service) applyMetadata(ctx context.Context, req ApplyRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	if !req.Yes {
 		err := &domain.CommandError{Code: "approval_required", Message: "metadata apply requires --yes", Hint: "Run pinax metadata plan first, then add --yes after confirming"}
 		return domain.NewErrorProjection("metadata.apply", err), err
@@ -1527,6 +1582,10 @@ func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.P
 		return errorProjection("metadata.apply", err), err
 	}
 	beforeBindings := managedBindingsByObject(beforeBindingsByPath)
+	if strings.TrimSpace(req.PlanID) != "" {
+		return s.applyMetadataPlan(ctx, root, req, beforeBindings, tracker)
+	}
+	tracker.begin()
 	notes, err := scanNotes(root)
 	if err != nil {
 		return errorProjection("metadata.apply", err), err
@@ -1580,6 +1639,64 @@ func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.P
 	}
 	addApplyReceiptProjection(&projection, receipt)
 	projection.Data = map[string]any{"applied_updates": applied, "receipt": receipt}
+	return projection, nil
+}
+
+// applyMetadataPlan 消费已保存的 metadata plan（pinax.metadata_plan.v1）：
+// freshness 守卫（--allow-stale 逃生门）后按 plan 操作应用，receipt 带 plan_id。
+func (s *Service) applyMetadataPlan(ctx context.Context, root string, req ApplyRequest, beforeBindings map[string]managedObjectPlanBinding, tracker *pipelineStageTracker) (domain.Projection, error) {
+	plan, err := loadMetadataPlan(root, req.PlanID)
+	if err != nil {
+		return errorProjection("metadata.apply", err), err
+	}
+	tracker.begin()
+	staleOverridden := false
+	if err := ensureMetadataPlanFresh(root, &plan); err != nil {
+		if domain.ErrorCode(err) == "plan_stale" && req.AllowStale {
+			// --allow-stale 逃生门：跳过 freshness 守卫，投影附 warning。
+			staleOverridden = true
+		} else {
+			projection := errorProjection("metadata.apply", err)
+			projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax metadata plan --vault %s --save", shellQuote(root))}}
+			projection.Data = map[string]any{"plan_id": plan.PlanID}
+			return projection, err
+		}
+	}
+	applied := 0
+	skipped := 0
+	changedPaths := make([]string, 0)
+	for _, op := range plan.Operations {
+		if op.Kind != "metadata_update" || op.Status != "planned" {
+			skipped++
+			continue
+		}
+		done, applyErr := s.applyMetadataPlanOperation(ctx, root, op)
+		if applyErr != nil {
+			return errorProjection("metadata.apply", applyErr), applyErr
+		}
+		if !done {
+			skipped++
+			continue
+		}
+		applied++
+		changedPaths = append(changedPaths, op.Path)
+		appendEventWarned(root, "metadata.apply", "success", map[string]string{"plan_id": plan.PlanID, "path": op.Path})
+	}
+	projection := domain.NewProjection("metadata.apply", "Metadata plan applied.")
+	projection.Facts["plan_id"] = plan.PlanID
+	projection.Facts["applied_updates"] = fmt.Sprint(applied)
+	projection.Facts["skipped"] = fmt.Sprint(skipped)
+	if staleOverridden {
+		projection.Facts["allow_stale"] = "true"
+		projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{Code: "plan_stale_overridden", Message: "stale plan applied via --allow-stale", Hint: "vault changed after this plan was generated"})
+	}
+	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
+	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "metadata.apply", plan.PlanID, "", beforeBindings, changedPaths)
+	if receiptErr != nil {
+		return errorProjection("metadata.apply", receiptErr), receiptErr
+	}
+	addApplyReceiptProjection(&projection, receipt)
+	projection.Data = map[string]any{"plan_id": plan.PlanID, "applied_updates": applied, "skipped": skipped, "receipt": receipt}
 	return projection, nil
 }
 
@@ -1676,6 +1793,13 @@ func (s *Service) ListOrganizePlans(_ context.Context, req VaultRequest) (domain
 }
 
 func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindOrganize, strings.TrimSpace(req.PlanID), "", "apply")
+	projection, err := s.applyOrganize(ctx, req, tracker)
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "applied", "applied_moves", "applied_metadata"))
+	return projection, err
+}
+
+func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	if !req.Yes {
 		vault := strings.TrimSpace(req.VaultPath)
 		if vault == "" {
@@ -1693,18 +1817,27 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 		return errorProjection("organize.apply", err), err
 	}
 	var savedPlan *domain.OrganizePlan
+	staleOverridden := false
 	if strings.TrimSpace(req.PlanID) != "" {
 		plan, err := loadOrganizePlan(root, req.PlanID)
 		if err != nil {
 			return errorProjection("organize.apply", err), err
 		}
+		tracker.begin()
 		if err := ensureOrganizePlanFresh(ctx, root, &plan); err != nil {
-			projection := errorProjection("organize.apply", err)
-			projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax organize plan --vault %s --save", shellQuote(root))}}
-			projection.Data = map[string]any{"plan_id": plan.PlanID}
-			return projection, err
+			if domain.ErrorCode(err) == "plan_stale" && req.AllowStale {
+				// --allow-stale 逃生门：跳过 freshness 守卫，投影附 warning。
+				staleOverridden = true
+			} else {
+				projection := errorProjection("organize.apply", err)
+				projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax organize plan --vault %s --save", shellQuote(root))}}
+				projection.Data = map[string]any{"plan_id": plan.PlanID}
+				return projection, err
+			}
 		}
 		savedPlan = &plan
+	} else {
+		tracker.begin()
 	}
 	beforeBindingsByPath, err := managedNotePlanBindings(ctx, root)
 	if err != nil {
@@ -1790,6 +1923,10 @@ func (s *Service) ApplyOrganize(ctx context.Context, req ApplyRequest) (domain.P
 	projection.Facts["applied_metadata"] = fmt.Sprint(appliedMetadata)
 	projection.Facts["applied"] = fmt.Sprint(appliedMoves + appliedMetadata)
 	projection.Facts["skipped"] = fmt.Sprint(skipped)
+	if staleOverridden {
+		projection.Facts["allow_stale"] = "true"
+		projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{Code: "plan_stale_overridden", Message: "stale plan applied via --allow-stale", Hint: "vault facts changed after this plan was generated"})
+	}
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	planID := ""
 	if savedPlan != nil {

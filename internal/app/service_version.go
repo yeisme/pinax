@@ -255,6 +255,8 @@ type VersionRestoreApplyRequest struct {
 	VaultPath string
 	PlanID    string
 	Yes       bool
+	// AllowStale 显式放行 restore_plan_stale 守卫（逃生门）。
+	AllowStale bool
 }
 
 // VersionRestoreApply 消费已保存的 restore plan，把历史 revision 的文件内容写回本地
@@ -262,6 +264,13 @@ type VersionRestoreApplyRequest struct {
 // remote_write=false、local_write=true，绝不调用 provider/cloud/MCP 写面。
 // 必须显式 --yes；plan 的 vault hash 与 revision 必须与当前 vault 一致。
 func (s *Service) VersionRestoreApply(ctx context.Context, req VersionRestoreApplyRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindRestore, strings.TrimSpace(req.PlanID), "", "apply")
+	projection, err := s.versionRestoreApply(ctx, req, tracker)
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "restored"))
+	return projection, err
+}
+
+func (s *Service) versionRestoreApply(ctx context.Context, req VersionRestoreApplyRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	if !req.Yes {
 		err := &domain.CommandError{Code: "approval_required", Message: "version restore apply requires explicit approval", Hint: "Rerun with --yes after reviewing the restore plan"}
 		return domain.NewErrorProjection("version.restore.apply", err), err
@@ -274,16 +283,23 @@ func (s *Service) VersionRestoreApply(ctx context.Context, req VersionRestoreApp
 	if err != nil {
 		return errorProjection("version.restore.apply", err), err
 	}
+	tracker.begin()
+	staleOverridden := false
 	// 校验目标 vault 与 plan 来源一致：vault hash 漂移说明 vault 已被改动，plan 失效。
 	currentHash, hashErr := versionVaultHash(root)
 	if hashErr != nil {
 		return errorProjection("version.restore.apply", hashErr), hashErr
 	}
 	if plan.VaultHash != "" && currentHash != plan.VaultHash {
-		err := &domain.CommandError{Code: "restore_plan_stale", Message: "vault changed since restore plan was generated", Hint: "Regenerate the restore plan with pinax version restore --plan before applying"}
-		projection := domain.NewErrorProjection("version.restore.apply", err)
-		projection.Data = map[string]any{"plan_id": plan.PlanID}
-		return projection, err
+		if req.AllowStale {
+			// --allow-stale 逃生门：跳过 vault hash 守卫，投影附 warning。
+			staleOverridden = true
+		} else {
+			err := &domain.CommandError{Code: "restore_plan_stale", Message: "vault changed since restore plan was generated", Hint: "Regenerate the restore plan with pinax version restore --plan before applying"}
+			projection := domain.NewErrorProjection("version.restore.apply", err)
+			projection.Data = map[string]any{"plan_id": plan.PlanID}
+			return projection, err
+		}
 	}
 	restoredHash := plan.ContentHash
 	restoredBackend := plan.VersionBackend
@@ -334,6 +350,11 @@ func (s *Service) VersionRestoreApply(ctx context.Context, req VersionRestoreApp
 	projection.Facts["path"] = plan.Path
 	projection.Facts["revision"] = plan.Revision
 	projection.Facts["version_backend"] = restoredBackend
+	projection.Facts["restored"] = "1"
+	if staleOverridden {
+		projection.Facts["allow_stale"] = "true"
+		projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{Code: "plan_stale_overridden", Message: "stale plan applied via --allow-stale", Hint: "vault changed after this plan was generated"})
+	}
 	if restoredHash != "" {
 		projection.Facts["content_hash"] = restoredHash
 	}

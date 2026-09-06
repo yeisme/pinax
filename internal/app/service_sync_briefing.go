@@ -218,12 +218,27 @@ func (s *Service) syncTransfer(ctx context.Context, req SyncRequest, direction s
 		return commandErrorProjection(command, err)
 	}
 	defer lock.Release()
+	tracker := newPipelineStageTracker(domain.PipelineKindSync, "", "", verb)
+	projection, err := s.syncTransferLocked(ctx, req, direction, root, target, tracker)
+	// run_id 由底层 sync run 生成，回填到阶段事件后再收口。
+	tracker.setRunID(projection.Facts["run_id"])
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "operations"))
+	return projection, err
+}
+
+func (s *Service) syncTransferLocked(ctx context.Context, req SyncRequest, direction syncplan.Direction, root, target string, tracker *pipelineStageTracker) (domain.Projection, error) {
+	verb := string(direction)
+	command := "sync." + verb
 	if isCapsaSyncTarget(target) {
 		if !req.Yes && !req.DryRun {
 			err := &domain.CommandError{Code: "approval_required", Message: fmt.Sprintf("sync %s requires --yes or --dry-run", verb), Hint: fmt.Sprintf("Review the plan first with pinax sync %s --target %s --dry-run, then add --yes after confirming", verb, syncOutputTarget(target))}
 			projection := domain.NewErrorProjection(command, err)
 			_ = writeApprovalRequiredSyncRun(root, req, command, direction, err, &projection)
 			return projection, err
+		}
+		// 阶段事件只覆盖真实 apply（--yes 非 dry-run）；preview/dry-run 不发。
+		if req.Yes && !req.DryRun {
+			tracker.begin()
 		}
 		return buildCloudSyncProjection(ctx, command, root, req, direction)
 	}

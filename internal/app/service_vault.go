@@ -629,6 +629,13 @@ func (s *Service) PlanRepair(ctx context.Context, req RepairPlanRequest) (domain
 }
 
 func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindRepair, strings.TrimSpace(req.PlanID), "", "apply")
+	projection, err := s.applyRepair(ctx, req, tracker)
+	tracker.finish(&projection, err, pipelineStageCounts(projection, "applied", "skipped"))
+	return projection, err
+}
+
+func (s *Service) applyRepair(ctx context.Context, req RepairApplyRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	if !req.Yes {
 		err := &domain.CommandError{Code: "approval_required", Message: "repair apply requires --yes", Hint: "Run pinax repair plan --save first, then add --yes after confirming"}
 		return domain.NewErrorProjection("repair.apply", err), err
@@ -645,11 +652,18 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 	if err != nil {
 		return errorProjection("repair.apply", err), err
 	}
+	tracker.begin()
+	staleOverridden := false
 	if err := ensureRepairPlanFresh(ctx, root, &plan); err != nil {
-		projection := errorProjection("repair.apply", err)
-		projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax repair plan --vault %s --save", shellQuote(root))}}
-		projection.Data = map[string]any{"plan_id": plan.PlanID}
-		return projection, err
+		if domain.ErrorCode(err) == "plan_stale" && req.AllowStale {
+			// --allow-stale 逃生门：跳过 freshness 守卫，投影附 warning。
+			staleOverridden = true
+		} else {
+			projection := errorProjection("repair.apply", err)
+			projection.Actions = []domain.Action{{Name: "replan", Command: fmt.Sprintf("pinax repair plan --vault %s --save", shellQuote(root))}}
+			projection.Data = map[string]any{"plan_id": plan.PlanID}
+			return projection, err
+		}
 	}
 	beforeBindingsByPath, err := managedNotePlanBindings(ctx, root)
 	if err != nil {
@@ -696,6 +710,10 @@ func (s *Service) ApplyRepair(ctx context.Context, req RepairApplyRequest) (doma
 	projection.Facts["operations.total"] = fmt.Sprint(len(plan.Operations))
 	projection.Facts["applied"] = fmt.Sprint(len(applied))
 	projection.Facts["skipped"] = fmt.Sprint(len(skipped))
+	if staleOverridden {
+		projection.Facts["allow_stale"] = "true"
+		projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{Code: "plan_stale_overridden", Message: "stale plan applied via --allow-stale", Hint: "vault facts changed after this plan was generated"})
+	}
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "repair.apply", plan.PlanID, snapshotID, beforeBindings, changedPaths)
 	if receiptErr != nil {

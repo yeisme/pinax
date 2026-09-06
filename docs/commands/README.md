@@ -77,6 +77,7 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Organization and retrieval | [`pinax metadata`](./metadata.md) | Plan and apply frontmatter metadata completion. |
 | Organization and retrieval | [`pinax repair`](./repair.md) | Generate maintenance plans from doctor issues and apply only low-risk fixes. |
 | Organization and retrieval | [`pinax organize`](./organize.md) | Plan, save, list, and apply note-structure organization plans. |
+| Organization and retrieval | [`pinax pipeline`](./pipeline.md) | Read-only unified view of pending plan/apply pipeline plans (with freshness) and recent apply receipts. |
 | Organization and retrieval | [`pinax proof`](./proof.md) | Run the local Capture -> Retrieve -> Diagnose -> Plan -> Snapshot -> Apply safely proof loop. |
 | Organization and retrieval | [`pinax brain`](./brain.md) | Agent Brain preview command group; `brain answer` is implemented as read-only extractive preview, while context/sources/maintain remain planned. |
 | Automation and integration | [`pinax briefing`](./briefing.md) | Manage daily trending-note briefing recipes, runs, and delivery. |
