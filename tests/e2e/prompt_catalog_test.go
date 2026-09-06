@@ -115,7 +115,7 @@ func TestPromptCatalogRepositoryImportE2E(t *testing.T) {
 		t.Fatalf("search command = %#v", searchEnvelope)
 	}
 	facts := searchEnvelope["facts"].(map[string]any)
-	if facts["results"] != "6" || facts["locale"] != "zh-CN" || facts["provider_calls"] != "0" || facts["durable_writes"] != "0" {
+	if facts["results"] != "6" || facts["locale"] != "en" || facts["provider_calls"] != "0" || facts["durable_writes"] != "0" {
 		t.Fatalf("search facts = %#v", facts)
 	}
 	if facts["operation_id"] != "promptrepo.catalog.search.v1" {
