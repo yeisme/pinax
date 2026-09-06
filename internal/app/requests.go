@@ -365,6 +365,15 @@ type NoteTagRequest struct {
 	Tags      []string
 }
 
+// NoteVerifyRequest 是 pinax note verify 的请求。Actor 为空且未配置 identity 时
+// 必须由调用方 fail-closed；service 层再次校验，双保险。
+type NoteVerifyRequest struct {
+	VaultPath string
+	NoteRef   string
+	Actor     string
+	Note      string
+}
+
 type NotePropertyRequest struct {
 	VaultPath string
 	NoteRef   string

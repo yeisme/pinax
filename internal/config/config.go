@@ -15,6 +15,7 @@ import (
 
 type Config struct {
 	Vault    string         `mapstructure:"vault" yaml:"vault" json:"vault,omitempty"`
+	Identity string         `mapstructure:"identity" yaml:"identity" json:"identity,omitempty"`
 	Remote   RemoteConfig   `mapstructure:"remote" yaml:"remote" json:"remote"`
 	Output   OutputConfig   `mapstructure:"output" yaml:"output" json:"output"`
 	Editor   EditorConfig   `mapstructure:"editor" yaml:"editor" json:"editor"`
@@ -294,6 +295,9 @@ func configFromViper(v *viper.Viper, set map[string]bool) Config {
 	if set["vault"] {
 		cfg.Vault = v.GetString("vault")
 	}
+	if set["identity"] {
+		cfg.Identity = v.GetString("identity")
+	}
 	if set["remote.api_url"] {
 		cfg.Remote.APIURL = v.GetString("remote.api_url")
 	}
@@ -366,6 +370,7 @@ func configFromViper(v *viper.Viper, set map[string]bool) Config {
 func configKeys() []string {
 	return []string{
 		"vault",
+		"identity",
 		"remote.api_url",
 		"remote.mode",
 		"output.color",
@@ -394,6 +399,7 @@ func configKeys() []string {
 func settingsProjectionKeys() []string {
 	return []string{
 		"vault",
+		"identity",
 		"remote.api_url",
 		"remote.mode",
 		"output.color",
@@ -454,6 +460,8 @@ func envConfigKey(envKey string) string {
 	switch envKey {
 	case "PINAX_VAULT":
 		return "vault"
+	case "PINAX_IDENTITY":
+		return "identity"
 	case "PINAX_API_URL":
 		return "remote.api_url"
 	case "PINAX_CONNECTION_MODE":
@@ -518,6 +526,9 @@ func preferredWriteScope(source string) string {
 func mergeConfig(dst *Config, src Config, isSet func(string) bool) {
 	if isSet("vault") && src.Vault != "" {
 		dst.Vault = src.Vault
+	}
+	if isSet("identity") && src.Identity != "" {
+		dst.Identity = src.Identity
 	}
 	if isSet("remote.api_url") {
 		dst.Remote.APIURL = src.Remote.APIURL
@@ -603,6 +614,7 @@ func applyEnv(cfg *Config, sources *SourceSet, env func(string) (string, bool)) 
 		}
 	}
 	apply("PINAX_VAULT", func(v string) { cfg.Vault = v })
+	apply("PINAX_IDENTITY", func(v string) { cfg.Identity = v })
 	apply("PINAX_API_URL", func(v string) { cfg.Remote.APIURL = v })
 	apply("PINAX_CONNECTION_MODE", func(v string) { cfg.Remote.Mode = v })
 	apply("PINAX_OUTPUT_COLOR", func(v string) { cfg.Output.Color = v })
@@ -637,6 +649,8 @@ func applyExplicitFlags(cfg *Config, sources *SourceSet, flags map[string]string
 		switch key {
 		case "vault":
 			cfg.Vault = value
+		case "identity":
+			cfg.Identity = value
 		case "remote.api_url":
 			cfg.Remote.APIURL = value
 		case "remote.mode":
@@ -836,6 +850,8 @@ func Value(cfg Config, key string) (string, bool) {
 	switch key {
 	case "vault":
 		return cfg.Vault, true
+	case "identity":
+		return cfg.Identity, true
 	case "remote.api_url":
 		return cfg.Remote.APIURL, true
 	case "remote.mode":

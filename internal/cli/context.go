@@ -64,6 +64,8 @@ type commandBuildContext struct {
 	noteListSort             *string
 	noteListPathPrefix       *string
 	noteListProperties       *[]string
+	noteVerifyActor          *string
+	noteVerifyNote           *string
 	noteStrictProperties     *bool
 	noteListCreatedAfter     *string
 	noteListUpdatedBefore    *string
