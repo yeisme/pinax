@@ -151,6 +151,9 @@ type Projection struct {
 	Data        any                 `json:"data,omitempty"`
 	Warnings    []ProjectionWarning `json:"warnings,omitempty"`
 	Error       *CommandError       `json:"error,omitempty"`
+	// PipelineStages 携带 pinax.pipeline.stage.v1 阶段事件（additive）：
+	// --events 渲染时在 start 与 end 之间按序输出 stage.started/completed/failed。
+	PipelineStages []PipelineStage `json:"pipeline_stages,omitempty"`
 }
 
 // ProjectionWarning is a non-fatal advisory attached to a projection. Unlike
@@ -463,6 +466,23 @@ type RepairOperation struct {
 	Reason                  string          `json:"reason"`
 	Status                  string          `json:"status"`
 	Evidence                []string        `json:"evidence,omitempty"`
+}
+
+// MetadataPlan 是 metadata backfill 管道的可保存计划（pinax.metadata_plan.v1）。
+// 默认 metadata plan 仍是内存态 preview；--save 后落入 .pinax/metadata-plans，
+// apply --plan 消费该计划并接受统一 freshness 守卫与 --allow-stale 逃生门。
+type MetadataPlan struct {
+	SchemaVersion string            `json:"schema_version"`
+	PlanID        string            `json:"plan_id"`
+	CreatedAt     string            `json:"created_at"`
+	ExpiresAt     string            `json:"expires_at"`
+	VaultRoot     string            `json:"vault_root"`
+	SourceCommand string            `json:"source_command"`
+	SourceFacts   map[string]string `json:"source_facts"`
+	Query         string            `json:"query,omitempty"`
+	Operations    []PlanOperation   `json:"operations"`
+	Status        string            `json:"status"`
+	SavedPath     string            `json:"saved_path,omitempty"`
 }
 
 // RestorePlan 是 version restore 生成的只读恢复计划，restore apply 据此把单个 vault

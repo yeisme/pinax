@@ -56,6 +56,37 @@ func renderEvents(w io.Writer, p domain.Projection) error {
 		}
 	}
 
+	// pinax.pipeline.stage.v1 阶段事件（additive）：apply 型命令经共享 helper
+	// 附加到 projection，--events 在 start 与 end 之间按序输出。
+	for _, stage := range p.PipelineStages {
+		payload := map[string]any{
+			"spec_version":   p.SpecVersion,
+			"mode":           "events",
+			"command":        p.Command,
+			"type":           stage.Type,
+			"schema_version": stage.SchemaVersion,
+			"pipeline":       stage.Pipeline,
+			"stage":          stage.Stage,
+			"seq":            seq,
+		}
+		if stage.PlanID != "" {
+			payload["plan_id"] = stage.PlanID
+		}
+		if stage.RunID != "" {
+			payload["run_id"] = stage.RunID
+		}
+		if len(stage.Counts) > 0 {
+			payload["counts"] = stage.Counts
+		}
+		if stage.Reason != "" {
+			payload["reason"] = stage.Reason
+		}
+		if err := enc.Encode(payload); err != nil {
+			return err
+		}
+		seq++
+	}
+
 	endType := "end"
 	if p.Status == "failed" {
 		endType = "error"

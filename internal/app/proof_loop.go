@@ -16,6 +16,10 @@ import (
 //
 // 默认 preview（只读）；--apply --yes 才在 fresh snapshot 后执行已批准的 repair/organize
 // apply 路径。manual-review-only 操作保持为 next action，不自动 apply。
+//
+// 阶段事件（pinax.pipeline.stage.v1）：capture/diagnose/plan/snapshot/apply 各发
+// stage.started/stage.completed；apply 模式额外写 proof_loop receipt（pinax.receipt.v1），
+// 供 pinax pipeline status 聚合。
 
 // ProofLoopRunRequest drives the proof loop run orchestration.
 type ProofLoopRunRequest struct {
@@ -28,6 +32,13 @@ type ProofLoopRunRequest struct {
 // 每个阶段把有界事实汇入一个 projection；preview 不写 vault，apply 路径先 fresh snapshot
 // 再执行已批准的 repair/organize apply。
 func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (domain.Projection, error) {
+	tracker := newPipelineStageTracker(domain.PipelineKindProofLoop, "", "", "")
+	projection, err := s.proofLoopRun(ctx, req, tracker)
+	tracker.attach(&projection)
+	return projection, err
+}
+
+func (s *Service) proofLoopRun(ctx context.Context, req ProofLoopRunRequest, tracker *pipelineStageTracker) (domain.Projection, error) {
 	root, err := cleanVaultPath(req.VaultPath)
 	if err != nil {
 		return errorProjection("proof.loop.run", err), err
@@ -38,6 +49,7 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 	}
 
 	runID := "proof_loop_" + time.Now().UTC().Format("20060102T150405Z")
+	tracker.setRunID(runID)
 	mode := "preview"
 	if req.Apply && req.Yes {
 		mode = "apply"
@@ -49,17 +61,22 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 	evidence := []string{}
 
 	// Stage 1-2: Capture + Diagnose — vault stats 与 doctor issue 摘要。
+	tracker.start("capture")
 	stats, statsErr := s.VaultStats(ctx, VaultStatsRequest{VaultPath: root})
 	if statsErr != nil {
+		tracker.fail(domain.ErrorCode(statsErr))
 		return errorProjection("proof.loop.run", statsErr), statsErr
 	}
 	captureFacts := stageFacts(stats)
 	for k, v := range captureFacts {
 		projection.Facts["capture."+k] = v
 	}
+	tracker.complete("capture", pipelineStageCounts(stats, "notes", "words"))
 
+	tracker.start("diagnose")
 	doctor, doctorErr := s.VaultDoctor(ctx, VaultDoctorRequest{VaultPath: root})
 	if doctorErr != nil {
+		tracker.fail(domain.ErrorCode(doctorErr))
 		return errorProjection("proof.loop.run", doctorErr), doctorErr
 	}
 	projection.Facts["diagnose.status"] = doctor.Facts["status"]
@@ -67,10 +84,13 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 	if doctor.Facts["issues"] == "" {
 		projection.Facts["diagnose.issues"] = "0"
 	}
+	tracker.complete("diagnose", pipelineStageCounts(doctor, "issues"))
 
 	// Stage 3: Plan — 生成并保存 repair + organize plan（只读，不 apply）。
+	tracker.start("plan")
 	repairPlan, repairErr := s.PlanRepair(ctx, RepairPlanRequest{VaultPath: root, Save: true})
 	if repairErr != nil {
+		tracker.fail(domain.ErrorCode(repairErr))
 		return errorProjection("proof.loop.run", repairErr), repairErr
 	}
 	if rp := repairPlan.Facts["plan_id"]; rp != "" {
@@ -84,11 +104,14 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 		projection.Facts["plan.organize_plan_id"] = organizePlanID
 		evidence = append(evidence, organizePath)
 	}
+	tracker.complete("plan", map[string]int{"plans": 1 + boolToInt(organizePlanID != "")})
 
 	// Stage 4: Snapshot — apply 路径需要 fresh snapshot；preview 只提示。
 	if req.Apply && req.Yes {
+		tracker.start("snapshot")
 		snap, snapErr := s.GitSnapshot(ctx, SnapshotRequest{VaultPath: root, Message: "proof loop pre-apply"})
 		if snapErr != nil {
+			tracker.fail(domain.ErrorCode(snapErr))
 			projection := errorProjection("proof.loop.run", snapErr)
 			projection.Facts["proof_loop_run_id"] = runID
 			return projection, snapErr
@@ -97,8 +120,10 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 		if ev := snap.Evidence; len(ev) > 0 {
 			evidence = append(evidence, ev[0])
 		}
+		tracker.complete("snapshot", nil)
 
 		// Stage 5: Apply — 仅执行已批准的 repair/organize apply；manual-review-only 自动跳过。
+		tracker.start("apply")
 		if rp := repairPlan.Facts["plan_id"]; rp != "" {
 			repairApply, applyErr := s.ApplyRepair(ctx, RepairApplyRequest{VaultPath: root, PlanID: rp, Yes: true})
 			if applyErr != nil {
@@ -120,6 +145,21 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 				projection.Facts["apply.organize"] = orgApply.Facts["applied"]
 			}
 		}
+		tracker.complete("apply", pipelineStageCounts(projection, "apply.repair", "apply.organize"))
+		// proof loop apply 写一条 pinax.receipt.v1 收据，供 pipeline status 聚合。
+		loopReceipt := map[string]any{
+			"run_id":           runID,
+			"mode":             mode,
+			"repair_plan_id":   repairPlan.Facts["plan_id"],
+			"organize_plan_id": organizePlanID,
+			"applied_repair":   projection.Facts["apply.repair"],
+			"applied_organize": projection.Facts["apply.organize"],
+		}
+		receiptRel, receiptErr := writeReceipt(root, "proof_loop", loopReceipt)
+		if receiptErr == nil {
+			projection.Facts["receipt"] = receiptRel
+			evidence = append(evidence, receiptRel)
+		}
 	}
 
 	// 汇总 evidence 与 next actions（preview 与 apply 都给）。
@@ -137,6 +177,13 @@ func (s *Service) ProofLoopRun(ctx context.Context, req ProofLoopRunRequest) (do
 		"organize_plan_id":  organizePlanID,
 	}
 	return projection, nil
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 // saveOrganizePlanForRun 构造并保存一份 organize plan 供 proof loop run 使用，返回 plan id 与保存路径。

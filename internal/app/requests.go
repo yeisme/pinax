@@ -91,6 +91,9 @@ type RepairApplyRequest struct {
 	PlanID          string
 	Yes             bool
 	SnapshotMessage string
+	// AllowStale 显式放行 plan_stale 守卫（逃生门）；其余守卫（--yes、snapshot）
+	// 不受影响。
+	AllowStale bool
 }
 
 type OrganizeSuggestRequest struct {
@@ -420,6 +423,9 @@ type ApplyRequest struct {
 	PlanID          string
 	Yes             bool
 	SnapshotMessage string
+	// AllowStale 显式放行 plan_stale 守卫（逃生门）；其余守卫（--yes、snapshot）
+	// 不受影响。
+	AllowStale bool
 }
 
 type SyncRequest struct {

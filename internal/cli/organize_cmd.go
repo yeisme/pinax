@@ -6,31 +6,40 @@ import (
 )
 
 func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildContext) {
+	var allowStale bool
+	var metadataSave bool
+	var metadataPlanID string
+
 	metadataCmd := &cobra.Command{Use: "metadata", Short: "Plan and apply note metadata"}
-	metadataCmd.AddCommand(&cobra.Command{
+	metadataPlanCmd := &cobra.Command{
 		Use:   "plan [query]",
 		Short: "Preview a metadata backfill plan",
+		Long:  "Preview a metadata backfill plan. This command is read-only by default; with --save, the service writes .pinax/metadata-plans/<plan_id>.json so apply --plan can consume the exact reviewed plan.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := ""
 			if len(args) > 0 {
 				query = args[0]
 			}
-			projection, err := ctx.svc.PlanMetadata(cmd.Context(), app.VaultRequest{VaultPath: *ctx.vaultPath, Query: query})
-			return ctx.renderProjection(cmd, projection, err)
-		},
-	})
-	metadataApplyCmd := &cobra.Command{
-		Use:     "apply",
-		Short:   "Apply a metadata backfill plan",
-		Long:    "Apply a metadata backfill plan. This command writes local Markdown frontmatter and requires explicit --yes. Run pinax metadata plan first to review the plan.",
-		Example: "pinax metadata plan --vault ./my-notes --json\npinax metadata apply --vault ./my-notes --yes",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.ApplyMetadata(cmd.Context(), app.ApplyRequest{VaultPath: *ctx.vaultPath, Yes: *ctx.yes})
+			projection, err := ctx.svc.PlanMetadata(cmd.Context(), app.MetadataPlanRequest{VaultPath: *ctx.vaultPath, Query: query, Save: metadataSave})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
+	metadataPlanCmd.Flags().BoolVar(&metadataSave, "save", false, "Save the metadata plan to .pinax/metadata-plans")
+	metadataCmd.AddCommand(metadataPlanCmd)
+	metadataApplyCmd := &cobra.Command{
+		Use:     "apply",
+		Short:   "Apply a metadata backfill plan",
+		Long:    "Apply a metadata backfill plan. This command writes local Markdown frontmatter and requires explicit --yes. Run pinax metadata plan first to review the plan; with --plan, a saved plan is applied and rejected as plan_stale when the vault changed since planning (pass --allow-stale to apply anyway).",
+		Example: "pinax metadata plan --vault ./my-notes --save --json\npinax metadata apply --vault ./my-notes --plan metadata-abc123 --yes\npinax metadata apply --vault ./my-notes --yes",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.ApplyMetadata(cmd.Context(), app.ApplyRequest{VaultPath: *ctx.vaultPath, PlanID: metadataPlanID, Yes: *ctx.yes, AllowStale: allowStale})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	metadataApplyCmd.Flags().StringVar(&metadataPlanID, "plan", "", "Metadata plan id or relative path under .pinax/metadata-plans")
 	metadataApplyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local writes")
+	metadataApplyCmd.Flags().BoolVar(&allowStale, "allow-stale", false, "Apply a saved plan even when vault facts changed after planning")
 	metadataCmd.AddCommand(metadataApplyCmd)
 	root.AddCommand(metadataCmd)
 
@@ -58,16 +67,17 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 	repairApplyCmd := &cobra.Command{
 		Use:     "apply",
 		Short:   "Apply a protected low-risk repair plan",
-		Long:    "Apply a saved repair plan. This command writes the local vault, requires explicit --yes, and needs version snapshot protection or --snapshot-message to create a snapshot first.",
+		Long:    "Apply a saved repair plan. This command writes the local vault, requires explicit --yes, and needs version snapshot protection or --snapshot-message to create a snapshot first. A saved plan whose facts no longer match the vault is rejected as plan_stale; pass --allow-stale to apply anyway.",
 		Example: "pinax repair plan --vault ./my-notes --save --json\npinax version snapshot --vault ./my-notes --message \"Pre-repair snapshot\"\npinax repair apply --vault ./my-notes --plan repair-abc123 --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.ApplyRepair(cmd.Context(), app.RepairApplyRequest{VaultPath: *ctx.vaultPath, PlanID: *ctx.repairPlanID, Yes: *ctx.yes, SnapshotMessage: *ctx.snapshotMessage})
+			projection, err := ctx.svc.ApplyRepair(cmd.Context(), app.RepairApplyRequest{VaultPath: *ctx.vaultPath, PlanID: *ctx.repairPlanID, Yes: *ctx.yes, SnapshotMessage: *ctx.snapshotMessage, AllowStale: allowStale})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	repairApplyCmd.Flags().StringVar(ctx.repairPlanID, "plan", "", "Repair plan id or relative path under .pinax/repair-plans")
 	repairApplyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local writes")
 	repairApplyCmd.Flags().StringVar(ctx.snapshotMessage, "snapshot-message", "", "Message for an automatic version snapshot before apply")
+	repairApplyCmd.Flags().BoolVar(&allowStale, "allow-stale", false, "Apply a saved plan even when vault facts changed after planning")
 	repairCmd.AddCommand(repairApplyCmd)
 	root.AddCommand(repairCmd)
 
@@ -110,16 +120,17 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 	organizeApplyCmd := &cobra.Command{
 		Use:     "apply",
 		Short:   "Apply a structure organization plan",
-		Long:    "Apply a structure organization plan. This command moves local note files, requires explicit --yes, and requires a saved and reviewed plan from pinax organize plan --save. A version snapshot must exist before applying, or use --snapshot-message so Pinax creates one first.",
+		Long:    "Apply a structure organization plan. This command moves local note files, requires explicit --yes, and requires a saved and reviewed plan from pinax organize plan --save. A version snapshot must exist before applying, or use --snapshot-message so Pinax creates one first. A saved plan whose facts no longer match the vault is rejected as plan_stale; pass --allow-stale to apply anyway.",
 		Example: "pinax organize plan --vault ./my-notes --save --json\npinax version snapshot --vault ./my-notes --message \"Pre-organization snapshot\"\npinax organize apply --vault ./my-notes --plan organize-abc123 --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.ApplyOrganize(cmd.Context(), app.ApplyRequest{VaultPath: *ctx.vaultPath, PlanID: *ctx.repairPlanID, Yes: *ctx.yes, SnapshotMessage: *ctx.snapshotMessage})
+			projection, err := ctx.svc.ApplyOrganize(cmd.Context(), app.ApplyRequest{VaultPath: *ctx.vaultPath, PlanID: *ctx.repairPlanID, Yes: *ctx.yes, SnapshotMessage: *ctx.snapshotMessage, AllowStale: allowStale})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	organizeApplyCmd.Flags().StringVar(ctx.repairPlanID, "plan", "", "Organize plan id or relative path under .pinax/organize-plans")
 	organizeApplyCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm local writes")
 	organizeApplyCmd.Flags().StringVar(ctx.snapshotMessage, "snapshot-message", "", "Message for an automatic version snapshot before apply")
+	organizeApplyCmd.Flags().BoolVar(&allowStale, "allow-stale", false, "Apply a saved plan even when vault facts changed after planning")
 	organizeCmd.AddCommand(organizeApplyCmd)
 	root.AddCommand(organizeCmd)
 

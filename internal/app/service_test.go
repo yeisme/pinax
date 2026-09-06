@@ -694,7 +694,7 @@ func TestMetadataApplyRequiresApprovalAndWritesFrontmatter(t *testing.T) {
 	note := filepath.Join(root, "notes", "raw.md")
 	writeFile(t, note, "---\nschema_version: pinax.note.v1\ntitle: Raw Note\n---\n\n# Raw Note\n\nbody\n")
 
-	plan, err := svc.PlanMetadata(ctx, VaultRequest{VaultPath: root})
+	plan, err := svc.PlanMetadata(ctx, MetadataPlanRequest{VaultPath: root})
 	if err != nil {
 		t.Fatalf("plan metadata: %v", err)
 	}
@@ -2562,7 +2562,7 @@ func TestMetadataPlanQueryUsesRegisteredOrAdoptableResolver(t *testing.T) {
 	notePath := filepath.Join(root, "notes", "needs-alias.md")
 	writeAppFixture(t, notePath, "---\nnote_id: note_needs_alias\ntitle: Needs Alias\n---\n\n# Needs Alias\n\nunique metadata resolver body\n")
 
-	projection, err := svc.PlanMetadata(ctx, VaultRequest{VaultPath: root, Query: "unique metadata resolver body"})
+	projection, err := svc.PlanMetadata(ctx, MetadataPlanRequest{VaultPath: root, Query: "unique metadata resolver body"})
 	if err != nil {
 		t.Fatalf("metadata plan resolver query: %v", err)
 	}

@@ -105,16 +105,19 @@ func addVersionCommands(root *cobra.Command, ctx commandBuildContext) {
 	restoreCmd.Flags().BoolVar(&restorePlan, "plan", false, "Only generate the restore plan; do not write the vault")
 
 	// restore apply 把已生成的 restore plan 安全写回本地 Markdown，是 proof loop 可逆 apply 的恢复路径。
+	var restoreAllowStale bool
 	restoreApplyCmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply a saved version restore plan to local Markdown",
+		Long:  "Apply a saved version restore plan to local Markdown. The plan is rejected as restore_plan_stale when the vault changed after planning; pass --allow-stale to apply anyway.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			projection, err := ctx.svc.VersionRestoreApply(cmd.Context(), app.VersionRestoreApplyRequest{VaultPath: *ctx.vaultPath, PlanID: restoreApplyPlan, Yes: restoreApplyYes})
+			projection, err := ctx.svc.VersionRestoreApply(cmd.Context(), app.VersionRestoreApplyRequest{VaultPath: *ctx.vaultPath, PlanID: restoreApplyPlan, Yes: restoreApplyYes, AllowStale: restoreAllowStale})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
 	restoreApplyCmd.Flags().StringVar(&restoreApplyPlan, "plan", "", "Saved restore plan id or path")
 	restoreApplyCmd.Flags().BoolVar(&restoreApplyYes, "yes", false, "Approve writing the restored content to local Markdown")
+	restoreApplyCmd.Flags().BoolVar(&restoreAllowStale, "allow-stale", false, "Apply a saved plan even when the vault changed after planning")
 	restoreCmd.AddCommand(restoreApplyCmd)
 	versionCmd.AddCommand(restoreCmd)
 
