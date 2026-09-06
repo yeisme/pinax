@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -180,13 +181,13 @@ func TestExploreOKFSignalsDerivation(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
-		name    string
-		fm      string
-		trust   string
-		fresh   string
-		genBy   string
-		genAt   string
-		actors  []string
+		name   string
+		fm     string
+		trust  string
+		fresh  string
+		genBy  string
+		genAt  string
+		actors []string
 	}{
 		{
 			name:  "missing fields default unverified fresh",
@@ -368,6 +369,98 @@ func TestExploreBundleJSONViaExploreHandler(t *testing.T) {
 	}
 	if decoded.SchemaVersion != ExploreBundleSchemaVersion || decoded.Counts.Nodes != 1 {
 		t.Fatalf("data.json bundle = %#v", decoded)
+	}
+}
+
+func TestExploreHandlerTokenQueryParamAuthAndBoundedPreview(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExploreNote(t, root, "notes/a.md", strings.Join([]string{
+		"schema_version: pinax.note.v1",
+		"note_id: note_a",
+		"title: A",
+		"summary: card summary",
+		"updated_at: 2026-09-01T00:00:00+00:00",
+	}, "\n"), "A preview line token=super-secret-42\n\nsecond line")
+	bundle, err := BuildExploreBundle(root)
+	if err != nil {
+		t.Fatalf("build bundle: %v", err)
+	}
+	server := httptest.NewServer(shareVaultExploreHandler(root, "share-token", bundle, true, time.Now().UTC()))
+	defer server.Close()
+
+	// 未认证：401 且不泄漏 bundle。
+	unauth, err := http.Get(server.URL + "/explore/data.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(io.LimitReader(unauth.Body, 4096))
+	_ = unauth.Body.Close()
+	if unauth.StatusCode != http.StatusUnauthorized || strings.Contains(string(raw), ExploreBundleSchemaVersion) {
+		t.Fatalf("unauthenticated data.json = %d %s", unauth.StatusCode, string(raw))
+	}
+
+	// 浏览器导航路径：?token= 查询参数认证（页面 HTML 内嵌 bundle）。
+	page, err := http.Get(server.URL + "/explore?token=share-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageBody, _ := io.ReadAll(io.LimitReader(page.Body, 1<<20))
+	_ = page.Body.Close()
+	if page.StatusCode != http.StatusOK {
+		t.Fatalf("token query param page status = %d", page.StatusCode)
+	}
+	if !strings.Contains(string(pageBody), "note_a") || strings.Contains(string(pageBody), "A preview line token=super-secret-42") {
+		t.Fatalf("embedded page must carry bundle metadata without bodies")
+	}
+	if refs := ScanExploreExternalRefs(pageBody); len(refs) != 0 {
+		t.Fatalf("served page leaked external refs: %v", refs)
+	}
+
+	// 错误 token：仍 401。
+	wrong, err := http.Get(server.URL + "/explore?token=wrong")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = wrong.Body.Close()
+	if wrong.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong token status = %d", wrong.StatusCode)
+	}
+
+	// note 预览端点：有界 + 脱敏。
+	preview, err := http.Get(server.URL + "/explore/note/note_a?token=share-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = preview.Body.Close() }()
+	if preview.StatusCode != http.StatusOK {
+		t.Fatalf("note preview status = %d", preview.StatusCode)
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(preview.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode preview payload: %v", err)
+	}
+	previewText, _ := payload["preview"].(string)
+	if !strings.Contains(previewText, "A preview line") {
+		t.Fatalf("preview text = %q", previewText)
+	}
+	if strings.Contains(previewText, "super-secret-42") {
+		t.Fatalf("preview leaked secret value: %q", previewText)
+	}
+	if _, ok := payload["frontmatter"]; ok {
+		t.Fatalf("preview must not expose frontmatter map")
+	}
+
+	// 未知 id fail-closed 404；不安全 id 404。
+	for _, bad := range []string{"note_missing", "note_token", "..%2F..%2Fetc"} {
+		resp, err := http.Get(server.URL + "/explore/note/" + bad + "?token=share-token")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("bad id %q status = %d", bad, resp.StatusCode)
+		}
 	}
 }
 

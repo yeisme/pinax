@@ -115,7 +115,9 @@ func TestPromptCatalogRepositoryImportE2E(t *testing.T) {
 		t.Fatalf("search command = %#v", searchEnvelope)
 	}
 	facts := searchEnvelope["facts"].(map[string]any)
-	if facts["results"] != "6" || facts["locale"] != "zh-CN" || facts["provider_calls"] != "0" || facts["durable_writes"] != "0" {
+	// Locale default switched zh-CN -> en in e7b9eb0; bare search reports the
+	// requested locale while the zh-CN fixtures still match via locale fallback.
+	if facts["results"] != "6" || facts["locale"] != "en" || facts["provider_calls"] != "0" || facts["durable_writes"] != "0" {
 		t.Fatalf("search facts = %#v", facts)
 	}
 	if facts["operation_id"] != "promptrepo.catalog.search.v1" {
