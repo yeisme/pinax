@@ -171,7 +171,9 @@ func exploreNodeID(note domain.Note) string {
 }
 
 func exploreNode(note domain.Note, limits exploreBundleLimits, now time.Time) ExploreNode {
-	signals := parseExploreOKFSignals(note)
+	// 信任/新鲜度直接消费 domain 派生（scanNotes 已填充 note.Trust，fail-closed）。
+	trust := domain.TrustTierOf(note.Trust)
+	fresh := domain.FreshnessOf(note.Trust, now)
 	tags := make([]string, 0, len(note.Tags))
 	for _, tag := range note.Tags {
 		tag = strings.TrimSpace(tag)
@@ -192,8 +194,8 @@ func exploreNode(note domain.Note, limits exploreBundleLimits, now time.Time) Ex
 		Title:     exploreBoundText(note.Title, limits.maxTitle),
 		Kind:      kind,
 		Tags:      tags,
-		Trust:     signals.TrustTier(),
-		Fresh:     signals.Freshness(now),
+		Trust:     trust,
+		Fresh:     fresh,
 		Summary:   exploreBoundText(exploreNoteSummary(note), limits.maxSummary),
 		UpdatedAt: strings.TrimSpace(note.UpdatedAt),
 	}
@@ -220,91 +222,6 @@ func exploreBoundText(value string, limit int) string {
 		return value
 	}
 	return string(runes[:limit])
-}
-
-// --- OKF trust/fresh 本地派生 ---
-//
-// NOTE(share-explore): 这里的 OKF 信任信号解析是 pinax-share-explore-v1 的本地派生
-// helper，直接消费 domain.Note.Frontmatter（map[string]string，嵌套 YAML 已被
-// markdownnote.ParseFrontmatter 扁平化为 "by:x,at:y" 形态）。配套 change
-// pinax-okf-trust-discovery-v1 落地 typed domain helper 后，两者待合并去重。
-
-type exploreOKFSignals struct {
-	GeneratedBy    string
-	GeneratedAt    string
-	VerifiedActors []string
-	StaleAfter     string
-}
-
-// parseExploreOKFSignals 解析 frontmatter 的 generated/verified/stale_after。
-// verified 兼容 OKF bare mapping（单元素列表扁平化后形态一致）。
-func parseExploreOKFSignals(note domain.Note) exploreOKFSignals {
-	signals := exploreOKFSignals{}
-	generated := strings.TrimSpace(note.Frontmatter["generated"])
-	if generated != "" {
-		signals.GeneratedBy = exploreFlatMappingValue(generated, "by")
-		signals.GeneratedAt = exploreFlatMappingValue(generated, "at")
-	}
-	for _, part := range strings.Split(strings.TrimSpace(note.Frontmatter["verified"]), ",") {
-		part = strings.Trim(strings.TrimSpace(part), `"'`)
-		if part == "" {
-			continue
-		}
-		if actor, ok := strings.CutPrefix(part, "by:"); ok {
-			signals.VerifiedActors = append(signals.VerifiedActors, strings.TrimSpace(actor))
-			continue
-		}
-		if strings.HasPrefix(part, "at:") {
-			continue
-		}
-		// 兼容裸标量形态（verified: human:ye）。
-		signals.VerifiedActors = append(signals.VerifiedActors, part)
-	}
-	signals.StaleAfter = strings.TrimSpace(note.Frontmatter["stale_after"])
-	return signals
-}
-
-// exploreFlatMappingValue 从扁平化 mapping（"by:actor:pinax/1.0,at:2026-…"）取子键值。
-func exploreFlatMappingValue(flat, key string) string {
-	prefix := key + ":"
-	for _, part := range strings.Split(flat, ",") {
-		part = strings.TrimSpace(part)
-		if value, ok := strings.CutPrefix(part, prefix); ok {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-// TrustTier 返回 unverified|machine|human（只看 verified 列表，绝不存储回 frontmatter）。
-func (s exploreOKFSignals) TrustTier() string {
-	if len(s.VerifiedActors) == 0 {
-		return "unverified"
-	}
-	for _, actor := range s.VerifiedActors {
-		if strings.HasPrefix(actor, "human:") {
-			return "human"
-		}
-	}
-	return "machine"
-}
-
-// Freshness 返回 fresh|stale（now >= stale_after 即 stale；缺字段/非法时间戳按 fresh，
-// 未知格式不崩溃，消费端容忍精神）。
-func (s exploreOKFSignals) Freshness(now time.Time) string {
-	if s.StaleAfter == "" {
-		return "fresh"
-	}
-	staleAfter, err := time.Parse(time.RFC3339, s.StaleAfter)
-	if err != nil {
-		if staleAfter, err = time.Parse("2006-01-02", s.StaleAfter); err != nil {
-			return "fresh"
-		}
-	}
-	if !now.Before(staleAfter) {
-		return "stale"
-	}
-	return "fresh"
 }
 
 // exploreNotePreview 返回 /explore/note/<id> 的有界预览（脱敏 + 字节上限，不嵌全文）。

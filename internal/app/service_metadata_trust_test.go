@@ -36,7 +36,7 @@ func TestMetadataPlanDefaultExcludesTrustFields(t *testing.T) {
 	root := t.TempDir()
 	writeTrustMetadataFixture(t, root)
 
-	projection, err := svc.PlanMetadata(context.Background(), VaultRequest{VaultPath: root})
+	projection, err := svc.PlanMetadata(context.Background(), MetadataPlanRequest{VaultPath: root})
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestMetadataPlanAndApplyTrustFields(t *testing.T) {
 	root := t.TempDir()
 	paths := writeTrustMetadataFixture(t, root)
 
-	projection, err := svc.PlanMetadata(context.Background(), VaultRequest{VaultPath: root, TrustFields: true, StaleAfter: "2026-12-01T00:00:00+00:00"})
+	projection, err := svc.PlanMetadata(context.Background(), MetadataPlanRequest{VaultPath: root, TrustFields: true, StaleAfter: "2026-12-01T00:00:00+00:00"})
 	if err != nil {
 		t.Fatalf("plan trust fields: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestMetadataPlanTrustFieldsRejectsInvalidStaleAfter(t *testing.T) {
 	svc := NewService()
 	root := t.TempDir()
 	writeTrustMetadataFixture(t, root)
-	projection, err := svc.PlanMetadata(context.Background(), VaultRequest{VaultPath: root, TrustFields: true, StaleAfter: "2026-12-01"})
+	projection, err := svc.PlanMetadata(context.Background(), MetadataPlanRequest{VaultPath: root, TrustFields: true, StaleAfter: "2026-12-01"})
 	if err != nil {
 		t.Fatalf("plan: %v", err)
 	}

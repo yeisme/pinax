@@ -1468,7 +1468,7 @@ func trustFieldsPlanOperations(notes []domain.Note, req MetadataPlanRequest) []d
 		if len(missing) == 0 {
 			continue
 		}
-		operations = append(operations, domain.PlanOperation{Kind: "trust_fields", Path: note.Path, Reason: "Backfill trust fields: " + strings.Join(missing, ", "), Status: "planned", Evidence: missing})
+		operations = append(operations, domain.PlanOperation{Kind: "trust_fields", Path: note.Path, Target: staleAfter, Reason: "Backfill trust fields: " + strings.Join(missing, ", "), Status: "planned", Evidence: missing})
 	}
 	return operations
 }
@@ -1559,7 +1559,6 @@ func (s *Service) applyTrustFieldsBackfill(ctx context.Context, root string, not
 	}
 	return applied, nil
 }
-
 
 func (s *Service) ApplyMetadata(ctx context.Context, req ApplyRequest) (domain.Projection, error) {
 	tracker := newPipelineStageTracker(domain.PipelineKindMetadata, strings.TrimSpace(req.PlanID), "", "apply")
@@ -1665,8 +1664,19 @@ func (s *Service) applyMetadataPlan(ctx context.Context, root string, req ApplyR
 	applied := 0
 	skipped := 0
 	changedPaths := make([]string, 0)
+	trustOps := make([]domain.PlanOperation, 0)
 	for _, op := range plan.Operations {
-		if op.Kind != "metadata_update" || op.Status != "planned" {
+		if op.Status != "planned" {
+			skipped++
+			continue
+		}
+		if op.Kind == "trust_fields" {
+			// 保存的 trust_fields 操作在 apply --plan 路径由共享回填执行，
+			// stale_after 目标值取 plan 里记录的 Target（缺省回落到本次 req）。
+			trustOps = append(trustOps, op)
+			continue
+		}
+		if op.Kind != "metadata_update" {
 			skipped++
 			continue
 		}
@@ -1681,6 +1691,31 @@ func (s *Service) applyMetadataPlan(ctx context.Context, root string, req ApplyR
 		applied++
 		changedPaths = append(changedPaths, op.Path)
 		appendEventWarned(root, "metadata.apply", "success", map[string]string{"plan_id": plan.PlanID, "path": op.Path})
+	}
+	if len(trustOps) > 0 {
+		notes, err := scanNotes(root)
+		if err != nil {
+			return errorProjection("metadata.apply", err), err
+		}
+		paths := make(map[string]bool, len(trustOps))
+		staleAfter := strings.TrimSpace(req.StaleAfter)
+		for _, op := range trustOps {
+			paths[op.Path] = true
+			if value := strings.TrimSpace(op.Target); value != "" {
+				staleAfter = value
+			}
+		}
+		targets := make([]domain.Note, 0, len(paths))
+		for _, note := range notes {
+			if paths[note.Path] {
+				targets = append(targets, note)
+			}
+		}
+		trustApplied, trustErr := s.applyTrustFieldsBackfill(ctx, root, targets, ApplyRequest{TrustFields: true, StaleAfter: staleAfter, AgentVersion: req.AgentVersion}, &changedPaths)
+		if trustErr != nil {
+			return errorProjection("metadata.apply", trustErr), trustErr
+		}
+		applied += trustApplied
 	}
 	projection := domain.NewProjection("metadata.apply", "Metadata plan applied.")
 	projection.Facts["plan_id"] = plan.PlanID

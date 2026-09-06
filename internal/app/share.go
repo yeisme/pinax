@@ -208,15 +208,14 @@ func shareVaultExploreHandler(root, authToken string, bundle ExploreBundle, embe
 			http.Error(w, "explore note not found", http.StatusNotFound)
 			return
 		}
-		signals := parseExploreOKFSignals(note)
 		writeShareJSON(w, map[string]any{
 			"schema_version": ExploreBundleSchemaVersion,
 			"id":             exploreNodeID(note),
 			"title":          note.Title,
 			"kind":           note.Kind,
 			"tags":           note.Tags,
-			"trust":          signals.TrustTier(),
-			"fresh":          signals.Freshness(now),
+			"trust":          domain.TrustTierOf(note.Trust),
+			"fresh":          domain.FreshnessOf(note.Trust, now),
 			"summary":        exploreNoteSummary(note),
 			"updated_at":     note.UpdatedAt,
 			"preview":        exploreNotePreview(note),
