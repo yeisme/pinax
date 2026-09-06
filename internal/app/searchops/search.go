@@ -32,6 +32,11 @@ type Request struct {
 	IncludeDirty  bool
 	ChangedSince  string
 	Revision      string
+	// 信任/发现增量（全部 additive；默认值下行为与既有 search 完全一致）。
+	Trust      string // unverified | machine | human；空 = 不过滤
+	Stale      string // include（默认） | only | exclude
+	Facets     bool   // 消费时合成 facet 计数（基于过滤前全匹配集）
+	TrustAware bool   // 信任感知模式：结果带徽标、agent 带 trust=/fresh= 字段
 }
 
 type Result struct {
@@ -48,6 +53,7 @@ type Result struct {
 	LinkTargetCandidates []domain.NoteLinkCandidate `json:"link_target_candidates,omitempty"`
 	LazyIndex            string                     `json:"lazy_index,omitempty"`
 	LazyIndexDeferred    bool                       `json:"lazy_index_deferred,omitempty"`
+	Facets               *SearchFacets              `json:"facets,omitempty"`
 }
 
 type LinkGraphBuilder func([]domain.Note) map[string][]domain.NoteLink
@@ -127,11 +133,61 @@ func NormalizedLazyIndex(mode string) string {
 }
 
 func BuildIndexRequest(req Request, linkFilter LinkTargetFilter) noteindex.SearchRequest {
-	indexReq := noteindex.SearchRequest{Query: req.Query, Tags: CleanTags(req.Tags), Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: NormalizedSort(req.Sort)}
-	if linkFilter.Active {
+	indexReq := noteindex.SearchRequest{Query: req.Query, Tags: CleanTags(req.Tags), Group: req.Group, Folder: req.Folder, Kind: req.Kind, Status: req.Status, CreatedAfter: req.CreatedAfter, UpdatedAfter: req.UpdatedAfter, HasAttachment: req.HasAttachment, Limit: req.Limit, Sort: NormalizedSort(req.Sort), IncludeTrustSignals: searchTrustAware(req)}
+	if linkFilter.Active || req.Facets {
+		// facet 计数与信任过滤需要在全匹配集上做，limit 交给 searchops 统一裁剪。
 		indexReq.Limit = 0
 	}
 	return indexReq
+}
+
+// searchTrustAware 报告本次请求是否处于信任感知模式（徽标/agent 字段/过滤/facet 任一）。
+func searchTrustAware(req Request) bool {
+	return req.TrustAware || req.Facets || NormalizedTrustFilter(req.Trust) != "" || NormalizedStaleFilter(req.Stale) != "include"
+}
+
+// NormalizedTrustFilter 归一化 --trust 值；非法值返回原样并应由 ValidateTrustFilters 拒绝。
+func NormalizedTrustFilter(value string) string {
+	value = strings.TrimSpace(value)
+	switch value {
+	case "":
+		return ""
+	case domain.TrustTierUnverified, domain.TrustTierMachine, domain.TrustTierHuman:
+		return value
+	default:
+		return value
+	}
+}
+
+// NormalizedStaleFilter 归一化 --stale 值（默认 include）。
+func NormalizedStaleFilter(value string) string {
+	switch strings.TrimSpace(value) {
+	case "", "include":
+		return "include"
+	case "only":
+		return "only"
+	case "exclude":
+		return "exclude"
+	default:
+		return "include"
+	}
+}
+
+// ValidateTrustFilters 对信任/新鲜度过滤器做 fail-closed 校验。
+func ValidateTrustFilters(req Request) error {
+	if value := strings.TrimSpace(req.Trust); value != "" {
+		switch value {
+		case domain.TrustTierUnverified, domain.TrustTierMachine, domain.TrustTierHuman:
+		default:
+			return &domain.CommandError{Code: "invalid_trust_filter", Message: "trust filter is invalid", Hint: "Use --trust unverified, --trust machine, or --trust human"}
+		}
+	}
+	switch strings.TrimSpace(req.Stale) {
+	case "", "include", "only", "exclude":
+	default:
+		return &domain.CommandError{Code: "invalid_stale_filter", Message: "stale filter is invalid", Hint: "Use --stale include, --stale only, or --stale exclude"}
+	}
+	return nil
 }
 
 func ResultFromIndex(req Request, indexLoaded string, result noteindex.SearchResult, linkFilter LinkTargetFilter) Result {
@@ -143,11 +199,17 @@ func ResultFromIndex(req Request, indexLoaded string, result noteindex.SearchRes
 		}
 		result.Returned = len(result.Results)
 	}
-	resultNotes := make([]domain.Note, 0, len(result.Results))
-	for _, item := range result.Results {
+	var facets *SearchFacets
+	if req.Facets {
+		// facet 计数基于过滤前的全匹配集（先看全景再收窄）。
+		facets = ComputeFacets(result.Results)
+	}
+	results, total := applyTrustFiltersAndLimit(req, result.Results)
+	resultNotes := make([]domain.Note, 0, len(results))
+	for _, item := range results {
 		resultNotes = append(resultNotes, item.Note)
 	}
-	return Result{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: result.Total, Returned: result.Returned, Notes: resultNotes, Results: result.Results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex)}
+	return Result{Engine: result.Engine, IndexStatus: result.IndexStatus, IndexLoaded: indexLoaded, Total: total, Returned: len(results), Notes: resultNotes, Results: results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex), Facets: facets}
 }
 
 func ResultFromFallback(req Request, engine string, notes []domain.Note, indexStatus string, linkFilter LinkTargetFilter) Result {
@@ -156,16 +218,24 @@ func ResultFromFallback(req Request, engine string, notes []domain.Note, indexSt
 		filtered = FilterNotesByLinkTarget(filtered, linkFilter)
 	}
 	SortFallbackNotes(filtered, NormalizedSort(req.Sort))
-	total := len(filtered)
-	limit := req.Limit
-	if limit > 0 && len(filtered) > limit {
-		filtered = filtered[:limit]
-	}
+	trustAware := searchTrustAware(req)
 	items := make([]noteindex.ResultItem, 0, len(filtered))
 	for _, note := range filtered {
 		items = append(items, noteindex.ResultItem{Note: note, Score: 1, MatchedFields: []string{engine}, Snippet: FirstSnippet(note.Body, req.Query)})
 	}
-	return Result{Engine: engine, IndexStatus: indexStatus, Total: total, Returned: len(items), Notes: filtered, Results: items, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex)}
+	if trustAware {
+		annotateFallbackItems(items)
+	}
+	var facets *SearchFacets
+	if req.Facets {
+		facets = ComputeFacets(items)
+	}
+	results, total := applyTrustFiltersAndLimit(req, items)
+	resultNotes := make([]domain.Note, 0, len(results))
+	for _, item := range results {
+		resultNotes = append(resultNotes, item.Note)
+	}
+	return Result{Engine: engine, IndexStatus: indexStatus, Total: total, Returned: len(results), Notes: resultNotes, Results: results, LinkTargetStatus: linkFilter.Status, LinkTargetMatches: linkFilter.Matches, LinkTargetCandidates: linkFilter.Candidates, LazyIndex: NormalizedLazyIndex(req.LazyIndex), Facets: facets}
 }
 
 func Projection(req Request, result Result, shellQuote func(string) string) domain.Projection {
@@ -387,6 +457,12 @@ func AddFilterFacts(facts map[string]string, req Request) {
 	}
 	if req.HasAttachment {
 		facts["filter.has_attachment"] = "true"
+	}
+	if NormalizedTrustFilter(req.Trust) != "" {
+		facts["filter.trust"] = NormalizedTrustFilter(req.Trust)
+	}
+	if NormalizedStaleFilter(req.Stale) != "include" {
+		facts["filter.stale"] = NormalizedStaleFilter(req.Stale)
 	}
 }
 

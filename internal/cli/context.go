@@ -68,6 +68,9 @@ type commandBuildContext struct {
 	noteVerifyNote           *string
 	metadataTrustFields      *bool
 	metadataTrustStaleAfter  *string
+	searchTrust              *string
+	searchStale              *string
+	searchFacets             *bool
 	noteStrictProperties     *bool
 	noteListCreatedAfter     *string
 	noteListUpdatedBefore    *string

@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	charmtable "github.com/charmbracelet/lipgloss/table"
@@ -970,6 +971,10 @@ func renderSummaryDataWithOptions(w io.Writer, theme summaryTheme, p domain.Proj
 		return renderSummaryCommandCatalog(w, theme, p.Data)
 	case "note.search":
 		return renderSummarySearchResults(w, theme, p.Data)
+	case "search.show":
+		return renderSummarySearchShow(w, theme, p.Data)
+	case "browse":
+		return renderSummaryBrowse(w, theme, p.Data)
 	case "api.routes":
 		return renderSummaryAPIRoutes(w, theme, p.Data)
 	case "connection.readiness":
@@ -1849,11 +1854,29 @@ func projectRegistryFromData(data any) (domain.ProjectRegistry, bool) {
 type summarySearchData struct {
 	Results []summarySearchResult `json:"results"`
 	Notes   []domain.Note         `json:"notes"`
+	Facets  *searchFacetsSummary  `json:"facets"`
 }
 
 type summarySearchResult struct {
 	Note    domain.Note `json:"note"`
 	Snippet string      `json:"snippet"`
+	Trust   string      `json:"trust"`
+	Fresh   string      `json:"fresh"`
+}
+
+// searchFacetsSummary 是 search facets 的渲染投影（与 searchops.SearchFacets 同构）。
+type searchFacetsSummary struct {
+	Tag    []searchFacetValue `json:"tag"`
+	Kind   []searchFacetValue `json:"kind"`
+	Status []searchFacetValue `json:"status"`
+	Folder []searchFacetValue `json:"folder"`
+	Trust  []searchFacetValue `json:"trust"`
+	Fresh  []searchFacetValue `json:"fresh"`
+}
+
+type searchFacetValue struct {
+	Value string `json:"value"`
+	Count int    `json:"count"`
 }
 
 type summaryListColumn struct {
@@ -1992,41 +2015,341 @@ func dataPathValue(item map[string]any, path string) any {
 }
 
 func renderSummarySearchResults(w io.Writer, theme summaryTheme, data any) error {
-	results := summarySearchResultsFromData(data)
-	if len(results) == 0 {
+	results, facets := summarySearchResultsFromData(data)
+	trustAware := false
+	for _, result := range results {
+		if strings.TrimSpace(result.Trust) != "" || strings.TrimSpace(result.Fresh) != "" {
+			trustAware = true
+			break
+		}
+	}
+	if len(results) == 0 && facets == nil {
 		return nil
 	}
 	if _, err := fmt.Fprintln(w); err != nil {
 		return err
 	}
-	rows := make([][]string, 0, len(results))
-	for _, result := range results {
-		rows = append(rows, []string{
-			summaryCell(result.Note.Path, 56),
-			summaryCell(result.Note.Title, 32),
-			summaryCell(result.Snippet, 80),
-		})
+	if len(results) > 0 {
+		rows := make([][]string, 0, len(results))
+		if trustAware {
+			for _, result := range results {
+				rows = append(rows, []string{
+					summaryCell(result.Note.Path, 48),
+					summaryCell(result.Note.Title, 28),
+					summaryCell(trustBadge(result.Trust), 12),
+					summaryCell(freshBadge(result.Fresh), 8),
+					summaryCell(result.Snippet, 64),
+				})
+			}
+			if err := renderSummaryTable(w, theme, []string{"Path", "Title", "Trust", "Fresh", "Preview"}, rows); err != nil {
+				return err
+			}
+		} else {
+			for _, result := range results {
+				rows = append(rows, []string{
+					summaryCell(result.Note.Path, 56),
+					summaryCell(result.Note.Title, 32),
+					summaryCell(result.Snippet, 80),
+				})
+			}
+			if err := renderSummaryTable(w, theme, []string{"Path", "Title", "Preview"}, rows); err != nil {
+				return err
+			}
+		}
 	}
-	return renderSummaryTable(w, theme, []string{"Path", "Title", "Preview"}, rows)
+	if facets != nil {
+		if err := renderSearchFacetsBlock(w, theme, facets); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func summarySearchResultsFromData(data any) []summarySearchResult {
-	var searchData summarySearchData
+// trustBadge/freshBadge 输出 ASCII 徽标（notty/markdown 场景由 summaryCell 保留纯文本标签）。
+func trustBadge(tier string) string {
+	switch strings.TrimSpace(tier) {
+	case domain.TrustTierHuman:
+		return "human ✓"
+	case domain.TrustTierMachine:
+		return "machine"
+	case domain.TrustTierUnverified:
+		return "unverified"
+	default:
+		return "-"
+	}
+}
+
+func freshBadge(fresh string) string {
+	if strings.TrimSpace(fresh) == domain.FreshnessStale {
+		return "stale"
+	}
+	if strings.TrimSpace(fresh) == domain.FreshnessFresh {
+		return "fresh"
+	}
+	return "-"
+}
+
+// renderSearchFacetsBlock 渲染 facet 计数块（置于结果表之后）。
+func renderSearchFacetsBlock(w io.Writer, theme summaryTheme, facets *searchFacetsSummary) error {
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render("Facets")); err != nil {
+		return err
+	}
+	dimensions := []struct {
+		name   string
+		values []searchFacetValue
+	}{
+		{"tag", facets.Tag},
+		{"kind", facets.Kind},
+		{"status", facets.Status},
+		{"folder", facets.Folder},
+		{"trust", facets.Trust},
+		{"fresh", facets.Fresh},
+	}
+	for _, dimension := range dimensions {
+		if len(dimension.values) == 0 {
+			continue
+		}
+		parts := make([]string, 0, len(dimension.values))
+		for _, value := range dimension.values {
+			parts = append(parts, fmt.Sprintf("%s=%d", value.Value, value.Count))
+		}
+		if _, err := fmt.Fprintf(w, "  %-7s %s\n", dimension.name, strings.Join(parts, " ")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// renderSummarySearchShow 渲染 search show 一站式详情卡（有界 snippet，不输出正文全文）。
+func renderSummarySearchShow(w io.Writer, theme summaryTheme, data any) error {
+	var card searchShowCard
 	b, err := json.Marshal(data)
 	if err != nil {
 		return nil
 	}
-	if err := json.Unmarshal(b, &searchData); err != nil {
+	if err := json.Unmarshal(b, &card); err != nil {
 		return nil
 	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	heading := card.Title
+	if heading == "" {
+		heading = card.Path
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render(heading), card.Kind, card.Path); err != nil {
+		return err
+	}
+	trustLine := trustBadge(card.Trust.Tier)
+	if card.Trust.LatestHumanBy != "" {
+		trustLine += " (" + card.Trust.LatestHumanBy + " @ " + trustEventDate(card.Trust.LatestHumanAt) + ")"
+	} else if card.Trust.VerifiedAtLatest != "" {
+		trustLine += " (latest verify " + trustEventDate(card.Trust.VerifiedAtLatest) + ")"
+	} else if card.Trust.GeneratedBy != "" {
+		trustLine += " (generated by " + card.Trust.GeneratedBy + ")"
+	}
+	freshLine := freshBadge(card.Fresh)
+	if card.Trust.StaleAfter != "" {
+		freshLine += " (stale_after " + trustEventDate(card.Trust.StaleAfter) + ")"
+	}
+	lines := [][2]string{
+		{"Trust", trustLine},
+		{"Fresh", freshLine},
+		{"Meta", searchShowMetaLine(card)},
+	}
+	if card.Snippet != "" {
+		lines = append(lines, [2]string{"Snippet", card.Snippet})
+	}
+	outLine := fmt.Sprintf("%d out", card.Links.Outgoing)
+	if len(card.Links.OutgoingRefs) > 0 {
+		outLine += " (" + searchShowRefNames(card.Links.OutgoingRefs) + ")"
+	}
+	inLine := fmt.Sprintf("%d in", card.Links.Incoming)
+	if len(card.Links.IncomingRefs) > 0 {
+		inLine += " (" + searchShowRefNames(card.Links.IncomingRefs) + ")"
+	}
+	lines = append(lines, [2]string{"Links", outLine + " - " + inLine})
+	if len(card.Neighbors) > 0 {
+		lines = append(lines, [2]string{"Neighbors", "same-tag: " + searchShowRefNames(card.Neighbors)})
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(w, "  %-9s %s\n", line[0], line[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func searchShowMetaLine(card searchShowCard) string {
+	parts := make([]string, 0, 5)
+	if len(card.Tags) > 0 {
+		parts = append(parts, "tags="+strings.Join(card.Tags, ","))
+	}
+	if card.Kind != "" {
+		parts = append(parts, "kind="+card.Kind)
+	}
+	if card.Status != "" {
+		parts = append(parts, "status="+card.Status)
+	}
+	if card.UpdatedAt != "" {
+		parts = append(parts, "updated="+trustEventDate(card.UpdatedAt))
+	}
+	return strings.Join(parts, "  ")
+}
+
+func searchShowRefNames(refs []searchShowRefCard) string {
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Title != "" {
+			names = append(names, ref.Title)
+			continue
+		}
+		names = append(names, ref.Path)
+	}
+	return strings.Join(names, ", ")
+}
+
+func trustEventDate(value string) string {
+	value = strings.TrimSpace(value)
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UTC().Format("2006-01-02")
+	}
+	return value
+}
+
+type searchShowCard struct {
+	Title     string              `json:"title"`
+	Path      string              `json:"path"`
+	Kind      string              `json:"kind"`
+	Status    string              `json:"status"`
+	UpdatedAt string              `json:"updated_at"`
+	Tags      []string            `json:"tags"`
+	Trust     searchShowTrustCard `json:"trust"`
+	Fresh     string              `json:"fresh"`
+	Snippet   string              `json:"snippet"`
+	Links     searchShowLinksCard `json:"links"`
+	Neighbors []searchShowRefCard `json:"neighbors"`
+}
+
+type searchShowTrustCard struct {
+	Tier             string `json:"tier"`
+	GeneratedBy      string `json:"generated_by"`
+	GeneratedAt      string `json:"generated_at"`
+	VerifiedCount    int    `json:"verified_count"`
+	VerifiedAtLatest string `json:"verified_at_latest"`
+	LatestHumanBy    string `json:"latest_human_by"`
+	LatestHumanAt    string `json:"latest_human_at"`
+	StaleAfter       string `json:"stale_after"`
+}
+
+type searchShowLinksCard struct {
+	Outgoing     int                 `json:"outgoing"`
+	OutgoingRefs []searchShowRefCard `json:"outgoing_refs"`
+	Incoming     int                 `json:"incoming"`
+	IncomingRefs []searchShowRefCard `json:"incoming_refs"`
+}
+
+type searchShowRefCard struct {
+	Path   string `json:"path"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
+
+// renderSummaryBrowse 渲染合成目录导航视图（子目录 + 该层 notes）。
+func renderSummaryBrowse(w io.Writer, theme summaryTheme, data any) error {
+	var view browseCard
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	if err := json.Unmarshal(b, &view); err != nil {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	label := view.Path
+	if label == "" {
+		label = "(vault root)"
+	}
+	if _, err := fmt.Fprintln(w, theme.header.Render(label), fmt.Sprintf("- %d notes - %d subfolders", view.Notes, len(view.Subfolders))); err != nil {
+		return err
+	}
+	if len(view.Subfolders) > 0 {
+		if _, err := fmt.Fprintln(w, theme.header.Render("Subfolders")); err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(view.Subfolders))
+		for _, folder := range view.Subfolders {
+			rows = append(rows, []string{summaryCell(folder.Path+"/", 48), fmt.Sprintf("%d notes", folder.NoteCount)})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Folder", "Notes"}, rows); err != nil {
+			return err
+		}
+	}
+	if len(view.Items) > 0 {
+		if _, err := fmt.Fprintln(w, theme.header.Render("Notes (by updated)")); err != nil {
+			return err
+		}
+		rows := make([][]string, 0, len(view.Items))
+		for _, item := range view.Items {
+			rows = append(rows, []string{
+				summaryCell(item.Title, 32),
+				summaryCell(item.Kind, 14),
+				summaryCell(trustBadge(item.Trust), 12),
+				summaryCell(freshBadge(item.Fresh), 8),
+				summaryCell(item.UpdatedAt, 22),
+			})
+		}
+		if err := renderSummaryTable(w, theme, []string{"Title", "Kind", "Trust", "Fresh", "Updated"}, rows); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type browseCard struct {
+	Path       string                `json:"path"`
+	Notes      int                   `json:"notes"`
+	Subfolders []browseSubfolderCard `json:"subfolders"`
+	Items      []browseItemCard      `json:"items"`
+}
+
+type browseSubfolderCard struct {
+	Path      string `json:"path"`
+	NoteCount int    `json:"note_count"`
+}
+
+type browseItemCard struct {
+	Title       string `json:"title"`
+	Path        string `json:"path"`
+	Kind        string `json:"kind"`
+	UpdatedAt   string `json:"updated_at"`
+	Trust       string `json:"trust"`
+	Fresh       string `json:"fresh"`
+	Description string `json:"description"`
+}
+
+func summarySearchResultsFromData(data any) ([]summarySearchResult, *searchFacetsSummary) {
+	var searchData summarySearchData
+	b, err := json.Marshal(data)
+	if err != nil {
+		return nil, nil
+	}
+	if err := json.Unmarshal(b, &searchData); err != nil {
+		return nil, nil
+	}
 	if len(searchData.Results) > 0 {
-		return searchData.Results
+		return searchData.Results, searchData.Facets
 	}
 	results := make([]summarySearchResult, 0, len(searchData.Notes))
 	for _, note := range searchData.Notes {
 		results = append(results, summarySearchResult{Note: note})
 	}
-	return results
+	return results, searchData.Facets
 }
 
 func renderSummaryMarkdownDocument(w io.Writer, data any, opts RenderOptions) error {

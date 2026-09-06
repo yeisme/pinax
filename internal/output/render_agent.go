@@ -88,6 +88,9 @@ func renderAgentWithOptions(w io.Writer, p domain.Projection, opts RenderOptions
 	lines = appendPublishThemeEjectAgentLines(lines, p)
 	lines = appendCollectionPlanAgentLines(lines, p)
 	lines = appendPlanningAgentLines(lines, p)
+	lines = appendSearchFacetAgentLines(lines, p)
+	lines = appendSearchShowAgentLines(lines, p)
+	lines = appendBrowseAgentLines(lines, p)
 	lines = appendBrainAgentLines(lines, p)
 	lines = appendMetadataRecordAgentLines(lines, p)
 	lines = appendProjectItemAgentLines(lines, p)
@@ -283,7 +286,7 @@ func agentListSpecs() []agentListSpec {
 		{Prefix: "issue", Path: []string{"issues"}, Fields: []agentListField{{"code", []string{"code", "issue_code"}}, {"severity", []string{"severity"}}, {"path", []string{"path"}}, {"field", []string{"field"}}, {"operation", []string{"operation"}}, {"note_id", []string{"note_id"}}, {"message", []string{"message"}}}},
 		{Prefix: "warning", Path: []string{"warnings"}, Fields: []agentListField{{"source", []string{"source"}}, {"path", []string{"path"}}, {"line", []string{"line"}}, {"message", []string{"message"}}}},
 		{Prefix: "delete_candidate", Path: []string{"delete_candidates"}, Fields: []agentListField{{"run_id", []string{"run_id"}}, {"name", []string{"name"}}, {"command", []string{"command"}}, {"status", []string{"status"}}, {"template", []string{"template"}}, {"target_note", []string{"target_note"}}, {"created_at", []string{"created_at"}}}},
-		{Prefix: "result", Path: []string{"results"}, Fields: []agentListField{{"prompt_asset_id", []string{"prompt_asset_id"}}, {"path", []string{"note.path", "path"}}, {"title", []string{"note.title", "title"}}, {"note_id", []string{"note.id", "note_id"}}, {"kind", []string{"note.kind", "kind"}}, {"status", []string{"note.status", "status"}}, {"snippet", []string{"snippet"}}, {"score", []string{"score"}}}},
+		{Prefix: "result", Path: []string{"results"}, Fields: []agentListField{{"prompt_asset_id", []string{"prompt_asset_id"}}, {"path", []string{"note.path", "path"}}, {"title", []string{"note.title", "title"}}, {"note_id", []string{"note.id", "note_id"}}, {"kind", []string{"note.kind", "kind"}}, {"status", []string{"note.status", "status"}}, {"snippet", []string{"snippet"}}, {"score", []string{"score"}}, {"trust", []string{"trust"}}, {"fresh", []string{"fresh"}}}},
 		{Prefix: "template", Path: []string{"templates"}, Fields: []agentListField{{"name", []string{"name"}}, {"source", []string{"source"}}, {"kind", []string{"kind"}}, {"scenario_id", []string{"scenario_id"}}, {"template_kind", []string{"template_kind"}}, {"maturity", []string{"maturity"}}, {"lifecycle", []string{"lifecycle"}}, {"pack", []string{"pack.id"}}, {"write_boundary", []string{"output_policy.write_boundary"}}}},
 		{Prefix: "prompt_asset", Path: []string{"prompt_assets"}, Fields: []agentListField{{"id", []string{"prompt_asset_id", "PromptAssetID"}}, {"title", []string{"title", "Title"}}, {"domain", []string{"domain", "Domain"}}, {"lifecycle", []string{"lifecycle", "Lifecycle"}}, {"permission", []string{"permission", "Permission"}}, {"owner_project", []string{"owner_project", "OwnerProject"}}, {"current_version_id", []string{"current_version_id", "CurrentVersionID"}}}},
 		{Prefix: "entry", Path: []string{"entries"}, Fields: []agentListField{{"event_id", []string{"event_id"}}, {"source", []string{"source"}}, {"kind", []string{"kind"}}, {"status", []string{"status"}}, {"severity", []string{"severity"}}, {"object_ref", []string{"object_ref"}}, {"path", []string{"path"}}, {"run_id", []string{"run_id"}}, {"ts", []string{"ts", "timestamp"}}}},
@@ -564,6 +567,127 @@ func appendPlanningAgentLines(lines []string, p domain.Projection) []string {
 				if value != "" {
 					lines = append(lines, prefix+field.Key+"="+quoteAgentValue(value))
 				}
+			}
+		}
+	}
+	return lines
+}
+
+// appendSearchFacetAgentLines 输出 facets.<dimension>.<value>=<count> 稳定 key=value。
+func appendSearchFacetAgentLines(lines []string, p domain.Projection) []string {
+	if p.Command != "note.search" {
+		return lines
+	}
+	root, ok := dataMap(p.Data)
+	if !ok {
+		return lines
+	}
+	facets, ok := dataMap(root["facets"])
+	if !ok {
+		return lines
+	}
+	for _, dimension := range []string{"tag", "kind", "status", "folder", "trust", "fresh"} {
+		raw, ok := facets[dimension].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range raw {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			value := agentScalarValue(entry["value"])
+			count := agentScalarValue(entry["count"])
+			if value == "" || count == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("facets.%s.%s=%s", dimension, value, count))
+		}
+	}
+	return lines
+}
+
+// appendSearchShowAgentLines 输出 search show 详情卡的稳定 key=value 字段。
+func appendSearchShowAgentLines(lines []string, p domain.Projection) []string {
+	if p.Command != "search.show" {
+		return lines
+	}
+	root, ok := dataMap(p.Data)
+	if !ok {
+		return lines
+	}
+	for _, field := range []agentListField{{"path", []string{"path"}}, {"note_id", []string{"note_id"}}, {"title", []string{"title"}}, {"kind", []string{"kind"}}, {"status", []string{"status"}}, {"updated_at", []string{"updated_at"}}} {
+		value := firstDataPathString(root, field.Paths...)
+		if value != "" {
+			lines = append(lines, "detail."+field.Key+"="+quoteAgentValue(value))
+		}
+	}
+	if trust, ok := dataMap(root["trust"]); ok {
+		for _, field := range []agentListField{{"tier", []string{"tier"}}, {"generated_by", []string{"generated_by"}}, {"generated_at", []string{"generated_at"}}, {"verified_at_latest", []string{"verified_at_latest"}}, {"latest_human_by", []string{"latest_human_by"}}, {"latest_human_at", []string{"latest_human_at"}}, {"stale_after", []string{"stale_after"}}} {
+			value := firstDataPathString(trust, field.Paths...)
+			if value != "" {
+				lines = append(lines, "detail.trust_"+field.Key+"="+quoteAgentValue(value))
+			}
+		}
+	}
+	if fresh := firstDataPathString(root, "fresh"); fresh != "" {
+		lines = append(lines, "detail.fresh="+quoteAgentValue(fresh))
+	}
+	if snippet := firstDataPathString(root, "snippet"); snippet != "" {
+		lines = append(lines, "detail.snippet="+quoteAgentValue(snippet))
+	}
+	if links, ok := dataMap(root["links"]); ok {
+		for _, field := range []agentListField{{"links_out", []string{"outgoing"}}, {"links_in", []string{"incoming"}}} {
+			value := firstDataPathString(links, field.Paths...)
+			if value != "" {
+				lines = append(lines, "detail."+field.Key+"="+quoteAgentValue(value))
+			}
+		}
+	}
+	return lines
+}
+
+// appendBrowseAgentLines 输出 browse 视图的稳定 key=value 字段。
+func appendBrowseAgentLines(lines []string, p domain.Projection) []string {
+	if p.Command != "browse" {
+		return lines
+	}
+	root, ok := dataMap(p.Data)
+	if !ok {
+		return lines
+	}
+	if path := firstDataPathString(root, "path"); path != "" {
+		lines = append(lines, "detail.path="+quoteAgentValue(path))
+	}
+	subfolders, _ := root["subfolders"].([]any)
+	for i, item := range subfolders {
+		folder, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		prefix := fmt.Sprintf("subfolder.%d.", i+1)
+		if value := agentScalarValue(folder["path"]); value != "" {
+			lines = append(lines, prefix+"path="+quoteAgentValue(value))
+		}
+		if value := agentScalarValue(folder["note_count"]); value != "" {
+			lines = append(lines, prefix+"notes="+quoteAgentValue(value))
+		}
+	}
+	items, _ := root["items"].([]any)
+	limit := len(items)
+	if limit > 10 {
+		limit = 10
+	}
+	for i, item := range items[:limit] {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		prefix := fmt.Sprintf("note.%d.", i+1)
+		for _, field := range []agentListField{{"path", []string{"path"}}, {"title", []string{"title"}}, {"kind", []string{"kind"}}, {"updated_at", []string{"updated_at"}}, {"trust", []string{"trust"}}, {"fresh", []string{"fresh"}}} {
+			value := firstDataPathString(entry, field.Paths...)
+			if value != "" {
+				lines = append(lines, prefix+field.Key+"="+quoteAgentValue(value))
 			}
 		}
 	}

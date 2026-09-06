@@ -1252,6 +1252,10 @@ func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (result Se
 		endStep(err)
 		return SearchResult{}, err
 	}
+	if err := searchops.ValidateTrustFilters(searchReq); err != nil {
+		endStep(err)
+		return SearchResult{}, err
+	}
 	endStep(nil)
 	engine := searchops.NormalizedEngine(searchReq.Engine)
 	endStep = rec.BeginStep("notes.scan", nil)
