@@ -44,6 +44,7 @@ var routeGroupMap = map[string]RouteInfo{
 	"/":                       {Group: "capabilities", Method: "GET", Readonly: true},
 	"/workbench":              {Group: "capabilities", Method: "GET", Action: "workbench.ui", Readonly: true},
 	"/v1/capabilities":        {Group: "capabilities", Method: "GET", Readonly: true},
+	"/v1/manifest":            {Group: "capabilities", Method: "GET", Action: "transport.manifest", Readonly: true},
 	"/v1/readiness":           {Group: "capabilities", Method: "GET", Action: "connection.readiness", Readonly: true},
 	"/v1/operations/":         {Group: "operations", Method: "GET", Action: "operation.show", Readonly: true},
 	"/v1/workbench/status":    {Group: "capabilities", Method: "GET", Action: "workbench.status", Readonly: true},

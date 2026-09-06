@@ -306,3 +306,68 @@ func TestOperationMigrationFailureIsStoreUnavailable(t *testing.T) {
 		t.Fatalf("Open() = %#v, %v; want operation_store_unavailable", store, err)
 	}
 }
+
+// TestCreateAcceptedClaimsRetryableReplay 覆盖重试认领：
+// failed+retryable+replay_safe 的 replay 事务内迁移到 applying 并获得执行权；
+// 未认领（不可重试或已被并发认领）时保持普通 Replay 短路。
+func TestCreateAcceptedClaimsRetryableReplay(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = store.Close() }()
+	request := testCreateRequest(t, "op-retry-1", "idem-retry-1", map[string]any{"title": "Retry"})
+
+	if _, err = store.CreateAccepted(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.StartApplying(ctx, request.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := store.CompleteFailed(ctx, request.OperationID, Outcome{
+		ErrorCode: "revision_conflict", ErrorMessage: "retry me", Retryable: true, ReplaySafe: true,
+	})
+	if err != nil || failed.Status != StatusFailed || !failed.Retryable || !failed.ReplaySafe {
+		t.Fatalf("failed row = %#v err=%v", failed, err)
+	}
+
+	// 可重试 replay：认领并迁移到 applying。
+	claimed, err := store.CreateAccepted(ctx, request)
+	if err != nil || !claimed.Replay || !claimed.RetryClaimed {
+		t.Fatalf("retry claim = %#v err=%v", claimed, err)
+	}
+	if claimed.Operation.Status != StatusApplying {
+		t.Fatalf("claimed status = %s", claimed.Operation.Status)
+	}
+	// 认领后可正常推进到终态。
+	succeeded, err := store.CompleteSucceeded(ctx, request.OperationID, Outcome{Result: json.RawMessage(`{"ok":true}`)})
+	if err != nil || succeeded.Status != StatusSucceeded {
+		t.Fatalf("succeeded after claim = %#v err=%v", succeeded, err)
+	}
+
+	// 终态 succeeded 的 replay：不认领，普通短路。
+	final, err := store.CreateAccepted(ctx, request)
+	if err != nil || !final.Replay || final.RetryClaimed || final.Operation.Status != StatusSucceeded {
+		t.Fatalf("terminal replay = %#v err=%v", final, err)
+	}
+
+	// 不可重试 failed：不认领。
+	request2 := testCreateRequest(t, "op-retry-2", "idem-retry-2", map[string]any{"title": "NoRetry"})
+	if _, err = store.CreateAccepted(ctx, request2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.StartApplying(ctx, request2.OperationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CompleteFailed(ctx, request2.OperationID, Outcome{
+		ErrorCode: "validation_failed", ErrorMessage: "do not retry", Retryable: false, ReplaySafe: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	nonRetryable, err := store.CreateAccepted(ctx, request2)
+	if err != nil || !nonRetryable.Replay || nonRetryable.RetryClaimed || nonRetryable.Operation.Status != StatusFailed {
+		t.Fatalf("non-retryable replay = %#v err=%v", nonRetryable, err)
+	}
+}

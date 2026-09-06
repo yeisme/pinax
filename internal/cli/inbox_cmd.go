@@ -22,6 +22,11 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 			if len(args) != 1 {
 				return renderCommandError(cmd, ctx.outputMode(), "inbox.capture", "argument_required", "inbox capture requires a title", "pinax inbox capture <title> --vault <vault>")
 			}
+			if operationID != "" || idempotencyKey != "" {
+				return renderCommandError(cmd, ctx.outputMode(), "inbox.capture", "remote_only_flag",
+					"--operation-id/--idempotency-key require a remote mutation (--api-url); local capture has no operation ledger",
+					"pinax inbox capture <title> --vault <vault> --api-url <url> --operation-id <id>")
+			}
 			projection, err := ctx.svc.InboxCapture(cmd.Context(), app.CreateNoteRequest{
 				VaultPath: *ctx.vaultPath,
 				Title:     args[0],

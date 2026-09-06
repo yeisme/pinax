@@ -115,7 +115,10 @@ func (s *Service) RenameFolderRemote(ctx context.Context, req FolderOperationReq
 		if findErr != nil {
 			return operationErrorProjection(folderRenameCapabilityID, findErr)
 		}
-		if found && existing.Operation.Status != operation.StatusAccepted {
+		// failed+retryable+replay_safe 的 replay 不在这里短路：重试需要
+		// 重新过 snapshot preflight（revision 可能已移动），由后续
+		// CreateAccepted 事务内认领并重新执行。
+		if found && !operation.RetryableReplay(existing.Operation) && existing.Operation.Status != operation.StatusAccepted {
 			return folderProjectionFromOperation(existing.Operation, true)
 		}
 	} else if !operation.IsCode(existingErr, operation.CodeNotFound) {
@@ -141,7 +144,7 @@ func (s *Service) RenameFolderRemote(ctx context.Context, req FolderOperationReq
 	if err != nil {
 		return operationErrorProjection(folderRenameCapabilityID, err)
 	}
-	if created.Replay && created.Operation.Status != operation.StatusAccepted {
+	if created.Replay && !created.RetryClaimed && created.Operation.Status != operation.StatusAccepted {
 		return folderProjectionFromOperation(created.Operation, true)
 	}
 
@@ -150,7 +153,10 @@ func (s *Service) RenameFolderRemote(ctx context.Context, req FolderOperationReq
 	planRequest.Yes = false
 	plan, planErr := s.RenameFolder(ctx, planRequest)
 	if planErr != nil {
-		_, applyingErr := store.StartApplying(ctx, operationID)
+		var applyingErr error
+		if !created.RetryClaimed {
+			_, applyingErr = store.StartApplying(ctx, operationID)
+		}
 		if applyingErr != nil {
 			if current, getErr := store.Get(ctx, operationID); getErr == nil {
 				return folderProjectionFromOperation(current, true)
@@ -168,7 +174,13 @@ func (s *Service) RenameFolderRemote(ctx context.Context, req FolderOperationReq
 	}
 	prepared := folderResultFromProjection(plan)
 	preparedJSON, _ := json.Marshal(prepared)
-	applying, err := store.StartApplyingWithOutcome(ctx, operationID, operation.Outcome{Result: preparedJSON})
+	var applying operation.OperationRow
+	if created.RetryClaimed {
+		// 认领时已迁移到 applying，不得重复迁移。
+		applying = created.Operation
+	} else {
+		applying, err = store.StartApplyingWithOutcome(ctx, operationID, operation.Outcome{Result: preparedJSON})
+	}
 	if err != nil {
 		if operation.IsCode(err, operation.CodeIllegalTransition) {
 			if current, getErr := store.Get(ctx, operationID); getErr == nil {

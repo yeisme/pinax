@@ -106,6 +106,7 @@ func (s *Store) CreateAccepted(ctx context.Context, request CreateRequest) (Crea
 		return CreateResult{}, err
 	}
 	var created OperationRow
+	retryClaimed := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, found, err := findBinding(ctx, tx, request)
 		if err != nil {
@@ -117,6 +118,34 @@ func (s *Store) CreateAccepted(ctx context.Context, request CreateRequest) (Crea
 			}
 			if err := tx.WithContext(ctx).First(&created, "operation_id = ?", existing.OperationID).Error; err != nil {
 				return err
+			}
+			// 重试认领：failed+retryable+replay_safe 的既有 operation 在
+			// 事务内迁移 failed → applying（乐观锁 status=failed）。赢得
+			// 认领的调用继续执行 mutation；并发重试看到 applying 走普通
+			// replay 短路，互斥不变。
+			if RetryableReplay(created) {
+				now := s.now()
+				result := tx.WithContext(ctx).Model(&OperationRow{}).
+					Where("operation_id = ? AND status = ?", created.OperationID, StatusFailed).
+					Updates(map[string]any{
+						"status": StatusApplying, "updated_at": now,
+						"applying_at": now, "completed_at": nil,
+						"error_code": "", "error_message": "",
+						"retryable": false, "replay_safe": false,
+					})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected == 1 {
+					created.Status = StatusApplying
+					created.UpdatedAt = now
+					retryClaimed = true
+					// 认领成功必须提交事务（errReplay 会回滚），
+					// 以 nil 退出让外层按 retryClaimed 语义返回。
+					return nil
+				} else if err := tx.WithContext(ctx).First(&created, "operation_id = ?", created.OperationID).Error; err != nil {
+					return err
+				}
 			}
 			return errReplay
 		}
@@ -151,10 +180,10 @@ func (s *Store) CreateAccepted(ctx context.Context, request CreateRequest) (Crea
 		return tx.WithContext(ctx).Create(&binding).Error
 	})
 	if errors.Is(err, errReplay) {
-		return CreateResult{Operation: created, Replay: true}, nil
+		return CreateResult{Operation: created, Replay: true, RetryClaimed: retryClaimed}, nil
 	}
 	if err == nil {
-		return CreateResult{Operation: created}, nil
+		return CreateResult{Operation: created, Replay: retryClaimed, RetryClaimed: retryClaimed}, nil
 	}
 	if IsCode(err, CodeIdempotencyConflict) {
 		return CreateResult{}, err

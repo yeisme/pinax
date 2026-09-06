@@ -70,6 +70,13 @@ func addFolderCommands(root *cobra.Command, ctx commandBuildContext) {
 		if len(args) != 2 {
 			return renderCommandError(cmd, ctx.outputMode(), "folder.rename", "argument_required", "folder rename requires old and new folder paths", "pinax folder rename <old> <new> --vault <vault> --yes")
 		}
+		// operation ledger 只存在于 remote mutation 路径；本地直连时
+		// 显式拒绝恢复身份 flag，不得静默丢弃后假装已进入幂等恢复。
+		if renameOperationID != "" || renameIdempotencyKey != "" {
+			return renderCommandError(cmd, ctx.outputMode(), "folder.rename", "remote_only_flag",
+				"--operation-id/--idempotency-key require a remote mutation (--api-url); local rename has no operation ledger",
+				"pinax folder rename <old> <new> --vault <vault> --api-url <url> --operation-id <id>")
+		}
 		projection, err := ctx.svc.RenameFolder(cmd.Context(), app.FolderOperationRequest{VaultPath: *ctx.vaultPath, Path: args[0], TargetPath: args[1], DryRun: renameDryRun, Yes: renameYes, ExpectedRevision: renameExpectedRevision})
 		return ctx.renderProjection(cmd, projection, err)
 	}}

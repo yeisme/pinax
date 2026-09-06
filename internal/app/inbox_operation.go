@@ -97,7 +97,7 @@ func (s *Service) InboxCaptureRemote(ctx context.Context, req CreateNoteRequest,
 	if err != nil {
 		return operationErrorProjection(inboxCaptureCapabilityID, err)
 	}
-	if created.Replay && created.Operation.Status != operation.StatusAccepted {
+	if created.Replay && !created.RetryClaimed && created.Operation.Status != operation.StatusAccepted {
 		return inboxProjectionFromOperation(created.Operation, true)
 	}
 
@@ -105,7 +105,10 @@ func (s *Service) InboxCaptureRemote(ctx context.Context, req CreateNoteRequest,
 	planRequest.DryRun = true
 	plan, planErr := s.InboxCapture(ctx, planRequest)
 	if planErr != nil {
-		_, applyingErr := store.StartApplying(ctx, operationID)
+		var applyingErr error
+		if !created.RetryClaimed {
+			_, applyingErr = store.StartApplying(ctx, operationID)
+		}
 		if applyingErr != nil {
 			if current, getErr := store.Get(ctx, operationID); getErr == nil {
 				return inboxProjectionFromOperation(current, true)
@@ -126,7 +129,13 @@ func (s *Service) InboxCaptureRemote(ctx context.Context, req CreateNoteRequest,
 	if err != nil {
 		return operationErrorProjection(inboxCaptureCapabilityID, err)
 	}
-	applying, err := store.StartApplyingWithOutcome(ctx, operationID, operation.Outcome{Result: preparedJSON})
+	var applying operation.OperationRow
+	if created.RetryClaimed {
+		// 认领时已迁移到 applying，不得重复迁移。
+		applying = created.Operation
+	} else {
+		applying, err = store.StartApplyingWithOutcome(ctx, operationID, operation.Outcome{Result: preparedJSON})
+	}
 	if err != nil {
 		if operation.IsCode(err, operation.CodeIllegalTransition) {
 			current, getErr := store.Get(ctx, operationID)

@@ -325,7 +325,11 @@ func mutationProjectionFromOperation(operation Operation, recovered bool) Projec
 	if len(operation.Result) > 0 && json.Unmarshal(operation.Result, &result) == nil {
 		for key, value := range result {
 			if text, ok := value.(string); ok && text != "" {
-				facts[key] = text
+				// 保留字合同字段（operation_status 等）来自已校验的 operation
+				// 对象；owner 返回的 result 不得覆盖恢复语义。
+				if _, reserved := facts[key]; !reserved {
+					facts[key] = text
+				}
 			}
 		}
 	}

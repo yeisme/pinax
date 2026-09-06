@@ -82,6 +82,15 @@ type CreateRequest struct {
 type CreateResult struct {
 	Operation OperationRow
 	Replay    bool
+	// RetryClaimed 表示本次调用把 failed+retryable+replay_safe 的既有
+	// operation 事务内迁移到 applying 并获得执行权；调用方应继续执行
+	// mutation 而不是短路返回。输掉竞态的并发调用拿到普通 Replay。
+	RetryClaimed bool
+}
+
+// RetryableReplay 报告 operation 是否处于可安全重放重试的 failed 终态。
+func RetryableReplay(row OperationRow) bool {
+	return row.Status == StatusFailed && row.Retryable && row.ReplaySafe
 }
 
 type Outcome struct {

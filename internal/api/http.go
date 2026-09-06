@@ -64,6 +64,11 @@ func NewServer(service *app.Service, vault string) *Server {
 }
 
 func NewServerWithOptions(service *app.Service, vault string, options ServerOptions) *Server {
+	// 规范化为绝对路径：operation ScopeDigest 与 ledger 定位都依赖 s.vault，
+	// 不同拼写（. / notes / 绝对路径）会造成跨实例 operation_not_found。
+	if abs, absErr := filepath.Abs(vault); absErr == nil {
+		vault = abs
+	}
 	s := &Server{
 		service:      service,
 		vault:        vault,
@@ -1163,6 +1168,15 @@ func rpcRouteGroup(route domain.RemoteRoute) string {
 		return "notes"
 	case "draft":
 		return "drafts"
+	case "task":
+		return "tasks"
+	// transport/connection/monitor/activity/workbench 能力的 REST 暴露组是
+	// capabilities；operation 的 REST 组是 operations。组不一致会让
+	// --hide/--expose 与 token 组限制在 RPC 与 REST 间行为分叉。
+	case "transport", "connection", "monitor", "activity", "workbench":
+		return "capabilities"
+	case "operation":
+		return "operations"
 	default:
 		return parts[0]
 	}
