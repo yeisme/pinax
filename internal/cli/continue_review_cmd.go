@@ -170,6 +170,7 @@ binding and no explicit --vault/--scope is given, the binding auto-resolves.`,
 	// additive experimental 子命令与 leaf RunE 共存：不带子命令时行为不变。
 	addContinueBindingSubcommands(cmd, ctx)
 	addContinueCheckpointSubcommand(cmd, ctx)
+	addContinueWorkbenchSubcommand(cmd, ctx)
 	addContinueFeedbackSubcommand(cmd, ctx)
 	addContinueReportSubcommand(cmd, ctx)
 	root.AddCommand(cmd)

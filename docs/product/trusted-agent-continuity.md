@@ -293,3 +293,12 @@ Root companion handoff 为 `openspec/changes/pinax-continuity-operator-handoff-v
 - Root `openspec/changes/pinax-continuity-operator-handoff-v1/`：Codex/Claude operator Skill 的跨 owner handoff。
 
 本文是产品与体验真源，不复制 `tasks.md` 的执行状态。
+
+## Workbench typed projection facade（pinax-workbench-continuity-projection-v1）
+
+面向 Workbench BFF 的 additive machine 合同；既有 continue 命令与 dogfood 冻结面不变。
+
+- `pinax continue workbench <projectRef> --json`：返回 `pinax.workbench.continuity_projection.v1` envelope（合同 identity/version/digest、binding 状态、有界 resume card、evidence-observed 时效、错误态 recovery）。`projectRef` 是 opaque `binding_id`（`continue bind --json` 的 `data.binding_id`），解析只走 registry exact-by-id：`not_found` / `disabled` / `invalid` / `ready`，缺项 fail-closed 返回稳定错误码与唯一恢复 action，不做跨 vault 搜索或 scope 猜测。
+- `pinax continue workbench --packet`：输出 `pinax.provider_packet.v1` provider packet（根仓消费；digest 与 envelope 一致；`checkpoint.propose` 复用既有 `continue checkpoint`，durable 只走 proposal service）。
+- 时效：`freshness.basis=evidence_observed_at`（非生成时间），`--ttl` 默认 600 秒、下限 60；过期只能重新调用 facade（refresh-only），消费端不得本地续命。
+- envelope 红线：不含 raw note/handoff 正文、transcript、credential 或绝对路径（`data.binding_id` 之外 Workbench 不需要任何本地状态）。
