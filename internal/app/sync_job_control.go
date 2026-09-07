@@ -129,6 +129,40 @@ func readSyncScopeClaim(root, scope string) (syncScopeClaim, bool, error) {
 	return claim, true, nil
 }
 
+// readSyncScopeClaimWithRetry 在 claim 创建与内容写入之间的短暂窗口里，
+// 并发 claimer 可能读到空/半写文件（O_EXCL 创建先行、写入随后，JSON 解析
+// 失败）。对该窗口做有界重试；文件消失（持有者写失败自清理）由
+// readSyncScopeClaim 映射为 ok=false、nil err，交由调用方重试原子创建。
+// 其他真实 IO 错误不重试、立即上抛。
+func readSyncScopeClaimWithRetry(root, scope string) (syncScopeClaim, bool, error) {
+	const retryBudget = 200 * time.Millisecond
+	deadline := time.Now().Add(retryBudget)
+	for {
+		claim, ok, err := readSyncScopeClaim(root, scope)
+		if err == nil {
+			return claim, ok, nil
+		}
+		var syntaxErr *json.SyntaxError
+		if !errors.As(err, &syntaxErr) {
+			return claim, ok, err
+		}
+		if time.Now().After(deadline) {
+			return claim, ok, err
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// syncScopeBusyUnreadableError 把不可读的持有 claim 折叠为 fail-closed 占用
+// 错误：宁可让调用方稍后重试，也不在互斥语义不确定时放行第二个执行器。
+func syncScopeBusyUnreadableError(scope string, cause error) error {
+	return &domain.CommandError{
+		Code:    "sync_scope_busy",
+		Message: fmt.Sprintf("sync scope %q is claimed but the holder claim could not be read", scope),
+		Hint:    fmt.Sprintf("Retry shortly; the holder claim write may be in progress or the file is corrupt (%v)", cause),
+	}
+}
+
 // activeSyncScopeRun 解析一个作用域 claim 指向的 run id（供 cancel 免 id
 // 调用与状态展示使用）。
 func activeSyncScopeRun(root, scope string) (string, bool) {
@@ -193,30 +227,29 @@ func claimSyncScope(root, scope, runID, command string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err == nil {
-		b, marshalErr := json.Marshal(claim)
-		if marshalErr == nil {
-			_, marshalErr = file.Write(append(b, '\n'))
-		}
-		if syncErr := file.Sync(); syncErr != nil {
-			marshalErr = syncErr
-		}
-		if closeErr := file.Close(); closeErr != nil {
-			marshalErr = closeErr
-		}
-		if marshalErr != nil {
-			_ = os.Remove(path)
-			return marshalErr
-		}
-		return nil
-	}
-	if !os.IsExist(err) {
+	published, err := publishSyncScopeClaim(path, claim)
+	if err != nil && !os.IsExist(err) && !errors.Is(err, errLinkUnsupported) {
 		return err
 	}
-	holder, ok, readErr := readSyncScopeClaim(root, scope)
+	if published {
+		return nil
+	}
+	if errors.Is(err, errLinkUnsupported) {
+		// 文件系统不支持硬链接（如 FAT/exFAT）：退回 O_EXCL 创建 + 随后
+		// 写入。该路径存在创建-写入窗口，由 readSyncScopeClaimWithRetry 兜底。
+		won, openErr := claimSyncScopeViaExclusiveCreate(path, claim)
+		if openErr != nil {
+			return openErr
+		}
+		if won {
+			return nil
+		}
+	}
+	holder, ok, readErr := readSyncScopeClaimWithRetry(root, scope)
 	if readErr != nil {
-		return readErr
+		// 持有者 claim 存在但持续不可读（非空窗口内写坏）：fail closed，
+		// 以占用语义拒绝而不是放行双跑。
+		return syncScopeBusyUnreadableError(scope, readErr)
 	}
 	if !ok {
 		// 竞态窗口内持有者刚好释放：重试一次原子创建。
@@ -240,6 +273,81 @@ func claimSyncScope(root, scope, runID, command string) error {
 		return syncScopeBusyError(scope, confirmed)
 	}
 	return nil
+}
+
+// errLinkUnsupported 表示当前文件系统不支持 temp+硬链接原子发布，调用方
+// 应退回 O_EXCL 创建路径。
+var errLinkUnsupported = errors.New("sync claim hard-link publish unsupported")
+
+// publishSyncScopeClaim 用 temp 文件 + 硬链接原子发布 claim：目标路径一旦
+// 存在，内容必然完整，并发 claimer 永远不会观察到半写状态。已被持有时返
+// 回 os.ErrExist 形态错误（won=false）；链接因文件系统不支持而失败时返回
+// errLinkUnsupported。
+func publishSyncScopeClaim(path string, claim syncScopeClaim) (bool, error) {
+	b, err := json.Marshal(claim)
+	if err != nil {
+		return false, err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".claim-*.tmp")
+	if err != nil {
+		return false, err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if _, err := tmp.Write(append(b, '\n')); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Close(); err != nil {
+		return false, err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		return false, err
+	}
+	if err := os.Link(tmpPath, path); err != nil {
+		if os.IsExist(err) {
+			return false, os.ErrExist
+		}
+		var linkErr *os.LinkError
+		if errors.As(err, &linkErr) {
+			// FAT/exFAT 等文件系统不支持硬链接：交由调用方走 O_EXCL 兜底。
+			return false, fmt.Errorf("%w: %w", errLinkUnsupported, err)
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// claimSyncScopeViaExclusiveCreate 是不支持硬链接文件系统上的兜底获取路径：
+// O_EXCL 原子创建 + 随后写入。创建与写入之间存在短窗口，读者侧由
+// readSyncScopeClaimWithRetry 兜底。
+func claimSyncScopeViaExclusiveCreate(path string, claim syncScopeClaim) (bool, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	b, marshalErr := json.Marshal(claim)
+	if marshalErr == nil {
+		_, marshalErr = file.Write(append(b, '\n'))
+	}
+	if syncErr := file.Sync(); syncErr != nil {
+		marshalErr = syncErr
+	}
+	if closeErr := file.Close(); closeErr != nil {
+		marshalErr = closeErr
+	}
+	if marshalErr != nil {
+		_ = os.Remove(path)
+		return false, marshalErr
+	}
+	return true, nil
 }
 
 // releaseSyncScope 释放作用域执行权；只删除仍属于本 run 的 claim，绝不
