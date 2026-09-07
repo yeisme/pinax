@@ -59,8 +59,8 @@ If a target local ID exists with a different digest, Pinax SHALL return an expli
 - **THEN** the command SHALL return conflict facts without writing
 - **AND** the existing PromptAsset and current version SHALL remain unchanged.
 
-### Requirement: Pinax SHALL consume promptrepo v0.5.0 with the official public source documented
-Pinax SHALL consume promptrepo v0.5.0 and document the official public source while preserving the separation between external promptrepo references and local `pinax://prompt/` assets.
+### Requirement: Pinax SHALL consume promptrepo v0.5.1 with the official public source documented
+Pinax SHALL consume promptrepo v0.5.1 and document the official public source while preserving the separation between external promptrepo references and local `pinax://prompt/` assets.
 
 #### Scenario: Shared official profile
 - **WHEN** the official profile exists under the shared promptrepo roots
