@@ -238,7 +238,10 @@ func loadCloudRemoteSnapshotViaTransport(ctx context.Context, root string, state
 	return cloudRemoteSnapshot{Transport: transport, Keys: keys, Manifest: manifest, RevisionID: head.CurrentRevision, ManifestBlobID: head.ManifestBlobID, ManifestKeyID: manifestEnvelope.KeyID}, nil
 }
 
-func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, plan syncplan.Plan, snapshot cloudRemoteSnapshot) (directPullResult, error) {
+// executeCloudPull 逐项应用 pull 计划。ctrl 提供项边界 cancel 轮询与逐项
+// live 事件（§2.2/§2.4）；发现 cancel 标记时在当前项边界停止并返回部分
+// 结果 + sync_cancelled 错误，调用方据此保留已完成项 receipt。
+func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, plan syncplan.Plan, snapshot cloudRemoteSnapshot, ctrl *syncJobControl) (directPullResult, error) {
 	if strings.TrimSpace(snapshot.RevisionID) == "" || strings.TrimSpace(snapshot.ManifestBlobID) == "" {
 		return directPullResult{}, &domain.CommandError{Code: "cloud_empty_remote", Message: "Capsa backend has no committed revision", Hint: "Run pinax sync push --target capsa --yes from a device with notes first"}
 	}
@@ -262,12 +265,16 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 	deletesApplied := 0
 	conflicts := []domain.SyncConflictEntry{}
 	for _, deleteMarker := range manifest.Deletes {
+		if ctrl.cancelled() {
+			return directPullResult{FilesApplied: filesApplied, DeletesApplied: deletesApplied, Conflicts: conflicts}, ctrl.cancelledError()
+		}
 		result, err := applyRemoteTrashDelete(root, remoteTrashDeleteMarker{ObjectKind: deleteMarker.ObjectKind, ObjectID: deleteMarker.ObjectID, TombstoneID: deleteMarker.TombstoneID, DeletedAt: deleteMarker.DeletedAt})
 		if err != nil {
 			return directPullResult{}, err
 		}
 		if result.Applied {
 			deletesApplied++
+			ctrl.emitItem("delete_local", "", deleteMarker.PathHash, "D", "applied")
 		}
 		if result.Conflict != nil {
 			conflicts = append(conflicts, *result.Conflict)
@@ -276,6 +283,9 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 	entries := manifestEntriesByPath(manifest)
 	entriesByObjectID := manifestEntriesByObjectID(manifest)
 	for _, op := range plan.Operations {
+		if ctrl.cancelled() {
+			return directPullResult{FilesApplied: filesApplied, DeletesApplied: deletesApplied, Conflicts: conflicts}, ctrl.cancelledError()
+		}
 		switch op.Kind {
 		case "download_blob":
 			entry, ok := entries[op.Path]
@@ -296,6 +306,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			}
 			if applied {
 				filesApplied++
+				ctrl.emitItem(op.Kind, op.Path, op.PathHash, syncRunOperationChangeCode(op), "applied")
 				if err := recordRemoteManifestEntry(ctx, root, entry, ""); err != nil {
 					return directPullResult{}, err
 				}
@@ -308,6 +319,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			}
 			if applied {
 				filesApplied++
+				ctrl.emitItem(op.Kind, op.Path, op.PathHash, syncRunOperationChangeCode(op), "applied")
 			}
 		case "move":
 			entry, ok := entriesByObjectID[op.ObjectID]
@@ -330,6 +342,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 				filesApplied++
 			}
 			if moved || applied {
+				ctrl.emitItem(op.Kind, op.Path, op.PathHash, syncRunOperationChangeCode(op), "applied")
 				if err := recordRemoteManifestEntry(ctx, root, entry, op.FromPath); err != nil {
 					return directPullResult{}, err
 				}
@@ -347,6 +360,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 				}
 				if applied {
 					filesApplied++
+					ctrl.emitItem(op.Kind, op.Path, op.PathHash, syncRunOperationChangeCode(op), "applied")
 				}
 				conflicts = append(conflicts, newConflicts...)
 				continue
@@ -357,6 +371,7 @@ func executeCloudPull(ctx context.Context, root string, state pinaxcloud.State, 
 			}
 			if conflict != nil {
 				conflicts = append(conflicts, *conflict)
+				ctrl.emitItem(op.Kind, op.Path, op.PathHash, syncRunOperationChangeCode(op), "conflict")
 			}
 		}
 	}
@@ -707,7 +722,11 @@ type cloudUploadStats struct {
 	Bytes int64
 }
 
-func executeCloudPushWithCredential(ctx context.Context, root string, state pinaxcloud.State, manifest pinaxcloud.Manifest, baseRevision string, source projectsecrets.UnlockSource, stats *cloudUploadStats) (cloudsync.CommitResult, error) {
+// executeCloudPushWithCredential 逐 blob 上传并提交新 manifest。ctrl 提供
+// 项边界 cancel 轮询与逐项 live 事件；取消发生在 manifest 提交前，远端只
+// 可能多出内容寻址 blob（下次 push 复用），不产生部分 manifest 状态。
+// baseManifest 仅用于 live 事件的 A/M 变更码近似（与计划期口径一致）。
+func executeCloudPushWithCredential(ctx context.Context, root string, state pinaxcloud.State, manifest, baseManifest pinaxcloud.Manifest, baseRevision string, source projectsecrets.UnlockSource, stats *cloudUploadStats, ctrl *syncJobControl) (cloudsync.CommitResult, error) {
 	if stats == nil {
 		stats = &cloudUploadStats{}
 	}
@@ -754,7 +773,20 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 	for _, fact := range missing.Present {
 		presentFacts[fact.BlobID] = fact
 	}
+	baseBlobs := make(map[string]bool, len(baseManifest.Entries))
+	for _, entry := range baseManifest.Entries {
+		baseBlobs[entry.Path] = true
+	}
+	livePushCode := func(entry pinaxcloud.ManifestEntry) string {
+		if baseBlobs[entry.Path] {
+			return "M"
+		}
+		return "A"
+	}
 	for i, entry := range manifest.Entries {
+		if ctrl.cancelled() {
+			return cloudsync.CommitResult{}, ctrl.cancelledError()
+		}
 		if _, ok := missingSet[entry.BlobID]; !ok {
 			matchesKey, err := remoteBlobMatchesKey(ctx, transport, entry.BlobID, key.KeyID)
 			if err != nil {
@@ -786,6 +818,7 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 			}
 			objectRefs[i].BlobHash = blobHash
 			objectRefs[i].Size = sizeBytes
+			ctrl.emitItem("upload_blob", entry.Path, entry.PathHash, livePushCode(entry), "applied")
 			continue
 		}
 		if err := transport.PutBlob(ctx, entry.BlobID, cloudBlob); err != nil {
@@ -793,8 +826,12 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 		}
 		stats.Blobs++
 		stats.Bytes += int64(len(content))
+		ctrl.emitItem("upload_blob", entry.Path, entry.PathHash, livePushCode(entry), "applied")
 	}
 	for i := len(manifest.Entries); i < len(objectRefs); i++ {
+		if ctrl.cancelled() {
+			return cloudsync.CommitResult{}, ctrl.cancelledError()
+		}
 		ref := objectRefs[i]
 		if ref.Deleted || ref.BlobID == "" || !strings.HasPrefix(ref.BlobID, "blob_") {
 			continue
@@ -830,11 +867,18 @@ func executeCloudPushWithCredential(ctx context.Context, root string, state pina
 			}
 			objectRefs[i].BlobHash = blobHash
 			objectRefs[i].Size = sizeBytes
+			ctrl.emitItem("upload_blob", "", ref.PathHash, "D", "applied")
 			continue
 		}
 		if err := transport.PutBlob(ctx, ref.BlobID, cloudBlob); err != nil {
 			return cloudsync.CommitResult{}, err
 		}
+		ctrl.emitItem("upload_blob", "", ref.PathHash, "D", "applied")
+	}
+	// manifest 提交是原子边界：项边界取消必须在提交前停下，远端不出现
+	// 部分应用的 manifest 状态。
+	if ctrl.cancelled() {
+		return cloudsync.CommitResult{}, ctrl.cancelledError()
 	}
 	manifestEnvelope, err := pinaxcloud.EncryptManifest(key, manifest)
 	if err != nil {

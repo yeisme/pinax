@@ -82,6 +82,12 @@ func ConnectionReadinessValueProjection(readiness ConnectionReadiness) domain.Pr
 		projection.Facts[name+"_status"] = readiness.Layers[name].Status
 		projection.Facts[name+"_maturity"] = readiness.Layers[name].Maturity
 	}
+	// lifecycle 事实（pinax-local-async-substrate-v1 §3.2）：gateway supervise
+	// 语义要求的退出/重启行为与远程写边界。放在 app 层使 CLI（connection
+	// readiness）与 MCP（pinax://readiness）投影同源。
+	projection.Facts["lifecycle_exit"] = "stdin_eof_drain_exit"
+	projection.Facts["lifecycle_restart_projection"] = "vault_state_consistent"
+	projection.Facts["lifecycle_remote_writes"] = "gateway_approval_only"
 	projection.Data = map[string]any{"readiness": readiness}
 	return projection
 }

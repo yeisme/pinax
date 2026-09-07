@@ -1230,7 +1230,7 @@ func TestSyncLogsTailShowsSyncedFilesInAllMachineSurfacesCLI(t *testing.T) {
 		}
 	}
 	agent := runCLI(t, "sync", "logs", "tail", "--limit", "20", "--vault", root, "--agent")
-	for _, want := range []string{"event.1.type=sync.file", "kind=upload_blob", "path=notes/live-sync.md"} {
+	for _, want := range []string{"event.1.type=sync.run", "event.1.status=running", "event.2.type=sync.file", "kind=upload_blob", "path=notes/live-sync.md"} {
 		if !strings.Contains(agent, want) {
 			t.Fatalf("sync logs agent missing %q:\n%s", want, agent)
 		}

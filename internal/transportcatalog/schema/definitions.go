@@ -175,6 +175,11 @@ func mcpRequestDefinitions() []Definition {
 		request("pinax.agent.handoff.read.request.v1", map[string]any{
 			"workspace": map[string]any{"type": "string", "default": "default"},
 		}),
+		// sync job status 只读投影（pinax-local-async-substrate-v1 §2.4）：
+		// MCP 消费者按 run_id 重放事件流结论，不触碰执行器状态。
+		request("pinax.sync.logs.status.request.v1", map[string]any{
+			"run_id": stringValue(),
+		}, "run_id"),
 	}
 }
 

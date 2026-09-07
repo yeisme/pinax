@@ -56,7 +56,7 @@ func TestMCPProtocolLifecycleCurrentAndLegacy(t *testing.T) {
 	}
 	legacyTools, _ := responseByID(t, legacy, "tools")["tools"].([]any)
 	legacyResources, _ := responseByID(t, legacy, "resources")["resources"].([]any)
-	if len(legacyTools) != 20 || len(legacyResources) != 8 {
+	if len(legacyTools) != 20 || len(legacyResources) != 9 {
 		t.Fatalf("legacy inventory tools=%d resources=%d", len(legacyTools), len(legacyResources))
 	}
 }

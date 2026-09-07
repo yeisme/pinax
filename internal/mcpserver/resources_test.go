@@ -23,6 +23,11 @@ func TestResourcesListEntriesAreReadableAndBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMCPFixture(t, root, "research/resource.md", "---\nschema_version: pinax.note.v1\nnote_id: note_resource\ntitle: Resource Note\nproject: research\nkind: task\nstatus: active\n---\n\nSECRET_RESOURCE_BODY should never be exposed.\n")
+	// sync job status resource 的可读实例：预置一条已终态的 sync run 事件流。
+	writeMCPFixture(t, root, ".pinax/events.jsonl",
+		`{"schema_version":"pinax.event.v1","type":"sync.run","status":"running","ts":"2026-09-07T10:00:00Z","facts":{"run_id":"sync_mcp_1","command":"sync.push","direction":"push","backend_kind":"embedded","remote_write":"true"}}`+"\n"+
+			`{"schema_version":"pinax.event.v1","type":"sync.file","status":"running","ts":"2026-09-07T10:00:01Z","facts":{"run_id":"sync_mcp_1","command":"sync.push","direction":"push","backend_kind":"embedded","kind":"upload_blob","operation_status":"applied","change_code":"A","change_state":"applied","path":"notes/a.md"}}`+"\n"+
+			`{"schema_version":"pinax.event.v1","type":"sync.run","status":"success","ts":"2026-09-07T10:00:02Z","facts":{"run_id":"sync_mcp_1","command":"sync.push","direction":"push","backend_kind":"embedded","remote_write":"true"}}`+"\n")
 
 	server := NewServer(service, root)
 	listed, err := server.Handle(ctx, Request{ID: 1, Method: "resources/list"})
@@ -38,6 +43,7 @@ func TestResourcesListEntriesAreReadableAndBounded(t *testing.T) {
 		"pinax://organize/plan":        "pinax://organize/plan",
 		"pinax://vault/graph":          "pinax://vault/graph",
 		"pinax://project/{slug}/board": "pinax://project/research/board",
+		"pinax://sync/job/{run_id}":    "pinax://sync/job/sync_mcp_1",
 	}
 	if len(listed.Resources) != len(concreteURI) {
 		t.Fatalf("resources/list returned %d resources, want %d", len(listed.Resources), len(concreteURI))

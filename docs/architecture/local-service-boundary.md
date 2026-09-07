@@ -32,4 +32,8 @@ Pinax 是本地优先的统一笔记 Agent CLI。本文冻结 Pinax 的服务化
 
 - sync run 的事件（逐项 `sync.file` + 终态 `sync.run`）持久化在 `.pinax/events.jsonl`。
 - `pinax sync logs status <run-id>` 从 event JSONL 幂等重放 job status（`pinax.sync_job_status.v1`）：accepted / progress / terminal 三相，崩溃前缀流重放为 progress，与 receipt（`sync logs show`）互补。
-- cancel 语义、同作用域单执行器 claim 与 `--events` NDJSON 对齐属后续增量，见 change tasks §2.2-2.4。
+- run 受理即写入 accepted 事实（`sync.run` + `running`）；执行器逐项应用并在每项完成后发出 live `sync.file` 事件，收口只补终态 `sync.run`，事件流不重复计数。
+- **cancel 语义：** `pinax sync cancel [run-id]` 写 CLI-authored cancel 标记（`.pinax/sync-jobs/cancel/<run_id>.json`，`pinax.sync_cancel.v1`，幂等）。执行器在项边界轮询标记；发现后在当前项边界停止，已完成项与 receipt 保留（状态 `cancelled`、退出码 0、错误码 `sync_cancelled`）。非终态 run 的 status 投影携带 `cancel_requested` 事实。
+- **同作用域单执行器 claim：** push/pull 执行前按作用域（vault + target）原子创建 claim（`.pinax/sync-jobs/claims/<scope>.json`，`pinax.sync_claim.v1`，`O_EXCL`）。占用返回可解释错误 `sync_scope_busy`（含持有者 run/pid/host/age）并落 failed receipt，不静默双跑；持有者终态、进程死亡或 claim 超时（1h）时允许幂等抢占，抢占后回读确认防并发双抢。取消入口只有本地 CLI，MCP 不提供写或取消面。
+- **`--events` NDJSON：** `sync push/pull --events` 逐项输出 progress 事件（scan/plan/transfer/item/commit/done）+ start/end envelope；`sync logs tail --events` 同一 NDJSON 合同重放历史事件。
+- **MCP 只读投影：** `pinax://sync/job/{run_id}` resource template（registry 可发现）按 run_id 重放 job status，与 CLI `sync logs status` 同源；MCP 面不提供任何写、取消或执行入口。

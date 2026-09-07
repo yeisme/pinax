@@ -88,6 +88,7 @@ func resourceRegistrations() []resourceRegistration {
 		{Resource: Resource{URI: "pinax://organize/plan", Name: "organize plan"}, CapabilityID: "organize.plan"},
 		{Resource: Resource{URI: "pinax://vault/graph", Name: "vault link graph"}, CapabilityID: "graph.summary"},
 		{Resource: Resource{URI: "pinax://project/{slug}/board", Name: "project board", Description: "bounded readonly project board"}, CapabilityID: "project.board.show"},
+		{Resource: Resource{URI: "pinax://sync/job/{run_id}", Name: "sync job status", Description: "sync job status replayed from the vault event JSONL"}, CapabilityID: "sync.logs.status"},
 	}
 }
 
@@ -153,6 +154,7 @@ func MCPAdditionalCapabilityDefinitions() ([]transportcatalog.CapabilityDefiniti
 		mcpReadonlyDefinition("note.context", "note.context", "pinax.note.context.request.v1"),
 		mcpReadonlyDefinition("version.snapshot.plan", "version.snapshot.plan", "pinax.version.snapshot_plan.request.v1"),
 		mcpReadonlyDefinition("agent.handoff.read", "agent.handoff.read", "pinax.agent.handoff.read.request.v1"),
+		mcpReadonlyDefinition("sync.logs.status", "sync.logs.status", "pinax.sync.logs.status.request.v1"),
 	}
 	declared := make(map[string][]string, len(definitions))
 	for _, definition := range definitions {

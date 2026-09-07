@@ -211,6 +211,13 @@ func readCurrentSyncState(root string) (currentSyncState, error) {
 }
 
 func finishSyncRun(root string, receipt SyncRunReceipt, plan syncplan.Plan, status string, commandErr *domain.CommandError, actions []domain.Action, pathPolicy string, started time.Time) (SyncRunReceipt, string, error) {
+	return finishSyncRunWithFileEvents(root, receipt, plan, status, commandErr, actions, pathPolicy, started, true)
+}
+
+// finishSyncRunWithFileEvents 收口一个 sync run。includeFileEvents=false
+// 用于执行期已逐项发出 live sync.file 事件的 run：收口只补终态 sync.run
+// 事件，避免同一项被事件流重复计数（status 重放按事件计数）。
+func finishSyncRunWithFileEvents(root string, receipt SyncRunReceipt, plan syncplan.Plan, status string, commandErr *domain.CommandError, actions []domain.Action, pathPolicy string, started time.Time, includeFileEvents bool) (SyncRunReceipt, string, error) {
 	receipt.Status = status
 	receipt.BaseRevision = syncops.SanitizeString(plan.BaseRevision)
 	receipt.RemoteRevisionBefore = syncops.SanitizeString(plan.RemoteRevision)
@@ -224,7 +231,7 @@ func finishSyncRun(root string, receipt SyncRunReceipt, plan syncplan.Plan, stat
 	if err != nil {
 		return receipt, path, err
 	}
-	if err := appendSyncRunEvent(root, receipt); err != nil {
+	if err := appendSyncRunEvents(root, receipt, includeFileEvents); err != nil {
 		return receipt, path, err
 	}
 	return receipt, path, nil
@@ -270,33 +277,39 @@ func syncRunCounts(plan syncplan.Plan, base map[string]int) map[string]int {
 }
 
 func appendSyncRunEvent(root string, receipt SyncRunReceipt) error {
-	for _, operation := range receipt.Operations {
-		if operation.Kind == "upload_manifest" || operation.Kind == "download_manifest" {
-			continue
-		}
-		facts := map[string]string{
-			"run_id":           receipt.RunID,
-			"command":          receipt.Command,
-			"direction":        receipt.Direction,
-			"backend_kind":     receipt.BackendKind,
-			"kind":             operation.Kind,
-			"operation_status": operation.Status,
-		}
-		for key, value := range map[string]string{
-			"path": operation.Path, "path_hash": operation.PathHash,
-			"from_path": operation.FromPath, "to_path": operation.ToPath,
-			"object_kind": operation.ObjectKind,
-		} {
-			if strings.TrimSpace(value) != "" {
-				facts[key] = value
+	return appendSyncRunEvents(root, receipt, true)
+}
+
+func appendSyncRunEvents(root string, receipt SyncRunReceipt, includeFileEvents bool) error {
+	if includeFileEvents {
+		for _, operation := range receipt.Operations {
+			if operation.Kind == "upload_manifest" || operation.Kind == "download_manifest" {
+				continue
 			}
-		}
-		if code := syncRunOperationChangeCode(operation); code != "" {
-			facts["change_code"] = code
-		}
-		facts["change_state"] = syncRunOperationChangeState(operation.Status, receipt.Status)
-		if err := appendEvent(root, "sync.file", receipt.Status, facts); err != nil {
-			return err
+			facts := map[string]string{
+				"run_id":           receipt.RunID,
+				"command":          receipt.Command,
+				"direction":        receipt.Direction,
+				"backend_kind":     receipt.BackendKind,
+				"kind":             operation.Kind,
+				"operation_status": operation.Status,
+			}
+			for key, value := range map[string]string{
+				"path": operation.Path, "path_hash": operation.PathHash,
+				"from_path": operation.FromPath, "to_path": operation.ToPath,
+				"object_kind": operation.ObjectKind,
+			} {
+				if strings.TrimSpace(value) != "" {
+					facts[key] = value
+				}
+			}
+			if code := syncRunOperationChangeCode(operation); code != "" {
+				facts["change_code"] = code
+			}
+			facts["change_state"] = syncRunOperationChangeState(operation.Status, receipt.Status)
+			if err := appendEvent(root, "sync.file", receipt.Status, facts); err != nil {
+				return err
+			}
 		}
 	}
 	facts := map[string]string{

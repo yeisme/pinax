@@ -61,17 +61,13 @@ func (s *Server) resourceProjection(ctx context.Context, uri string) (domain.Pro
 		}
 		return projection, nil
 	case "pinax://readiness":
-		projection := app.ConnectionReadinessProjection(app.ConnectionReadinessOptions{
+		// lifecycle 事实由 app 层 ConnectionReadiness 投影统一携带
+		// （pinax-local-async-substrate-v1 §3.2），CLI 与 MCP 同源。
+		return app.ConnectionReadinessProjection(app.ConnectionReadinessOptions{
 			Mode:           "local-vault",
 			Transport:      "stdio",
 			OwnerAvailable: s.service != nil,
-		})
-		// lifecycle 事实（pinax-local-async-substrate-v1）：gateway supervise
-		// 语义要求的退出/重启行为与远程写边界，与六层 readiness 一并投影。
-		projection.Facts["lifecycle_exit"] = "stdin_eof_drain_exit"
-		projection.Facts["lifecycle_restart_projection"] = "vault_state_consistent"
-		projection.Facts["lifecycle_remote_writes"] = "gateway_approval_only"
-		return projection, nil
+		}), nil
 	case "pinax://vault/current":
 		return s.service.VaultStats(ctx, app.VaultStatsRequest{VaultPath: s.vault})
 	case "pinax://organize/plan":
@@ -100,6 +96,14 @@ func (s *Server) resourceProjection(ctx context.Context, uri string) (domain.Pro
 				NoteDisplay: string(domain.NoteDisplayCard),
 				Compact:     true,
 			})
+		}
+	}
+	if value, ok := resourceURIValue(uri, "pinax://sync/job/"); ok {
+		runID, err := url.PathUnescape(value)
+		if err == nil && strings.TrimSpace(runID) != "" && !strings.Contains(runID, "/") {
+			// 只读投影（§2.4）：MCP 消费者经 registry 发现并按 run_id 重放
+			// 事件流结论；不提供任何写或取消入口（取消走本地 CLI）。
+			return s.service.SyncLogsStatus(ctx, app.SyncLogsRequest{VaultPath: s.vault, RunID: runID})
 		}
 	}
 

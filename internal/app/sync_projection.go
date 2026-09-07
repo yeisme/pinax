@@ -36,6 +36,8 @@ type cloudSyncRun struct {
 	plan           syncplan.Plan
 	localDiffPlan  syncplan.Plan
 	planErr        error
+	ctrl           *syncJobControl
+	claimed        bool
 }
 
 func buildCloudSyncProjection(ctx context.Context, command, root string, req SyncRequest, direction syncplan.Direction) (domain.Projection, error) {
@@ -51,12 +53,96 @@ func buildCloudSyncProjection(ctx context.Context, command, root string, req Syn
 		return projection, r.planErr
 	}
 	if r.direction == syncplan.DirectionPush && r.req.Yes && !r.req.DryRun && isExecutableCloudState(r.state) {
+		if err := r.claimExecutorScope(); err != nil {
+			return r.projectScopeBusy(err)
+		}
+		defer r.releaseExecutorScope()
 		return r.executeCloudPush()
 	}
 	if r.direction == syncplan.DirectionPull && r.req.Yes && !r.req.DryRun && isExecutableCloudState(r.state) {
+		if err := r.claimExecutorScope(); err != nil {
+			return r.projectScopeBusy(err)
+		}
+		defer r.releaseExecutorScope()
 		return r.executeCloudPull()
 	}
 	return r.projectPlanOnly()
+}
+
+// claimExecutorScope 获取同作用域（vault + target）单执行器原子 claim
+// （pinax-local-async-substrate-v1 §2.3）：另一执行器持有时返回携带持有者
+// 事实的可解释占用错误，绝不静默双跑。
+func (r *cloudSyncRun) claimExecutorScope() error {
+	if err := claimSyncScope(r.root, r.outputTarget, r.receipt.RunID, r.command); err != nil {
+		return err
+	}
+	r.claimed = true
+	return nil
+}
+
+func (r *cloudSyncRun) releaseExecutorScope() {
+	if !r.claimed {
+		return
+	}
+	releaseSyncScope(r.root, r.outputTarget, r.receipt.RunID)
+	r.claimed = false
+}
+
+// projectScopeBusy 把 scope 占用错误折叠为可解释投影 + failed receipt，
+// 供 `sync logs` 追溯被拒 run；不执行任何项。
+func (r *cloudSyncRun) projectScopeBusy(err error) (domain.Projection, error) {
+	commandErr := commandErrorFromError(err)
+	projection := domain.NewErrorProjection(r.command, commandErr)
+	projection.Facts["run_id"] = r.receipt.RunID
+	projection.Facts["remote_write"] = "false"
+	projection.Facts["local_write"] = "false"
+	projection.Actions = []domain.Action{{Name: "logs", Command: fmt.Sprintf("pinax sync logs list --vault %s --json", shellQuote(r.root))}}
+	receiptOut, receiptPath, receiptErr := finishSyncRunWithFileEvents(r.root, r.receipt, r.plan, "failed", commandErr, projection.Actions, r.pathPolicy, r.started, true)
+	r.receipt = receiptOut
+	if receiptErr != nil {
+		return errorProjection(r.command, receiptErr), receiptErr
+	}
+	projection.Evidence = []string{receiptPath}
+	projection.Data = map[string]any{"receipt": r.receipt}
+	return projection, commandErr
+}
+
+// projectCancelled 收口一个项边界取消的 run（§2.2）：receipt 状态 cancelled、
+// 已完成项保留、未执行项不产生部分状态。取消是用户请求的预期结果，
+// projection 报 partial + cancelled=true 而非 failed，退出码为 0。
+func (r *cloudSyncRun) projectCancelled(summary string, extraFacts map[string]string) (domain.Projection, error) {
+	commandErr := &domain.CommandError{
+		Code:    SyncCancelledErrorCode,
+		Message: "sync run was cancelled at an item boundary",
+		Hint:    "Completed items and their receipt are preserved; rerun the sync command to continue",
+	}
+	projection := domain.NewProjection(r.command, summary)
+	projection.Status = "partial"
+	projection.Facts["run_id"] = r.receipt.RunID
+	projection.Facts["cancelled"] = "true"
+	projection.Facts["remote_write"] = "false"
+	projection.Facts["local_write"] = fmt.Sprint(r.receipt.LocalWrite)
+	projection.Facts["completed_items"] = fmt.Sprint(r.ctrl.itemsCompleted)
+	projection.Facts["total_items"] = fmt.Sprint(r.ctrl.itemsTotal)
+	for key, value := range extraFacts {
+		projection.Facts[key] = value
+	}
+	projection.Actions = []domain.Action{
+		{Name: "status", Command: fmt.Sprintf("pinax sync logs status %s --vault %s --json", r.receipt.RunID, shellQuote(r.root))},
+		{Name: "retry", Command: fmt.Sprintf("pinax sync %s --target %s --vault %s --yes", strings.ToLower(strings.TrimPrefix(r.command, "sync.")), r.outputTarget, shellQuote(r.root))},
+	}
+	receiptOut, receiptPath, receiptErr := finishSyncRunWithFileEvents(r.root, r.receipt, r.plan, "cancelled", commandErr, projection.Actions, r.pathPolicy, r.started, !r.ctrl.liveFileEvents)
+	r.receipt = receiptOut
+	if receiptErr != nil {
+		return errorProjection(r.command, receiptErr), receiptErr
+	}
+	if err := writeCurrentSyncState(r.root, r.state, r.receipt, ""); err != nil {
+		warnPersistFailure("sync state", err)
+	}
+	emitSyncEvent(r.req.LiveEvents, SyncEvent{Type: "progress", Phase: "done", Direction: string(r.direction), RunID: r.receipt.RunID, Status: "cancelled", RemoteWrite: false, LocalWrite: r.receipt.LocalWrite})
+	projection.Evidence = []string{receiptPath}
+	projection.Data = map[string]any{"receipt": r.receipt, "completed_items": r.ctrl.itemsCompleted, "total_items": r.ctrl.itemsTotal}
+	return projection, nil
 }
 
 // newCloudSyncRun loads vault state, manifests, the remote head (when the
@@ -78,6 +164,12 @@ func newCloudSyncRun(ctx context.Context, command, root string, req SyncRequest,
 		return nil, projection, gateErr
 	}
 	r.receipt = syncRunStart(command, direction, r.state, r.pathPolicy, r.outputTarget)
+	// 受理即入账（pinax-local-async-substrate-v1 §2.4）：run 级受理事件让
+	// status 投影在执行期就能重放出 accepted 相，外部 cancel 方也能从
+	// 事件流发现 run_id。
+	r.ctrl = newSyncJobControl(root, r.receipt, r.pathPolicy, req.LiveEvents)
+	r.ctrl.itemsTotal = 0 // 计划已知后在下方回填。
+	r.ctrl.emitAccepted(false)
 	emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "scan", Direction: string(direction), RunID: r.receipt.RunID, Status: "running", RemoteWrite: false})
 	r.localManifest, err = buildLocalCloudManifest(root, r.state)
 	if err != nil {
@@ -137,6 +229,7 @@ func newCloudSyncRun(ctx context.Context, command, root string, req SyncRequest,
 		r.baseManifest = pinaxcloud.Manifest{SchemaVersion: r.localManifest.SchemaVersion}
 	}
 	r.plan, r.planErr = syncplan.BuildPlan(syncplan.Request{Direction: direction, Target: r.outputTarget, LocalManifest: r.localManifest, BaseManifest: r.baseManifest, RemoteManifest: r.remoteSnapshot.Manifest, BaseRevision: r.baseRevision, RemoteRevision: remoteRevision, DryRun: req.DryRun, Yes: req.Yes})
+	r.ctrl.itemsTotal = len(r.plan.Operations)
 	emitSyncEvent(req.LiveEvents, SyncEvent{Type: "progress", Phase: "plan", Direction: string(direction), RunID: r.receipt.RunID, Completed: 0, Total: len(r.plan.Operations), Status: "planned", Facts: map[string]string{"scope": syncOutputScope(r.remoteLoaded)}})
 	localDiffPlan, localDiffErr := syncplan.BuildPlan(syncplan.Request{Direction: syncplan.DirectionDiff, Target: r.outputTarget, LocalManifest: r.localManifest, BaseManifest: r.baseManifest, RemoteManifest: r.remoteSnapshot.Manifest, BaseRevision: r.baseRevision, RemoteRevision: remoteRevision, DryRun: true, Yes: true})
 	r.localDiffPlan = localDiffPlan
@@ -231,7 +324,7 @@ func (r *cloudSyncRun) executeCloudPush() (domain.Projection, error) {
 	uploadStats := &cloudUploadStats{}
 	rebaseResult, execErr := runCloudPushRebase(cloudRebasePlan{
 		commit: func(base string) (cloudsync.CommitResult, error) {
-			return executeCloudPushWithCredential(r.ctx, r.root, r.state, r.localManifest, base, r.req.ProjectUnlockSource, uploadStats)
+			return executeCloudPushWithCredential(r.ctx, r.root, r.state, r.localManifest, r.baseManifest, base, r.req.ProjectUnlockSource, uploadStats, r.ctrl)
 		},
 		pull: func() (cloudRemoteSnapshot, error) {
 			return loadCloudRemoteSnapshotWithCredential(r.ctx, r.state, r.root, r.req.ProjectUnlockSource)
@@ -241,6 +334,17 @@ func (r *cloudSyncRun) executeCloudPush() (domain.Projection, error) {
 		baseRevision:  r.baseRevision,
 		yes:           r.req.Yes,
 	})
+	if isSyncCancelledError(execErr) {
+		// 项边界取消（§2.2）：manifest 提交未发生，远端只可能多出内容寻址
+		// blob（下次 push 直接复用）；已上传 blob 计入 receipt 保留。
+		r.plan.RemoteWrite = false
+		r.receipt.Counts["upload_blobs"] += int(uploadStats.Blobs)
+		r.receipt.Counts["bytes_uploaded"] += int(uploadStats.Bytes)
+		return r.projectCancelled("Sync push cancelled at an item boundary; uploaded blobs are recorded and reusable.", map[string]string{
+			"upload_blobs":   fmt.Sprint(r.receipt.Counts["upload_blobs"]),
+			"bytes_uploaded": fmt.Sprint(r.receipt.Counts["bytes_uploaded"]),
+		})
+	}
 	if len(rebaseResult.Conflicts) > 0 {
 		// Auto-rebase pulled the remote head and found a content conflict that
 		// cannot be auto-pushed. Surface a conflict_required projection.
@@ -311,7 +415,7 @@ func (r *cloudSyncRun) executeCloudPush() (domain.Projection, error) {
 	if err := writeCloudManifestCache(r.root, commit.RevisionID, r.localManifest); err != nil {
 		return errorProjection(r.command, err), err
 	}
-	receiptOut, receiptPath, receiptErr := finishSyncRun(r.root, r.receipt, r.plan, "success", nil, projection.Actions, r.pathPolicy, r.started)
+	receiptOut, receiptPath, receiptErr := finishSyncRunWithFileEvents(r.root, r.receipt, r.plan, "success", nil, projection.Actions, r.pathPolicy, r.started, !r.ctrl.liveFileEvents)
 	r.receipt = receiptOut
 	if receiptErr != nil {
 		return errorProjection(r.command, receiptErr), receiptErr
@@ -363,7 +467,18 @@ func (r *cloudSyncRun) executeCloudPull() (domain.Projection, error) {
 		return projection, commandErr
 	}
 	emitSyncEvent(r.req.LiveEvents, SyncEvent{Type: "progress", Phase: "transfer", Direction: string(r.direction), RunID: r.receipt.RunID, Total: len(r.plan.Operations), Status: "running"})
-	pullResult, execErr := executeCloudPull(r.ctx, r.root, r.state, r.plan, r.remoteSnapshot)
+	pullResult, execErr := executeCloudPull(r.ctx, r.root, r.state, r.plan, r.remoteSnapshot, r.ctrl)
+	if isSyncCancelledError(execErr) {
+		// 项边界取消（§2.2）：已落盘的文件/trash 删除保留，manifest 缓存
+		// 不推进；receipt 记录已应用项计数。
+		r.receipt.LocalWrite = pullResult.FilesApplied > 0 || pullResult.DeletesApplied > 0
+		r.receipt.Counts["files_applied"] = pullResult.FilesApplied
+		r.receipt.Counts["delete_markers_applied"] = pullResult.DeletesApplied
+		return r.projectCancelled("Sync pull cancelled at an item boundary; applied files are preserved on disk.", map[string]string{
+			"files_applied":          fmt.Sprint(pullResult.FilesApplied),
+			"delete_markers_applied": fmt.Sprint(pullResult.DeletesApplied),
+		})
+	}
 	if execErr != nil {
 		commandErr := commandErrorFromError(execErr)
 		projection := domain.NewErrorProjection(r.command, commandErr)
@@ -399,7 +514,7 @@ func (r *cloudSyncRun) executeCloudPull() (domain.Projection, error) {
 	if err := writeCloudManifestCache(r.root, pullResult.RevisionID, pullResult.Manifest); err != nil {
 		return errorProjection(r.command, err), err
 	}
-	receiptOut, receiptPath, receiptErr := finishSyncRun(r.root, r.receipt, r.plan, "success", nil, projection.Actions, r.pathPolicy, r.started)
+	receiptOut, receiptPath, receiptErr := finishSyncRunWithFileEvents(r.root, r.receipt, r.plan, "success", nil, projection.Actions, r.pathPolicy, r.started, !r.ctrl.liveFileEvents)
 	r.receipt = receiptOut
 	if receiptErr != nil {
 		return errorProjection(r.command, receiptErr), receiptErr

@@ -110,7 +110,7 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantDigest = "sha256:298b6b47a7c2a922bf520d93fb0773ec88fc8d0664ed08647962ff23b3090e54"
+	const wantDigest = "sha256:e6a61ee97fadb7258290533f591b91e5319a771d893da1ee9753f6d4e3ee577f"
 	if digest != wantDigest {
 		t.Fatalf("OpenAPI golden digest = %q, want %q", digest, wantDigest)
 	}

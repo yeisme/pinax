@@ -178,6 +178,13 @@ func (s *Service) SyncLogsStatus(_ context.Context, req SyncLogsRequest) (domain
 	projection.Facts["total"] = fmt.Sprint(status.Total)
 	projection.Facts["events"] = fmt.Sprint(status.EventCount)
 	projection.Facts["replayable"] = "true"
+	// cancel 标记是事件流之外的独立结构化资产（§2.2）：非终态 run 携带
+	// cancel_requested 事实，让消费者无需读 claim/标记文件即可看到取消请求。
+	if marker, requested, markerErr := readSyncCancelMarker(root, req.RunID); markerErr == nil && requested && status.Phase != SyncJobPhaseTerminal {
+		projection.Facts["cancel_requested"] = "true"
+		projection.Facts["cancel_requested_at"] = marker.RequestedAt
+		projection.Actions = append(projection.Actions, domain.Action{Name: "follow", Command: fmt.Sprintf("pinax sync logs tail --follow --vault %s", shellQuote(root))})
+	}
 	projection.Data = map[string]any{"status": status, "events": status.EventCount}
 	projection.Evidence = []string{filepath.ToSlash(filepath.Join(".pinax", "events.jsonl"))}
 	return projection, nil

@@ -526,6 +526,24 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsStatusCmd, logsTailCmd, logsPruneCmd)
 	syncCmd.AddCommand(logsCmd)
 
+	var syncCancelReason string
+	syncCancelCmd := &cobra.Command{
+		Use:   "cancel [run-id]",
+		Short: "Request cancellation of a running sync run",
+		Long:  "Write the CLI-authored cancel marker for a sync run. The executor checks the marker at item boundaries and stops after the current item; completed items and their receipt are preserved.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runID := ""
+			if len(args) > 0 {
+				runID = args[0]
+			}
+			projection, err := ctx.svc.SyncCancel(cmd.Context(), app.SyncCancelRequest{VaultPath: *ctx.vaultPath, RunID: runID, Reason: syncCancelReason})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	syncCancelCmd.Flags().StringVar(&syncCancelReason, "reason", "", "Optional reason recorded in the cancel marker")
+	syncCmd.AddCommand(syncCancelCmd)
+
 	var manifestDeviceID string
 	var manifestPlanID string
 	var manifestRemoteCapability string
