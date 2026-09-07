@@ -9,15 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/glebarez/sqlite"
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/index/query"
 	pinaxplugin "github.com/yeisme/pinax/internal/plugin"
 	"github.com/yeisme/pinax/internal/profile"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 )
 
 func projectSlugCompletion(vaultPathValue func() string) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
@@ -380,7 +378,7 @@ func promptAssetCompletionItems(root string) ([]string, error) {
 		}
 		return nil, err
 	}
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=ro", filepath.ToSlash(indexPath))), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := sqlitedsn.OpenReadOnly(indexPath)
 	if err != nil {
 		return nil, err
 	}

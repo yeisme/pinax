@@ -14,6 +14,7 @@ import (
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/cli"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 )
 
 var version = "dev"
@@ -22,7 +23,11 @@ func main() {
 	root := newRootCommand()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := root.ExecuteContext(ctx); err != nil {
+	err := root.ExecuteContext(ctx)
+	// 进程退出前关闭全部 SQLite 连接：checkpoint WAL 回主库并移除 -wal/-shm
+	// sidecar，vault 树不在命令间残留运行时产物。
+	sqlitedsn.CloseAll()
+	if err != nil {
 		var commandErr *domain.CommandError
 		if !errors.As(err, &commandErr) {
 			fmt.Fprintln(os.Stderr, err)

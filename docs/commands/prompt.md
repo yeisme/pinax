@@ -5,7 +5,7 @@
 The command group has two surfaces:
 
 1. **Local Prompt Vault** (default): `prompt create|import|search|show|resolve|lifecycle|feedback` operate on Pinax-owned local assets only.
-2. **Federated Catalog** (experimental, additive): `prompt repository` and `prompt catalog` discover, verify, and — when rights permit — install external prompts through the public `github.com/yeisme/promptrepo v0.5.0` SDK.
+2. **Federated Catalog** (experimental, additive): `prompt repository` and `prompt catalog` discover, verify, and — when rights permit — install external prompts through the public `github.com/yeisme/promptrepo v0.5.1` SDK.
 
 Federated catalog 的 Agent 模板默认使用 `locale=en`。中文笔记和资料可以继续作为输入值，最终笔记语言由用户内容和模板字段决定；中文模板译文只供人类审阅，不参与 preview 或安装。
 

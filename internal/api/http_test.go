@@ -931,6 +931,13 @@ func snapshotFileTree(t *testing.T, root string) map[string]string {
 		if entry.IsDir() {
 			return nil
 		}
+		name := entry.Name()
+		// SQLite WAL 运行时 sidecar（*-wal/*-shm）随连接打开/读取而变化，
+		// 属于派生运行时状态而非 vault 内容；真实 CLI 进程退出时经
+		// sqlitedsn.CloseAll 清理。写门禁断言关注的是用户内容不被修改。
+		if strings.HasSuffix(name, "-wal") || strings.HasSuffix(name, "-shm") {
+			return nil
+		}
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err

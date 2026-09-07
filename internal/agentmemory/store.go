@@ -11,10 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/yeisme/pinax/internal/agentprotocol"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 // Store 是 Agent memory runtime 的持久化仓库。
@@ -30,9 +29,7 @@ func Open(root string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("create agent memory dir: %w", err)
 	}
-	db, err := gorm.Open(sqlite.Open(filepath.Join(dir, "agent_memory.sqlite")), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	db, err := sqlitedsn.Open(filepath.Join(dir, "agent_memory.sqlite"))
 	if err != nil {
 		return nil, fmt.Errorf("open agent memory store: %w", err)
 	}

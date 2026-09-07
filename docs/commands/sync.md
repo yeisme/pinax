@@ -27,6 +27,7 @@ The backup mirror boundary also excludes realtime daemon and conflict policy cha
 | `pinax sync daemon logs` | Reads redacted daemon events. | Read-only. |
 | `pinax sync logs list` | Lists recent sync run receipts. | Read-only. |
 | `pinax sync logs show <run-id>` | Shows one sync receipt and its redacted operations. | Read-only. |
+| `pinax sync logs status <run-id>` | Replays a run's job status (accepted/progress/terminal) from the vault event JSONL. | Read-only. |
 | `pinax sync logs tail` | Shows run and file-level sync timeline events. | Read-only. |
 | `pinax sync logs tail --follow` | Streams newly appended redacted sync events until canceled. | Read-only. |
 | `pinax sync conflicts list` | Lists local conflict copies. | Read-only. |
@@ -197,6 +198,12 @@ Inspect which files a completed sync planned and follow later sync activity in a
 pinax sync logs tail --vault ./my-notes --limit 50
 pinax sync logs tail --vault ./my-notes --follow
 pinax sync logs tail --vault ./my-notes --follow --events
+```
+
+Replay one run's status directly from the durable event JSONL. This projection is idempotent and works even when the run was interrupted before writing a receipt: a run with item events but no terminal event replays as `phase=progress`.
+
+```bash
+pinax sync logs status 20260907T100000Z_ab12cd34 --vault ./my-notes --json
 ```
 
 The timeline contains a `sync.file` item for each non-manifest operation and a final `sync.run` summary. File items include the run ID, direction, operation kind, final run status, and the path allowed by the run's `path_policy`. `--path-policy hash` emits `path_sha256:...`; `--path-policy omitted` keeps the operation but removes the path. `--follow` supports default human output, `--agent`, and `--events`; use non-follow `--json` when a single JSON envelope is required.

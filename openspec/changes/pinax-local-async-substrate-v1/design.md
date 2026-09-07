@@ -20,6 +20,12 @@ flowchart LR
 - 目标：统一 helper（如 `internal/…/sqlitedsn.Open(path)`）产出 `path?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)`，读池 `SetMaxOpenConns(4)/SetMaxIdleConns(4)`；对齐 sonora `internal/store/store.go` 已验证模式（WAL N 读者 + 1 写者，写经 busy_timeout 串行）。
 - 语义：单写者语义保留（不加分布式锁），MCP server 与 CLI 并发读不串行、不踩 `SQLITE_BUSY`。
 
+### WAL sidecar 生命周期（实现期发现，sonora 场景差异）
+
+- Pinax CLI 是短生命周期进程且命令退出不显式关连接；WAL 下未 checkpoint 的 `-wal` 可能包含全部数据页（含头页），主文件近空，且残留 `-wal/-shm` 会污染 vault 文件树、掩盖主文件损坏。
+- 退出契约：`sqlitedsn` 登记全部打开的连接池，`main()` 退出前调用 `sqlitedsn.CloseAll()`——最后一个连接关闭时 SQLite 自动 checkpoint 回主文件并删除 sidecar。被 SIGKILL 残留的 sidecar 由 SQLite 下次打开自动恢复；vault `.gitignore` 白名单本身不追踪这些运行时产物。
+- 损坏检测独立于 sidecar 状态：`index.Diagnose` 先做主文件 SQLite 头校验（前 16 字节魔数），热 WAL 不能掩盖主文件被截断/覆盖。
+
 ## sync/delivery job 投影
 
 - 复用既有 event JSONL + receipt 模型，新增投影：

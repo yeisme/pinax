@@ -63,6 +63,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [可信 Agent 工作连续性 PRD](./product/trusted-agent-continuity.md)
 - [通用 Agent 记忆系统 PRD](./product/general-agent-memory-prd.md)
 - [架构边界](./architecture/architecture-boundaries.md)
+- [本地服务边界](./architecture/local-service-boundary.md)
 - [Cloud Sync Architecture](./architecture/cloud-sync-design.md)
 - [Go Development Ecosystem Design](./architecture/go-development-ecosystem.md)
 - [CLI Output Contract](./interfaces/cli-output-contract.md)

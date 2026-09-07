@@ -12,10 +12,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/glebarez/sqlite"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 const (
@@ -132,7 +131,7 @@ func Open(root string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	db, err := gorm.Open(sqlite.Open(filepath.Join(dir, "ledger.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := sqlitedsn.Open(filepath.Join(dir, "ledger.sqlite"))
 	if err != nil {
 		return nil, memoryStoreError(err)
 	}

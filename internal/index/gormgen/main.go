@@ -14,10 +14,9 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/glebarez/sqlite"
 	"github.com/yeisme/pinax/internal/index/model"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gen"
-	"gorm.io/gorm"
 )
 
 func main() {
@@ -28,7 +27,7 @@ func main() {
 	dbPath := createTempDBPath()
 	defer func() { _ = os.Remove(dbPath) }()
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	db, err := sqlitedsn.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open temp db: %v", err)
 	}

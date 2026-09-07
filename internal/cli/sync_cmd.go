@@ -499,6 +499,10 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 		projection, err := ctx.svc.SyncLogsShow(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, RunID: args[0]})
 		return ctx.renderProjection(cmd, projection, err)
 	}}
+	logsStatusCmd := &cobra.Command{Use: "status <run-id>", Short: "Replay a sync run status from the vault event JSONL", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		projection, err := ctx.svc.SyncLogsStatus(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, RunID: args[0]})
+		return ctx.renderProjection(cmd, projection, err)
+	}}
 	logsTailCmd := &cobra.Command{Use: "tail", Short: "Tail the safe sync event timeline", RunE: func(cmd *cobra.Command, args []string) error {
 		if !syncLogFollow {
 			projection, err := ctx.svc.SyncLogsTail(cmd.Context(), app.SyncLogsRequest{VaultPath: *ctx.vaultPath, Limit: syncLogLimit})
@@ -519,7 +523,7 @@ func addSyncCommands(root *cobra.Command, ctx commandBuildContext) {
 	logsPruneCmd.Flags().IntVar(&syncPruneKeep, "keep", 200, "Keep at most this many recent sync runs")
 	logsPruneCmd.Flags().IntVar(&syncPruneMaxAgeDays, "max-age-days", 90, "Delete sync runs older than this many days")
 	logsPruneCmd.Flags().BoolVar(ctx.yes, "yes", false, "Confirm deleting sync run receipts")
-	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsTailCmd, logsPruneCmd)
+	logsCmd.AddCommand(logsListCmd, logsShowCmd, logsStatusCmd, logsTailCmd, logsPruneCmd)
 	syncCmd.AddCommand(logsCmd)
 
 	var manifestDeviceID string

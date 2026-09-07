@@ -6,11 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/glebarez/sqlite"
 	"github.com/yeisme/pinax/internal/index/model"
 	"github.com/yeisme/pinax/internal/index/query"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 func globalUpdate() *gorm.Session {
@@ -67,9 +66,7 @@ func open(root string) (*gorm.DB, error) {
 	if err := os.MkdirAll(filepath.Join(root, ".pinax"), 0o755); err != nil {
 		return nil, err
 	}
-	return gorm.Open(sqlite.Open(filepath.Join(root, ".pinax", "index.sqlite")), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
+	return sqlitedsn.Open(filepath.Join(root, ".pinax", "index.sqlite"))
 }
 
 func migrate(db *gorm.DB) error {

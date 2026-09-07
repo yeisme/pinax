@@ -13,11 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/yeisme/pinax/internal/index/model"
 	"github.com/yeisme/pinax/internal/index/query"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 type Repository struct {
@@ -59,7 +58,7 @@ func OpenVaultRepository(root string) (*Repository, error) {
 	if err := os.MkdirAll(filepath.Join(root, ".pinax"), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := gorm.Open(sqlite.Open(filepath.Join(root, ".pinax", "index.sqlite")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := sqlitedsn.Open(filepath.Join(root, ".pinax", "index.sqlite"))
 	if err != nil {
 		return nil, err
 	}

@@ -12,9 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/glebarez/sqlite"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 var (
@@ -36,7 +35,7 @@ func Open(root string) (*Store, error) {
 		return nil, operationError(CodeStoreUnavailable, "Operation store is unavailable", err)
 	}
 	databasePath := filepath.Join(dir, "operations.sqlite")
-	db, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := sqlitedsn.Open(databasePath)
 	if err != nil {
 		return nil, operationError(CodeStoreUnavailable, "Operation store is unavailable", err)
 	}
@@ -59,7 +58,7 @@ func OpenExisting(root string) (*Store, error) {
 		}
 		return nil, operationError(CodeStoreUnavailable, "Operation store is unavailable", err)
 	}
-	db, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := sqlitedsn.Open(databasePath)
 	if err != nil {
 		return nil, operationError(CodeStoreUnavailable, "Operation store is unavailable", err)
 	}

@@ -133,3 +133,30 @@ func hasEvidence(report DoctorReport, evidence string) bool {
 	}
 	return false
 }
+
+// TestIndexDiagnoseDetectsCorruptMainFileWithHotWAL 验证统一 WAL DSN 下的
+// 损坏检测：未 checkpoint 的热 -wal 可能包含全部数据页（含头页），主文件
+// 被覆盖为垃圾时 SQLite 仍能读出"正常"数据；doctor 必须经主文件头校验
+// 识别为不可读，而不是被热 WAL 掩盖（pinax-local-async-substrate-v1）。
+func TestIndexDiagnoseDetectsCorruptMainFileWithHotWAL(t *testing.T) {
+	t.Parallel()
+	notes := []domain.Note{{ID: "note_a", Title: "A", Path: "notes/a.md", Body: "# A\n"}}
+	root := t.TempDir()
+	if _, err := Rebuild(root, notes); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	indexPath := filepath.Join(root, ".pinax", "index.sqlite")
+
+	// 头校验：主文件为垃圾字节（即使残留热 -wal/-shm）也必须判不可读。
+	if err := os.WriteFile(indexPath, []byte("not sqlite"), 0o644); err != nil {
+		t.Fatalf("corrupt index: %v", err)
+	}
+	report, err := Diagnose(root, notes)
+	if err != nil {
+		t.Fatalf("diagnose corrupt: %v", err)
+	}
+	assertDiagnosis(t, report, "unreadable", "index_unreadable")
+
+	// 健康索引不误伤：干净 root 重建后 fresh（头校验放行）由
+	// TestIndexDiagnoseClassifiesStatusAndIssues 的 fresh 阶段覆盖。
+}

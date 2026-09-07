@@ -61,11 +61,17 @@ func (s *Server) resourceProjection(ctx context.Context, uri string) (domain.Pro
 		}
 		return projection, nil
 	case "pinax://readiness":
-		return app.ConnectionReadinessProjection(app.ConnectionReadinessOptions{
+		projection := app.ConnectionReadinessProjection(app.ConnectionReadinessOptions{
 			Mode:           "local-vault",
 			Transport:      "stdio",
 			OwnerAvailable: s.service != nil,
-		}), nil
+		})
+		// lifecycle 事实（pinax-local-async-substrate-v1）：gateway supervise
+		// 语义要求的退出/重启行为与远程写边界，与六层 readiness 一并投影。
+		projection.Facts["lifecycle_exit"] = "stdin_eof_drain_exit"
+		projection.Facts["lifecycle_restart_projection"] = "vault_state_consistent"
+		projection.Facts["lifecycle_remote_writes"] = "gateway_approval_only"
+		return projection, nil
 	case "pinax://vault/current":
 		return s.service.VaultStats(ctx, app.VaultStatsRequest{VaultPath: s.vault})
 	case "pinax://organize/plan":

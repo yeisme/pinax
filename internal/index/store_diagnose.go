@@ -1,7 +1,11 @@
 package index
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +23,13 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 			status := Status{Status: "missing", Path: indexRelPath()}
 			return doctorReport(status, []Issue{indexIssue("index_missing", "warning", status.Path, "本地索引缺失", []string{"index_status=missing"})}), nil
 		}
+		status := Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}
+		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
+	}
+	// 先校验主文件头：WAL 模式下所有页（含头页）可能都滞留在未 checkpoint 的
+	// -wal 里，主文件被覆盖为垃圾时 SQLite 仍能从热 WAL 读出"正常"数据。
+	// 头校验保证损坏的主文件无论 sidecar 状态如何都会被识别为不可读。
+	if err := verifySQLiteHeader(indexPath); err != nil {
 		status := Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}
 		return doctorReport(status, []Issue{indexIssue("index_unreadable", "error", status.Path, "本地索引不可读", status.Evidence)}), nil
 	}
@@ -115,6 +126,36 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 	}
 	status := Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: issueEvidence(issues)}
 	return doctorReport(status, issues), nil
+}
+
+// sqliteHeaderMagic 是 SQLite 数据库文件头的前 16 字节。
+var sqliteHeaderMagic = []byte("SQLite format 3\x00")
+
+// verifySQLiteHeader 校验索引主文件是否是 SQLite 数据库文件。
+//
+// 统一 WAL DSN（pinax-local-async-substrate-v1）下，未 checkpoint 的 -wal
+// 可能包含全部数据页（含头页）：主文件被截断或覆盖为垃圾时，SQLite 仍会
+// 经热 WAL 读出"正常"数据，损坏被掩盖。进程退出路径（sqlitedsn.CloseAll）
+// 保证正常命令间不残留 sidecar，这里再对主文件做独立头校验，使损坏检测
+// 不依赖 sidecar 状态（覆盖残留 sidecar 的崩溃/被杀场景）。
+func verifySQLiteHeader(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	header := make([]byte, len(sqliteHeaderMagic))
+	read, err := io.ReadFull(file, header)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return fmt.Errorf("index file is not a SQLite database (short header: %d bytes)", read)
+		}
+		return err
+	}
+	if !bytes.Equal(header, sqliteHeaderMagic) {
+		return errors.New("index file is not a SQLite database (invalid header)")
+	}
+	return nil
 }
 
 func objectIdentityConsistencyIssues(q *query.Query, notes []*model.NoteRecord) []Issue {
