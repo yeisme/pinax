@@ -342,7 +342,7 @@ github.com/yeisme/credentialctl/internal/projectapp
 github.com/yeisme/credentialctl/internal/projectcrypto
 github.com/yeisme/credentialctl/internal/projectstore
 github.com/yeisme/credentialctl/pkg/projectsecrets
-# github.com/yeisme/promptrepo v0.5.0
+# github.com/yeisme/promptrepo v0.5.1
 ## explicit; go 1.24.0
 github.com/yeisme/promptrepo
 github.com/yeisme/promptrepo/engine

@@ -4,8 +4,15 @@ All notable changes to this module are documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-07
+
 ### Added
 
+- Native Git repository sources using HTTPS, SSH, SCP-style, and bare
+  `github.com/owner/repository` addresses while preserving legacy source URI
+  compatibility.
+- Cross-locale display search so Chinese titles, summaries, and aliases can
+  discover an English Agent template without changing the returned exact ref.
 - Additive `UITemplateAddress` parser/formatter for the independent
   `kind=ui-template` family without widening released `TemplateAddress`
   behavior.
@@ -30,6 +37,22 @@ All notable changes to this module are documented here.
   schemas, structured document contracts, and frozen catalog digests are
   unchanged. The per-bundle safety ceilings do not impose a global asset-count
   limit.
+
+## [0.5.0] - 2026-09-05
+
+### Added
+
+- Experimental `RecipeV1`, step dependency and input-binding contracts for
+  deterministic multi-step prompt workflows.
+- Portable `PromptPackageV1` validation, safe inventory paths, file digests,
+  and package verification without provider, network, or execution side
+  effects.
+
+### Compatibility
+
+- Existing rendering, catalog, template contract, reference, and source
+  adapter APIs remain compatible. The new package contracts are additive and
+  retain their `v0.1` experimental schema identifiers.
 
 ## [0.4.0] - 2026-08-24
 

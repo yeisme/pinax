@@ -1,0 +1,20 @@
+version: 2
+project_name: promptrepo
+
+builds:
+  - id: library
+    skip: true
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+source:
+  enabled: true
+
+changelog:
+  use: git
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

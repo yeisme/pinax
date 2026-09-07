@@ -253,7 +253,7 @@ func (m *Manager) Search(_ context.Context, request promptrepo.SearchRequest) (p
 			if !containsAll(solution.Tags, request.Tags) {
 				continue
 			}
-			score, reasons := searchScore(normalizedQuery, display, solution)
+			score, reasons := searchScoreAcrossLocales(normalizedQuery, locale, display, solution)
 			if normalizedQuery != "" && score == 0 {
 				continue
 			}
@@ -634,6 +634,24 @@ func searchScore(query string, display promptrepo.LocalizedText, solution prompt
 		}
 	}
 	return score, reasons
+}
+
+func searchScoreAcrossLocales(query, selectedLocale string, display promptrepo.LocalizedText, solution promptrepo.Solution) (int, []string) {
+	bestScore, bestReasons := searchScore(query, display, solution)
+	locales := make([]string, 0, len(solution.Locales))
+	for locale := range solution.Locales {
+		if locale != selectedLocale {
+			locales = append(locales, locale)
+		}
+	}
+	sort.Strings(locales)
+	for _, locale := range locales {
+		score, reasons := searchScore(query, solution.Locales[locale], solution)
+		if score > bestScore {
+			bestScore, bestReasons = score, reasons
+		}
+	}
+	return bestScore, bestReasons
 }
 
 func normalizeSearch(value string) string {

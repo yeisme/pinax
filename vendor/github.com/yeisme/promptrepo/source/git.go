@@ -17,6 +17,7 @@ import (
 )
 
 var githubPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+var scpGitRemote = regexp.MustCompile(`^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:.+$`)
 
 type GitAdapter struct{}
 
@@ -137,23 +138,106 @@ func (GitAdapter) ReadCompanion(ctx context.Context, profile promptrepo.Reposito
 }
 
 func normalizeGitRemote(raw string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if strings.ContainsAny(raw, "\x00\n\r") {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid Git repository URI", false, nil)
+	}
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid Git repository URI", false, nil)
+	}
+	if isBareGitHubRemote(clean) {
+		return normalizeBareGitHubRemote(clean)
+	}
+	if scpGitRemote.MatchString(clean) {
+		path := clean[strings.IndexByte(clean, ':')+1:]
+		if strings.Trim(path, "/") == "" || strings.ContainsAny(path, "?#") {
+			return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid SCP-style Git repository URI", false, nil)
+		}
+		return clean, nil
+	}
+	parsed, err := url.Parse(clean)
 	if err != nil {
 		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid Git repository URI", false, err)
 	}
-	switch parsed.Scheme {
-	case "git+file", "git+https", "git+ssh":
-		return strings.TrimPrefix(raw, "git+"), nil
+	switch strings.ToLower(parsed.Scheme) {
+	case "git+file":
+		return normalizeGitFileURL(clean[len("git+"):])
+	case "git+https", "git+ssh":
+		return normalizeNativeGitURL(clean[len("git+"):])
 	case "github":
-		owner := parsed.Host
-		repository := strings.Trim(strings.TrimSuffix(parsed.Path, ".git"), "/")
-		if !githubPart.MatchString(owner) || !githubPart.MatchString(repository) {
-			return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "github source must be github://owner/repository", false, nil)
-		}
-		return fmt.Sprintf("https://github.com/%s/%s.git", owner, repository), nil
+		return normalizeLegacyGitHubRemote(parsed)
+	case "http", "https", "ssh":
+		return normalizeNativeGitURL(clean)
 	default:
 		return "", promptrepo.NewError(promptrepo.CodeUnsupportedSourceScheme, "unsupported Git repository scheme", false, nil)
 	}
+}
+
+func normalizeGitFileURL(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.Trim(parsed.Path, "/") == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid Git file repository URI", false, err)
+	}
+	return raw, nil
+}
+
+func isBareGitHubRemote(raw string) bool {
+	return strings.HasPrefix(strings.ToLower(raw), "github.com/")
+}
+
+func normalizeBareGitHubRemote(raw string) (string, error) {
+	parts := strings.Split(strings.Trim(raw[len("github.com/"):], "/"), "/")
+	if len(parts) != 2 {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "GitHub source must identify one owner and repository", false, nil)
+	}
+	return formatGitHubRemote(parts[0], parts[1])
+}
+
+func normalizeLegacyGitHubRemote(parsed *url.URL) (string, error) {
+	if parsed.User != nil || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid GitHub repository source", false, nil)
+	}
+	return formatGitHubRemote(parsed.Hostname(), strings.Trim(parsed.Path, "/"))
+}
+
+func normalizeNativeGitURL(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" || strings.Trim(parsed.Path, "/") == "" {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid Git repository URI", false, err)
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "Git repository URI must not contain a query or fragment", false, nil)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		if parsed.User != nil {
+			return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "Git HTTP repository URI must not contain user information", false, nil)
+		}
+		if strings.EqualFold(parsed.Hostname(), "github.com") && parsed.Port() == "" {
+			parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+			if len(parts) != 2 {
+				return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "GitHub source must identify one owner and repository", false, nil)
+			}
+			return formatGitHubRemote(parts[0], parts[1])
+		}
+	case "ssh":
+		if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword || parsed.User.Username() == "" {
+				return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "Git SSH repository URI must not contain a password", false, nil)
+			}
+		}
+	default:
+		return "", promptrepo.NewError(promptrepo.CodeUnsupportedSourceScheme, "unsupported Git repository scheme", false, nil)
+	}
+	return raw, nil
+}
+
+func formatGitHubRemote(owner, repository string) (string, error) {
+	repository = strings.TrimSuffix(repository, ".git")
+	if !githubPart.MatchString(owner) || !githubPart.MatchString(repository) {
+		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "GitHub source must identify one owner and repository", false, nil)
+	}
+	return fmt.Sprintf("https://github.com/%s/%s.git", owner, repository), nil
 }
 
 func runGit(ctx context.Context, args ...string) (string, error) {

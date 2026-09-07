@@ -17,6 +17,11 @@ search, exact `promptrepo://` references, digest-verified template reads, and
 staged installation receipts. It does not execute prompts, call models, or
 depend on Template Registry server/internal packages.
 
+Search matches localized titles, summaries, and aliases from every locale while
+returning the result card and exact ref in the requested locale. A Chinese
+human query can therefore discover an English Agent template without
+registering a second compilable template.
+
 ## 模板寻址、检查与预览（v0.3.0）
 
 从 v0.3.0 起，旧 solution ref 保持不变：
@@ -33,8 +38,8 @@ SDK 另提供 `ParseTemplateAddress` / `FormatTemplateAddress` 表达不可变�
 promptrepo://official/audio/podcast-narration@1.0.0?kind=template&locale=zh-CN&role=main&path=prompts%2Fmain.zh-CN.md&digest=sha256%3A...&snapshot=sha256%3A...
 ```
 
-这不是 repository source URI：profile 的 `file://`、`git+https://`、
-`github://`、`s3://` 仍只用来同步 catalog；Address 只在已经同步的 solution
+这不是 repository source URI：profile 的 `file://`、原生 Git HTTPS/SSH 地址、
+`github.com/owner/repository`、兼容的 `github://` / `git+https://`、`s3://` 只用来同步 catalog；Address 只在已经同步的 solution
 内标识模板、可选 selector 和不可变 digest/snapshot。user/project scoped source
 alias 属于后续 profile/source 路由工作，本阶段不改变这些 source。
 
@@ -189,7 +194,7 @@ func main() error {
     }
     _, err = client.AddRepository(context.Background(), promptrepo.AddRepositoryRequest{
         Profile: promptrepo.RepositoryProfile{
-            ID: "official", Source: "github://yeisme/prompt-templates", Trust: "official",
+            ID: "official", Source: "https://github.com/yeisme/prompt-templates", Trust: "official",
         },
     })
     return err
@@ -206,8 +211,10 @@ func main() error {
 默认 state 位于 OS user config/cache 目录的 `yeisme/promptrepo`。State 由 engine
 原子写入并使用跨进程锁；未来 schema 会以 `STATE_SCHEMA_TOO_NEW` fail closed。
 
-Built-in sources are `file://`, Git (`git+file`, `git+https`, `git+ssh`,
-`github://`), and anonymous read-only `s3://`. Profiles hold credential
+Built-in sources are `file://`, native Git (`http://`, `https://`, `ssh://`,
+`git@host:path`, `github.com/owner/repository`), compatible legacy Git
+(`git+file`, `git+https`, `git+ssh`, `github://`), and anonymous read-only
+`s3://`. Profiles hold credential
 references only, never credential values. See [docs/architecture.md](docs/architecture.md).
 
 ### Graph Kit structured-document conformance
@@ -224,8 +231,9 @@ snapshot 被直接用于读取、路径逃逸或 selector 不兼容时均 fail c
 JSON/YAML 投影只包含摘要和 snapshot lineage，不包含结构化正文。
 
 仓库内 conformance test 使用本地 `git+file://` fixture，不访问网络，也不包含
-Auctra 或具体小说数据。`github://owner/repository` 仅是 Git HTTPS remote 的规范化
-入口；真实 GitHub canary 与发布仍需要维护者单独授权。
+Auctra 或具体小说数据。原生 `https://github.com/owner/repository`、简写
+`github.com/owner/repository` 与兼容的 `github://owner/repository` 都规范化为 Git HTTPS
+remote；真实 GitHub canary 与发布仍需要维护者单独授权。
 
 Consumer handoff：Graph Kit 不需要新增 SDK surface；Auctra 与 Registry 可继续精确
 固定已发布的 `github.com/yeisme/promptrepo v0.4.0`。本变更没有创建 tag、发布模块或

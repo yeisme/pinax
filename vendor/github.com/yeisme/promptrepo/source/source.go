@@ -45,14 +45,24 @@ func DefaultRegistry() *Registry {
 }
 
 func DetectKind(raw string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
+	clean := strings.TrimSpace(raw)
+	if isBareGitHubRemote(clean) || scpGitRemote.MatchString(clean) {
+		if _, err := normalizeGitRemote(raw); err != nil {
+			return "", err
+		}
+		return "git", nil
+	}
+	parsed, err := url.Parse(clean)
 	if err != nil {
 		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid repository source URI", false, err)
 	}
-	switch parsed.Scheme {
+	switch strings.ToLower(parsed.Scheme) {
 	case "file":
 		return "file", nil
-	case "git+file", "git+https", "git+ssh", "github":
+	case "git+file", "git+https", "git+ssh", "github", "http", "https", "ssh":
+		if _, err := normalizeGitRemote(raw); err != nil {
+			return "", err
+		}
 		return "git", nil
 	case "s3":
 		return "s3", nil
