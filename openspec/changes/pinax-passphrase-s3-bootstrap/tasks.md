@@ -74,3 +74,7 @@ Status 2026-08-23: 7.5-7.9 依赖真实 macOS 发布候选 + Tencent COS + 私�
 剩余 5 个 task 依次覆盖 observed→candidate 入站验证、Mac→既有设备出站验证、恢复矩阵、精确平台支持表述和 closeout；本变更不伪造任何外部 evidence。
 
 当前状态：**Mac 正向使用已被报告为 observed，repository-encrypted S3/COS support 仍为 experimental**。旧 AWS profile/fake/env 路径全部保留且不 deprecate；在发布候选、真实 Mac 双向 dogfood、恢复矩阵和 redaction evidence 完成前，不应将当前安装的 `pinax dev`、所有 macOS 架构或该分支描述为 stable S3 backup。
+
+## 2026-09-09 当前 Mac 实机验收
+
+真实 macOS 26.6.2 / darwin-arm64 已执行，不能再仅以 Linux 环境缺失描述 7.5。正式 v0.2.0 archive candidate contract PASS，但独立 clone 的 Keychain bootstrap 失败 keychain_store_unavailable；发现 --unlock keychain 隐式 Remember 行为，进入最小修复。7.5-7.9 保持未勾选。详见 [实机验收记录](mac-acceptance-2026-09-09.md)，证据保存在本项目 temp/integration-test-runs/。真实 COS push 未执行。

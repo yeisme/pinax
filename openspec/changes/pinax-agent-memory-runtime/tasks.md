@@ -80,3 +80,7 @@ Status 2026-08-23（重申）: 8.5 最早四周观察完成日期为 2026-08-25�
 - 8.6 是 stable-from release 决策，明确依赖 8.5 的四周 evidence；任务自身要求"缺少...四周 evidence 时保持 experimental，不 archive 为 GA"。
 
 当前状态：8.1-8.4（含全质量门禁）已完成；code-complete 部分已实现并通过 `task check`/`task ci`/`openspec validate --strict`。capability 保持 **experimental**，旧 memory/brain 不进入 deprecation。8.5/8.6 保持未勾选，待真实 dogfood evidence 产生后由产品/发布 owner 完成。本会话不伪造 evidence。
+
+## 2026-09-09 当前 Mac / 现有 vault 复核
+
+通过当前 Mac 的 SSH 对真实 yeisme-notes 执行 agent status 与 agent memory proposals，命令可用、proposals=0；Mac 上 agent-memory integration 9 packages PASS。该结果不提供连续四周真实 Pinax/Ordo/Codex 分母，8.5/8.6 保持未勾选和 experimental。证据：temp/integration-test-runs/remote-memory-status-20260909、remote-memory-proposals-20260909、20260909T095536Z-7159。

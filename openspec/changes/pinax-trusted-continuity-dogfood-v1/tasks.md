@@ -64,3 +64,7 @@ Status 2026-09-03（编码会话只读取证）: 8.2-8.4 全部为外部门控�
   Status 2026-09-03: [external-gate skipped] — CEO/product 决策依赖 8.2+8.3；当前 `go_ready=false`（sample/runtime/class/source 四 gate 未过），不可提前决策。
   Status 2026-09-07: [external-gate skipped] — 复核同日 report：`go_ready=false`（sample/runtime/class/source 四 gate 未过），不可提前决策；依赖 8.3 窗口结束后的终版分母。
   Status 2026-09-08: [external-gate skipped] — 复核同日 report 仍 `go_ready=false`（sample 1/30、runtime 仅 codex、class 仅 release_operations、source 与 weekly_review 均 not_measured），不可提前决策。
+
+## 2026-09-09 当前 Mac / 现有 vault 复核
+
+通过当前 Mac 的 SSH 对真实 yeisme-notes 执行 continue report --since 6w --json：total_runs=1、completed_loops=1、runtime=codex、task class=release_operations、source/weekly review 未测量、silent_confirmed_write_count=0、go_ready=false。8.3 仍为 1/30，窗口至 2026-10-10；8.4 不提前决策。证据：temp/integration-test-runs/remote-continuity-report-20260909。
