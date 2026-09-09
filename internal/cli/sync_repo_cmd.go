@@ -141,16 +141,9 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 			if err != nil {
 				return err
 			}
-			rememberTarget := selectedKeychain
-			if bootstrapRememberKeychain && rememberTarget == nil {
-				service, account, err := parseKeychainRef(defaultKeychainRef)
-				if err != nil {
-					return err
-				}
-				rememberTarget, err = projectsecrets.NewKeychainSource(service, account)
-				if err != nil {
-					return err
-				}
+			rememberTarget, err := resolveRememberKeychain(bootstrapRememberKeychain, selectedKeychain, defaultKeychainRef)
+			if err != nil {
+				return err
 			}
 			projection, err := ctx.svc.SyncRepoBootstrap(cmd.Context(), app.SyncRepoRuntimeRequest{
 				VaultPath:           *ctx.vaultPath,
@@ -222,4 +215,21 @@ func addSyncRepoCommands(parent *cobra.Command, ctx commandBuildContext) {
 	repoCmd.AddCommand(repoDoctorCmd)
 
 	parent.AddCommand(repoCmd)
+}
+
+// resolveRememberKeychain returns a write target only when the caller
+// explicitly requested persistence. A keychain unlock source is read-only
+// unless --remember-keychain is set.
+func resolveRememberKeychain(remember bool, selected *projectsecrets.KeychainSource, defaultKeychainRef string) (*projectsecrets.KeychainSource, error) {
+	if !remember {
+		return nil, nil
+	}
+	if selected != nil {
+		return selected, nil
+	}
+	service, account, err := parseKeychainRef(defaultKeychainRef)
+	if err != nil {
+		return nil, err
+	}
+	return projectsecrets.NewKeychainSource(service, account)
 }

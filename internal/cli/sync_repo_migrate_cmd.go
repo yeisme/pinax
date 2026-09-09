@@ -2,7 +2,6 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	"github.com/yeisme/pinax/internal/app"
 )
 
@@ -33,16 +32,9 @@ func addSyncRepoMigrateCommands(repoCmd *cobra.Command, ctx commandBuildContext)
 			if err != nil {
 				return err
 			}
-			rememberTarget := selectedKeychain
-			if rememberKeychain && rememberTarget == nil {
-				service, account, err := parseKeychainRef(defaultKeychainRef)
-				if err != nil {
-					return err
-				}
-				rememberTarget, err = projectsecrets.NewKeychainSource(service, account)
-				if err != nil {
-					return err
-				}
+			rememberTarget, err := resolveRememberKeychain(rememberKeychain, selectedKeychain, defaultKeychainRef)
+			if err != nil {
+				return err
 			}
 			projection, err := ctx.svc.SyncRepoMigrateDeviceProfile(cmd.Context(), app.SyncRepoMigrateRequest{
 				VaultPath: *ctx.vaultPath, UnlockSource: source, RememberKeychain: rememberTarget, Yes: yes,

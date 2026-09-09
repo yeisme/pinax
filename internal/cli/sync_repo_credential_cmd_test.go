@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yeisme/credentialctl/pkg/projectsecrets"
 	pinaxremote "github.com/yeisme/pinax/internal/remote"
 )
 
@@ -26,6 +27,46 @@ func runCLIWithStdin(t *testing.T, stdin string, args ...string) (string, string
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return out.String(), errOut.String(), err
+}
+
+func TestResolveRememberKeychainRequiresExplicitFlag(t *testing.T) {
+	selected, err := projectsecrets.NewKeychainSource("pinax", "repo-account")
+	if err != nil {
+		t.Fatalf("new keychain source: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		remember bool
+		selected *projectsecrets.KeychainSource
+		wantNil  bool
+	}{
+		{name: "bootstrap keychain unlock without remember stays read-only", selected: selected, wantNil: true},
+		{name: "migrate keychain unlock without remember stays read-only", selected: selected, wantNil: true},
+		{name: "bootstrap explicit remember retains selected keychain", remember: true, selected: selected},
+		{name: "migrate explicit remember retains selected keychain", remember: true, selected: selected},
+		{name: "explicit remember creates default target", remember: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target, err := resolveRememberKeychain(test.remember, test.selected, "keychain://pinax/repo-account")
+			if err != nil {
+				t.Fatalf("resolve remember target: %v", err)
+			}
+			if test.wantNil {
+				if target != nil {
+					t.Fatal("read-only keychain unlock unexpectedly selected a remember target")
+				}
+				return
+			}
+			if target == nil {
+				t.Fatal("explicit remember did not select a keychain target")
+			}
+			if test.selected != nil && target != test.selected {
+				t.Fatal("explicit remember did not retain the selected keychain target")
+			}
+		})
+	}
 }
 
 func TestSyncPullHelpIncludesUnifiedUnlockFlags(t *testing.T) {
