@@ -16,7 +16,7 @@ func main() {
 	result, err := evidence.Run(evidence.Config{
 		RunID:             runID,
 		ParentDir:         filepath.Join("temp", "integration-test-runs"),
-		Command:           []string{"go", "test", "./internal/mcpserver", "./internal/cli", "./cmd/pinax", "./tests/e2e", "-run", "MCPProtocolLifecycle|MCPTransportParity|Stdout|Stderr|JSONRPC|Signal|Panic|ToolSchema|StructuredContent|ResourceTemplate", "-count=1"},
+		Command:           []string{"go", "test", "./internal/mcpserver", "./internal/cli", "./cmd/pinax", "./tests/e2e", "-run", "InputIntake|MCPProtocolLifecycle|MCPTransportParity|Stdout|Stderr|JSONRPC|Signal|Panic|ToolSchema|StructuredContent|ResourceTemplate", "-count=1"},
 		PassThroughStdout: os.Stdout,
 		PassThroughStderr: os.Stderr,
 		PassStatus:        "passed",

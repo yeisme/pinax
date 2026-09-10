@@ -350,12 +350,13 @@ type NoteListRequest struct {
 }
 
 type NoteMutationRequest struct {
-	VaultPath string
-	NoteRef   string
-	Title     string
-	TargetDir string
-	Yes       bool
-	DryRun    bool
+	ExpectedRevision string
+	VaultPath        string
+	NoteRef          string
+	Title            string
+	TargetDir        string
+	Yes              bool
+	DryRun           bool
 }
 
 type NoteDeleteRequest struct {
@@ -366,10 +367,11 @@ type NoteDeleteRequest struct {
 }
 
 type NoteTagRequest struct {
-	VaultPath string
-	NoteRef   string
-	Operation string
-	Tags      []string
+	ExpectedRevision string
+	VaultPath        string
+	NoteRef          string
+	Operation        string
+	Tags             []string
 }
 
 // NoteVerifyRequest 是 pinax note verify 的请求。Actor 为空且未配置 identity 时

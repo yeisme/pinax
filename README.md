@@ -471,6 +471,8 @@ Start the read-only MCP surface:
 pinax mcp serve --vault ./my-notes
 ```
 
+Optional [MCP collaboration](docs/interfaces/mcp-collaboration.md) adds Markdown and structured results. Enable `--collaboration` for enhanced reads; add `--allow-note-body --allow-note-write` for explicit body reads and preview-bound daily writes. Original tools retain their read-only behavior. Actual client conversation acceptance is tracked separately from protocol tests.
+
 The local REST/RPC projection adapter binds only to localhost and only reuses application service projections; it is not a public hosted API. The root path returns a small discovery projection, while `/v1/capabilities` lists callable REST/RPC capabilities:
 
 ```bash

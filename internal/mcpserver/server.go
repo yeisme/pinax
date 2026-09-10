@@ -11,6 +11,7 @@ import (
 	"github.com/yeisme/pinax/internal/agentprotocol"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/inputrequests"
 	catalogschema "github.com/yeisme/pinax/internal/transportcatalog/schema"
 	"github.com/yeisme/pinax/internal/transportmanifest"
 )
@@ -49,12 +50,16 @@ type Tool struct {
 }
 
 type Resource struct {
+	MIMEType    string `json:"mimeType,omitempty"`
 	URI         string `json:"uri"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 }
 
 type Server struct {
+	collaboration     bool
+	notePolicy        app.CollaborationPolicy
+	input             *inputrequests.Service
 	service           *app.Service
 	vault             string
 	agentMem          *app.AgentMemoryService
@@ -68,6 +73,9 @@ func NewServer(service *app.Service, vault string) *Server {
 }
 
 type ServerOptions struct {
+	Collaboration   bool
+	NotePolicy      app.CollaborationPolicy
+	Input           *inputrequests.Service
 	Manifest        func() (domain.Projection, error)
 	StrictLifecycle bool
 	Diagnostics     io.Writer
@@ -79,7 +87,10 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 		manifest = transportmanifest.ProjectionProvider(TransportManifest)
 	}
 	return &Server{
+		collaboration:   options.Collaboration,
+		notePolicy:      options.NotePolicy,
 		service:         service,
+		input:           options.Input,
 		vault:           vault,
 		agentMem:        app.NewAgentMemoryService(),
 		manifest:        manifest,
@@ -95,6 +106,9 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			return resp, err
 		}
 		resp.Result = modernDiscoveryResult()
+		if s.collaboration {
+			s.addCollaborationDiscovery(resp.Result)
+		}
 		return resp, nil
 	case "initialize":
 		protocolVersion := mcpStringArg(req.Params, "protocolVersion")
@@ -114,7 +128,10 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			"serverInfo": map[string]any{"name": "pinax", "version": "dev"},
 			// Keep the original fields for pre-standard Pinax MCP consumers.
 			"name":      "pinax",
-			"read_only": true,
+			"read_only": s.input == nil && (!s.collaboration || !s.notePolicy.AllowWrite),
+		}
+		if s.collaboration {
+			s.addCollaborationDiscovery(resp.Result)
 		}
 		return resp, nil
 	case "ping":
@@ -129,8 +146,20 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			return resp, err
 		}
 		resources := ResourceInventory()
+		if s.collaboration {
+			resources = append(resources, collaborationResources()...)
+		}
+		if s.input != nil {
+			resources = append(resources, Resource{URI: "pinax://input/capabilities", Name: "Input capabilities"})
+		}
 		if modern {
 			resources = ConcreteResourceInventory()
+			if s.collaboration {
+				resources = append(resources, collaborationResources()...)
+			}
+			if s.input != nil {
+				resources = append(resources, Resource{URI: "pinax://input/capabilities", Name: "Input capabilities"})
+			}
 			resp.Result = cacheableCompleteResult(map[string]any{"resources": resources}, 300000, "public")
 		} else {
 			resp.Resources = resources
@@ -143,6 +172,9 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			return resp, err
 		}
 		templates := ResourceTemplateInventory()
+		if s.collaboration {
+			templates = append(templates, collaborationResourceTemplates()...)
+		}
 		if modern {
 			resp.Result = cacheableCompleteResult(map[string]any{"resourceTemplates": templates}, 300000, "public")
 		} else {
@@ -153,6 +185,12 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 		modern, err := s.validateOperationalRequest(req)
 		if err != nil {
 			return resp, err
+		}
+		if req.Params["uri"] == "pinax://input/capabilities" {
+			return s.inputResource(req), nil
+		}
+		if uri, _ := req.Params["uri"].(string); s.collaboration && strings.HasPrefix(uri, "pinax://interaction/") {
+			return s.collaborationResource(ctx, req)
 		}
 		resourceResp, readErr := s.readResource(ctx, req)
 		if readErr == nil && modern {
@@ -165,6 +203,12 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			return resp, err
 		}
 		tools := ToolInventory()
+		if s.collaboration {
+			tools = append(tools, s.collaborationTools()...)
+		}
+		if s.input != nil {
+			tools = append(tools, inputTools()...)
+		}
 		if modern {
 			resp.Result = cacheableCompleteResult(map[string]any{"tools": standardToolDefinitions(tools)}, 300000, "public")
 		} else {
@@ -176,6 +220,12 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 		modern, err := s.validateOperationalRequest(req)
 		if err != nil {
 			return resp, err
+		}
+		if name, _ := req.Params["name"].(string); strings.HasPrefix(name, "pinax.input.") {
+			return s.inputCall(ctx, req)
+		}
+		if name, _ := req.Params["name"].(string); strings.HasPrefix(name, "pinax.interaction.") {
+			return s.collaborationCall(ctx, req)
 		}
 		toolResp, err := s.callTool(ctx, req)
 		if err != nil {
@@ -569,8 +619,8 @@ func standardToolDefinitions(tools []Tool) []map[string]any {
 			"inputSchema":  tool.InputSchema,
 			"outputSchema": tool.OutputSchema,
 			"annotations": map[string]any{
-				"readOnlyHint":    true,
-				"destructiveHint": false,
+				"readOnlyHint":    tool.Readonly,
+				"destructiveHint": !tool.Readonly,
 				"idempotentHint":  true,
 				"openWorldHint":   false,
 			},
@@ -710,6 +760,7 @@ func ServeWithOptions(ctx context.Context, service *app.Service, vault string, i
 		diagnostics = io.Discard
 	}
 	enc := json.NewEncoder(out)
+	standardWire := true
 	type scannedFrame struct {
 		data []byte
 		err  error
@@ -718,6 +769,7 @@ func ServeWithOptions(ctx context.Context, service *app.Service, vault string, i
 	go func() {
 		defer close(frames)
 		scanner := bufio.NewScanner(in)
+		scanner.Buffer(make([]byte, 64<<10), 1<<20)
 		for scanner.Scan() {
 			data := append([]byte(nil), scanner.Bytes()...)
 			select {
@@ -750,13 +802,23 @@ func ServeWithOptions(ctx context.Context, service *app.Service, vault string, i
 		}
 		var req Request
 		if err := json.Unmarshal(frame.data, &req); err != nil {
-			_ = enc.Encode(Response{JSONRPC: "2.0", Error: newMCPError(-32700, "parse_error", err.Error())})
+			if err := encodeMCPResponse(enc, Response{JSONRPC: "2.0", Error: newMCPError(-32700, "parse_error", "Invalid JSON-RPC request")}, true); err != nil {
+				return err
+			}
 			continue
 		}
 		// JSON-RPC notifications intentionally have no response. Standard MCP
 		// clients send notifications/initialized immediately after initialize.
 		if strings.HasPrefix(req.Method, "notifications/") {
 			continue
+		}
+		if req.Method == "initialize" {
+			if mcpStringArg(req.Params, "protocolVersion") != "" {
+				standardWire = true
+			} else if !server.legacyInitialized {
+				standardWire = false
+				_, _ = fmt.Fprintln(diagnostics, "pinax mcp: unversioned private envelope is deprecated; send protocolVersion and consume result.tools/result.resources")
+			}
 		}
 		resp, err := safeHandleMCPRequest(ctx, server, req, diagnostics)
 		if err != nil {
@@ -767,10 +829,25 @@ func ServeWithOptions(ctx context.Context, service *app.Service, vault string, i
 				resp.Error = newMCPError(-32603, "internal_error", "MCP request failed")
 			}
 		}
-		if err := enc.Encode(resp); err != nil {
+		if err := encodeMCPResponse(enc, resp, standardWire || modernRequestProtocolVersion(req) != ""); err != nil {
 			return err
 		}
 	}
+}
+
+// Strict MCP clients reject extra top-level fields before matching response IDs.
+// Keep internal/private compatibility projections out of the standard wire frame.
+func encodeMCPResponse(enc *json.Encoder, resp Response, standard bool) error {
+	if !standard {
+		return enc.Encode(resp)
+	}
+	frame := map[string]any{"jsonrpc": "2.0", "id": resp.ID}
+	if resp.Error != nil {
+		frame["error"] = resp.Error
+	} else {
+		frame["result"] = resp.Result
+	}
+	return enc.Encode(frame)
 }
 
 func safeHandleMCPRequest(ctx context.Context, server *Server, req Request, diagnostics io.Writer) (resp Response, err error) {

@@ -479,10 +479,10 @@ func TestMCPStdioStandardHandshakeKeepsLegacyProjection(t *testing.T) {
 		t.Fatalf("initialize serverInfo = %#v", initialize["serverInfo"])
 	}
 
-	// Legacy consumers keep the existing top-level list while standard MCP
-	// clients consume result.tools and camelCase inputSchema.
-	if !containsTool(responses[1].Tools, "pinax.agent.context") {
-		t.Fatalf("legacy tool projection missing: %#v", responses[1].Tools)
+	// Versioned clients require a strict wire envelope, even on legacy MCP versions.
+	// The unversioned private path is covered by TestMCPReleaseCoreFrame.
+	if len(responses[1].Tools) != 0 {
+		t.Fatalf("standard envelope leaked private tool projection: %#v", responses[1].Tools)
 	}
 	standardTools, ok := responses[1].Result["tools"].([]any)
 	if !ok || len(standardTools) == 0 {

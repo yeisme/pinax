@@ -121,3 +121,11 @@ openspec new change pinax-<slug>
 ```
 
 OpenSpec workflow 以 skills 和 `openspec` CLI 为入口。根目录 `openspec/` 只负责设计 handoff，不记录 Pinax 代码实现进度。
+
+## 单次输入页面例外
+
+用户批准的 `mcp-input-intake-experience-v1` 允许显式启用、仅绑定一个输入请求的同源上传页；不扩展为首页、资产库或后台。文件和权限仍由本项目服务持有，上传不自动批准生成、覆盖、分析或付费。新增入口默认关闭。
+
+## MCP 交互边界
+
+2026-09-10 用户取消 Pinax HTML/MCP Apps 交互。MCP 只提供工具、Markdown 与结构化结果，不恢复内嵌页面、UI 资源或浏览器验收任务。旧只读工具保持原义；正文与写入由 owner 分别启用。单次文件输入合同保持原有边界。

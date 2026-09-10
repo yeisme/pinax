@@ -1,0 +1,98 @@
+# Synthetic process checks only. No model generation or real user outcome.
+exec pinax init vault --title Research --json
+exec sh -c 'pinax note add "Local Index" --slug local-index --stdin --vault vault --json < index.md'
+cp stdout created.json
+source-id created.json
+exec sh -c 'pinax note add "External Retrieval" --slug external-retrieval --stdin --vault vault --json < external.md'
+exec pinax index refresh --vault vault --json
+vault-digest vault before.sha
+next-second
+
+# Candidate lookup, rephrasing and bounded multi-source discovery.
+exec pinax search lexical --limit 1 --lazy-index off --vault vault --agent
+stdout 'fact.returned=1'
+stdout 'local-index.md'
+exec pinax search embeddings --limit 2 --lazy-index off --vault vault --agent
+stdout 'external-retrieval.md'
+exec pinax search comparison --limit 2 --lazy-index off --vault vault --agent
+stdout 'fact.returned=2'
+exec pinax search nonexistent-evidence --lazy-index off --vault vault --agent
+stdout 'fact.returned=0'
+exec pinax search lexical --lazy-index ' off ' --vault vault --agent
+stdout 'fact.lazy_index=off'
+
+# Sources must be opened explicitly; conflicting statements remain distinguishable.
+exec pinax note show $SOURCE_ID --view source --display body --vault vault --json
+stdout 'lexical indexing'
+stdout 'source-notes-only'
+exec pinax note show external-retrieval --view source --display body --vault vault --json
+stdout 'semantic retrieval'
+stdout 'source-evaluation-missing'
+exec pinax note backlinks local-index --vault vault --json
+stdout 'external-retrieval.md'
+! exec pinax note show missing-source --view source --display body --vault vault --json
+stdout '"status":"failed"'
+vault-digest vault after.sha
+cmp before.sha after.sha
+
+# A missing index falls back without creating an index or changing source state.
+rm vault/.pinax/index.sqlite
+vault-digest vault missing-index.sha
+exec pinax search comparison --engine auto --lazy-index off --limit 2 --vault vault --agent
+stdout 'fact.engine=native'
+stdout 'fact.returned=2'
+vault-digest vault after-fallback.sha
+cmp missing-index.sha after-fallback.sha
+
+# Unaccepted output and dry-run must not create a note or receipt.
+exec sh -c 'pinax note add "Decision Brief" --slug decision-brief --dir index --stdin --dry-run --vault vault --json < brief.md'
+! exists vault/notes/index/decision-brief.md
+vault-digest vault after-preview.sha
+cmp missing-index.sha after-preview.sha
+
+# Simulated acceptance persists through the CLI, then verifies source backlinks.
+exec sh -c 'pinax note add "Decision Brief" --slug decision-brief --dir index --stdin --vault vault --json < brief.md'
+exists vault/notes/index/decision-brief.md
+exec pinax search 'Decision Brief' --engine native --lazy-index off --vault vault --agent
+stdout 'decision-brief.md'
+exec pinax note backlinks local-index --vault vault --json
+stdout 'decision-brief.md'
+
+# Moving a source retains identity; reading after deletion reports the missing source.
+exec pinax note rename $SOURCE_ID 'Local Index Revised' --vault vault --json
+exec pinax note show $SOURCE_ID --view source --display body --vault vault --json
+stdout 'Local Index Revised'
+stdout 'lexical indexing'
+exec pinax note delete $SOURCE_ID --yes --vault vault --json
+! exec pinax note show $SOURCE_ID --view source --display body --vault vault --json
+stdout '"status":"failed"'
+
+# Deterministic storage failure: a file occupies the requested parent directory.
+cp blocker.txt vault/notes/blocked
+vault-digest vault before-failure.sha
+! exec pinax note add 'Failed Brief' --dir blocked --stdin --vault vault --json < brief.md
+stdout '"status":"failed"'
+vault-digest vault after-failure.sha
+cmp before-failure.sha after-failure.sha
+
+-- index.md --
+# Local Index
+For the synthetic comparison, prefer lexical indexing for local source-notes-only use.
+Evidence date: unknown. This note makes no claim about current external products.
+
+-- external.md --
+# External Retrieval
+For the synthetic comparison, consider semantic retrieval with embeddings.
+This contradicts [[local-index]] on the preferred next step: source-evaluation-missing.
+Evidence date: unknown. More evaluation is needed before choosing.
+
+-- brief.md --
+# Decision Brief
+Synthetic fixture, not an Agent-generated result and not a real accepted decision.
+Use the local baseline first; semantic retrieval remains an unvalidated alternative.
+Sources: [[local-index]] and [[external-retrieval]]. Source dates are unknown.
+Template reference only: research/evidence-research-brief-beta@2.0.0-beta.1 (en).
+No Registry compilation or repeatable model generation is claimed.
+
+-- blocker.txt --
+This file deliberately blocks a fixture-only destination directory.

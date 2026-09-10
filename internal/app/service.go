@@ -1240,7 +1240,11 @@ func (s *Service) SearchNotes(ctx context.Context, req SearchRequest) (result Se
 	monitorFacts["engine_requested"] = searchops.NormalizedEngine(req.Engine)
 	monitorFacts["lazy_index"] = searchops.NormalizedLazyIndex(req.LazyIndex)
 	monitorFacts["limit"] = fmt.Sprint(req.Limit)
-	rec := startMonitorRun(root, "note.search", monitorFacts)
+	// 显式只读搜索不能因性能采样而写入 vault 内的 monitor 文件。
+	var rec *monitorRecorder
+	if searchops.NormalizedLazyIndex(searchReq.LazyIndex) != "off" {
+		rec = startMonitorRun(root, "note.search", monitorFacts)
+	}
 	defer func() { rec.Finish("", err) }()
 	searchReq.VaultPath = root
 	endStep := rec.BeginStep("search.validate", nil)

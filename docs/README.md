@@ -6,7 +6,7 @@
 
 Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。三个核心概念：Markdown vault 是用户知识资产的真源，Proof Loop 保护每一次 agent 写入，Cloud Sync 只协调密文。SQLite/GORM 是可重建索引投影，version backend 只提供版本证据和受保护工作流的 snapshot basis，外部平台通过 CLI-backed Provider adapter 接入。
 
-核心保障见 [Agent-Safe Boundary](./overview/agent-safe-boundary.md)：读取命令默认返回 bounded projection，不返回完整 note body；MCP 工具只读；云端不保存明文，也不执行本地工具。
+核心保障见 [Agent-Safe Boundary](./overview/agent-safe-boundary.md)：读取命令默认返回 bounded projection，不返回完整 note body；默认 MCP 工具只读；云端不保存明文，也不执行本地工具。独立 opt-in 的 [MCP 人机协作](./interfaces/mcp-collaboration.md) 提供 Markdown、结构化结果、指定正文读取及预览绑定写入，不改变旧工具权限。
 
 ## Agent-Safe 证明循环
 
@@ -126,3 +126,5 @@ Package validation target 会以 snapshot/no-publish 模式运行 GoReleaser，�
 ## CI/CD
 
 - [模块化、分级 CI/CD](delivery/ci-cd.md)：quick、full、integration、release 的触发场景、真实命令和权限边界。
+
+- [MCP 文件输入与一次性上传页](mcp-input-intake.md)

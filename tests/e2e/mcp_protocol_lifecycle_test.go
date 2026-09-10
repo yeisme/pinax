@@ -54,8 +54,15 @@ func TestMCPProtocolLifecycleCurrentAndLegacy(t *testing.T) {
 	if initialize["protocolVersion"] != "2025-11-25" || initialize["read_only"] != true {
 		t.Fatalf("legacy initialize = %#v", initialize)
 	}
-	legacyTools, _ := responseByID(t, legacy, "tools")["tools"].([]any)
-	legacyResources, _ := responseByID(t, legacy, "resources")["resources"].([]any)
+	legacyTools, _ := responseResult(t, legacy, "tools")["tools"].([]any)
+	legacyResources, _ := responseResult(t, legacy, "resources")["resources"].([]any)
+	for _, id := range []string{"tools", "resources"} {
+		for key := range responseByID(t, legacy, id) {
+			if key != "jsonrpc" && key != "id" && key != "result" {
+				t.Fatalf("non-standard JSON-RPC response field: %s", key)
+			}
+		}
+	}
 	if len(legacyTools) != 20 || len(legacyResources) != 9 {
 		t.Fatalf("legacy inventory tools=%d resources=%d", len(legacyTools), len(legacyResources))
 	}

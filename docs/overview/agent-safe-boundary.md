@@ -17,6 +17,8 @@ This boundary is shared across `note read/show`, the project board, the local da
 
 ## MCP bounded context: agents read projections, not raw files
 
+The following guarantees describe the default connection and the original tool names. The opt-in `--collaboration` surface adds separate tools with explicit owner body/write permissions, revision-bound previews and durable receipts. It does not widen existing tools. See [MCP collaboration](../interfaces/mcp-collaboration.md). Caller-declared intent or confirmation is never recorded as verified human approval.
+
 MCP tools are read-only and reuse the CLI relationship and note projections. The MCP server forces bounded display even when a caller requests the body:
 
 - `pinax.note.links` — outgoing links, supporting `--broken-only`, `--kind`, `--limit`.

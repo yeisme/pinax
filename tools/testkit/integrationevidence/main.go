@@ -16,8 +16,12 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, dsh-pane, or knowledge-source-adapter")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, dsh-pane, knowledge-source-adapter, or research-brief")
 	flag.Parse()
+	if *profile == "mcp-apps-browser" {
+		_, _ = fmt.Fprintln(os.Stderr, "The MCP Apps browser profile has been retired. Use --profile mcp-collaboration for Markdown tool verification.")
+		os.Exit(2)
+	}
 	runID := time.Now().UTC().Format("20060102T150405Z") + fmt.Sprintf("-%d", os.Getpid())
 	config := buildConfigForProfile(*profile, runID, os.Stdout, os.Stderr)
 	result, err := evidence.Run(config)
@@ -64,6 +68,19 @@ func buildConfig(runID string, stdout, stderr io.Writer) evidence.Config {
 }
 
 func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	if profile == "mcp-collaboration" || profile == "mcp-collaboration-quality" || profile == "mcp-collaboration-race" || profile == "mcp-collaboration-go" || profile == "mcp-strict-client" || profile == "mcp-official-sdk" || profile == "mcp-inspector" {
+		return collaborationEvidenceConfig(profile, runID, stdout, stderr)
+	}
+	if profile == "research-brief" {
+		return evidence.Config{
+			RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"go", "test", "./internal/app/searchops", "./internal/app", "./tests/e2e", "-run", "TestFirstSnippetUnicode|TestResearchBriefWorkflow|TestMonitorRecordsSearchStepsAndActivitySource|Test.*(Link|Orphan|GraphSummary)", "-count=1"},
+			PassThroughStdout: stdout, PassThroughStderr: stderr,
+			PassStatus: "passed", Layer: "e2e",
+			// 测试成功只证明合成流程；真实检索效果和人工采纳必须另行观察。
+			ExtraChecks: map[string]any{"fixture_only": true, "real_user_evaluations": 0, "model_calls": 0},
+		}
+	}
 	if profile == "knowledge-source-adapter" {
 		return buildKnowledgeSourceAdapterConfig(runID, stdout, stderr)
 	}

@@ -281,6 +281,24 @@ func (s *Store) StartApplying(ctx context.Context, operationID string) (Operatio
 	return s.transition(ctx, operationID, StatusApplying, Outcome{})
 }
 
+// CheckpointApplying persists recovery references before a filesystem side effect.
+// It never stores the request or note body and cannot change a terminal operation.
+func (s *Store) CheckpointApplying(ctx context.Context, id string, outcome Outcome) error {
+	if err := validateOutcome(outcome); err != nil {
+		return err
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	result := s.db.WithContext(ctx).Model(&OperationRow{}).Where("operation_id = ? AND status = ?", id, StatusApplying).Updates(map[string]any{"result_json": []byte(outcome.Result), "receipt_json": []byte(outcome.Receipt), "receipt_ref": outcome.ReceiptRef, "resource_ref": outcome.ResourceRef, "updated_at": s.now()})
+	if result.Error != nil {
+		return operationError(CodeStoreUnavailable, "Operation checkpoint failed", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return operationError(CodeIllegalTransition, "Operation is not applying", nil)
+	}
+	return nil
+}
+
 // StartApplyingWithOutcome persists bounded preparation evidence before the
 // domain mutation starts. This closes the crash window where reconciliation
 // would otherwise know that an operation was applying but not which durable

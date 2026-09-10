@@ -548,6 +548,10 @@ func (s *Service) ArchiveNote(ctx context.Context, req NoteMutationRequest) (dom
 	if err != nil {
 		return errorProjection("note.archive", err), err
 	}
+	if req.ExpectedRevision != "" && collaborationRevision(content) != req.ExpectedRevision {
+		err := collaborationError("revision_conflict", "Note changed before archive")
+		return errorProjection("note.archive", err), err
+	}
 	meta["status"] = "archived"
 	meta["updated_at"] = time.Now().UTC().Format(time.RFC3339)
 	updated, _ := patchFrontmatterFields(content, meta)
@@ -638,6 +642,10 @@ func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Proje
 	}
 	root, note, path, content, meta, err := s.loadMutableNoteForWrite(ctx, req.VaultPath, req.NoteRef)
 	if err != nil {
+		return errorProjection("note.tag", err), err
+	}
+	if req.ExpectedRevision != "" && collaborationRevision(content) != req.ExpectedRevision {
+		err := collaborationError("revision_conflict", "Note changed before tag update")
 		return errorProjection("note.tag", err), err
 	}
 	tags, tagErr := normalizeTagsForWrite(note.Tags)

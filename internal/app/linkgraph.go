@@ -342,9 +342,10 @@ func linkGraphEngineStatus(root string) (engine, indexStatus string) {
 	if _, err := os.Stat(path); err != nil {
 		return "scan", "missing"
 	}
-	// 检查 schema version
-	status, _ := noteindex.Init(root)
-	if status.Status == "fresh" {
+	// An empty lookup checks projection compatibility without initializing metadata.
+	// Preserve indexed object edges after rename; this is not a source freshness check.
+	result, err := noteindex.Lookup(root, noteindex.LookupRequest{})
+	if err == nil && result.Status.Status == "fresh" {
 		return "index", "fresh"
 	}
 	return "scan", "stale"

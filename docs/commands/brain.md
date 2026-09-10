@@ -47,6 +47,10 @@ Agent Brain projections must remain body-safe and evidence-first:
 - Maintenance is plan-only by default; `--dry-run` writes nothing, and `--save-plan` writes only CLI-authored plan evidence under `.pinax/brain-maintenance-plans/`. Content-changing apply still goes through service-owned proof-loop commands.
 - Hosted/team/OAuth/rate-limit behavior is future-owner work, not a current `cli/pinax` backend.
 
+## Agent research workflow
+
+For cross-source synthesis in the current Agent, see [研究简报工作流](../guides/research-brief.md). This does not add model synthesis to `brain answer`.
+
 ## Related
 
 - [memory](./memory.md)

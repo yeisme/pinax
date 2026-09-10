@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/yeisme/pinax/internal/domain"
 	noteindex "github.com/yeisme/pinax/internal/index"
@@ -488,22 +489,20 @@ func FirstSnippet(body, query string) string {
 		return ""
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
+	runes := []rune(body)
 	if query != "" {
-		idx := strings.Index(strings.ToLower(body), query)
+		lower := strings.ToLower(body)
+		idx := strings.Index(lower, query)
 		if idx >= 0 {
-			start := idx - 30
-			if start < 0 {
-				start = 0
-			}
-			end := idx + len(query) + 60
-			if end > len(body) {
-				end = len(body)
-			}
-			return strings.TrimSpace(body[start:end])
+			// 大小写映射可能改变 UTF-8 字节数；先映射为字符位置，再截取原文。
+			matched := utf8.RuneCountInString(lower[:idx])
+			start := max(0, matched-30)
+			end := min(len(runes), matched+utf8.RuneCountInString(query)+60)
+			return strings.TrimSpace(string(runes[start:end]))
 		}
 	}
-	if len(body) > 120 {
-		return body[:120]
+	if len(runes) > 120 {
+		return string(runes[:120])
 	}
 	return body
 }
