@@ -123,12 +123,14 @@ go test ./internal/mcpserver -run 'Initialize|Protocol|Lifecycle|Modern|Resource
 
 `PINAX_MCP_RUNTIME=official-sdk` 显式启用基于官方 Go MCP SDK（`github.com/modelcontextprotocol/go-sdk` v1.7.0）的候选 stdio 运行时；缺省仍是既有手写实现，默认行为不变。两个 runtime 共享同一工具/资源注册目录与 `internal/mcpserver` dispatch 单点，schema 校验、错误码与脱敏语义同源。
 
-已知差异（默认切换评审前需复核）：
+Runtime 选择（pinax-mcp-official-sdk-v1 §4.4 起）：默认 runtime 为官方 Go SDK；`PINAX_MCP_RUNTIME=legacy` 显式回退手写实现（兼容窗口内保留），其他取值 fail closed 报错退出。
 
-- 未注册工具由 SDK 在 server 侧以 `-32602`（unknown tool）拒绝；legacy runtime 为 `-32601`。
-- 私有 `server/discover` 握手与 unversioned 私有 envelope 在 candidate 中不可用。
+已知差异（4.4 切换后复核修正）：
+
+- 未注册工具由 SDK 在 server 侧以 `-32602`（unknown tool）拒绝；legacy runtime 为 `-32601` 或私有 `-32001` 包装。
+- 私有 `server/discover` 握手带协议 `_meta` 时经 `Server.Handle` 单点在两个 runtime 均可用（2026-09-11 受控探针修正冻结表）；无 `_meta` 的错误语义两个 runtime 一致。legacy initialize 结果的 `read_only` 私有 envelope 字段仅在 legacy runtime 投影。
 - `tools/list`/`resources/list` 顶层的 `resultType/ttlMs/cacheScope` 缓存提示不投影。
-- stdio 客户端关闭 stdin 即终止会话（EOF 归一化为零退出）；真实客户端在会话期间保持管道打开，不受影响。
+- stdio 客户端关闭 stdin 即终止会话（EOF 归一化为零退出）；真实客户端在会话期间保持管道打开，不受影响。一次性 shell 管道需在关闭前保持 stdin 打开等待响应。
 
 验证：
 

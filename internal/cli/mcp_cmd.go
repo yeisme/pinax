@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/yeisme/pinax/internal/inputrequests"
@@ -65,12 +67,17 @@ func addMCPCommands(root *cobra.Command, ctx commandBuildContext) {
 				Collaboration: collaboration,
 				NotePolicy:    app.CollaborationPolicy{AllowBody: allowBody, AllowWrite: allowWrite},
 			}
-			// 官方 SDK candidate runtime 仅显式开启；默认仍是既有手写实现
-			// （pinax-mcp-official-sdk-v1：默认切换前必须完成真实客户端验收）。
-			if os.Getenv("PINAX_MCP_RUNTIME") == sdkruntime.RuntimeName {
+			// 默认 runtime 为官方 SDK；legacy 手写实现保留为兼容窗口内的回退路径
+			// （pinax-mcp-official-sdk-v1 4.4：真实客户端验收完成后切换默认，
+			// 兼容窗口内可用 PINAX_MCP_RUNTIME=legacy 显式回退）。
+			switch runtimeName := strings.TrimSpace(os.Getenv("PINAX_MCP_RUNTIME")); runtimeName {
+			case sdkruntime.RuntimeName, "":
 				return sdkruntime.Serve(cmd.Context(), ctx.svc, *ctx.vaultPath, os.Stdin, cmd.OutOrStdout(), options)
+			case "legacy":
+				return mcpserver.ServeWithOptions(cmd.Context(), ctx.svc, *ctx.vaultPath, os.Stdin, cmd.OutOrStdout(), options)
+			default:
+				return fmt.Errorf("unknown PINAX_MCP_RUNTIME %q: want %q or %q", runtimeName, sdkruntime.RuntimeName, "legacy")
 			}
-			return mcpserver.ServeWithOptions(cmd.Context(), ctx.svc, *ctx.vaultPath, os.Stdin, cmd.OutOrStdout(), options)
 		},
 	}
 	serve.Flags().StringVar(&inputListen, "input-listen", "", "Explicit address for the restricted input HTTP listener")

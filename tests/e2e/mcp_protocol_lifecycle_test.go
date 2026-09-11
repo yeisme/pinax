@@ -17,36 +17,38 @@ func TestMCPProtocolLifecycleCurrentAndLegacy(t *testing.T) {
 	t.Parallel()
 
 	vault := t.TempDir()
-	current := runMCPProcess(t, vault, []string{
+	// pinax-mcp-official-sdk-v1 §4.4：默认 runtime 已切官方 SDK；legacy 私有
+	// envelope 合同（含 server/discover）经 PINAX_MCP_RUNTIME=legacy 显式覆盖验证。
+	legacyPrivate := runMCPProcessEnv(t, vault, []string{
 		`{"jsonrpc":"2.0","id":"discover","method":"server/discover","params":{"_meta":` + currentMCPMeta + `}}`,
 		`{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{"_meta":` + currentMCPMeta + `}}`,
 		`{"jsonrpc":"2.0","id":"call","method":"tools/call","params":{"name":"pinax.git.snapshot_plan","arguments":{},"_meta":` + currentMCPMeta + `}}`,
 		`{"jsonrpc":"2.0","id":"resources","method":"resources/list","params":{"_meta":` + currentMCPMeta + `}}`,
 		`{"jsonrpc":"2.0","id":"templates","method":"resources/templates/list","params":{"_meta":` + currentMCPMeta + `}}`,
 		`{"jsonrpc":"2.0","id":"manifest","method":"resources/read","params":{"uri":"pinax://manifest","_meta":` + currentMCPMeta + `}}`,
-	})
-	if len(current) != 6 {
-		t.Fatalf("current responses = %d, want 6", len(current))
+	}, []string{"PINAX_MCP_RUNTIME=legacy"})
+	if len(legacyPrivate) != 6 {
+		t.Fatalf("legacy private responses = %d, want 6", len(legacyPrivate))
 	}
-	assertMCPResultType(t, current, "discover")
-	assertMCPResultType(t, current, "tools")
-	assertMCPResultType(t, current, "call")
-	assertMCPResultType(t, current, "resources")
-	assertMCPResultType(t, current, "templates")
-	assertMCPResultType(t, current, "manifest")
-	call := responseResult(t, current, "call")
+	assertMCPResultType(t, legacyPrivate, "discover")
+	assertMCPResultType(t, legacyPrivate, "tools")
+	assertMCPResultType(t, legacyPrivate, "call")
+	assertMCPResultType(t, legacyPrivate, "resources")
+	assertMCPResultType(t, legacyPrivate, "templates")
+	assertMCPResultType(t, legacyPrivate, "manifest")
+	call := responseResult(t, legacyPrivate, "call")
 	structured, _ := call["structuredContent"].(map[string]any)
 	if structured["schema_version"] != "pinax.mcp.tool_result.v1" || structured["status"] != "success" {
 		t.Fatalf("current call structured content = %#v", structured)
 	}
 
-	legacy := runMCPProcess(t, vault, []string{
+	legacy := runMCPProcessEnv(t, vault, []string{
 		`{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"pinax-e2e","version":"1"}}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
 		`{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{}}`,
 		`{"jsonrpc":"2.0","id":"resources","method":"resources/list","params":{}}`,
 		`{"jsonrpc":"2.0","id":"manifest","method":"resources/read","params":{"uri":"pinax://manifest"}}`,
-	})
+	}, []string{"PINAX_MCP_RUNTIME=legacy"})
 	if len(legacy) != 4 {
 		t.Fatalf("legacy responses = %d, want 4", len(legacy))
 	}
@@ -66,18 +68,49 @@ func TestMCPProtocolLifecycleCurrentAndLegacy(t *testing.T) {
 	if len(legacyTools) != 20 || len(legacyResources) != 9 {
 		t.Fatalf("legacy inventory tools=%d resources=%d", len(legacyTools), len(legacyResources))
 	}
+
+	// 默认 runtime（无 env）= 官方 SDK：标准 initialize 流程可用，结果不含
+	// legacy 私有 read_only envelope；私有 server/discover（带协议 _meta）经
+	// Server.Handle 单点在两个 runtime 均可用（4.4 受控探针修正冻结表）。
+	defaultRuntime, _ := runMCPPiped(t, vault, nil, []string{
+		`{"jsonrpc":"2.0","id":"initialize","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"pinax-e2e-default","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"discover","method":"server/discover","params":{"_meta":` + currentMCPMeta + `}}`,
+		`{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{}}`,
+		`{"jsonrpc":"2.0","id":"resources","method":"resources/list","params":{}}`,
+	}, 4)
+	if len(defaultRuntime) != 4 {
+		t.Fatalf("default runtime responses = %d, want 4", len(defaultRuntime))
+	}
+	if initialize := responseResult(t, defaultRuntime, "initialize"); initialize["protocolVersion"] != "2025-11-25" {
+		t.Fatalf("default runtime initialize = %#v", initialize)
+	}
+	if _, ok := responseResult(t, defaultRuntime, "initialize")["read_only"]; ok {
+		t.Fatalf("default runtime must not project legacy read_only envelope")
+	}
+	if discover := responseByID(t, defaultRuntime, "discover"); discover == nil || discover["result"] == nil {
+		t.Fatalf("private server/discover with _meta must stay available on the default runtime: %#v", discover)
+	}
+	tools, _ := responseResult(t, defaultRuntime, "tools")["tools"].([]any)
+	resources, _ := responseResult(t, defaultRuntime, "resources")["resources"].([]any)
+	if len(tools) != 20 || len(resources) == 0 {
+		t.Fatalf("default runtime inventory tools=%d resources=%d", len(tools), len(resources))
+	}
 }
 
 func TestMCPTransportParityWithAuthoritativeManifest(t *testing.T) {
 	t.Parallel()
 
 	vault := t.TempDir()
-	responses := runMCPProcess(t, vault, []string{
-		`{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{"_meta":` + currentMCPMeta + `}}`,
-		`{"jsonrpc":"2.0","id":"resources","method":"resources/list","params":{"_meta":` + currentMCPMeta + `}}`,
-		`{"jsonrpc":"2.0","id":"templates","method":"resources/templates/list","params":{"_meta":` + currentMCPMeta + `}}`,
-		`{"jsonrpc":"2.0","id":"manifest","method":"resources/read","params":{"uri":"pinax://manifest","_meta":` + currentMCPMeta + `}}`,
-	})
+	responses, _ := runMCPPiped(t, vault, nil, []string{
+		`{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"pinax-e2e-parity","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{}}`,
+		`{"jsonrpc":"2.0","id":"resources","method":"resources/list","params":{}}`,
+		`{"jsonrpc":"2.0","id":"templates","method":"resources/templates/list","params":{}}`,
+		`{"jsonrpc":"2.0","id":"manifest","method":"resources/read","params":{"uri":"pinax://manifest"}}`,
+	}, 5)
+	responses = responses[1:] // 丢弃 initialize 响应，保持后续断言不变
 	tools, _ := responseResult(t, responses, "tools")["tools"].([]any)
 	resources, _ := responseResult(t, responses, "resources")["resources"].([]any)
 	templates, _ := responseResult(t, responses, "templates")["resourceTemplates"].([]any)
@@ -112,10 +145,11 @@ func TestMCPTransportParityWithAuthoritativeManifest(t *testing.T) {
 	}
 }
 
-func runMCPProcess(t *testing.T, vault string, frames []string) []map[string]any {
+func runMCPProcessEnv(t *testing.T, vault string, frames []string, extraEnv []string) []map[string]any {
 	t.Helper()
 	cmd := exec.Command(filepath.Join(sharedBinDir, "pinax"), "mcp", "serve", "--vault", vault)
 	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stdin = strings.NewReader(strings.Join(frames, "\n") + "\n")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

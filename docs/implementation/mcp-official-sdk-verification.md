@@ -26,8 +26,22 @@
 - 顶层缓存提示字段（resultType/ttlMs/cacheScope）：不投影。
 - SDK stdin EOF 即拆除会话：真实客户端保持管道打开不受影响；EOF 归一化零退出。
 
-## 未完成 / 阻塞
+## 4.2 真实客户端验收（2026-09-11 完成）
 
-- 4.2 Codex、Claude Code、Grok、Kimi Code 真实会话验收：外部真实客户端，本 change 不执行。
-- 4.4 默认 runtime 切换：依赖 4.2 证据，未决策。
-- 调研核实（1.1）与分层设计（1.2）见 change `design.md`；candidate 未宣称成为默认 runtime。
+`temp/mcp-client-validation-20260910-rEyDgS`（四客户端同 vault 同 server，配置均带 `PINAX_MCP_RUNTIME=official-sdk`；探针以未注册工具错误码 `-32602` vs legacy `-32001` 区分 runtime；`bin/pinax` 自 7953f75 重建——原 09-10 快照早于 sdkruntime 接线）：
+
+| 客户端 | 结果 |
+| --- | --- |
+| Codex 0.154.0（exec） | 全清单通过：26 工具、capabilities 资源、搜索、正文读取、preview→apply→status→旧版本回读 |
+| Claude Code 2.1.208（-p） | 全清单通过；含末尾无换行 append 边界二次预览、跨客户端陈旧预览 apply 被 `revision_conflict` 拒绝、安全渲染 `untrusted_user_content` 纯文本传递 |
+| Kimi Code 0.42.0（-p） | 全清单通过（经用户级 `~/.kimi-code/mcp.json`；`-p` 模式不加载项目级配置，即使授予 workspace trust） |
+| Grok 1.0.5 | 协议层握手+26 工具正常（doctor）；会话端把 `pinax-validation__pinax.*` 点号工具名判为 invalid/ambiguous 全部跳过（26 skip→tool_count=0→connection failed）。legacy runtime 对照完全一致 ⇒ grok 1.0.5 预存限制而非候选回归 |
+
+服务端回执与 transcripts：同目录 `evidence/` 与 `validation-report.json`（`real_agent_conversations_verified=true`，`model_calls=9`）。
+
+## 4.4 默认切换（2026-09-11 决策）
+
+- **决策：默认 runtime 切换为官方 SDK**；legacy 保留为兼容窗口回退路径（`PINAX_MCP_RUNTIME=legacy`），未知取值 fail closed（`internal/cli/mcp_cmd.go`）。
+- 依据：4.1 自动验收（TS SDK strict client + Inspector + 进程级 e2e）与 4.2 三客户端真实会话全通过；grok 限制为双 runtime 预存且已记录；在用注册消费方（hermes personal profile）走标准 stdio 工具调用。
+- **冻结表修正**：受控探针确认私有 `server/discover`（带协议 `_meta`）经 `Server.Handle` 单点在两个 runtime 均可用，仅 legacy `read_only` envelope 字段不投影——比原"candidate 不提供私有握手"的冻结结论更安全，私有握手消费者切换后不受影响。
+- 全局门禁：`task check`（fmt-check/lint/`go test ./...`/build/`openspec validate --all`/renderer test）通过；新增 `TestMCPRuntimeDefaultSwitch`、lifecycle 默认段与 parity 管道化适配。

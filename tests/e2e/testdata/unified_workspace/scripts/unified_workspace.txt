@@ -109,7 +109,9 @@ exec grep -q '/v1/database/views/{name}:render' api-routes.json
 exec grep -q 'task.adopt' api-routes.json
 exec grep -q 'graph.summary' api-routes.json
 
-exec sh -c 'printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"pinax-e2e\",\"version\":\"1\"}}}" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}" "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"pinax.database.view.render\",\"arguments\":{\"name\":\"table-active\"}}}" | pinax mcp serve --vault vault > mcp.jsonl'
+# 默认 runtime（官方 SDK）在 stdin EOF 即拆除会话；一次性管道需保持
+# stdin 打开等待响应（真实客户端语义），再关闭触发优雅退出。
+exec sh -c '(printf "%s\n" "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{},\"clientInfo\":{\"name\":\"pinax-e2e\",\"version\":\"1\"}}}" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}" "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"pinax.database.view.render\",\"arguments\":{\"name\":\"table-active\"}}}"; sleep 2) | pinax mcp serve --vault vault > mcp.jsonl'
 exec grep -q 'pinax.database.view.render' mcp.jsonl
 exec grep -q 'database_tab' mcp.jsonl
 

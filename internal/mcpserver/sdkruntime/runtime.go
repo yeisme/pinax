@@ -3,9 +3,9 @@
 // 设计（pinax-mcp-official-sdk-v1）：本包不携带业务逻辑。工具、资源、
 // schema 校验、错误与脱敏语义全部委托 internal/mcpserver.Server.Handle
 // 单点 dispatch，两个 runtime（legacy 手写 stdio 与本包）对同一注册目录
-// 投影，保证行为同源。默认 runtime 仍是 legacy 实现；本包仅在
-// PINAX_MCP_RUNTIME=official-sdk 显式开启时使用，默认切换前必须完成
-// change 4.2 的真实客户端验收。
+// 投影，保证行为同源。4.2 真实客户端验收（2026-09-11）完成后，本包为
+// 默认 runtime（pinax-mcp-official-sdk-v1 §4.4）；legacy 手写实现保留为
+// 兼容窗口内的回退路径，经 PINAX_MCP_RUNTIME=legacy 显式启用。
 package sdkruntime
 
 import (

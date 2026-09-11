@@ -54,7 +54,7 @@ func TestMCPOfficialSDKRuntimeCandidateProcess(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	wantResponses := 6
 	for time.Now().Before(deadline) {
-		if len(decodeMCPFrames(t, stdout.String())) >= wantResponses {
+		if countDecodedFrames(stdout.String()) >= wantResponses {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -111,6 +111,55 @@ func TestMCPOfficialSDKRuntimeCandidateProcess(t *testing.T) {
 	}
 }
 
+// countDecodedFrames 宽容计数已完整落盘的 JSON-RPC 帧；轮询期间行可能只写了一半，
+// 不应让等待循环在半行上 fatal。
+func countDecodedFrames(stdout string) int {
+	n := 0
+	for _, line := range strings.Split(stdout, "\n") {
+		var frame map[string]any
+		if json.Unmarshal([]byte(strings.TrimSpace(line)), &frame) == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// runMCPPiped 以保持 stdin 打开的管道驱动 serve（SDK runtime 在 stdin EOF
+// 即拆除会话，一次性 Reader 与真实客户端行为不符），等待 wantResponses 帧后关闭。
+func runMCPPiped(t *testing.T, vault string, extraEnv []string, frames []string, wantResponses int) ([]map[string]any, string) {
+	t.Helper()
+	cmd := exec.Command(filepath.Join(sharedBinDir, "pinax"), "mcp", "serve", "--vault", vault)
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+	cmd.Env = append(cmd.Env, extraEnv...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe: %v", err)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start serve: %v", err)
+	}
+	for _, frame := range frames {
+		if _, err := io.WriteString(stdin, frame+"\n"); err != nil {
+			t.Fatalf("write frame: %v", err)
+		}
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if countDecodedFrames(stdout.String()) >= wantResponses {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = stdin.Close()
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("serve failed: %v\nstderr=%s", err, stderr.String())
+	}
+	return decodeMCPFrames(t, stdout.String()), stderr.String()
+}
+
 func decodeMCPFrames(t *testing.T, stdout string) []map[string]any {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -126,4 +175,105 @@ func decodeMCPFrames(t *testing.T, stdout string) []map[string]any {
 		responses = append(responses, response)
 	}
 	return responses
+}
+
+// TestMCPRuntimeDefaultSwitch 验证 pinax-mcp-official-sdk-v1 §4.4 的默认切换与兼容窗口：
+// 缺省 PINAX_MCP_RUNTIME 走官方 SDK（私有 server/discover 不可用），
+// PINAX_MCP_RUNTIME=legacy 显式回退手写实现（server/discover 可用），
+// 未知取值 fail closed 报错退出。
+func TestMCPRuntimeDefaultSwitch(t *testing.T) {
+	t.Parallel()
+
+	frames := []string{
+		`{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"pinax-e2e-switch","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":"discover","method":"server/discover","params":{"_meta":` + currentMCPMeta + `}}`,
+		`{"jsonrpc":"2.0","id":"unknown","method":"tools/call","params":{"name":"__runtime_probe__","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":"tools","method":"tools/list","params":{}}`,
+	}
+
+	runServe := func(env string) ([]map[string]any, string) {
+		vault := t.TempDir()
+		cmd := exec.Command(filepath.Join(sharedBinDir, "pinax"), "mcp", "serve", "--vault", vault)
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir())
+		if env != "" {
+			cmd.Env = append(cmd.Env, "PINAX_MCP_RUNTIME="+env)
+		}
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			t.Fatalf("stdin pipe: %v", err)
+		}
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start serve: %v", err)
+		}
+		for _, frame := range frames {
+			if _, err := io.WriteString(stdin, frame+"\n"); err != nil {
+				t.Fatalf("write frame: %v", err)
+			}
+		}
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if countDecodedFrames(stdout.String()) >= 5 {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		_ = stdin.Close()
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("serve (env=%q) failed: %v\nstderr=%s", env, err, stderr.String())
+		}
+		return decodeMCPFrames(t, stdout.String()), stderr.String()
+	}
+
+	// 缺省 runtime = 官方 SDK：标准 initialize 结果不含 legacy 私有 read_only 字段，
+	// 未注册工具按 SDK 侧错误码 -32602 拒绝（冻结差异表）。
+	responses, _ := runServe("")
+	initialize := responseResult(t, responses, "init")
+	if _, ok := initialize["read_only"]; ok {
+		t.Fatalf("default runtime must not project legacy read_only envelope: %#v", initialize)
+	}
+	if tools := responseResult(t, responses, "tools"); tools == nil {
+		t.Fatalf("default runtime tools/list missing")
+	}
+
+	// 私有 server/discover 握手在两个 runtime 均经 Server.Handle 单点可用
+	// （4.4 受控探针确认；无 _meta 的错误语义两个 runtime 一致）。
+	responses, _ = runServe("legacy")
+	legacyInit := responseResult(t, responses, "init")
+	if legacyInit["read_only"] != true {
+		t.Fatalf("legacy runtime must keep read_only envelope: %#v", legacyInit)
+	}
+	discover := responseByID(t, responses, "discover")
+	if discover == nil || discover["result"] == nil {
+		t.Fatalf("legacy runtime must keep server/discover: %#v", discover)
+	}
+	responses, _ = runServe("")
+	discover = responseByID(t, responses, "discover")
+	if discover == nil || discover["result"] == nil {
+		t.Fatalf("server/discover with protocol _meta must stay available on the default runtime: %#v", discover)
+	}
+	unknown := responseByID(t, responses, "unknown")
+	if unknown == nil {
+		t.Fatalf("unknown tool probe response missing")
+	}
+	unknownErr, _ := unknown["error"].(map[string]any)
+	if code, _ := unknownErr["code"].(float64); code != -32602 {
+		t.Fatalf("default runtime unknown tool error = %#v, want -32602", unknown["error"])
+	}
+
+	// 未知取值 fail closed。
+	vault := t.TempDir()
+	cmd := exec.Command(filepath.Join(sharedBinDir, "pinax"), "mcp", "serve", "--vault", vault)
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "XDG_CONFIG_HOME="+t.TempDir(), "PINAX_MCP_RUNTIME=future-runtime")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		t.Fatalf("unknown PINAX_MCP_RUNTIME must fail closed")
+	}
+	if !strings.Contains(stderr.String(), "unknown PINAX_MCP_RUNTIME") {
+		t.Fatalf("unknown runtime error message = %q", stderr.String())
+	}
 }

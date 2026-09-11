@@ -71,6 +71,8 @@ internal/mcpserver（统一注册目录 + dispatch 单点）
 
 ### 真实客户端验收合同
 
+> 4.4 修正（2026-09-11）：受控探针确认私有 `server/discover`（带协议 `_meta`）经 `Server.Handle` 单点在两个 runtime 均可用；上表"candidate 不提供私有握手"仅对无 `_meta` 错误路径成立。默认切换对私有握手消费者无破坏。
+
 - 自动（4.1）：官方 TS SDK strict client（复用 `tools/testkit/mcpstrictclient.mjs`）+ Inspector + 进程内 Go SDK client；覆盖 20+6+6 工具发现与调用、资源枚举/读取、错误码、大 frame、per-request 取消。
 - 真实（4.2，外部）：Codex、Claude Code、Grok、Kimi Code 真实会话；本 change 内不执行、不勾选。
 - 切换（4.4）：以上证据齐备后单独决策默认 runtime；未齐备前 default=legacy。
