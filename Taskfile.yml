@@ -396,3 +396,19 @@ tasks:
     desc: Remove local build artifacts.
     cmds:
       - rm -rf dist coverage.out
+
+  ci:quick:
+    desc: Run the fast CI gate used for pull requests
+    cmds:
+      - task: fmt-check
+
+  ci:race:
+    desc: Run the race or concurrency gate locally
+    cmds:
+      - task: test
+
+  ci:full:
+    desc: Run the complete project validation suite
+    cmds:
+      - task: ci:quick
+      - task: test:integration
