@@ -70,6 +70,7 @@ credentialctl describe openai/personal-default --json   # view without mutating
 - There is deliberately no `get`/`print` command; if you find yourself wanting the value, you want `export`/`sync` or a consumer resolver instead.
 - Secrets are rejected in metadata (`METADATA_INVALID`); describe the purpose, never paste the key.
 - `set`/`rotate` keep existing metadata; `--clear-note` removes a note.
+- Lifecycle: every value mutation stamps `rotated_at`; set an expiry with `describe <ref> --expires <RFC3339>` (`--clear-expires` removes it) and `doctor` warns `expired`/`expiring` (within 30 days) locally.
 - `search` results include `matched_on` plus the metadata, redacted in every output mode.
 
 ## Collect scattered keys (discover / import-config)
@@ -137,8 +138,9 @@ credentialctl storage rollback openai/main --to file --yes --json
 ```
 
 - After migration `<base>/envelope.json` exists (Argon2id fixed profile + wrapped DEK; per-ref AEAD bound to ref+revision+envelope digest).
-- Unlock precedence: `--unlock-file` > `CREDENTIALCTL_UNLOCK_FILE` > `--unlock-env` > TTY prompt (humans only). Machine flows without a source fail closed `UNLOCK_REQUIRED` (exit 4); wrong passphrase is `UNLOCK_FAILED` (exit 4).
+- Unlock precedence: `--unlock-file` > `CREDENTIALCTL_UNLOCK_FILE` > `--unlock-env` > `--unlock keychain` (macOS/Windows Credential Manager item `credentialctl-store`) > TTY prompt (humans only). Machine flows without a source fail closed `UNLOCK_REQUIRED` (exit 4); wrong passphrase or missing keychain item is `UNLOCK_FAILED` (exit 4).
 - One unlock/derivation per process; keys wiped at exit. `status`/`doctor` on a locked store still render (unavailable + unlock action); data-touching commands fail closed.
+- On macOS the system Keychain is also a real explicit backend: `storage migrate <ref> --from file --to keychain --yes` (file stays the default authority; other platforms fail closed).
 - Inline sync, exec, render and backup all work unchanged over an encrypted store (decrypt in-process).
 
 ## Inline target workflow
