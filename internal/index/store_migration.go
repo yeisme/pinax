@@ -2,9 +2,13 @@ package index
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/yeisme/pinax/internal/index/model"
 	"github.com/yeisme/pinax/internal/index/query"
@@ -70,10 +74,117 @@ func open(root string) (*gorm.DB, error) {
 }
 
 func migrate(db *gorm.DB) error {
+	repaired, err := repairPrimaryKeyDrift(db)
+	if err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
-	return backfillObjectIdentity(db)
+	if err := backfillObjectIdentity(db); err != nil {
+		return err
+	}
+	if len(repaired) > 0 {
+		now := time.Now().UTC().Format(time.RFC3339)
+		if err := recordSchemaPrimaryKeyRepair(db, repaired, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// repairPrimaryKeyDrift 修复旧版本索引库的主键漂移：AutoMigrate 只补列，
+// 不会重建既有表的主键，而增量 upsert(Save) 依赖 ON CONFLICT(<model primary key>)。
+// 主键不一致时在事务内 rename → 按模型重建表 → 拷贝共有列 → drop 旧表，
+// 缺失的列由后续 AutoMigrate/backfill 补齐。返回实际重建的表名列表。
+func repairPrimaryKeyDrift(db *gorm.DB) ([]string, error) {
+	repaired := []string{}
+	for _, m := range model.AllModels() {
+		stmt := &gorm.Statement{DB: db}
+		if err := stmt.Parse(m); err != nil {
+			return nil, err
+		}
+		table := stmt.Schema.Table
+		if !db.Migrator().HasTable(table) {
+			continue
+		}
+		expected := make([]string, 0, len(stmt.Schema.PrimaryFields))
+		for _, field := range stmt.Schema.PrimaryFields {
+			expected = append(expected, field.DBName)
+		}
+		actual, err := sqlitePrimaryKeyColumns(db, table)
+		if err != nil {
+			return nil, err
+		}
+		if equalStringSet(expected, actual) {
+			continue
+		}
+		if err := rebuildTablePrimaryKey(db, table, m); err != nil {
+			return nil, fmt.Errorf("rebuild %s primary key: %w", table, err)
+		}
+		repaired = append(repaired, table)
+	}
+	return repaired, nil
+}
+
+func equalStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sortedA := append([]string{}, a...)
+	sortedB := append([]string{}, b...)
+	sort.Strings(sortedA)
+	sort.Strings(sortedB)
+	for i := range sortedA {
+		if sortedA[i] != sortedB[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// schemaPrimaryKeyRepairMetaKey 在 index_meta_records 中记录主键漂移修复日志，
+// 让原本静默的自愈对 doctor/status 可见、可审计。
+const schemaPrimaryKeyRepairMetaKey = "schema_pk_repairs"
+
+const schemaPrimaryKeyRepairLogLimit = 10
+
+type schemaPrimaryKeyRepairEntry struct {
+	Tables []string `json:"tables"`
+	At     string   `json:"at"`
+}
+
+func recordSchemaPrimaryKeyRepair(db *gorm.DB, tables []string, now string) error {
+	entries := schemaPrimaryKeyRepairLog(db)
+	entries = append(entries, schemaPrimaryKeyRepairEntry{Tables: tables, At: now})
+	if len(entries) > schemaPrimaryKeyRepairLogLimit {
+		entries = entries[len(entries)-schemaPrimaryKeyRepairLogLimit:]
+	}
+	raw, err := json.Marshal(entries)
+	if err != nil {
+		return err
+	}
+	return upsertMeta(db, schemaPrimaryKeyRepairMetaKey, string(raw), now)
+}
+
+func schemaPrimaryKeyRepairLog(db *gorm.DB) []schemaPrimaryKeyRepairEntry {
+	raw := metaValue(db, schemaPrimaryKeyRepairMetaKey)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	entries := []schemaPrimaryKeyRepairEntry{}
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil
+	}
+	return entries
+}
+
+func latestSchemaPrimaryKeyRepair(db *gorm.DB) (schemaPrimaryKeyRepairEntry, bool) {
+	entries := schemaPrimaryKeyRepairLog(db)
+	if len(entries) == 0 {
+		return schemaPrimaryKeyRepairEntry{}, false
+	}
+	return entries[len(entries)-1], true
 }
 
 func backfillObjectIdentity(db *gorm.DB) error {

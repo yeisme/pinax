@@ -6,6 +6,12 @@
 //
 // 生成产物写入 internal/index/query，引用 internal/index/model 中的模型。
 // Markdown vault 仍是真源，这里生成的 DAO 只用于 SQLite 投影的类型化读写。
+//
+// 注意：生成的 Save 等价于 db.Clauses(clause.OnConflict{UpdateAll: true}).Create，
+// GORM 会以模型主键作为 ON CONFLICT 冲突目标；SQLite 要求该列必须真实对应
+// PRIMARY KEY/UNIQUE 约束，否则报 "ON CONFLICT clause does not match any
+// PRIMARY KEY or UNIQUE constraint"。AutoMigrate 不会重建既有表主键，
+// internal/index migrate 的 repairPrimaryKeyDrift 负责检测并重建这类漂移表。
 package main
 
 import (

@@ -124,7 +124,12 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 			}
 		}
 	}
-	status := Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: issueEvidence(issues)}
+	evidence := issueEvidence(issues)
+	// 主键漂移自愈是纯投影修复，不改变 status，只在 evidence 留最近一次修复痕迹。
+	if repair, ok := latestSchemaPrimaryKeyRepair(db); ok {
+		evidence = append(evidence, "schema_pk_repair="+strings.Join(repair.Tables, ",")+"@"+repair.At)
+	}
+	status := Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: evidence}
 	return doctorReport(status, issues), nil
 }
 

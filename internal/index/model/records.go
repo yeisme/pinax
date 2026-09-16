@@ -3,6 +3,11 @@
 // Markdown vault 是真源，SQLite 索引只是可重建投影。这里只放纯数据模型，
 // 不放业务查询逻辑：普通业务读写必须通过 internal/index/query 生成的类型化 DAO，
 // GORM runtime 只保留连接、迁移、事务和少数集中 helper。
+//
+// 主键约束：gen DAO 的 Save（upsert）以模型 primaryKey 字段作为 SQLite
+// ON CONFLICT 冲突目标，因此调整任何模型的 primaryKey 都属于 schema 变更；
+// AutoMigrate 不会重建既有表主键，internal/index migrate 的
+// repairPrimaryKeyDrift 会检测实际表主键与模型不一致的漂移并重建该表。
 package model
 
 // IndexMetaRecord 记录索引 schema 版本与重建时间等元信息。
