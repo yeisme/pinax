@@ -78,11 +78,12 @@ type Solution struct {
 }
 
 type Catalog struct {
-	SchemaVersion string             `json:"schema_version"`
-	Repository    RepositoryMetadata `json:"repository"`
-	GeneratedAt   time.Time          `json:"generated_at"`
-	Digest        string             `json:"digest"`
-	Solutions     []Solution         `json:"solutions"`
+	Discovery     []TemplateDiscoveryAnnotation `json:"discovery,omitempty"`
+	SchemaVersion string                        `json:"schema_version"`
+	Repository    RepositoryMetadata            `json:"repository"`
+	GeneratedAt   time.Time                     `json:"generated_at"`
+	Digest        string                        `json:"digest"`
+	Solutions     []Solution                    `json:"solutions"`
 }
 
 type Snapshot struct {

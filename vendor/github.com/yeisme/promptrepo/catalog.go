@@ -46,6 +46,9 @@ func ValidateCatalog(catalog Catalog) error {
 func CanonicalCatalogDigest(catalog Catalog) (string, error) {
 	clone := catalog
 	clone.Digest = ""
+
+	clone.Discovery = nil
+
 	// Build timestamps are operational metadata. Excluding them keeps the
 	// content digest stable when the same repository is rebuilt later.
 	clone.GeneratedAt = time.Time{}

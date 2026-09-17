@@ -32,7 +32,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/spf13/pflag v1.0.9
 	github.com/yeisme/credentialctl v0.3.0
-	github.com/yeisme/promptrepo v0.5.1
+	github.com/yeisme/promptrepo v0.6.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/sys v0.47.0
 )

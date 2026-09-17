@@ -4,6 +4,14 @@ All notable changes to this module are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Template discovery annotations (`Catalog.Discovery`) with bounded
+  `TemplateDiscoveryAnnotation` metadata so catalogs can carry
+  producer-generated discovery facts alongside immutable solutions.
+- Browse API surface (`browse.go`, `engine/browse.go`) with conformance
+  coverage for catalog browsing across locales and filters.
+
 ## [0.5.1] - 2026-09-07
 
 ### Added

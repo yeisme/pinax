@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yeisme/promptrepo"
 )
@@ -46,6 +47,11 @@ func (GitAdapter) Sync(ctx context.Context, profile promptrepo.RepositoryProfile
 	if err := os.MkdirAll(filepath.Dir(repositoryPath), 0o700); err != nil {
 		return SyncResult{}, sourceError("git", err)
 	}
+	unlock, err := lockGitMirror(ctx, repositoryPath+".sync-lock")
+	if err != nil {
+		return SyncResult{}, err
+	}
+	defer unlock()
 	if _, err := os.Stat(repositoryPath); os.IsNotExist(err) {
 		if output, cloneErr := runGit(ctx, "-c", "core.hooksPath=/dev/null", "clone", "--bare", "--no-tags", remote, repositoryPath); cloneErr != nil {
 			return SyncResult{}, classifyGitError(profile, output, cloneErr)
@@ -269,4 +275,21 @@ func classifyGitError(profile promptrepo.RepositoryProfile, output string, cause
 		return promptrepo.NewError(code, "Git repository authorization failed", false, cause)
 	}
 	return promptrepo.NewError(promptrepo.CodeSourceFetchFailed, "Git repository fetch failed", true, cause)
+}
+
+func lockGitMirror(ctx context.Context, path string) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	for {
+		if err := os.Mkdir(path, 0700); err == nil {
+			return func() { _ = os.Remove(path) }, nil
+		} else if !os.IsExist(err) {
+			return nil, promptrepo.NewError(promptrepo.CodeSourceFetchFailed, "Git mirror lock unavailable", false, nil)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, promptrepo.NewError(promptrepo.CodeStateLocked, "Git mirror is busy; retry after its owner exits", true, nil)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
 }

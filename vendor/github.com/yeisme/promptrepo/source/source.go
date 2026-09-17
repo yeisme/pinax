@@ -41,7 +41,7 @@ func NewRegistry(adapters ...Adapter) *Registry {
 }
 
 func DefaultRegistry() *Registry {
-	return NewRegistry(LocalAdapter{}, GitAdapter{}, S3Adapter{HTTPClient: &http.Client{Timeout: 30 * time.Second}})
+	return NewRegistry(LocalAdapter{}, GitAdapter{}, EikonaAdapter{}, S3Adapter{HTTPClient: &http.Client{Timeout: 30 * time.Second}})
 }
 
 func DetectKind(raw string) (string, error) {
@@ -57,6 +57,18 @@ func DetectKind(raw string) (string, error) {
 		return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "invalid repository source URI", false, err)
 	}
 	switch strings.ToLower(parsed.Scheme) {
+	case "eikona+file", "eikona+https", "eikona+http":
+		if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "Eikona source cannot contain credentials, query or fragment", false, nil)
+		}
+		if parsed.Scheme == "eikona+file" {
+			if parsed.Host != "" || !strings.HasPrefix(parsed.Path, "/") {
+				return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "Eikona local source requires an absolute output root", false, nil)
+			}
+		} else if parsed.Host == "" {
+			return "", promptrepo.NewError(promptrepo.CodeInvalidRequest, "Eikona remote source requires a host", false, nil)
+		}
+		return "eikona", nil
 	case "file":
 		return "file", nil
 	case "git+file", "git+https", "git+ssh", "github", "http", "https", "ssh":
