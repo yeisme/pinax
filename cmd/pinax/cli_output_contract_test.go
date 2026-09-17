@@ -248,7 +248,14 @@ func TestCLIRemoteModeRejectsVaultConflictAndUnsupportedCommand(t *testing.T) {
 func TestCLIRemoteModeTokenSourcesStayRedacted(t *testing.T) {
 	t.Parallel()
 	const secret = "pinax-remote-secret"
-	tokenFile := filepath.Join(t.TempDir(), "token.txt")
+	tokenDir := t.TempDir()
+	// t.TempDir() subdirectories inherit mode 0o777 from the umask; a umask
+	// like 0o002 leaves them group-writable and the token file policy rejects
+	// the ancestors. Tighten the fixture directory to owner-only.
+	if err := os.Chmod(tokenDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenFile := filepath.Join(tokenDir, "token.txt")
 	writeCLIFixture(t, tokenFile, secret+"\n")
 	if err := os.Chmod(tokenFile, 0o600); err != nil {
 		t.Fatal(err)

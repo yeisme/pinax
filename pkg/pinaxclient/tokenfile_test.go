@@ -157,7 +157,14 @@ func TestTokenFileErrorsAndJSONAreRedacted(t *testing.T) {
 
 func secureTokenFixture(t *testing.T, contents string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "token")
+	dir := t.TempDir()
+	// Go's t.TempDir() creates the per-test subdirectory with mode 0o777, so a
+	// permissive umask (for example 0o002) can leave it group-writable, which
+	// the token file ancestor policy rejects. Tighten it to owner-only.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "token")
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
