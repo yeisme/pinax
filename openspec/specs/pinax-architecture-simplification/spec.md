@@ -36,8 +36,7 @@ command errors rather than process panics.
 
 ### Requirement: Evidence persistence failures SHALL be visible
 
-Monitoring and sync evidence writes (run records, appended events, sync state)
-SHALL report failures on stderr instead of silently discarding them.
+Monitoring and sync evidence writes (run records, appended events, sync state) SHALL report failures on stderr instead of silently discarding them.
 
 #### Scenario: Disk-full during monitor run
 
