@@ -108,17 +108,17 @@ func hugoConfig(profile domain.PublishProfile) string {
 	if title == "" {
 		title = profile.Name
 	}
-	return fmt.Sprintf("baseURL: %s\ntitle: %s\ntheme: pinax-encyclopedia\nmarkup:\n  goldmark:\n    renderer:\n      unsafe: false\nparams:\n  pinax_theme_contract: %s\ndisableKinds:\n  - RSS\n  - sitemap\n", baseURL, title, PublishThemeSchemaVersion)
+	return fmt.Sprintf("baseURL: %s\ntitle: %s\ntheme: pinax-encyclopedia\nmarkup:\n  goldmark:\n    renderer:\n      unsafe: false\nparams:\n  pinax_theme_contract: %s\ndisableKinds:\n  - RSS\n  - sitemap\n", baseURL, yamlScalar(title), PublishThemeSchemaVersion)
 }
 
 func hugoEntryMarkdown(note domain.Note) string {
-	return fmt.Sprintf("---\nschema_version: pinax.publish_entry.v1\ntitle: %s\nnote_id: %s\ntype: %s\ntags: [%s]\n---\n\n%s\n", note.Title, note.ID, defaultString(note.Kind, "note"), quotedCSV(note.Tags), strings.TrimSpace(note.Body))
+	return fmt.Sprintf("---\nschema_version: pinax.publish_entry.v1\ntitle: %s\nnote_id: %s\ntype: %s\ntags: [%s]\n---\n\n%s\n", yamlScalar(note.Title), yamlScalar(note.ID), yamlScalar(defaultString(note.Kind, "note")), quotedCSV(note.Tags), strings.TrimSpace(note.Body))
 }
 
 func hugoIndexMarkdown(title string, notes []domain.Note) string {
 	var b strings.Builder
 	b.WriteString("---\nschema_version: pinax.publish_index.v1\ntitle: ")
-	b.WriteString(title)
+	b.WriteString(yamlScalar(title))
 	b.WriteString("\n---\n\n# ")
 	b.WriteString(title)
 	b.WriteString("\n\n")
@@ -484,6 +484,13 @@ func quotedCSV(values []string) string {
 		items[i] = fmt.Sprintf("%q", item)
 	}
 	return strings.Join(items, ", ")
+}
+
+// yamlScalar renders value as a quoted YAML scalar so front matter values that
+// contain YAML separators (for example index titles like "Tag: pages") stay
+// parseable instead of breaking the Hugo build.
+func yamlScalar(value string) string {
+	return fmt.Sprintf("%q", value)
 }
 
 func defaultString(value, fallback string) string {

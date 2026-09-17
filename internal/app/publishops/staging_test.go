@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
+	"gopkg.in/yaml.v3"
 )
 
 func TestBuildHugoStagingProjectWritesSafeThemeContract(t *testing.T) {
@@ -43,7 +44,7 @@ func TestBuildHugoStagingProjectWritesSafeThemeContract(t *testing.T) {
 		}
 	}
 	hugoConfig := mustReadPublishOpsFile(t, filepath.Join(stageRoot, "hugo.yaml"))
-	for _, want := range []string{"baseURL: https://example.github.io/kb/", "title: Knowledge Base", "theme: pinax-encyclopedia", "unsafe: false", "pinax.publish_theme.v1"} {
+	for _, want := range []string{"baseURL: https://example.github.io/kb/", "title: \"Knowledge Base\"", "theme: pinax-encyclopedia", "unsafe: false", "pinax.publish_theme.v1"} {
 		if !strings.Contains(hugoConfig, want) {
 			t.Fatalf("hugo config missing %q:\n%s", want, hugoConfig)
 		}
@@ -163,4 +164,60 @@ func TestBuiltinThemeUsesLocalAssetsAndStableHTMLStructure(t *testing.T) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func TestBuildHugoStagingProjectQuotesYAMLFrontMatterScalars(t *testing.T) {
+	t.Parallel()
+	vaultRoot := t.TempDir()
+	stageRoot := filepath.Join(t.TempDir(), "stage")
+	profile := domain.NewDefaultPublishProfile("public", domain.PublishTargetGitHubPages, domain.PublishRendererHugo)
+	profile.Site.Title = "Knowledge Base"
+	plan := domain.PublishPlan{
+		ProfileName: profile.Name,
+		Target:      profile.Target,
+		Renderer:    profile.Renderer,
+		Selected: []domain.PublishItem{
+			{ID: "note_roadmap", Kind: "note", Title: "Roadmap: Q3", SourcePath: "notes/roadmap.md", OutputPath: "entries/roadmap/index.html"},
+		},
+	}
+	notes := map[string]domain.Note{"notes/roadmap.md": {ID: "note_roadmap", Title: "Roadmap: Q3", Path: "notes/roadmap.md", Kind: "concept", Status: "active", Tags: []string{"pages"}, Body: "# Roadmap"}}
+
+	if _, err := BuildHugoStagingProject(HugoStagingRequest{VaultRoot: vaultRoot, StageRoot: stageRoot, Profile: profile, Plan: plan, Notes: notes}); err != nil {
+		t.Fatalf("build hugo staging: %v", err)
+	}
+
+	var entry struct {
+		Title  string   `yaml:"title"`
+		NoteID string   `yaml:"note_id"`
+		Type   string   `yaml:"type"`
+		Tags   []string `yaml:"tags"`
+	}
+	unmarshalStagingFrontMatter(t, mustReadPublishOpsFile(t, filepath.Join(stageRoot, "content", "entries", "roadmap", "index.md")), &entry)
+	if entry.Title != "Roadmap: Q3" || entry.NoteID != "note_roadmap" || entry.Type != "concept" || len(entry.Tags) != 1 || entry.Tags[0] != "pages" {
+		t.Fatalf("entry front matter did not round-trip: %#v", entry)
+	}
+
+	var index struct {
+		Title string `yaml:"title"`
+	}
+	unmarshalStagingFrontMatter(t, mustReadPublishOpsFile(t, filepath.Join(stageRoot, "content", "indexes", "tags", "pages.md")), &index)
+	if index.Title != "Tag: pages" {
+		t.Fatalf("tag index front matter did not round-trip: %#v", index)
+	}
+}
+
+func unmarshalStagingFrontMatter(t *testing.T, document string, out any) {
+	t.Helper()
+	const delimiter = "---\n"
+	if !strings.HasPrefix(document, delimiter) {
+		t.Fatalf("document is missing front matter:\n%s", document)
+	}
+	rest := document[len(delimiter):]
+	end := strings.Index(rest, "\n---\n")
+	if end < 0 {
+		t.Fatalf("document front matter is not terminated:\n%s", document)
+	}
+	if err := yaml.Unmarshal([]byte(rest[:end]), out); err != nil {
+		t.Fatalf("front matter is not valid YAML: %v\n%s", err, document)
+	}
 }
