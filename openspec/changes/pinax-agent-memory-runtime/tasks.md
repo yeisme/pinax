@@ -74,12 +74,14 @@ Status 2026-08-23（重申）: 8.5 最早四周观察完成日期为 2026-08-25�
   Status 2026-09-13: [external-gate skipped] — 只读取证与 09-12 一致：`pinax agent status --json` 正常返回（data 空）、`pinax agent memory proposals --json` count=0；自 week-0 以来无新增真实 dogfood，连续四周分母不可用。
   Status 2026-09-15: [external-gate skipped] — 只读取证与 09-13 一致：`pinax agent status --json` 正常返回（data 空）、`pinax agent memory proposals --json` count=0；自 week-0 以来无新增真实 dogfood，连续四周分母不可用。
   Status 2026-09-16: [external-gate skipped] — 只读取证与 09-15 一致：`pinax agent status --json` 正常返回（data 空）、`pinax agent memory proposals --json` count=0；自 week-0 以来无新增真实 dogfood，连续四周分母不可用。
+  Status 2026-09-17: [external-gate skipped] — 只读取证与 09-16 一致：`pinax agent status --json` 正常返回（data 空）、`pinax agent memory proposals --json` count=0；自 week-0 以来无新增真实 dogfood，连续四周分母不可用。
 - [ ] 8.6 Owner: release/evolution；Scope: capability maturity 和 closeout；Dependencies: 8.5；Lane: final；决定 new runtime 是否 stable-from，明确旧 memory/brain 不进入本 release deprecation；Verification: `openspec status --change pinax-agent-memory-runtime && openspec validate pinax-agent-memory-runtime --strict`；Expected: stable-from 或继续 experimental 的证据明确；Failure re-check: 缺少两个 adapter 或四周 evidence 时保持 experimental，不 archive 为 GA。
   Status 2026-09-03: [external-gate skipped] — stable-from 发布决策依赖 8.5 四周 evidence；按本 task 自身规则，缺证据时保持 experimental、不 archive 为 GA。capability 维持 experimental，旧 memory/brain 不进入 deprecation。
   Status 2026-09-12: [external-gate skipped] — 8.5 四周分母仍不可用；capability 维持 experimental，旧 memory/brain 不进入 deprecation。
   Status 2026-09-13: [external-gate skipped] — 8.5 四周分母仍不可用；capability 维持 experimental，旧 memory/brain 不进入 deprecation。
   Status 2026-09-15: [external-gate skipped] — 8.5 四周分母仍不可用；capability 维持 experimental，旧 memory/brain 不进入 deprecation。`openspec status --change pinax-agent-memory-runtime` 4/4 artifacts complete、`openspec validate pinax-agent-memory-runtime --strict` valid。
   Status 2026-09-16: [external-gate skipped] — 8.5 四周分母仍不可用；capability 维持 experimental，旧 memory/brain 不进入 deprecation。`openspec status --change pinax-agent-memory-runtime` 4/4 artifacts complete、`openspec validate pinax-agent-memory-runtime --strict` valid。
+  Status 2026-09-17: [external-gate skipped] — 8.5 四周分母仍不可用；capability 维持 experimental，旧 memory/brain 不进入 deprecation。`openspec status --change pinax-agent-memory-runtime` 4/4 artifacts complete、`openspec validate pinax-agent-memory-runtime --strict` valid。
 
 ## Closeout 说明（不可通过编码完成）
 
