@@ -29,4 +29,4 @@ pinax note show "<returned-note-id>" --vault ./my-notes --view source --display 
 
 本地能力修复已通过隔离 `task check` 和合成流程；使用旧版本 CLI 时，不能假定所有只读副作用修复均已包含。未替换已安装 CLI。
 
-2026-09-10 的五题试点获用户批次认可，回顾性重测 5/5，五份保存和回读通过。首轮找回率仍未测量；该结果不是独立盲测，也不保证任意新问题有同样表现。详见 [验收记录](../../openspec/changes/pinax-evidence-research-pilot-v1/acceptance.md)。
+2026-09-10 的五题试点获用户批次认可，回顾性重测 5/5，五份保存和回读通过。首轮找回率仍未测量；该结果不是独立盲测，也不保证任意新问题有同样表现。详见 [验收记录](../../openspec/changes/archive/2026-09-11-pinax-evidence-research-pilot-v1/acceptance.md)。
