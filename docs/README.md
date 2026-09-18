@@ -128,3 +128,10 @@ Package validation target 会以 snapshot/no-publish 模式运行 GoReleaser，�
 - [模块化、分级 CI/CD](delivery/ci-cd.md)：quick、full、integration、release 的触发场景、真实命令和权限边界。
 
 - [MCP 文件输入与一次性上传页](mcp-input-intake.md)
+
+## Agent Skills
+
+本项目会话的 active skills 由仓库根 `.skills/profiles/targets/cli/pinax.txt` 分配，用 `scripts/skills.sh sync-target cli/pinax` 生成 `.agents/skills/` 与 `.claude/skills/`。不要手改运行副本。
+
+完整对照、缺口与下一波优化见 [子项目 Skill Profile](../../../docs/skills/subproject-skill-profiles.md)。
+

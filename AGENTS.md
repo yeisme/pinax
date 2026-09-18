@@ -24,7 +24,7 @@ Pinax 不是云笔记后端、新闻爬虫、飞书知识库或长期 daemon。�
 
 ## 必用本域 Skills
 
-代码修改、调试、测试或审查本子项目时优先触发：
+Active skills 由仓库根 `.skills/profiles/targets/cli/pinax.txt` 分配。对照与「实现仓过肥」说明见 [子项目 Skill Profile](../../docs/skills/subproject-skill-profiles.md)。代码修改、调试、测试或审查本子项目时优先触发：
 
 - 任意代码实现、调试、测试、重构：`yeisme-coding-execution-driver`。
 - CLI 输出、`--agent`、`--json`、`--events`、`--explain` 或脱敏合同：`ai-native-cli-output-contract`。
