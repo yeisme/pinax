@@ -1,3 +1,0 @@
-display_name: Pinax Sync And Storage Operator
-short_description: Prefer Pinax repository-encrypted S3/COS bootstrap, with Git as its ciphertext/version companion and rclone only as an external fallback.
-default_prompt: Inspect this Pinax vault and prefer the native repository-encrypted S3/COS migration and bootstrap workflow; verify durable remote commit facts, use Git only for declaration/ciphertext history, and use rclone only when native Pinax sync is unavailable.

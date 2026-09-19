@@ -36,13 +36,13 @@ Active skills 由仓库根 `.skills/profiles/targets/cli/pinax.txt` 分配。对
 - PR/代码审查、质量扫描：`review`、`health`。
 - 性能专项：`performance-profiler`。
 
-如果任务涉及网页研究证据采集路线，按需读取 `internet-access`；如果任务涉及 MCP Gateway 接入，回到根仓库或 `mcp/gateway` owner 使用对应 skill。
+如果任务涉及网页研究证据采集路线，按需读取 `internet-access`；如果任务涉及 MCP Gateway 接入，用根会话 `yeisme-mcp-router` 再打开对应 Gateway skill，不要把 Gateway maintainer 装进本仓。
 
-Pinax 运行操作不是代码实现时，先走 Pinax agent 路由：
+Pinax 运行操作不是代码实现时，先走 Pinax agent 路由。八个 `pinax-*-operator` **不常驻本实现仓**；从 `.skills/yeisme/pinax-agent/` 按需读取。日常笔记操作仓是 `data/yeisme-notes`。
 
-- 用户说“写一篇 Pinax 笔记”“保存到 Pinax”“写入 vault”“收进 inbox”时，先用 `pinax-agent-router`，再路由到 `pinax-vault-operator`。
+- 用户说“写一篇 Pinax 笔记”“保存到 Pinax”“写入 vault”“收进 inbox”时，先用 `pinax-agent-router`，再按需加载 `pinax-vault-operator`。
 - 直接写入前先确认 vault：`pinax vault list --json`。
-- 长正文用 `pinax note add "<title>" --stdin --json` 或 `pinax inbox capture "<title>" --stdin --json`，不要手写 `.pinax/**` 元数据或索引。
+- 长正文用 `pinax note add "<title>" --dir index --stdin --json` 或 `pinax inbox capture "<title>" --stdin --json`，不要手写 `.pinax/**` 元数据或索引。
 - 如果用户只是要普通文章、社媒文案或临时草稿，没有提 Pinax/vault/storage，则按普通内容生成处理，不默认写入 vault。
 
 ## 架构边界
