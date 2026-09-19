@@ -14,6 +14,9 @@ func addAssetCommands(root *cobra.Command, ctx commandBuildContext) {
 	var previewAs string
 	var previewContextNote string
 	var previewMaxBytes int
+	var addDrivebridgeRef string
+	var addDrivebridgeSHA256 string
+	var addRegister bool
 
 	assetCmd := &cobra.Command{
 		Use:   "asset",
@@ -28,15 +31,30 @@ func addAssetCommands(root *cobra.Command, ctx commandBuildContext) {
 			"pinax asset repair --plan --vault ./my-notes --json\n" +
 			"pinax asset verify --vault ./my-notes --json",
 	}
-	assetCmd.AddCommand(&cobra.Command{
+	addCmd := &cobra.Command{
 		Use:   "add <file>",
 		Short: "Add a file to the vault asset manifest",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projection, err := ctx.svc.AssetAdd(cmd.Context(), app.AssetRequest{VaultPath: *ctx.vaultPath, Source: args[0]})
+			projection, err := ctx.svc.AssetAdd(cmd.Context(), app.AssetRequest{VaultPath: *ctx.vaultPath, Source: args[0], Register: addRegister, DrivebridgeRef: addDrivebridgeRef, DrivebridgeSHA256: addDrivebridgeSHA256})
 			return ctx.renderProjection(cmd, projection, err)
 		},
-	})
+	}
+	addCmd.Flags().BoolVar(&addRegister, "register", false, "Register the file in place inside the vault instead of copying it into assets/")
+	addCmd.Flags().StringVar(&addDrivebridgeRef, "drivebridge-ref", "", "Pinned drivebridge://<space>/<file-id>@<version> reference (metadata only; no payload bytes)")
+	addCmd.Flags().StringVar(&addDrivebridgeSHA256, "drivebridge-sha256", "", "Expected sha256 for the pinned DriveBridge reference")
+	assetCmd.AddCommand(addCmd)
+	consumeDrivebridgeCmd := &cobra.Command{
+		Use:               "consume-drivebridge <asset>",
+		Short:             "Verify and land an asset's pinned DriveBridge reference",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: assetRefCompletion(func() string { return *ctx.vaultPath }),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.ConsumeDrivebridgeAsset(cmd.Context(), app.AssetRequest{VaultPath: *ctx.vaultPath, Ref: args[0]})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	assetCmd.AddCommand(consumeDrivebridgeCmd)
 	assetCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List vault assets",

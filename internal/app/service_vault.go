@@ -486,7 +486,13 @@ func (s *Service) StorageStatus(_ context.Context, req VaultRequest) (domain.Pro
 	if err != nil {
 		return errorProjection("storage.status", err), err
 	}
-	return storageProjection("storage.status", "Storage backend status read.", profile), nil
+	projection := storageProjection("storage.status", "Storage backend status read.", profile)
+	// DriveBridge 与 Capsa/Remote API 是并列的独立模式；facts 分开呈现，
+	// 一条路径成功不得把另一条标成已同步。
+	for fact, value := range drivebridgeAttachmentFactsOnly(root) {
+		projection.Facts[fact] = value
+	}
+	return projection, nil
 }
 
 func (s *Service) StorageDoctor(_ context.Context, req VaultRequest) (domain.Projection, error) {
@@ -508,8 +514,27 @@ func (s *Service) StorageDoctor(_ context.Context, req VaultRequest) (domain.Pro
 			issues = append(issues, domain.Issue{Code: "missing_region", Path: ".pinax/storage.json", Message: "Missing S3 region"})
 		}
 	}
+	// DriveBridge 加法 facts：未 attach 时枚举为 none，不要求本机已安装 DriveBridge。
+	facts, record, attached := drivebridgeAttachmentFacts(root)
+	for fact, value := range facts {
+		projection.Facts[fact] = value
+	}
+	if attached {
+		if facts["drivebridge_content_mode"] == drivebridgeContentModeOpaqueEncrypted {
+			issues = append(issues, domain.Issue{Code: "drivebridge_opaque_encrypted", Path: ".pinax/drivebridge-attach.yaml", Message: "Attached prefix is the Capsa encrypted blob store; objects are not plaintext notes and are never projected as notes"})
+		}
+		if facts["drivebridge_location_match"] == "false" {
+			issues = append(issues, domain.Issue{Code: "drivebridge_location_mismatch", Path: ".pinax/drivebridge-attach.yaml", Message: "Attached DriveBridge location no longer matches the current storage profile"})
+		}
+		if !drivebridgeInstalled() {
+			// 仅报告，不失败：doctor 不因缺二进制而红。
+			issues = append(issues, domain.Issue{Code: "drivebridge_not_installed", Path: "PATH", Message: "DriveBridge CLI is not on PATH; attach/hydrate commands need it, storage set/status/doctor do not"})
+		}
+		projection.Data = map[string]any{"storage": profile, "issues": issues, "network_checked": false, "drivebridge": record}
+	} else {
+		projection.Data = map[string]any{"storage": profile, "issues": issues, "network_checked": false}
+	}
 	projection.Facts["issues"] = fmt.Sprint(len(issues))
-	projection.Data = map[string]any{"storage": profile, "issues": issues, "network_checked": false}
 	if len(issues) > 0 {
 		projection.Status = "partial"
 	}
@@ -566,6 +591,10 @@ func (s *Service) VaultDoctor(_ context.Context, req VaultDoctorRequest) (domain
 	projection.Facts["issues.total"] = fmt.Sprint(len(issues))
 	for severity, count := range report.Counts {
 		projection.Facts["issues."+severity] = fmt.Sprint(count)
+	}
+	// DriveBridge attach 状态与 Capsa/Remote API 并列；未 attach 时为 none。
+	for fact, value := range drivebridgeAttachmentFactsOnly(root) {
+		projection.Facts[fact] = value
 	}
 	projection.Data = report
 	if len(issues) > 0 {

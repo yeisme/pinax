@@ -864,7 +864,7 @@ func remoteModeLocalCommand(cmd *cobra.Command, source string) bool {
 		return true
 	}
 	root, _, _ := strings.Cut(path, " ")
-	if root == "backup" || root == "capsa" || root == "sync" || root == "commands" || root == "connection" {
+	if root == "backup" || root == "capsa" || root == "sync" || root == "commands" || root == "connection" || root == "storage" {
 		return true
 	}
 	if source != "config" {
@@ -915,6 +915,8 @@ func classifyRemoteCommand(commandPath string) RemoteCommandCoverageEntry {
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "local_runtime_or_configuration"}
 	case "cloud", "sync":
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "cloud_sync_runs_locally"}
+	case "storage":
+		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "local_only", Reason: "storage_and_drivebridge_attach_run_locally"}
 	default:
 		return RemoteCommandCoverageEntry{CommandPath: commandPath, Status: "unsupported", Reason: "not_in_remote_capability_registry"}
 	}

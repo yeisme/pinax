@@ -78,6 +78,28 @@ The daemon runs one startup pull-before-push cycle before waiting for the next t
 
 The daemon must acquire a per-vault runner lock and the shared sync operation lock. It must pause with `conflict_required` when pull creates conflict copies, and it must not emit `remote_write=true` unless the underlying push path completed the durable revision commit and local sync-state receipt.
 
+## Pattern C: DriveBridge attach (file plane, not a Capsa transport)
+
+`pinax storage attach-drivebridge --space <space>` adopts the SAME local root or S3 bucket/prefix that `pinax storage set local|s3` already points at, through the DriveBridge `storage adopt` zero-copy contract. It is a file plane beside the note kernel: DriveBridge provides file identity, version pinning, transfer, and browsing; Pinax keeps note identity, Markdown truth, proof loops, and bounded projections.
+
+```text
+pinax storage set local|s3  (canonical owner storage)
+        |
+        v
+drivebridge storage adopt --kind local|s3   (zero copy, same location)
+        |
+        v
+device B: pinax storage hydrate --space <space>  (pin ref/version/sha256, rebuild index)
+```
+
+Boundaries that keep Pattern C separate from Pattern A and Pattern B:
+
+- Pattern C is never a Capsa transport and never a Remote API multi-device vault. Capsa `remote_write=true` stays bound to durable Capsa revision commits; DriveBridge attach/hydrate/upload success never raises it and never advances Capsa sync-state.
+- `pinax capsa backend set rclone --remote onedrive:PinaxSync` is encrypted Capsa Sync over rclone (`opaque_encrypted` objects). It is NOT the DriveBridge plaintext working copy created by `pinax storage bind-working-copy --provider onedrive|gdrive` (`provider-plaintext`), which is an explicit opt-in and never uploaded by `init`/`note add`/`storage set`.
+- Doctor facts report the three modes separately: `drivebridge_content_mode` (`none`/`adopt_local`/`adopt_s3`/`provider-plaintext`/`opaque_encrypted`), `capsa_sync_configured`, and `remote_api_configured`.
+- `.pinax/**`, SQLite/WAL, tokens, and Capsa envelopes stay Pinax-authored; DriveBridge never writes them, and hydrate never replays owner metadata from the file plane.
+- Stable error codes: `drivebridge_not_installed`, `drivebridge_not_attached`, `drivebridge_location_mismatch`, `drivebridge_working_copy_opt_in_required`, `drivebridge_local_unreachable`, `file_version_changed`, `owner_protected`.
+
 ## Object-store layout for direct transports
 
 Direct S3/rclone transports store Capsa Sync objects under a configured prefix:

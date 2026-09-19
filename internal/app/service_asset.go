@@ -31,7 +31,25 @@ func (s *Service) AssetAdd(_ context.Context, req AssetRequest) (domain.Projecti
 		err := &domain.CommandError{Code: "argument_required", Message: "asset add requires a source file", Hint: "pinax asset add <file> --vault <vault>"}
 		return domain.NewErrorProjection("asset.add", err), err
 	}
-	asset, err := pinaxassets.Add(root, req.Source)
+	opts := pinaxassets.AddOptions{Mode: pinaxassets.AddModeCopy}
+	if req.Register {
+		opts.Mode = pinaxassets.AddModeRegister
+	}
+	if strings.TrimSpace(req.DrivebridgeRef) != "" {
+		// 登记 pinned drivebridge 引用：只写 metadata，不传输 payload 字节。
+		space, fileID, version, refErr := ParseDrivebridgeRef(req.DrivebridgeRef)
+		if refErr != nil {
+			return errorProjection("asset.add", refErr), refErr
+		}
+		opts.Drivebridge = &domain.DrivebridgeAssetRef{
+			URI:     strings.TrimSpace(req.DrivebridgeRef),
+			FileID:  fileID,
+			Version: version,
+			SHA256:  strings.ToLower(strings.TrimSpace(req.DrivebridgeSHA256)),
+			Space:   space,
+		}
+	}
+	asset, err := pinaxassets.AddWithOptions(root, req.Source, opts)
 	if err != nil {
 		return errorProjection("asset.add", err), err
 	}

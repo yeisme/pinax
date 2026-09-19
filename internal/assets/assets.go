@@ -42,6 +42,9 @@ const (
 type AddOptions struct {
 	Mode     AddMode
 	ObjectID string
+	// Drivebridge pins an external drivebridge:// file-version reference on the
+	// asset metadata. It never transfers payload bytes.
+	Drivebridge *domain.DrivebridgeAssetRef
 }
 
 func Add(root, source string) (Asset, error) {
@@ -129,7 +132,11 @@ func AddWithOptions(root, source string, opts AddOptions) (Asset, error) {
 	if strings.TrimSpace(existing.CreatedAt) != "" {
 		createdAt = existing.CreatedAt
 	}
-	asset := Asset{ObjectID: objectID, ID: "asset_" + sha[:12], Path: rel, Filename: filepath.Base(rel), Stem: strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), Extension: strings.TrimPrefix(strings.ToLower(filepath.Ext(rel)), "."), MediaType: mediaType(rel), Size: size, ModifiedUnix: info.ModTime().Unix(), Width: width, Height: height, SHA256: sha, ManagedStatus: "managed", CreatedAt: createdAt, UpdatedAt: now}
+	asset := Asset{ObjectID: objectID, ID: "asset_" + sha[:12], Path: rel, Filename: filepath.Base(rel), Stem: strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), Extension: strings.TrimPrefix(strings.ToLower(filepath.Ext(rel)), "."), MediaType: mediaType(rel), Size: size, ModifiedUnix: info.ModTime().Unix(), Width: width, Height: height, SHA256: sha, ManagedStatus: "managed", CreatedAt: createdAt, UpdatedAt: now, Drivebridge: opts.Drivebridge}
+	// 重复登记同一路径且未带新引用时保留既有 drivebridge 引用。
+	if asset.Drivebridge == nil && existing.Drivebridge != nil {
+		asset.Drivebridge = existing.Drivebridge
+	}
 	manifest.Assets = upsertAsset(manifest.Assets, asset)
 	if err := Save(root, manifest); err != nil {
 		return Asset{}, err

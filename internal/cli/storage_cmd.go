@@ -40,6 +40,57 @@ func addStorageCommands(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	})
+	// DriveBridge attach 组是加法命令：零拷贝挂接已有 local/S3、显式网盘
+	// 工作副本 opt-in 与换机 hydrate；不替代 storage set local|s3。
+	var attachSpace string
+	var attachRemote string
+	attachDrivebridgeCmd := &cobra.Command{
+		Use:   "attach-drivebridge",
+		Short: "Attach DriveBridge to the existing storage location (zero copy)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.AttachDrivebridge(cmd.Context(), app.DrivebridgeAttachRequest{VaultPath: *ctx.vaultPath, Space: attachSpace, Remote: attachRemote})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	attachDrivebridgeCmd.Flags().StringVar(&attachSpace, "space", "", "DriveBridge space identifier")
+	attachDrivebridgeCmd.Flags().StringVar(&attachRemote, "remote", "", "Existing rclone S3 remote for kind=s3 adopt (default: derived from the bucket)")
+	_ = attachDrivebridgeCmd.MarkFlagRequired("space")
+	storageCmd.AddCommand(attachDrivebridgeCmd)
+	storageCmd.AddCommand(&cobra.Command{
+		Use:   "detach-drivebridge",
+		Short: "Remove the DriveBridge attach record; storage profile and notes stay untouched",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.DetachDrivebridge(cmd.Context(), app.DrivebridgeDetachRequest{VaultPath: *ctx.vaultPath})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	})
+	var bindProvider string
+	var bindSpace string
+	bindWorkingCopyCmd := &cobra.Command{
+		Use:   "bind-working-copy",
+		Short: "Opt in to a plaintext OneDrive/Google Drive working copy",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.BindWorkingCopy(cmd.Context(), app.DrivebridgeBindWorkingCopyRequest{VaultPath: *ctx.vaultPath, Provider: bindProvider, Space: bindSpace})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	bindWorkingCopyCmd.Flags().StringVar(&bindProvider, "provider", "", "Provider kind: onedrive or gdrive")
+	bindWorkingCopyCmd.Flags().StringVar(&bindSpace, "space", "", "DriveBridge space identifier")
+	_ = bindWorkingCopyCmd.MarkFlagRequired("provider")
+	_ = bindWorkingCopyCmd.MarkFlagRequired("space")
+	_ = bindWorkingCopyCmd.RegisterFlagCompletionFunc("provider", staticCompletion("provider", "onedrive", "gdrive"))
+	storageCmd.AddCommand(bindWorkingCopyCmd)
+	var hydrateSpace string
+	hydrateCmd := &cobra.Command{
+		Use:   "hydrate",
+		Short: "Rebuild the working copy from the attached DriveBridge space on this device",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projection, err := ctx.svc.StorageHydrate(cmd.Context(), app.DrivebridgeHydrateRequest{VaultPath: *ctx.vaultPath, Space: hydrateSpace})
+			return ctx.renderProjection(cmd, projection, err)
+		},
+	}
+	hydrateCmd.Flags().StringVar(&hydrateSpace, "space", "", "DriveBridge space identifier (default: attached space)")
+	storageCmd.AddCommand(hydrateCmd)
 	root.AddCommand(storageCmd)
 
 }

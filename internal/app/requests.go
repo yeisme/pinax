@@ -50,6 +50,14 @@ type AssetRequest struct {
 	IncludePaths    bool
 	PreviewAs       string
 	MaxPreviewBytes int
+	// Register keeps the source file in place inside the vault instead of
+	// copying it into assets/.
+	Register bool
+	// DrivebridgeRef registers a pinned drivebridge://<space>/<file-id>@<version>
+	// reference on the asset (metadata only; no payload bytes are transferred).
+	DrivebridgeRef string
+	// DrivebridgeSHA256 pins the expected content digest for the reference.
+	DrivebridgeSHA256 string
 }
 
 type PromptAssetRequest struct {
@@ -431,6 +439,29 @@ type StorageRequest struct {
 	Prefix    string
 	Endpoint  string
 	Profile   string
+}
+
+type DrivebridgeAttachRequest struct {
+	VaultPath string
+	Space     string
+	// Remote names an existing rclone S3 remote for kind=s3 adopt; empty means
+	// Pinax derives a stable name from the storage profile bucket.
+	Remote string
+}
+
+type DrivebridgeDetachRequest struct {
+	VaultPath string
+}
+
+type DrivebridgeBindWorkingCopyRequest struct {
+	VaultPath string
+	Provider  string // onedrive | gdrive
+	Space     string
+}
+
+type DrivebridgeHydrateRequest struct {
+	VaultPath string
+	Space     string
 }
 
 type ApplyRequest struct {

@@ -312,6 +312,21 @@ type Asset struct {
 	CreatedAt     string        `json:"created_at"`
 	UpdatedAt     string        `json:"updated_at"`
 	DisplayPath   string        `json:"display_path,omitempty"`
+	// Drivebridge holds an optional pinned DriveBridge file-version reference
+	// (file id, version, sha256). It never carries payload bytes and never
+	// replaces the vault copy as the attachment source of truth.
+	Drivebridge *DrivebridgeAssetRef `json:"drivebridge,omitempty"`
+}
+
+// DrivebridgeAssetRef is a pinned DriveBridge file version reference that other
+// projects (e.g. Scaena) may bind. Cross-project consumers must not share or
+// infer Pinax note identity from it.
+type DrivebridgeAssetRef struct {
+	URI     string `json:"uri"`
+	FileID  string `json:"file_id"`
+	Version string `json:"version"`
+	SHA256  string `json:"sha256,omitempty"`
+	Space   string `json:"space,omitempty"`
 }
 
 // AssetManifest is the CLI-authored asset registry stored under .pinax/assets/manifest.json.
@@ -658,6 +673,33 @@ type S3Storage struct {
 	Prefix   string `json:"prefix,omitempty"`
 	Endpoint string `json:"endpoint,omitempty"`
 	Profile  string `json:"profile,omitempty"`
+}
+
+// DrivebridgeAttach is the CLI-authored attach record stored at
+// .pinax/drivebridge-attach.yaml (schema pinax.drivebridge_attach.v1).
+// It records that DriveBridge adopted the SAME local root or S3 bucket/prefix
+// as the current pinax.storage.v1 profile (zero copy), or that an explicit
+// provider working-copy opt-in was recorded. Agents must never hand-write it.
+type DrivebridgeAttach struct {
+	SchemaVersion  string              `json:"schema_version" yaml:"schema_version"`
+	Consumer       string              `json:"consumer" yaml:"consumer"`
+	Space          string              `json:"space" yaml:"space"`
+	Kind           string              `json:"kind" yaml:"kind"`       // local | s3 | onedrive | gdrive
+	Purpose        string              `json:"purpose" yaml:"purpose"` // vault
+	Location       DrivebridgeLocation `json:"location" yaml:"location"`
+	ConnectionID   string              `json:"connection_id,omitempty" yaml:"connection_id,omitempty"`
+	IdempotencyKey string              `json:"idempotency_key" yaml:"idempotency_key"`
+	ContentMode    string              `json:"content_mode" yaml:"content_mode"` // adopt_local | adopt_s3 | provider-plaintext
+	AttachedAt     string              `json:"attached_at" yaml:"attached_at"`
+}
+
+// DrivebridgeLocation mirrors the adopted storage location. For kind=local only
+// Root is set; for kind=s3 Bucket/Prefix (and the reused rclone remote) are set.
+type DrivebridgeLocation struct {
+	Root   string `json:"root,omitempty" yaml:"root,omitempty"`
+	Bucket string `json:"bucket,omitempty" yaml:"bucket,omitempty"`
+	Prefix string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	Remote string `json:"remote,omitempty" yaml:"remote,omitempty"`
 }
 
 func NewProjection(command, summary string) Projection {
