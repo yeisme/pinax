@@ -43,7 +43,8 @@ func TestInboxJudgmentQuestionSetStable(t *testing.T) {
 			t.Errorf("question %s uses an unknown primitive %s", question.ID, question.Primitive)
 		}
 	}
-	if InboxJudgmentQuestionSetDigest() != InboxJudgmentQuestionSetDigest() {
+	questionSetDigest, questionSetDigestAgain := InboxJudgmentQuestionSetDigest(), InboxJudgmentQuestionSetDigest()
+	if questionSetDigest != questionSetDigestAgain {
 		t.Error("question set digest must be deterministic")
 	}
 	if len(InboxJudgmentQuestionSetDigest()) == 0 || InboxJudgmentPolicyDigest() == "" {
@@ -346,7 +347,8 @@ func TestVaultJudgmentAuthorizer(t *testing.T) {
 	if authorization.VaultDigest != VaultDigestFor("/vault/main") || !authorization.Allows("n1") || authorization.Allows("n2") {
 		t.Errorf("authorization mismatch: %+v", authorization)
 	}
-	if authorization.Digest() != authorization.Digest() {
+	authDigest, authDigestAgain := authorization.Digest(), authorization.Digest()
+	if authDigest != authDigestAgain {
 		t.Error("authorization digest must be deterministic")
 	}
 }
