@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yeisme/pinax/internal/domain"
@@ -317,8 +318,9 @@ func (h InboxJudgmentReviewHandoff) Projection() (domain.Projection, error) {
 }
 
 // InboxJudgmentCacheKey 绑定缓存判断依赖的每个维度：主体、vault、权限
-// 版本、inbox/候选 revision、问题集、策略、模型、adapter 与合同版本。
-// 任一变化都是不同的 key；权限变化还会使已存条目失效。
+// 版本、inbox/候选 revision、问题集、策略、模型、模式、adapter 与合同
+// 版本。任一变化都是不同的 key（shadow evidence 不会 replay 给 assist
+// consumer）；权限变化还会使已存条目失效。
 type InboxJudgmentCacheKey struct {
 	PrincipalDigest         string
 	VaultDigest             string
@@ -328,6 +330,7 @@ type InboxJudgmentCacheKey struct {
 	QuestionSetDigest       string
 	PolicyDigest            string
 	Model                   string
+	Mode                    string
 	AdapterVersion          string
 	ContractVersion         string
 }
@@ -362,14 +365,17 @@ func InboxJudgmentCacheKeyFor(principalDigest string, projection InboxJudgmentPr
 		QuestionSetDigest:       projection.Binding.QuestionSetDigest,
 		PolicyDigest:            projection.Binding.PolicyDigest,
 		Model:                   projection.Binding.Model,
+		Mode:                    projection.Binding.Mode,
 		AdapterVersion:          adapterVersion,
 		ContractVersion:         JudgmentWireSchemaVersion,
 	}
 }
 
-// InboxJudgmentCache 是 owner 管理的 evidence 缓存。读取总是先通过领域
-// 权限合同重授权：拒绝、权限版本变化或候选离开授权集合都会使条目失效。
+// InboxJudgmentCache 是 owner 管理的 evidence 缓存，可被多个 consumer
+// 共享，内部自同步。读取总是先通过领域权限合同重授权：拒绝、权限版本
+// 变化或候选离开授权集合都会使条目失效。
 type InboxJudgmentCache struct {
+	mu      sync.Mutex
 	entries map[string]InboxJudgmentEvidence
 }
 
@@ -380,15 +386,23 @@ func NewInboxJudgmentCache() *InboxJudgmentCache {
 
 // Store 在 key 下缓存 evidence。
 func (c *InboxJudgmentCache) Store(key InboxJudgmentCacheKey, evidence InboxJudgmentEvidence) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.entries[key.Digest()] = evidence
 }
 
 // Len 返回缓存条目数。
-func (c *InboxJudgmentCache) Len() int { return len(c.entries) }
+func (c *InboxJudgmentCache) Len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.entries)
+}
 
 // Get 重授权后返回缓存判断。被撤销或收窄的权限报 miss 并删除条目：旧
 // 授权绝不能被 replay 进新读取。
 func (c *InboxJudgmentCache) Get(ctx context.Context, authorizer InboxJudgmentAuthorizer, key InboxJudgmentCacheKey) (InboxJudgmentEvidence, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	digest := key.Digest()
 	evidence, ok := c.entries[digest]
 	if !ok {
@@ -408,6 +422,10 @@ func (c *InboxJudgmentCache) Get(ctx context.Context, authorizer InboxJudgmentAu
 			delete(c.entries, digest)
 			return InboxJudgmentEvidence{}, false
 		}
+	}
+	if evidence.Suggestion != nil && !authorization.Allows(evidence.Suggestion.InboxNoteID) {
+		delete(c.entries, digest)
+		return InboxJudgmentEvidence{}, false
 	}
 	return evidence, true
 }

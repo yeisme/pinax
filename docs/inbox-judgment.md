@@ -7,7 +7,7 @@
 ## 1. 固定基线
 
 - **对照组是原流程本身**。任何判断建议都与"用户按现有 `pinax inbox show` / `pinax inbox promote` / `pinax inbox discard` 流程整理收件箱"的结果对比，不引入第二套真值。
-- **确定性前置规则永远先于模型**：权限与 vault 隔离（跨 vault 默认不取材）、必需字段与 revision 绑定、字节数与候选数上限、敏感形态 fail closed、内容 digest 全等（`exact_content_digest`，确定性重复线索，无需概率）。
+- **确定性前置规则永远先于模型**：权限与 vault 隔离（跨 vault 默认不取材）、授权集合绑定（inbox 笔记与全部候选都必须位于授权集合内，空集合 = deny-all）、必需字段与 revision 绑定、字节数与候选数上限、敏感形态 fail closed、内容 digest 全等（`exact_content_digest`，确定性重复线索，无需概率）。
 - **离线合同基线**：`go test ./internal/inboxjudgment` 覆盖 wire 合同（schema "1.0"、8 错误码 + submission_state/retry_class、choice/ordinal_score/binary 原语、pair 对齐）、off 零调用、缓存权限撤销、stale/权限撤销不可采纳、零网络 replay。
 - **场景矩阵基线**：`TestInboxJudgmentScenarioMatrix`（inbox-link、duplicate-warning、vault-isolation、failure-injection）经本项目 evidence runner 落证据到 `temp/integration-test-runs/inbox-judgment-*/`，六类证据齐全；`TestInboxJudgmentScenarioFailureEvidence` 证明失败运行同样保留原始退出码与完整证据。
 
@@ -62,7 +62,7 @@ pinax config doctor --json   # judgment_status: experimental_off / experimental_
 ## 5. 关闭与恢复
 
 - 关闭即把 `judgment.mode` 设回 `off`（或移除 `judgment` 配置节 / 注入的 transport 配置）：原命令、默认配置与 canonical state 全部保持，历史 evidence 只读保留，不删除用户数据或凭据。
-- 已缓存的判断 evidence 在权限撤销、vault scope 变化或候选离开授权集合时自动失效删除；重放旧 evidence 零网络、不新建 attempt。
+- 已缓存的判断 evidence 在权限撤销、vault scope 变化或候选/inbox 笔记离开授权集合时自动失效删除；缓存 key 绑定模式（shadow evidence 不会 replay 给 assist consumer）；重放旧 evidence 零网络、不新建 attempt。
 - 回滚后如需再次启用，从阶段 1 重新进入，不复用旧阈值结论。
 
 ## 6. 边界（不变的领域限制）

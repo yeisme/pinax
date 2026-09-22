@@ -2,6 +2,7 @@ package inboxjudgment
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -209,6 +210,35 @@ func TestBuildProjectionVaultIsolation(t *testing.T) {
 	// 无 authorizer：显式错误。
 	if _, err := BuildInboxJudgmentProjection(context.Background(), binding, nil, input, DefaultInboxJudgmentLimits()); err == nil {
 		t.Fatal("missing authorizer must fail explicitly")
+	}
+}
+
+func TestBuildProjectionInboxNoteAuthorization(t *testing.T) {
+	input := judgmentProjectionFixtureInput()
+	binding := judgmentEnabledBinding()
+	// inbox 笔记自身不在授权集合：投影阶段即拒绝，inbox 正文绝不进入
+	// 可外发投影（不留“已外发、采纳门才拒绝”的窗口）。
+	unauthorized := StaticJudgmentAuthorizer{Authorization: InboxJudgmentAuthorization{
+		VaultDigest:    VaultDigestFor(input.VaultRoot),
+		AllowedNoteIDs: []string{"note-a", "note-b"},
+	}}
+	_, err := BuildInboxJudgmentProjection(context.Background(), binding, unauthorized, input, DefaultInboxJudgmentLimits())
+	if err == nil {
+		t.Fatal("inbox note outside the authorized set must fail closed at projection time")
+	}
+	var commandError *domain.CommandError
+	if !errors.As(err, &commandError) || commandError.Code != "judgment_unauthorized" {
+		t.Fatalf("want judgment_unauthorized, got %v", err)
+	}
+	if strings.Contains(err.Error(), input.InboxNoteID) {
+		t.Error("failure must not leak the inbox note id")
+	}
+	// 空授权集合 = deny-all：与缓存重授权语义一致，不静默放行任何候选。
+	empty := StaticJudgmentAuthorizer{Authorization: InboxJudgmentAuthorization{
+		VaultDigest: VaultDigestFor(input.VaultRoot),
+	}}
+	if _, err := BuildInboxJudgmentProjection(context.Background(), binding, empty, input, DefaultInboxJudgmentLimits()); err == nil {
+		t.Fatal("empty allowed set must fail closed")
 	}
 }
 

@@ -362,8 +362,9 @@ func BuildInboxJudgmentProjection(ctx context.Context, binding InboxJudgmentBind
 	candidates := make([]InboxJudgmentCandidate, 0, len(input.Candidates))
 	seen := map[string]bool{}
 	for _, candidate := range input.Candidates {
-		// 每条候选必须位于当前授权集合内；集合外的候选 fail closed 且不回显 ID。
-		if len(authorization.AllowedNoteIDs) > 0 && !authorization.Allows(candidate.NoteID) {
+		// 每条候选必须位于当前授权集合内；空授权集合同样 fail closed
+		// （与缓存重授权语义一致），集合外的候选 fail closed 且不回显 ID。
+		if !authorization.Allows(candidate.NoteID) {
 			return InboxJudgmentProjection{}, &domain.CommandError{Code: "judgment_unauthorized", Message: "candidate input is outside the authorized vault scope", Hint: "Re-select candidates through the original note service before judgment"}
 		}
 		if seen[candidate.NoteID] {
@@ -409,6 +410,11 @@ func BuildInboxJudgmentProjection(ctx context.Context, binding InboxJudgmentBind
 	}
 	if err := InboxJudgmentPrecheck(projection.InboxText, input.InboxNoteID, projection.InboxRevision, candidates, questions, limits, nil); err != nil {
 		return InboxJudgmentProjection{}, err
+	}
+	// inbox 笔记自身也必须位于授权集合内：先授权、后投影，不留
+	// “正文已可外发、采纳门才拒绝”的窗口（与采纳侧检查对齐）。
+	if !authorization.Allows(projection.InboxNoteID) {
+		return InboxJudgmentProjection{}, &domain.CommandError{Code: "judgment_unauthorized", Message: "inbox note is outside the authorized vault scope", Hint: "Re-select the inbox note through the original note service before judgment"}
 	}
 	projection.Digest = projection.ComputeDigest()
 	return projection, nil

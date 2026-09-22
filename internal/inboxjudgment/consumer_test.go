@@ -3,7 +3,9 @@ package inboxjudgment
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
@@ -315,6 +317,55 @@ func TestConsumerCacheReplayAndRevocation(t *testing.T) {
 	if _, err := narrowedConsumer.Evaluate(context.Background(), input); err == nil {
 		t.Fatal("candidate outside the narrowed authorization must fail closed")
 	}
+}
+
+func TestShadowEvidenceNotReplayedAcrossModes(t *testing.T) {
+	input := judgmentProjectionFixtureInput()
+	transport := NewFixtureTransport("cross-mode")
+	cache := NewInboxJudgmentCache()
+	shadow := judgmentFixtureConsumer(t, InboxJudgmentModeShadow, transport, judgmentFixtureAuthorizer(input), cache, nil)
+	shadowOutcome, err := shadow.Evaluate(context.Background(), input)
+	if err != nil {
+		t.Fatalf("shadow evaluate: %v", err)
+	}
+	if shadowOutcome.FromCache || transport.EvaluateCalls() != 1 {
+		t.Fatalf("shadow evaluate must be one transport attempt, from_cache=%v calls=%d", shadowOutcome.FromCache, transport.EvaluateCalls())
+	}
+	// 同输入的 assist consumer：缓存 key 绑定 mode，shadow evidence 不得
+	// replay 成 assist 结果；assist 必须跑自己的 attempt。
+	assist := judgmentFixtureConsumer(t, InboxJudgmentModeAssist, transport, judgmentFixtureAuthorizer(input), cache, nil)
+	assistOutcome, err := assist.Evaluate(context.Background(), input)
+	if err != nil {
+		t.Fatalf("assist evaluate: %v", err)
+	}
+	if assistOutcome.FromCache {
+		t.Fatal("shadow evidence must not replay to an assist consumer")
+	}
+	if transport.EvaluateCalls() != 2 {
+		t.Fatalf("assist must run its own transport attempt, calls=%d", transport.EvaluateCalls())
+	}
+	if assistOutcome.Evidence.Mode != InboxJudgmentModeAssist {
+		t.Errorf("assist evidence mode = %s", assistOutcome.Evidence.Mode)
+	}
+}
+
+func TestInboxJudgmentCacheConcurrentAccess(t *testing.T) {
+	cache := NewInboxJudgmentCache()
+	evidence := InboxJudgmentEvidence{SchemaVersion: InboxJudgmentEvidenceSchemaV1, Mode: InboxJudgmentModeAssist}
+	// 缓存可被多个 consumer 并发共享：Store/Get/Len 并发访问必须无数据
+	// 竞态（go test -race 验证）。
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := InboxJudgmentCacheKey{PrincipalDigest: fmt.Sprintf("principal-%d", i%4), Mode: InboxJudgmentModeAssist}
+			cache.Store(key, evidence)
+			cache.Get(context.Background(), nil, key)
+			cache.Len()
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestReplayInboxJudgmentEvidenceZeroNetwork(t *testing.T) {
