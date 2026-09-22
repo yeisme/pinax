@@ -35,6 +35,7 @@ pinax storage doctor --vault ./my-notes --json
 - hydrate 钉住观察到的 file id/version/sha256；远端中途变化返回 `file_version_changed`，本机 local 不可见返回 `drivebridge_local_unreachable`；冲突交给 `pinax repair` / `pinax sync conflicts`，DriveBridge 不自动合并正文。
 - hydrate 钉住观察到的 file id/version/sha256；远端中途变化返回 `file_version_changed`，本机 local 不可见返回 `drivebridge_local_unreachable`；冲突交给 `pinax repair` / `pinax sync conflicts`，DriveBridge 不自动合并正文。
 - hydrate 只落地可校验字节：DriveBridge 清单条目缺 `sha256` 时跳过并给出 `hydrate_unverifiable_file` 警告与 `unverified_skipped` fact；越界路径（绝对路径、`..`）计入 `unsafe_paths_skipped`，绝不写根外。
+- attach/bind 拒绝静默改绑：已 attach 其他 space 时返回 `drivebridge_already_attached`，必须先 `pinax storage detach-drivebridge`；同 space 重挂保持幂等。
 - attach 记录损坏（读不了 `.pinax/drivebridge-attach.yaml`）时 consume 报 `drivebridge_attach_unreadable`、doctor 报 `drivebridge_attach_unreadable=true`，不会伪装成未 attach；用 `pinax storage detach-drivebridge` 删除坏记录后重新 attach。
 - 已知限制：若 owner 侧 adopt 落在与当前 storage profile 不一致的位置（owner 侧行为异常），该 space 会持续返回 `drivebridge_location_mismatch`，而 DriveBridge 当前无 `unadopt` 命令，只能换用新的 space 名重新 attach。
 
