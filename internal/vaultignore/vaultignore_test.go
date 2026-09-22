@@ -34,7 +34,7 @@ func TestMatcherUsesPinaxignoreWithNegationAndHardDeny(t *testing.T) {
 
 func TestDefaultTemplatesUsePinaxAndGitBoundaries(t *testing.T) {
 	pinax := DefaultPinaxIgnore()
-	for _, want := range []string{".pinax/", ".git/", ".obsidian/", ".env*", "dist/"} {
+	for _, want := range []string{".pinax/", ".git/", ".obsidian/", ".drivebridge-pinax-vault.json", ".env*", "dist/"} {
 		if !containsLine(pinax, want) {
 			t.Fatalf("default .pinaxignore missing %q:\n%s", want, pinax)
 		}

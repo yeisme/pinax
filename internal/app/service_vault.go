@@ -44,10 +44,11 @@ func (s *Service) InitVault(_ context.Context, req InitVaultRequest) (domain.Pro
 	if req.Title == "" {
 		req.Title = filepath.Base(root)
 	}
-	for _, dir := range []string{filepath.Join(root, "notes"), filepath.Join(root, ".pinax")} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return errorProjection("vault.init", err), err
-		}
+	if err := ensureVaultContentDir(filepath.Join(root, "notes")); err != nil {
+		return errorProjection("vault.init", err), err
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".pinax"), 0o755); err != nil {
+		return errorProjection("vault.init", err), err
 	}
 	content := fmt.Sprintf("schema_version: pinax.config.v1\ntitle: %q\n", req.Title)
 	if err := os.WriteFile(config, []byte(content), 0o644); err != nil {
@@ -519,6 +520,8 @@ func (s *Service) StorageDoctor(_ context.Context, req VaultRequest) (domain.Pro
 	for fact, value := range facts {
 		projection.Facts[fact] = value
 	}
+	mergeMountedVaultFacts(&projection, root)
+	issues = append(issues, controlPlaneOnRemoteIssue(root)...)
 	if attached {
 		if facts["drivebridge_content_mode"] == drivebridgeContentModeOpaqueEncrypted {
 			issues = append(issues, domain.Issue{Code: "drivebridge_opaque_encrypted", Path: ".pinax/drivebridge-attach.yaml", Message: "Attached prefix is the Capsa encrypted blob store; objects are not plaintext notes and are never projected as notes"})
@@ -595,6 +598,16 @@ func (s *Service) VaultDoctor(_ context.Context, req VaultDoctorRequest) (domain
 	// DriveBridge attach 状态与 Capsa/Remote API 并列；未 attach 时为 none。
 	for fact, value := range drivebridgeAttachmentFactsOnly(root) {
 		projection.Facts[fact] = value
+	}
+	mergeMountedVaultFacts(&projection, root)
+	for _, issue := range controlPlaneOnRemoteIssue(root) {
+		issues = append(issues, domain.VaultIssue{Code: issue.Code, Severity: "warning", Path: issue.Path, Message: issue.Message})
+	}
+	report.Issues = issues
+	report.Counts = countIssuesBySeverity(issues)
+	projection.Facts["issues.total"] = fmt.Sprint(len(issues))
+	for severity, count := range report.Counts {
+		projection.Facts["issues."+severity] = fmt.Sprint(count)
 	}
 	projection.Data = report
 	if len(issues) > 0 {

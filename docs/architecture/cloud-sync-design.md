@@ -100,6 +100,22 @@ Boundaries that keep Pattern C separate from Pattern A and Pattern B:
 - `.pinax/**`, SQLite/WAL, tokens, and Capsa envelopes stay Pinax-authored; DriveBridge never writes them, and hydrate never replays owner metadata from the file plane.
 - Stable error codes: `drivebridge_not_installed`, `drivebridge_not_attached`, `drivebridge_location_mismatch`, `drivebridge_working_copy_opt_in_required`, `drivebridge_local_unreachable`, `file_version_changed`, `owner_protected`.
 
+## Pattern D: DriveBridge path-mounted vault (object storage as a local directory)
+
+Object storage used as the **vault itself** is a local filesystem path. DriveBridge presents the space at `--vault-root`; Pinax only runs `storage set local` on that path. Pinax does not grow a live S3 vault filesystem, and `pinax storage set s3` remains a profile that does not connect.
+
+```text
+drivebridge preset pinax-vault --space pinax-vault --vault-root /abs/Pinax/cloud
+pinax init /abs/Pinax/cloud
+pinax storage set local --root /abs/Pinax/cloud --vault /abs/Pinax/cloud
+```
+
+- User content (`notes/**` and other non-dot trees) lives in the space; the overlay uses symlinks from `--vault-root`.
+- `.pinax/**` and SQLite stay on the local vault root. DriveBridge never writes them.
+- Second device: mount/preset again, `pinax init` (local control plane), `pinax index refresh`. Hydrate remains for a disconnected copy, not the primary object-storage vault path.
+- Capsa ciphertext prefixes are a different tree. Doctor reports Pattern D via `drivebridge_preset` / `content_mount`, separately from `drivebridge_attached` and `capsa_sync_configured`.
+- Agents cannot start the mount. If `content_mount=unmounted`, the next command is a user-terminal `drivebridge mount vault --preset pinax`.
+
 ## Object-store layout for direct transports
 
 Direct S3/rclone transports store Capsa Sync objects under a configured prefix:

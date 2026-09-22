@@ -166,6 +166,7 @@ func DefaultPinaxIgnore() string {
 		".pinax/",
 		".git/",
 		".obsidian/",
+		".drivebridge-pinax-vault.json",
 		".env*",
 		"*.pem",
 		"*.key",
