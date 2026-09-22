@@ -615,7 +615,10 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 			continue
 		}
 		rel := path.Join(filepath.ToSlash(file.Dir), file.Name)
-		if rel == "" || strings.HasPrefix(rel, "/") {
+		// 远端清单可能来自共享空间或损坏状态：hydrate 只接受落在 vault
+		// 根内的相对路径；绝对路径、.. 越界（如 Dir="../outside"）与
+		// Windows 保留名一律跳过，绝不把字节写到根外。
+		if !filepath.IsLocal(filepath.FromSlash(rel)) {
 			continue
 		}
 		// .pinax/** 是 CLI-authored owner 元数据；hydrate 只重建用户工作副本，

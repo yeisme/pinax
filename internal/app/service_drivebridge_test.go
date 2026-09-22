@@ -423,6 +423,48 @@ func TestStorageHydrateS3SecondDevice(t *testing.T) {
 	}
 }
 
+func TestStorageHydrateSkipsNonLocalListingPaths(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	source := t.TempDir()
+	notePath := filepath.Join(source, "remote.md")
+	writeFile(t, notePath, "---\nschema_version: pinax.note.v1\ntitle: Remote Note\n---\n\nbody\n")
+	escapePath := filepath.Join(source, "pwned.md")
+	writeFile(t, escapePath, "must never land outside the vault root\n")
+	escapeParent := filepath.Dir(root)
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(
+			fakeDrivebridgeFile{Space: "pinax-vault", Ref: "pinax-vault:notes/remote.md", Name: "remote.md", Dir: "notes", Version: "v1", SHA256: testFileSHA(t, notePath), Path: notePath},
+			fakeDrivebridgeFile{Space: "pinax-vault", Ref: "pinax-vault:../escape/pwned.md", Name: "pwned.md", Dir: "../escape", Version: "v1", SHA256: testFileSHA(t, escapePath), Path: escapePath},
+			fakeDrivebridgeFile{Space: "pinax-vault", Ref: "pinax-vault:/abs/pwned.md", Name: "pwned.md", Dir: "/abs", Version: "v1", SHA256: testFileSHA(t, escapePath), Path: escapePath},
+		),
+	})
+	projection, err := svc.StorageHydrate(ctx, DrivebridgeHydrateRequest{VaultPath: root, Space: "pinax-vault"})
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if projection.Facts["files_downloaded"] != "1" {
+		t.Fatalf("only the in-root file may download, facts = %#v", projection.Facts)
+	}
+	if _, err := os.Stat(filepath.Join(root, "notes", "remote.md")); err != nil {
+		t.Fatalf("legitimate note missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(escapeParent, "escape", "pwned.md")); err == nil {
+		t.Fatalf("hydrate must not write outside the vault root")
+	}
+	if calls := fake.calls(t); strings.Contains(calls, "escape/pwned.md") {
+		t.Fatalf("non-local listing entries must be skipped before download:\n%s", calls)
+	}
+}
+
 func TestStorageHydrateLocalUnreachable(t *testing.T) {
 	newFakeDrivebridge(t)
 	ctx := context.Background()
