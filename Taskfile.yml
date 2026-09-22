@@ -2,6 +2,9 @@ version: "3"
 
 vars:
   GORELEASER: goreleaser
+  # Go directive from go.mod; keeps the lint toolchain pin in sync on bumps.
+  GO_DIRECTIVE:
+    sh: awk '/^go /{print $2; exit}' go.mod
 
 tasks:
   default:
@@ -351,6 +354,13 @@ tasks:
 
   lint:
     desc: Run golangci-lint.
+    # golangci-lint embeds a go/types built with its own toolchain; a newer
+    # system Go makes `go list` include go1.27-gated vendored files (e.g.
+    # x/text tables17.0.0.go) that crash the embedded type checker with
+    # "file requires newer Go version". Pin the toolchain golangci-lint's
+    # package loading uses to the module's declared Go version.
+    env:
+      GOTOOLCHAIN: "go{{.GO_DIRECTIVE}}"
     cmds:
       - golangci-lint run
 
