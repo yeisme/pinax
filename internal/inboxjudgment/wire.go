@@ -468,7 +468,9 @@ func ValidateJudgmentWireResult(request JudgmentWireRequest, result JudgmentWire
 			return invalidResponse("answered item lacks a value")
 		}
 		setArms := 0
-		for _, ok := range []bool{item.Value.Binary != nil, item.Value.OrdinalLevel != "", item.Value.Choice != ""} {
+		// ordinal 是一个 arm：OrdinalLevel（域等级）与 OrdinalValue（数值
+		// 伴随字段）成对出现；其他 arm 上出现任一 ordinal 字段都算双臂。
+		for _, ok := range []bool{item.Value.Binary != nil, item.Value.OrdinalLevel != "" || item.Value.OrdinalValue != nil, item.Value.Choice != ""} {
 			if ok {
 				setArms++
 			}

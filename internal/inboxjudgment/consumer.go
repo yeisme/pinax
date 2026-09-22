@@ -634,7 +634,13 @@ func AcceptInboxJudgmentSuggestion(ctx context.Context, suggestion InboxJudgment
 		if !ok {
 			return notAdoptable("suggestion references an unbound candidate", "Re-evaluate explicitly")
 		}
-		if current, ok := currentRevisions[id]; ok && current != bound {
+		current, ok := currentRevisions[id]
+		if !ok {
+			// revision 未知 ≠ 未变化：缺当前 revision 一律 fail closed，
+			// 不把“查询不到”静默解释成“未变化”。
+			return &domain.CommandError{Code: "judgment_stale_source", Message: "current revision is unknown for a bound source", Hint: "Resolve the note's current revision and re-run acceptance; unknown never counts as unchanged"}
+		}
+		if current != bound {
 			return &domain.CommandError{Code: "judgment_stale_source", Message: "source revision changed after evaluation", Hint: "Historical evidence stays read-only; re-evaluate explicitly for the new version"}
 		}
 		return nil

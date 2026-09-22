@@ -207,6 +207,16 @@ func TestValidateJudgmentWireResult(t *testing.T) {
 	if err := ValidateJudgmentWireResult(request, unexpected); err == nil {
 		t.Error("answer for an unexpected pair must be rejected")
 	}
+	// choice arm 携带 stray ordinal_value：双臂必须拒绝（ordinal_level +
+	// ordinal_value 成对才是单个 ordinal arm）。
+	strayOrdinal := valid
+	strayOrdinal.Items = []JudgmentWireItem{{
+		CandidateID: "n2", QuestionID: "relation", AnswerStatus: "answered",
+		Value: &JudgmentWireAnswerValue{Choice: RelationComplement, OrdinalValue: new(float64)},
+	}}
+	if err := ValidateJudgmentWireResult(request, strayOrdinal); err == nil {
+		t.Error("a choice arm carrying a stray ordinal value must be rejected as two arms")
+	}
 	// 弃答携带值。
 	abstainedWithValue := valid
 	abstainedWithValue.Items = []JudgmentWireItem{{

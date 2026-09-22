@@ -259,6 +259,45 @@ func TestBuildProjectionDeterministicExactDuplicate(t *testing.T) {
 	}
 }
 
+func TestBuildProjectionTruncatedDigestIsNotExactDuplicate(t *testing.T) {
+	limits := DefaultInboxJudgmentLimits()
+	input := judgmentProjectionFixtureInput()
+	authorizer := StaticJudgmentAuthorizer{Authorization: InboxJudgmentAuthorization{
+		VaultDigest:    VaultDigestFor(input.VaultRoot),
+		AllowedNoteIDs: []string{input.InboxNoteID, "note-prefix", "note-long"},
+	}}
+	// inbox 文本超限被截断，截断后内容与候选完整文本逐字节相同：
+	// 只是前缀相同，不是 exact duplicate，零误报基线要求不产生 finding。
+	// 载荷不含空格：避免 TrimSpace 让两侧长度错开 1 字节而碰巧不等。
+	full := strings.Repeat("kyototemplevisitnotes", 240)
+	input.InboxText = full
+	input.Candidates = []InboxJudgmentCandidate{
+		{NoteID: "note-prefix", SourceRevision: "sha256:rev-prefix", InlineText: full[:limits.MaxInboxBytes]},
+	}
+	projection, err := BuildInboxJudgmentProjection(context.Background(), judgmentEnabledBinding(), authorizer, input, limits)
+	if err != nil {
+		t.Fatalf("build projection: %v", err)
+	}
+	if len(projection.Deterministic) != 0 {
+		t.Fatalf("truncated inbox digest prefix match must not be an exact duplicate finding: %+v", projection.Deterministic)
+	}
+	// 反向（非对称上限）：候选 inline 截断到 MaxInlineBytes=4000，恰等于
+	// 未截断 inbox（MaxInboxBytes 放宽到 8000）的全文：同样只是前缀相同。
+	wideLimits := limits
+	wideLimits.MaxInboxBytes = 8000
+	input.InboxText = full[:limits.MaxInlineBytes]
+	input.Candidates = []InboxJudgmentCandidate{
+		{NoteID: "note-long", SourceRevision: "sha256:rev-long", InlineText: full},
+	}
+	projection, err = BuildInboxJudgmentProjection(context.Background(), judgmentEnabledBinding(), authorizer, input, wideLimits)
+	if err != nil {
+		t.Fatalf("build projection: %v", err)
+	}
+	if len(projection.Deterministic) != 0 {
+		t.Fatalf("truncated candidate digest prefix match must not be an exact duplicate finding: %+v", projection.Deterministic)
+	}
+}
+
 func TestInboxJudgmentPrecheckRules(t *testing.T) {
 	questions := InboxJudgmentQuestions()
 	limits := DefaultInboxJudgmentLimits()

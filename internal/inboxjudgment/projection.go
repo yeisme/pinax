@@ -378,11 +378,16 @@ func BuildInboxJudgmentProjection(ctx context.Context, binding InboxJudgmentBind
 		updated.Truncated = truncated
 		candidates = append(candidates, updated)
 	}
-	inboxText, _ := judgmentBoundedText(input.InboxText, limits.MaxInboxBytes)
+	inboxText, inboxTruncated := judgmentBoundedText(input.InboxText, limits.MaxInboxBytes)
 	inboxDigest := judgmentDigestBytes([]byte(inboxText))
 	// 可计算约束先于模型：内容 digest 全等即确定性重复，无需概率。
+	// 但 digest 只对完整内容成立：任一侧被截断时，全等只证明前缀相同，
+	// 不能当作 exact 重复（零误报基线），跳过可计算 finding。
 	var findings []InboxJudgmentDeterministicFinding
 	for _, candidate := range candidates {
+		if inboxTruncated || (candidate.SourceDigest == "" && candidate.Truncated) {
+			continue
+		}
 		digest := candidate.SourceDigest
 		if digest == "" {
 			digest = judgmentDigestBytes([]byte(candidate.InlineText))

@@ -460,6 +460,16 @@ func TestAcceptInboxJudgmentSuggestionGates(t *testing.T) {
 	if _, err := AcceptInboxJudgmentSuggestion(context.Background(), suggestion, evidence, authorizer, staleCandidate, projectionCandidates); err == nil {
 		t.Error("stale candidate revision must block adoption")
 	}
+	// 缺失当前 revision（笔记已删除或调用方映射不完整）：未知 ≠ 未变化，
+	// 一律 fail closed，不得静默放行。inbox 笔记被引用且缺当前 revision。
+	missingRevision := map[string]string{
+		"note-a": input.Candidates[0].SourceRevision,
+		"note-b": input.Candidates[1].SourceRevision,
+	}
+	err = AcceptInboxJudgmentSuggestionErr(context.Background(), suggestion, evidence, authorizer, missingRevision, projectionCandidates)
+	if err == nil || !isJudgmentErrorCode(err, "judgment_stale_source") {
+		t.Fatalf("unknown current revision must block adoption with judgment_stale_source, got %v", err)
+	}
 	// 权限撤销：不可采纳且不泄露候选存在性。
 	revoked := StaticJudgmentAuthorizer{Authorization: InboxJudgmentAuthorization{Denied: true}}
 	err = AcceptInboxJudgmentSuggestionErr(context.Background(), suggestion, evidence, revoked, currentRevisions, projectionCandidates)
