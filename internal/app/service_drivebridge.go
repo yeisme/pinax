@@ -609,7 +609,7 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 	projection.Facts["drivebridge_space"] = record.Space
 	projection.Facts["drivebridge_kind"] = record.Kind
 	downloaded, unchanged, conflicts, failures := 0, 0, 0, 0
-	skipProtected := 0
+	skipProtected, skipUnsafe := 0, 0
 	for _, file := range listed.Files {
 		if file.Directory {
 			continue
@@ -619,6 +619,7 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 		// 根内的相对路径；绝对路径、.. 越界（如 Dir="../outside"）与
 		// Windows 保留名一律跳过，绝不把字节写到根外。
 		if !filepath.IsLocal(filepath.FromSlash(rel)) {
+			skipUnsafe++
 			continue
 		}
 		// .pinax/** 是 CLI-authored owner 元数据；hydrate 只重建用户工作副本，
@@ -672,6 +673,7 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 	projection.Facts["files_conflict"] = fmt.Sprint(conflicts)
 	projection.Facts["files_failed"] = fmt.Sprint(failures)
 	projection.Facts["protected_skipped"] = fmt.Sprint(skipProtected)
+	projection.Facts["unsafe_paths_skipped"] = fmt.Sprint(skipUnsafe)
 	projection.Facts["remote_write"] = "false"
 	if downloaded > 0 || unchanged > 0 {
 		// 工作副本落地后由 Pinax 重建索引；笔记 id 仍由 Pinax 管理。

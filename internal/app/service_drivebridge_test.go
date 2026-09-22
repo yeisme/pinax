@@ -451,7 +451,7 @@ func TestStorageHydrateSkipsNonLocalListingPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hydrate: %v", err)
 	}
-	if projection.Facts["files_downloaded"] != "1" {
+	if projection.Facts["files_downloaded"] != "1" || projection.Facts["unsafe_paths_skipped"] != "2" {
 		t.Fatalf("only the in-root file may download, facts = %#v", projection.Facts)
 	}
 	if _, err := os.Stat(filepath.Join(root, "notes", "remote.md")); err != nil {
