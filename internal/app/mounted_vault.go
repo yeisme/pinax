@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,7 @@ func mountedVaultFacts(root string) map[string]string {
 			facts["control_plane_local"] = "true"
 		}
 	}
-	if body, err := os.ReadFile(filepath.Join(root, drivebridgePinaxVaultMarker)); err == nil && strings.Contains(string(body), "pinax-vault") {
+	if body, ok := readDrivebridgeMarker(filepath.Join(root, drivebridgePinaxVaultMarker)); ok && strings.Contains(body, "pinax-vault") {
 		facts["drivebridge_preset"] = "pinax-vault"
 	}
 	notes := filepath.Join(root, "notes")
@@ -62,7 +63,9 @@ func mountedVaultFacts(root string) map[string]string {
 	}
 	switch {
 	case info.Mode()&os.ModeSymlink != 0:
-		if _, statErr := os.Stat(notes); statErr != nil {
+		if target, statErr := os.Stat(notes); statErr != nil || !target.IsDir() {
+			// 悬空链接或指向普通文件：既不是挂载也不是可用内容目录，
+			// 如实报 unmounted，不伪装成 unknown_fuse。
 			facts["content_mount"] = "unmounted"
 		} else if facts["drivebridge_preset"] == "pinax-vault" {
 			facts["content_mount"] = "drivebridge_path"
@@ -106,4 +109,19 @@ func controlPlaneOnRemoteIssue(root string) []domain.Issue {
 		Path:    ".pinax",
 		Message: "Pinax control plane is a symlink; keep .pinax on local disk, not on the mounted content tree",
 	}}
+}
+
+// readDrivebridgeMarker 有界读取 preset 标记：marker 是极小的 JSON，
+// 超过 64KiB 的文件视为无效（doctor 不得被超大文件撑爆内存）。
+func readDrivebridgeMarker(path string) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer func() { _ = f.Close() }()
+	body, err := io.ReadAll(io.LimitReader(f, 64*1024+1))
+	if err != nil || len(body) > 64*1024 {
+		return "", false
+	}
+	return string(body), true
 }

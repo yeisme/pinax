@@ -47,6 +47,12 @@ func (s *Service) InitVault(_ context.Context, req InitVaultRequest) (domain.Pro
 	if err := ensureVaultContentDir(filepath.Join(root, "notes")); err != nil {
 		return errorProjection("vault.init", err), err
 	}
+	if info, lstatErr := os.Lstat(filepath.Join(root, ".pinax")); lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		// 控制面必须留在本地盘：不在 init 时穿过 .pinax 符号链接创建
+		// control_plane_on_remote 事后才报告的状态。
+		commandErr := &domain.CommandError{Code: "control_plane_symlink", Message: "cannot initialize a vault through a .pinax symlink", Hint: "Keep .pinax on local disk; remove the symlink and retry pinax init"}
+		return errorProjection("vault.init", commandErr), commandErr
+	}
 	if err := os.MkdirAll(filepath.Join(root, ".pinax"), 0o755); err != nil {
 		return errorProjection("vault.init", err), err
 	}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -128,5 +129,51 @@ func TestStorageDoctorControlPlaneOnRemote(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("missing control_plane_on_remote in %#v", doctor.Data)
+	}
+}
+
+func TestInitVaultRefusesPinaxSymlink(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc := NewService()
+	root := t.TempDir()
+	remote := t.TempDir()
+	if err := os.Symlink(remote, filepath.Join(root, ".pinax")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.InitVault(ctx, InitVaultRequest{VaultPath: root, Title: "Mounted"}); !hasCommandCode(err, "control_plane_symlink") {
+		t.Fatalf("expected control_plane_symlink, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(remote, "config.yaml")); err == nil {
+		t.Fatal("init must not write the control plane through the symlink")
+	}
+}
+
+func TestMountedVaultFactsSymlinkToFileAndBoundedMarker(t *testing.T) {
+	t.Parallel()
+	// notes 符号链接指向普通文件：如实报 unmounted，不伪装 unknown_fuse。
+	root := t.TempDir()
+	targetFile := filepath.Join(t.TempDir(), "notadir")
+	if err := os.WriteFile(targetFile, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(targetFile, filepath.Join(root, "notes")); err != nil {
+		t.Fatal(err)
+	}
+	facts := mountedVaultFacts(root)
+	if facts["content_mount"] != "unmounted" || facts["content_writable"] != "false" {
+		t.Fatalf("symlink-to-file must report unmounted, facts = %#v", facts)
+	}
+	// 超 64KiB 的 marker 视为无效：preset 不生效。
+	root2 := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root2, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root2, drivebridgePinaxVaultMarker), bytes.Repeat([]byte("pinax-vault junk "), 5000), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	facts2 := mountedVaultFacts(root2)
+	if facts2["drivebridge_preset"] != "none" {
+		t.Fatalf("oversized marker must be ignored, facts = %#v", facts2)
 	}
 }

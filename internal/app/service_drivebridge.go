@@ -289,6 +289,12 @@ func (s *Service) AttachDrivebridge(ctx context.Context, req DrivebridgeAttachRe
 		err := &domain.CommandError{Code: "invalid_drivebridge_space", Message: "DriveBridge space must not look like a flag or a path", Hint: "The space name must not start with a dash and must not contain separators or dot segments"}
 		return domain.NewErrorProjection("storage.attach_drivebridge", err), err
 	}
+	if existing, attached, loadErr := loadDrivebridgeAttach(root); loadErr == nil && attached && existing.Space != space {
+		// 已 attach 其他 space 时必须先 detach：静默改绑会让旧 adopt 泄漏
+		// 在 owner 侧（DriveBridge 无 unadopt），hydrate 源被悄悄切换。
+		err := &domain.CommandError{Code: "drivebridge_already_attached", Message: "This vault is already attached to DriveBridge space " + existing.Space, Hint: "Run pinax storage detach-drivebridge first; silently re-attaching another space abandons the previous owner-side adopt"}
+		return domain.NewErrorProjection("storage.attach_drivebridge", err), err
+	}
 	profile, err := loadStorageProfile(root)
 	if err != nil {
 		return errorProjection("storage.attach_drivebridge", err), err
@@ -505,6 +511,11 @@ func (s *Service) BindWorkingCopy(ctx context.Context, req DrivebridgeBindWorkin
 		}
 		return domain.NewErrorProjection("storage.bind_working_copy", err), err
 	}
+	if existing, attached, loadErr := loadDrivebridgeAttach(root); loadErr == nil && attached && existing.Space != space {
+		// 换 space 静默改绑：必须先 detach，旧 adopt 不允许被悄悄泄漏。
+		err := &domain.CommandError{Code: "drivebridge_already_attached", Message: "This vault is already attached to DriveBridge space " + existing.Space, Hint: "Run pinax storage detach-drivebridge first; silently re-binding another space abandons the previous owner-side adopt"}
+		return domain.NewErrorProjection("storage.bind_working_copy", err), err
+	}
 	record := domain.DrivebridgeAttach{
 		SchemaVersion:  drivebridgeAttachSchemaVersion,
 		Consumer:       drivebridgeConsumerPinax,
@@ -534,6 +545,12 @@ func (s *Service) BindWorkingCopy(ctx context.Context, req DrivebridgeBindWorkin
 	return projection, nil
 }
 
+// normalizeDrivebridgeDigest 归一双方摘要为小写 hex：注册时用户输入已
+// 小写化，远端上报若用大写 hex 不应造成假阳性 file_version_changed。
+func normalizeDrivebridgeDigest(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
 // fileSHA256OrEmpty hashes a local file; missing files return "".
 func fileSHA256OrEmpty(path string) string {
 	b, err := os.ReadFile(path)
@@ -553,6 +570,7 @@ func drivebridgeStat(ctx context.Context, ref string) (drivebridgeFile, error) {
 	if err := json.Unmarshal(data, &file); err != nil {
 		return drivebridgeFile{}, &domain.CommandError{Code: "drivebridge_invocation_failed", Message: "DriveBridge stat payload was unreadable", Hint: "Upgrade DriveBridge and retry"}
 	}
+	file.SHA256 = normalizeDrivebridgeDigest(file.SHA256)
 	return file, nil
 }
 
@@ -636,6 +654,7 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 			skipProtected++
 			continue
 		}
+		file.SHA256 = normalizeDrivebridgeDigest(file.SHA256)
 		if file.SHA256 == "" {
 			// 无内容 digest 的清单条目不可校验：fail closed 跳过并计数，
 			// 不静默落地未验证字节（合同：hydrate 钉 ref/version/sha256）。
@@ -661,11 +680,11 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 			continue
 		}
 		// 钉住观察到的文件身份：传输后再次核对 version/sha256，变化则失败，
-		// 不静默接受新字节。
-		if _, _, err := runDrivebridgeJSON(ctx, "download", "--ref", file.Ref, "--out", target); err != nil {
-			// 中断传输只可能留下半截文件：清掉，避免下次 hydrate 把它
-			// 误判成本地冲突（target 下载前不存在，删除不伤用户数据）。
-			_ = os.Remove(target)
+		// 不静默接受新字节。先落临时名再原子换入：Stat 检查与下载之间
+		// 出现的本地写入不会被传输覆盖，验证失败也不留半截文件。
+		tmp := target + ".pinax-download"
+		if _, _, err := runDrivebridgeJSON(ctx, "download", "--ref", file.Ref, "--out", tmp); err != nil {
+			_ = os.Remove(tmp)
 			failures++
 			projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
 				Code:    "hydrate_transfer_failed",
@@ -674,12 +693,31 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 			continue
 		}
 		after, statErr := drivebridgeStat(ctx, file.Ref)
-		if statErr != nil || after.Version != file.Version || (file.SHA256 != "" && after.SHA256 != file.SHA256) || (file.SHA256 != "" && fileSHA256OrEmpty(target) != file.SHA256) {
-			_ = os.Remove(target)
+		if statErr != nil || after.Version != file.Version || (file.SHA256 != "" && after.SHA256 != file.SHA256) || (file.SHA256 != "" && fileSHA256OrEmpty(tmp) != file.SHA256) {
+			_ = os.Remove(tmp)
 			failures++
 			projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
 				Code:    "file_version_changed",
 				Message: rel + " changed while hydrating; the pinned version is kept and local edits are untouched",
+			})
+			continue
+		}
+		if _, statErr := os.Stat(target); statErr == nil {
+			// 下载期间 target 出现了本地写入：保留本地编辑，交给冲突流程。
+			_ = os.Remove(tmp)
+			conflicts++
+			projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
+				Code:    "hydrate_local_conflict",
+				Message: rel + " changed locally while hydrating; DriveBridge never merges content automatically",
+			})
+			continue
+		}
+		if err := os.Rename(tmp, target); err != nil {
+			_ = os.Remove(tmp)
+			failures++
+			projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
+				Code:    "hydrate_transfer_failed",
+				Message: rel + ": " + err.Error(),
 			})
 			continue
 		}
@@ -855,6 +893,7 @@ func (s *Service) ConsumeDrivebridgeAsset(ctx context.Context, req AssetRequest)
 		err := &domain.CommandError{Code: "drivebridge_ref_missing", Message: "Asset has no pinned DriveBridge reference", Hint: "Register one with pinax asset add <file> --register --drivebridge-ref drivebridge://<space>/<file-id>@<version>"}
 		return domain.NewErrorProjection("asset.consume_drivebridge", err), err
 	}
+	pinned.SHA256 = normalizeDrivebridgeDigest(pinned.SHA256)
 	if _, attached, attachErr := loadDrivebridgeAttach(root); attachErr != nil {
 		// 损坏/不可读的 attach 记录不得伪装成“未 attach”：单独报错并
 		// 指向修复路径，已落地副本不受影响。
@@ -890,15 +929,26 @@ func (s *Service) ConsumeDrivebridgeAsset(ctx context.Context, req AssetRequest)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return errorProjection("asset.consume_drivebridge", err), err
 		}
-		if _, _, err := runDrivebridgeJSON(ctx, "download", "--ref", pinned.FileID, "--out", target); err != nil {
-			// 清掉中断传输留下的半截文件，避免重试被误判成已落地冲突。
-			_ = os.Remove(target)
+		// 先落临时名再原子换入：中断不留半截文件，下载期间出现的本地
+		// 写入不会被覆盖（交给 landed-conflict 流程）。
+		tmp := target + ".pinax-download"
+		if _, _, err := runDrivebridgeJSON(ctx, "download", "--ref", pinned.FileID, "--out", tmp); err != nil {
+			_ = os.Remove(tmp)
 			return errorProjection("asset.consume_drivebridge", err), err
 		}
-		if pinned.SHA256 != "" && fileSHA256OrEmpty(target) != pinned.SHA256 {
-			_ = os.Remove(target)
+		if pinned.SHA256 != "" && fileSHA256OrEmpty(tmp) != pinned.SHA256 {
+			_ = os.Remove(tmp)
 			err := &domain.CommandError{Code: "file_version_changed", Message: "Downloaded bytes for " + asset.Path + " do not match the pinned sha256", Hint: "Re-pin the reference; no partial copy was kept"}
 			return domain.NewErrorProjection("asset.consume_drivebridge", err), err
+		}
+		if _, statErr := os.Stat(target); statErr == nil {
+			_ = os.Remove(tmp)
+			err := &domain.CommandError{Code: "asset_landed_conflict", Message: "Landed vault copy of " + asset.Path + " reappeared during download; refusing to overwrite", Hint: "Run pinax asset repair-plan --vault <vault> to reconcile the landed copy"}
+			return domain.NewErrorProjection("asset.consume_drivebridge", err), err
+		}
+		if err := os.Rename(tmp, target); err != nil {
+			_ = os.Remove(tmp)
+			return errorProjection("asset.consume_drivebridge", err), err
 		}
 		landed = true
 	}

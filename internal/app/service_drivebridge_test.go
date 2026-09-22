@@ -809,6 +809,67 @@ func TestAssetRegisterDerivesDrivebridgeSHA(t *testing.T) {
 	}
 }
 
+func TestAttachDifferentSpaceRequiresDetach(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetLocalStorage(ctx, StorageRequest{VaultPath: root, Root: root}); err != nil {
+		t.Fatalf("set local storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	// 换 space 静默改绑：必须拒绝，旧 adopt 不允许被悄悄泄漏。
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "other-space"}); !hasCommandCode(err, "drivebridge_already_attached") {
+		t.Fatalf("expected drivebridge_already_attached, got %v", err)
+	}
+	record, attached, err := loadDrivebridgeAttach(root)
+	if err != nil || !attached || record.Space != "pinax-vault" {
+		t.Fatalf("rejected attach must keep the original record: %#v attached=%v err=%v", record, attached, err)
+	}
+	// 同 space 重挂保持幂等。
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("same-space re-attach must stay idempotent: %v", err)
+	}
+	// bind-working-copy 换 space 同样拒绝（先确认目标 space 存在，再命中
+	// double-attach 守卫，与 space_not_found 的先后语义一致）。
+	fake.setState(t, map[string]any{"spaces": []map[string]any{{"id": "other-space", "backend": "onedrive", "local_root": ""}}})
+	if _, err := svc.BindWorkingCopy(ctx, DrivebridgeBindWorkingCopyRequest{VaultPath: root, Provider: "onedrive", Space: "other-space"}); !hasCommandCode(err, "drivebridge_already_attached") {
+		t.Fatalf("expected drivebridge_already_attached for bind, got %v", err)
+	}
+}
+
+func TestStorageHydrateNormalizesUppercaseDigests(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	source := t.TempDir()
+	notePath := filepath.Join(source, "remote.md")
+	writeFile(t, notePath, "---\nschema_version: pinax.note.v1\ntitle: Remote Note\n---\n\nbody\n")
+	// 远端清单用大写 hex：大小写不应造成假阳性 file_version_changed。
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "pinax-vault:notes/remote.md", Name: "remote.md", Dir: "notes", Version: "v1", SHA256: strings.ToUpper(testFileSHA(t, notePath)), Path: notePath}),
+	})
+	projection, err := svc.StorageHydrate(ctx, DrivebridgeHydrateRequest{VaultPath: root, Space: "pinax-vault"})
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if projection.Facts["files_downloaded"] != "1" || projection.Facts["files_failed"] != "0" {
+		t.Fatalf("uppercase digests must not fail verification, facts = %#v", projection.Facts)
+	}
+	if _, err := os.Stat(filepath.Join(root, "notes", "remote.md")); err != nil {
+		t.Fatalf("hydrated note missing: %v", err)
+	}
+}
+
 func TestConsumeDrivebridgeReportsUnreadableAttachRecord(t *testing.T) {
 	fake := newFakeDrivebridge(t)
 	ctx := context.Background()
