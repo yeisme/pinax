@@ -107,6 +107,13 @@ if args[:1] == ["download"]:
     x = next((y for y in state.get("files", []) if y["ref"] == ref), None)
     if x is None:
         emit("download", None, None, status="failed", code="not_found", message="reference not found: " + ref)
+    if ref in state.get("partial_download", {}):
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        with open(x["path"], "rb") as src, open(out_path, "wb") as dst:
+            data = src.read()
+            dst.write(data[:len(data)//2])
+        emit("download", None, None, status="failed", code="interrupted",
+             message="fake interrupted transfer for " + ref)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     shutil.copyfile(x["path"], out_path)
     emit("download", "Downloaded via op-fake.", {"id": "op-fake", "status": "completed", "file_ref": ref})

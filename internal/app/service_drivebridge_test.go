@@ -612,6 +612,115 @@ func TestAssetRegisterAndConsumeDrivebridgeRef(t *testing.T) {
 	}
 }
 
+func TestAssetConsumeDrivebridgeRefSurvivesIndexRefresh(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	source := filepath.Join(root, "attachments", "report.png")
+	writeFile(t, source, "REGRESSION_PAYLOAD")
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(
+			fakeDrivebridgeFile{Space: "pinax-vault", Ref: "r:report.png", Name: "report.png", Dir: "assets", Version: "v7", SHA256: testFileSHA(t, source), Path: source},
+		),
+	})
+	if _, err := svc.AssetAdd(ctx, AssetRequest{VaultPath: root, Source: source, Register: true, DrivebridgeRef: "drivebridge://pinax-vault/r:report.png@v7", DrivebridgeSHA256: testFileSHA(t, source)}); err != nil {
+		t.Fatalf("asset add: %v", err)
+	}
+	// 索引投影没有 drivebridge 列：index refresh 重建资产行后，consume
+	// 仍必须能从 manifest 回填 pin 并消费成功。
+	if _, err := svc.IndexRefresh(ctx, IndexRefreshRequest{VaultPath: root}); err != nil {
+		t.Fatalf("index refresh: %v", err)
+	}
+	if _, err := svc.ConsumeDrivebridgeAsset(ctx, AssetRequest{VaultPath: root, Ref: "report.png"}); err != nil {
+		t.Fatalf("consume after index refresh: %v", err)
+	}
+}
+
+func TestInterruptedTransfersLeaveNoPartialCopies(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	source := t.TempDir()
+	notePath := filepath.Join(source, "remote.md")
+	writeFile(t, notePath, "---\nschema_version: pinax.note.v1\ntitle: Remote Note\n---\n\nbody "+strings.Repeat("x", 512)+"\n")
+	noteFiles := fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "pinax-vault:notes/remote.md", Name: "remote.md", Dir: "notes", Version: "v1", SHA256: testFileSHA(t, notePath), Path: notePath})
+	// hydrate 第一次：传输中断 → 计入 failed 且不留半截文件。
+	fake.setState(t, map[string]any{
+		"files":            noteFiles,
+		"partial_download": map[string]any{"pinax-vault:notes/remote.md": true},
+	})
+	projection, err := svc.StorageHydrate(ctx, DrivebridgeHydrateRequest{VaultPath: root, Space: "pinax-vault"})
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if projection.Facts["files_failed"] != "1" {
+		t.Fatalf("interrupted transfer must fail, facts = %#v", projection.Facts)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "notes", "remote.md")); statErr == nil {
+		t.Fatal("interrupted transfer must not leave a partial copy")
+	}
+	// hydrate 重试（远端健康）：正常落地，不误报本地冲突。
+	fake.setState(t, map[string]any{"files": noteFiles})
+	projection, err = svc.StorageHydrate(ctx, DrivebridgeHydrateRequest{VaultPath: root, Space: "pinax-vault"})
+	if err != nil {
+		t.Fatalf("hydrate retry: %v", err)
+	}
+	if projection.Facts["files_downloaded"] != "1" || projection.Facts["files_conflict"] != "0" {
+		t.Fatalf("retry must land the note without a bogus conflict, facts = %#v", projection.Facts)
+	}
+	// consume：登记后中断 → 不留半截落地副本，重试成功。
+	attachSource := filepath.Join(root, "attachments", "report.png")
+	fakeSource := filepath.Join(source, "report.png")
+	writeFile(t, attachSource, "CONSUME_PARTIAL_PAYLOAD")
+	writeFile(t, fakeSource, "CONSUME_PARTIAL_PAYLOAD")
+	fake.setState(t, map[string]any{
+		"files":            append(noteFiles, fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "r:report.png", Name: "report.png", Dir: "assets", Version: "v7", SHA256: testFileSHA(t, fakeSource), Path: fakeSource})...),
+		"partial_download": map[string]any{"r:report.png": true},
+	})
+	sourceSHA := testFileSHA(t, fakeSource)
+	if _, err := svc.AssetAdd(ctx, AssetRequest{VaultPath: root, Source: attachSource, Register: true, DrivebridgeRef: "drivebridge://pinax-vault/r:report.png@v7", DrivebridgeSHA256: sourceSHA}); err != nil {
+		t.Fatalf("asset add: %v", err)
+	}
+	// 登记模式的落地副本就是源文件：删掉它，把 consume 推进下载分支。
+	if err := os.Remove(attachSource); err != nil {
+		t.Fatalf("remove landed copy: %v", err)
+	}
+	if _, err := svc.ConsumeDrivebridgeAsset(ctx, AssetRequest{VaultPath: root, Ref: "report.png"}); err == nil {
+		t.Fatal("interrupted consume download must fail")
+	}
+	manifestRaw := readFile(t, filepath.Join(root, ".pinax", "assets", "manifest.json"))
+	var manifest struct {
+		Assets []domain.Asset `json:"assets"`
+	}
+	if err := json.Unmarshal([]byte(manifestRaw), &manifest); err != nil {
+		t.Fatalf("manifest invalid: %v", err)
+	}
+	landedPath := filepath.Join(root, filepath.FromSlash(manifest.Assets[0].Path))
+	if _, statErr := os.Stat(landedPath); statErr == nil {
+		t.Fatal("interrupted consume must not leave a partial landed copy")
+	}
+	fake.setState(t, map[string]any{
+		"files": append(noteFiles, fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "r:report.png", Name: "report.png", Dir: "assets", Version: "v7", SHA256: sourceSHA, Path: fakeSource})...),
+	})
+	if _, err := svc.ConsumeDrivebridgeAsset(ctx, AssetRequest{VaultPath: root, Ref: "report.png"}); err != nil {
+		t.Fatalf("consume retry must land the asset: %v", err)
+	}
+}
+
 func TestParseDrivebridgeRefShapes(t *testing.T) {
 	space, fileID, version, err := ParseDrivebridgeRef("drivebridge://pinax-vault/r:note.md@v3")
 	if err != nil || space != "pinax-vault" || fileID != "r:note.md" || version != "v3" {

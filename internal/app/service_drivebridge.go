@@ -644,6 +644,9 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 		// 钉住观察到的文件身份：传输后再次核对 version/sha256，变化则失败，
 		// 不静默接受新字节。
 		if _, _, err := runDrivebridgeJSON(ctx, "download", "--ref", file.Ref, "--out", target); err != nil {
+			// 中断传输只可能留下半截文件：清掉，避免下次 hydrate 把它
+			// 误判成本地冲突（target 下载前不存在，删除不伤用户数据）。
+			_ = os.Remove(target)
 			failures++
 			projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
 				Code:    "hydrate_transfer_failed",
@@ -797,6 +800,12 @@ func (s *Service) ConsumeDrivebridgeAsset(ctx context.Context, req AssetRequest)
 			notFound := &domain.CommandError{Code: domain.ErrorCodeAssetNotFound, Message: "Asset not found", Hint: fmt.Sprintf("pinax asset list --vault %s --json", shellQuote(root))}
 			return domain.NewErrorProjection("asset.consume_drivebridge", notFound), notFound
 		}
+	} else if asset.Drivebridge == nil {
+		// 索引投影没有 drivebridge 列：index refresh 会把资产行重建为无
+		// pin 版本。manifest 是 pin 的真源，按路径回填，不覆盖已有 pin。
+		if manifestAsset, manifestErr := pinaxassets.Find(root, asset.Path); manifestErr == nil && manifestAsset.Drivebridge != nil {
+			asset.Drivebridge = manifestAsset.Drivebridge
+		}
 	}
 	pinned := asset.Drivebridge
 	if pinned == nil {
@@ -834,6 +843,8 @@ func (s *Service) ConsumeDrivebridgeAsset(ctx context.Context, req AssetRequest)
 			return errorProjection("asset.consume_drivebridge", err), err
 		}
 		if _, _, err := runDrivebridgeJSON(ctx, "download", "--ref", pinned.FileID, "--out", target); err != nil {
+			// 清掉中断传输留下的半截文件，避免重试被误判成已落地冲突。
+			_ = os.Remove(target)
 			return errorProjection("asset.consume_drivebridge", err), err
 		}
 		if pinned.SHA256 != "" && fileSHA256OrEmpty(target) != pinned.SHA256 {
