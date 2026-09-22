@@ -255,6 +255,144 @@ func TestConfigPathsUseXDGAndProjectVault(t *testing.T) {
 	}
 }
 
+func TestJudgmentSwitchDefaultsDormant(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Judgment.Enabled || cfg.Judgment.Mode != JudgmentModeOff {
+		t.Fatalf("judgment default must stay dormant: %#v", cfg.Judgment)
+	}
+	if value, ok := Value(cfg, "judgment.enabled"); !ok || value != "false" {
+		t.Fatalf("judgment.enabled value = %q ok=%v", value, ok)
+	}
+	if value, ok := Value(cfg, "judgment.mode"); !ok || value != "off" {
+		t.Fatalf("judgment.mode value = %q ok=%v", value, ok)
+	}
+
+	root := t.TempDir()
+	result, err := Load(LoadOptions{VaultPath: root, Env: mapEnv(map[string]string{})})
+	if err != nil {
+		t.Fatalf("load default: %v", err)
+	}
+	if result.Config.Judgment.Enabled || JudgmentEffectiveMode(result.Config.Judgment.Mode) != JudgmentModeOff {
+		t.Fatalf("loaded judgment config must stay dormant: %#v", result.Config.Judgment)
+	}
+	sources := map[string]SettingProjection{}
+	for _, setting := range result.Settings {
+		sources[setting.Key] = setting
+	}
+	for _, key := range []string{"judgment.enabled", "judgment.mode"} {
+		setting, ok := sources[key]
+		if !ok {
+			t.Fatalf("settings projection missing %q", key)
+		}
+		if setting.Source != "default" || !setting.Writable {
+			t.Fatalf("%s setting = %#v", key, setting)
+		}
+	}
+}
+
+func TestJudgmentSwitchMergesFilesEnvAndFlags(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user.yaml")
+	project := filepath.Join(root, "vault", ".pinax", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(project), 0o755); err != nil {
+		t.Fatalf("mkdir project config: %v", err)
+	}
+	writeConfigFixture(t, user, "judgment:\n  enabled: true\n  mode: shadow\n")
+	writeConfigFixture(t, project, "judgment:\n  mode: assist\n")
+
+	result, err := Load(LoadOptions{
+		VaultPath:         filepath.Join(root, "vault"),
+		UserConfigPath:    user,
+		ProjectConfigPath: project,
+		Env:               mapEnv(map[string]string{"PINAX_JUDGMENT_ENABLED": "true"}),
+		ExplicitFlags:     map[string]string{"judgment.mode": "shadow"},
+	})
+	if err != nil {
+		t.Fatalf("load judgment config: %v", err)
+	}
+	if !result.Config.Judgment.Enabled || result.Config.Judgment.Mode != JudgmentModeShadow {
+		t.Fatalf("merged judgment config = %#v", result.Config.Judgment)
+	}
+	for _, want := range []string{user, project, "PINAX_JUDGMENT_ENABLED", "judgment.mode"} {
+		if !result.Sources.Contains(want) {
+			t.Fatalf("sources missing %q: %#v", want, result.Sources)
+		}
+	}
+	modeSource := ""
+	for _, setting := range result.Settings {
+		if setting.Key == "judgment.mode" {
+			modeSource = setting.Source
+		}
+	}
+	if modeSource != "flag" {
+		t.Fatalf("judgment.mode source = %q, want flag", modeSource)
+	}
+}
+
+func TestJudgmentSwitchEnvModeOffDisablesEnabledConfig(t *testing.T) {
+	root := t.TempDir()
+	user := filepath.Join(root, "user.yaml")
+	writeConfigFixture(t, user, "judgment:\n  enabled: true\n  mode: assist\n")
+	result, err := Load(LoadOptions{
+		VaultPath:      root,
+		UserConfigPath: user,
+		Env:            mapEnv(map[string]string{"PINAX_JUDGMENT_MODE": "off"}),
+	})
+	if err != nil {
+		t.Fatalf("load disabled judgment config: %v", err)
+	}
+	if JudgmentEffectiveMode(result.Config.Judgment.Mode) != JudgmentModeOff {
+		t.Fatalf("env off must disable judgment, mode = %q", result.Config.Judgment.Mode)
+	}
+}
+
+func TestJudgmentSwitchRejectsInvalidCombinations(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		env  map[string]string
+		code string
+	}{
+		{name: "mode shadow without enabled", body: "judgment:\n  mode: shadow\n", code: "config_invalid"},
+		{name: "mode assist without enabled", body: "judgment:\n  mode: assist\n", code: "config_invalid"},
+		{name: "unknown mode", body: "judgment:\n  enabled: true\n  mode: auto\n", code: "config_invalid"},
+		{name: "env mode without enabled", body: "", env: map[string]string{"PINAX_JUDGMENT_MODE": "shadow"}, code: "config_invalid"},
+		{name: "env disable with enabled mode", body: "judgment:\n  enabled: true\n  mode: assist\n", env: map[string]string{"PINAX_JUDGMENT_ENABLED": "false"}, code: "config_invalid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			user := filepath.Join(root, "config.yaml")
+			if tt.body != "" {
+				writeConfigFixture(t, user, tt.body)
+			}
+			env := map[string]string{}
+			for k, v := range tt.env {
+				env[k] = v
+			}
+			_, err := Load(LoadOptions{VaultPath: root, UserConfigPath: user, Env: mapEnv(env)})
+			if err == nil || ErrorCode(err) != tt.code {
+				t.Fatalf("error code = %q, err = %v", ErrorCode(err), err)
+			}
+		})
+	}
+}
+
+func TestJudgmentSwitchSetValueParsesTypes(t *testing.T) {
+	if parsed, err := parseConfigValue("judgment.enabled", "true"); err != nil || parsed != true {
+		t.Fatalf("judgment.enabled true = %#v, %v", parsed, err)
+	}
+	if parsed, err := parseConfigValue("judgment.enabled", "off"); err != nil || parsed != false {
+		t.Fatalf("judgment.enabled off = %#v, %v", parsed, err)
+	}
+	if _, err := parseConfigValue("judgment.enabled", "maybe"); err == nil || ErrorCode(err) != "config_invalid" {
+		t.Fatalf("judgment.enabled maybe must be rejected, got %v", err)
+	}
+	if parsed, err := parseConfigValue("judgment.mode", JudgmentModeShadow); err != nil || parsed != JudgmentModeShadow {
+		t.Fatalf("judgment.mode shadow = %#v, %v", parsed, err)
+	}
+}
+
 func writeConfigFixture(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

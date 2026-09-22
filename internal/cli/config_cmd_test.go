@@ -174,6 +174,83 @@ func TestConfigSetRequiresExplicitScope(t *testing.T) {
 	}
 }
 
+func TestConfigDoctorMarksExperimentalJudgmentSwitch(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	vault := filepath.Join(root, "vault")
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "judgment:\n  enabled: true\n  mode: shadow\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("NO_COLOR", "")
+
+	cmd := NewRootCommand("test")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--vault", vault, "config", "doctor", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute config doctor: %v\noutput:\n%s", err, out.String())
+	}
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatalf("config doctor json: %v\n%s", err, out.String())
+	}
+	diagnostics, ok := envelope.Data["diagnostics"].(map[string]any)
+	if !ok || diagnostics["judgment_status"] != "experimental_shadow" {
+		t.Fatalf("judgment diagnostic = %#v", envelope.Data["diagnostics"])
+	}
+
+	getCmd := NewRootCommand("test")
+	var getOut bytes.Buffer
+	getCmd.SetOut(&getOut)
+	getCmd.SetArgs([]string{"--vault", vault, "config", "get", "judgment.mode", "--agent"})
+	if err := getCmd.Execute(); err != nil {
+		t.Fatalf("config get judgment.mode: %v\n%s", err, getOut.String())
+	}
+	for _, want := range []string{"fact.key=judgment.mode", "fact.value=shadow", "fact.source=user", "pinax config set judgment.mode <value> --scope user"} {
+		if !strings.Contains(getOut.String(), want) {
+			t.Fatalf("config get judgment.mode missing %q:\n%s", want, getOut.String())
+		}
+	}
+}
+
+func TestConfigDoctorJudgmentSwitchStaysOffByDefault(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	vault := filepath.Join(root, "vault")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("NO_COLOR", "")
+
+	cmd := NewRootCommand("test")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--vault", vault, "config", "doctor", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute config doctor: %v\noutput:\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), `"judgment_status":"experimental_off"`) {
+		t.Fatalf("default judgment diagnostic must stay experimental_off:\n%s", out.String())
+	}
+}
+
+func TestConfigRejectsHalfEnabledJudgmentCombination(t *testing.T) {
+	root := t.TempDir()
+	xdg := filepath.Join(root, "xdg")
+	vault := filepath.Join(root, "vault")
+	writeCLITestFile(t, filepath.Join(xdg, "pinax", "config.yaml"), "judgment:\n  mode: assist\n")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("NO_COLOR", "")
+
+	cmd := NewRootCommand("test")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--vault", vault, "config", "get", "judgment.mode", "--agent"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(out.String(), "judgment.mode 不合法") {
+		t.Fatalf("half-enabled judgment config must fail fast:\n%s", out.String())
+	}
+}
+
 func writeCLITestFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

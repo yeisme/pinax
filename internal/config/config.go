@@ -24,7 +24,26 @@ type Config struct {
 	Storage  StorageConfig  `mapstructure:"storage" yaml:"storage" json:"storage"`
 	Themes   ThemeSet       `mapstructure:"themes" yaml:"themes" json:"themes"`
 	Markdown MarkdownConfig `mapstructure:"markdown" yaml:"markdown" json:"markdown"`
+	Judgment JudgmentConfig `mapstructure:"judgment" yaml:"judgment" json:"judgment"`
 }
+
+// JudgmentConfig 是实验性（experimental）inbox judgment 开关面。默认零值
+// 即完全休眠：enabled=false 且 mode=off，inbox 流程零 judgment 装配、零
+// transport 调用。mode=shadow/assist 必须显式 enabled=true，非法组合在
+// 配置加载时 fail-fast 拒绝。启用模式所需的 transport、精确模型 pin 与
+// 授权注入不来自配置文件：本节只保存开关，不保存、不发现凭据或 adapter。
+type JudgmentConfig struct {
+	Enabled bool   `mapstructure:"enabled" yaml:"enabled" json:"enabled"`
+	Mode    string `mapstructure:"mode" yaml:"mode" json:"mode"`
+}
+
+// JudgmentModeOff 与 inboxjudgment 包的 off/shadow/assist 模式字面量一致；
+// config 包不依赖实现包，字面量在此按合同钉住。
+const (
+	JudgmentModeOff    = "off"
+	JudgmentModeShadow = "shadow"
+	JudgmentModeAssist = "assist"
+)
 
 type RemoteConfig struct {
 	APIURL string `mapstructure:"api_url" yaml:"api_url" json:"api_url,omitempty"`
@@ -175,12 +194,13 @@ func ErrorCode(err error) string {
 
 func DefaultConfig() Config {
 	return Config{
-		Output:  OutputConfig{Style: "table", Color: "auto", Theme: "pinax", Width: 100, Markdown: MarkdownConfig{Enabled: true, Style: "auto"}},
-		Editor:  EditorConfig{},
-		Note:    NoteConfig{Status: "active"},
-		Search:  SearchConfig{Limit: 20},
-		Storage: StorageConfig{Backend: "local"},
-		Themes:  ThemeSet{Custom: map[string]string{}},
+		Output:   OutputConfig{Style: "table", Color: "auto", Theme: "pinax", Width: 100, Markdown: MarkdownConfig{Enabled: true, Style: "auto"}},
+		Editor:   EditorConfig{},
+		Note:     NoteConfig{Status: "active"},
+		Search:   SearchConfig{Limit: 20},
+		Storage:  StorageConfig{Backend: "local"},
+		Themes:   ThemeSet{Custom: map[string]string{}},
+		Judgment: JudgmentConfig{Enabled: false, Mode: JudgmentModeOff},
 	}
 }
 
@@ -364,6 +384,12 @@ func configFromViper(v *viper.Viper, set map[string]bool) Config {
 	if set["themes.custom"] {
 		cfg.Themes.Custom = v.GetStringMapString("themes.custom")
 	}
+	if set["judgment.enabled"] {
+		cfg.Judgment.Enabled = v.GetBool("judgment.enabled")
+	}
+	if set["judgment.mode"] {
+		cfg.Judgment.Mode = v.GetString("judgment.mode")
+	}
 	return cfg
 }
 
@@ -393,6 +419,8 @@ func configKeys() []string {
 		"storage.profile",
 		"storage.token",
 		"themes.custom",
+		"judgment.enabled",
+		"judgment.mode",
 	}
 }
 
@@ -421,6 +449,8 @@ func settingsProjectionKeys() []string {
 		"storage.endpoint",
 		"storage.profile",
 		"themes.custom",
+		"judgment.enabled",
+		"judgment.mode",
 	}
 }
 
@@ -484,6 +514,10 @@ func envConfigKey(envKey string) string {
 		return "search.limit"
 	case "PINAX_SEARCH_ALLOW_STALE":
 		return "search.allow_stale"
+	case "PINAX_JUDGMENT_ENABLED":
+		return "judgment.enabled"
+	case "PINAX_JUDGMENT_MODE":
+		return "judgment.mode"
 	default:
 		return ""
 	}
@@ -555,6 +589,12 @@ func mergeConfig(dst *Config, src Config, isSet func(string) bool) {
 	mergeStorage(&dst.Storage, src.Storage, isSet)
 	if isSet("themes.custom") {
 		dst.Themes.Custom = copyStringMap(src.Themes.Custom)
+	}
+	if isSet("judgment.enabled") {
+		dst.Judgment.Enabled = src.Judgment.Enabled
+	}
+	if isSet("judgment.mode") {
+		dst.Judgment.Mode = src.Judgment.Mode
 	}
 }
 
@@ -634,6 +674,8 @@ func applyEnv(cfg *Config, sources *SourceSet, env func(string) (string, bool)) 
 		}
 	})
 	apply("PINAX_SEARCH_ALLOW_STALE", func(v string) { cfg.Search.AllowStale = parseBool(v) })
+	apply("PINAX_JUDGMENT_ENABLED", func(v string) { cfg.Judgment.Enabled = parseBool(v) })
+	apply("PINAX_JUDGMENT_MODE", func(v string) { cfg.Judgment.Mode = v })
 	apply("NO_COLOR", func(v string) { cfg.Output.Color = "never" })
 	if cfg.Editor.Command == "" {
 		apply("EDITOR", func(v string) { cfg.Editor.Command = v })
@@ -677,6 +719,10 @@ func applyExplicitFlags(cfg *Config, sources *SourceSet, flags map[string]string
 			}
 		case "search.allow_stale":
 			cfg.Search.AllowStale = parseBool(value)
+		case "judgment.enabled":
+			cfg.Judgment.Enabled = parseBool(value)
+		case "judgment.mode":
+			cfg.Judgment.Mode = value
 		}
 	}
 }
@@ -737,11 +783,30 @@ func (cfg Config) Validate() error {
 			return configInvalid("themes.custom."+role, color)
 		}
 	}
+	// 实验性 judgment 开关：mode 域固定，shadow/assist 必须显式 enabled，
+	// 非法组合 fail-fast（含半开配置与未知值）。
+	switch cfg.Judgment.Mode {
+	case "", JudgmentModeOff:
+	case JudgmentModeShadow, JudgmentModeAssist:
+		if !cfg.Judgment.Enabled {
+			return configInvalid("judgment.mode", cfg.Judgment.Mode)
+		}
+	default:
+		return configInvalid("judgment.mode", cfg.Judgment.Mode)
+	}
 	return nil
 }
 
 func configInvalid(key, value string) error {
 	return &Error{Code: "config_invalid", Message: key + " 不合法: " + value}
+}
+
+// JudgmentEffectiveMode 归一化显示/装配用的 judgment mode：空值按 off。
+func JudgmentEffectiveMode(mode string) string {
+	if strings.TrimSpace(mode) == "" {
+		return JudgmentModeOff
+	}
+	return mode
 }
 func oneOf(value string, allowed ...string) bool {
 	for _, item := range allowed {
@@ -892,6 +957,10 @@ func Value(cfg Config, key string) (string, bool) {
 		return cfg.Storage.Endpoint, true
 	case "storage.profile":
 		return cfg.Storage.Profile, true
+	case "judgment.enabled":
+		return strconv.FormatBool(cfg.Judgment.Enabled), true
+	case "judgment.mode":
+		return JudgmentEffectiveMode(cfg.Judgment.Mode), true
 	default:
 		if role, ok := strings.CutPrefix(key, "themes.custom."); ok {
 			value, exists := cfg.Themes.Custom[role]
@@ -963,7 +1032,7 @@ func parseConfigValue(key, value string) (any, error) {
 			return nil, configInvalid(key, value)
 		}
 		return parsed, nil
-	case "output.markdown.enabled", "search.allow_stale":
+	case "output.markdown.enabled", "search.allow_stale", "judgment.enabled":
 		switch strings.ToLower(strings.TrimSpace(value)) {
 		case "1", "true", "yes", "on":
 			return true, nil

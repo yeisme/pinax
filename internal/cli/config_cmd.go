@@ -77,6 +77,7 @@ func addConfigCommands(root *cobra.Command, ctx commandBuildContext) {
 				"token_status":          "not_inspected",
 				"secret_ref_boundary":   "no_plaintext_secret_values",
 				"body_exposure_default": "none",
+				"judgment_status":       judgmentDiagnosticStatus(ctx.configResult.Config.Judgment),
 			}
 			for key, value := range diagnostics {
 				projection.Facts[key] = value
@@ -154,6 +155,16 @@ func configuredStatus(value string) string {
 		return "not_configured"
 	}
 	return "configured"
+}
+
+// judgmentDiagnosticStatus 报告实验性 inbox judgment 开关状态；配置已在
+// 加载时校验，mode 只会是 off/shadow/assist。
+func judgmentDiagnosticStatus(judgment pinaxconfig.JudgmentConfig) string {
+	mode := pinaxconfig.JudgmentEffectiveMode(judgment.Mode)
+	if mode == pinaxconfig.JudgmentModeOff {
+		return "experimental_off"
+	}
+	return "experimental_" + mode
 }
 
 func currentConfigPaths(ctx commandBuildContext) pinaxconfig.Paths {
