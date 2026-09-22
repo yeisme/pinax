@@ -721,6 +721,129 @@ func TestInterruptedTransfersLeaveNoPartialCopies(t *testing.T) {
 	}
 }
 
+func TestStorageHydrateSkipsUnverifiableListingEntries(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	source := t.TempDir()
+	notePath := filepath.Join(source, "remote.md")
+	writeFile(t, notePath, "---\nschema_version: pinax.note.v1\ntitle: Remote Note\n---\n\nbody\n")
+	// 清单条目缺 sha256：不可校验即不可落地。
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "pinax-vault:notes/remote.md", Name: "remote.md", Dir: "notes", Version: "v1", SHA256: "", Path: notePath}),
+	})
+	projection, err := svc.StorageHydrate(ctx, DrivebridgeHydrateRequest{VaultPath: root, Space: "pinax-vault"})
+	if err != nil {
+		t.Fatalf("hydrate: %v", err)
+	}
+	if projection.Facts["unverified_skipped"] != "1" || projection.Facts["files_downloaded"] != "0" {
+		t.Fatalf("unverifiable entries must be skipped, facts = %#v", projection.Facts)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "notes", "remote.md")); statErr == nil {
+		t.Fatal("unverifiable file must not land")
+	}
+	if calls := fake.calls(t); strings.Contains(calls, "download") {
+		t.Fatalf("unverifiable entries must not be downloaded:\n%s", calls)
+	}
+	warned := false
+	for _, warning := range projection.Warnings {
+		if warning.Code == "hydrate_unverifiable_file" {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatalf("missing hydrate_unverifiable_file warning: %#v", projection.Warnings)
+	}
+}
+
+func TestAssetRegisterDerivesDrivebridgeSHA(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	attachSource := filepath.Join(root, "attachments", "report.png")
+	fakeSource := filepath.Join(t.TempDir(), "report.png")
+	writeFile(t, attachSource, "DERIVED_SHA_PAYLOAD")
+	writeFile(t, fakeSource, "DERIVED_SHA_PAYLOAD")
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "r:report.png", Name: "report.png", Dir: "assets", Version: "v7", SHA256: testFileSHA(t, fakeSource), Path: fakeSource}),
+	})
+	// 不传 --drivebridge-sha256：pin 必须从本地源派生内容 digest。
+	if _, err := svc.AssetAdd(ctx, AssetRequest{VaultPath: root, Source: attachSource, Register: true, DrivebridgeRef: "drivebridge://pinax-vault/r:report.png@v7"}); err != nil {
+		t.Fatalf("asset add: %v", err)
+	}
+	manifestRaw := readFile(t, filepath.Join(root, ".pinax", "assets", "manifest.json"))
+	var manifest struct {
+		Assets []domain.Asset `json:"assets"`
+	}
+	if err := json.Unmarshal([]byte(manifestRaw), &manifest); err != nil {
+		t.Fatalf("manifest invalid: %v", err)
+	}
+	if manifest.Assets[0].Drivebridge == nil || manifest.Assets[0].Drivebridge.SHA256 != testFileSHA(t, fakeSource) {
+		t.Fatalf("derived pin must be content-bound: %#v", manifest.Assets[0].Drivebridge)
+	}
+	// 派生 pin 真的参与校验：同 version 篡改内容 → file_version_changed。
+	tampered := filepath.Join(t.TempDir(), "tampered.png")
+	writeFile(t, tampered, "TAMPERED_BYTES")
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "r:report.png", Name: "report.png", Dir: "assets", Version: "v7", SHA256: testFileSHA(t, tampered), Path: tampered}),
+	})
+	if err := os.Remove(attachSource); err != nil {
+		t.Fatalf("remove landed copy: %v", err)
+	}
+	if _, err := svc.ConsumeDrivebridgeAsset(ctx, AssetRequest{VaultPath: root, Ref: "report.png"}); !hasCommandCode(err, "file_version_changed") {
+		t.Fatalf("derived pin must verify content, got %v", err)
+	}
+}
+
+func TestConsumeDrivebridgeReportsUnreadableAttachRecord(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetS3Storage(ctx, StorageRequest{VaultPath: root, Bucket: "notes", Region: "us-east-1", Prefix: "pinax/"}); err != nil {
+		t.Fatalf("set s3 storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "pinax-vault"}); err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	attachSource := filepath.Join(root, "attachments", "report.png")
+	fakeSource := filepath.Join(t.TempDir(), "report.png")
+	writeFile(t, attachSource, "UNREADABLE_RECORD_PAYLOAD")
+	writeFile(t, fakeSource, "UNREADABLE_RECORD_PAYLOAD")
+	fake.setState(t, map[string]any{
+		"files": fakeFiles(fakeDrivebridgeFile{Space: "pinax-vault", Ref: "r:report.png", Name: "report.png", Dir: "assets", Version: "v7", SHA256: testFileSHA(t, fakeSource), Path: fakeSource}),
+	})
+	if _, err := svc.AssetAdd(ctx, AssetRequest{VaultPath: root, Source: attachSource, Register: true, DrivebridgeRef: "drivebridge://pinax-vault/r:report.png@v7", DrivebridgeSHA256: testFileSHA(t, fakeSource)}); err != nil {
+		t.Fatalf("asset add: %v", err)
+	}
+	// attach 记录损坏：consume 必须报 unreadable 而不是伪装成未 attach。
+	writeFile(t, filepath.Join(root, ".pinax", "drivebridge-attach.yaml"), "{{{{ not-yaml")
+	if _, err := svc.ConsumeDrivebridgeAsset(ctx, AssetRequest{VaultPath: root, Ref: "report.png"}); !hasCommandCode(err, "drivebridge_attach_unreadable") {
+		t.Fatalf("expected drivebridge_attach_unreadable, got %v", err)
+	}
+	doctor, err := svc.StorageDoctor(ctx, VaultRequest{VaultPath: root})
+	if err != nil {
+		t.Fatalf("storage doctor: %v", err)
+	}
+	if doctor.Facts["drivebridge_attach_unreadable"] != "true" || doctor.Facts["drivebridge_attached"] != "false" {
+		t.Fatalf("doctor must surface the unreadable attach record, facts = %#v", doctor.Facts)
+	}
+}
+
 func TestParseDrivebridgeRefShapes(t *testing.T) {
 	space, fileID, version, err := ParseDrivebridgeRef("drivebridge://pinax-vault/r:note.md@v3")
 	if err != nil || space != "pinax-vault" || fileID != "r:note.md" || version != "v3" {
@@ -730,5 +853,35 @@ func TestParseDrivebridgeRefShapes(t *testing.T) {
 		if _, _, _, err := ParseDrivebridgeRef(bad); err == nil {
 			t.Fatalf("expected error for %q", bad)
 		}
+	}
+	// 注入形态：组件不得像 flag 或路径，否则会被 DriveBridge CLI 重新
+	// 解析成选项或造成路径歧义。
+	for _, bad := range []string{
+		"drivebridge://--evil/r:note.md@v3",
+		"drivebridge://space/--ref@v3",
+		"drivebridge://space/r:note.md@-v3",
+		"drivebridge://space/../../etc/passwd@v3",
+		"drivebridge://space/a/b@v3",
+		"drivebridge://./r@v3",
+	} {
+		if _, _, _, err := ParseDrivebridgeRef(bad); err == nil {
+			t.Fatalf("expected injection-shaped ref to be rejected: %q", bad)
+		}
+	}
+}
+
+func TestAttachDrivebridgeRejectsFlagLikeSpace(t *testing.T) {
+	fake := newFakeDrivebridge(t)
+	ctx := context.Background()
+	svc := NewService()
+	root := initDrivebridgeVault(t, svc)
+	if _, err := svc.SetLocalStorage(ctx, StorageRequest{VaultPath: root, Root: root}); err != nil {
+		t.Fatalf("set local storage: %v", err)
+	}
+	if _, err := svc.AttachDrivebridge(ctx, DrivebridgeAttachRequest{VaultPath: root, Space: "--space=evil"}); !hasCommandCode(err, "invalid_drivebridge_space") {
+		t.Fatalf("expected invalid_drivebridge_space, got %v", err)
+	}
+	if calls := fake.calls(t); strings.Contains(calls, "adopt") {
+		t.Fatalf("rejected space must never reach the DriveBridge CLI:\n%s", calls)
 	}
 }

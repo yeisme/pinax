@@ -41,11 +41,21 @@ func (s *Service) AssetAdd(_ context.Context, req AssetRequest) (domain.Projecti
 		if refErr != nil {
 			return errorProjection("asset.add", refErr), refErr
 		}
+		// pin 始终内容绑定：未显式给 sha 时从本地源派生，consume 下载后
+		// 总是可校验，不静默退化为仅 version 校验。
+		pinnedSHA := strings.ToLower(strings.TrimSpace(req.DrivebridgeSHA256))
+		if pinnedSHA == "" {
+			pinnedSHA = fileSHA256OrEmpty(req.Source)
+		}
+		if pinnedSHA == "" {
+			err := &domain.CommandError{Code: "drivebridge_sha_unavailable", Message: "DriveBridge pin needs a content digest", Hint: "Pass --drivebridge-sha256 or use a readable local source so the pin can be content-bound"}
+			return domain.NewErrorProjection("asset.add", err), err
+		}
 		opts.Drivebridge = &domain.DrivebridgeAssetRef{
 			URI:     strings.TrimSpace(req.DrivebridgeRef),
 			FileID:  fileID,
 			Version: version,
-			SHA256:  strings.ToLower(strings.TrimSpace(req.DrivebridgeSHA256)),
+			SHA256:  pinnedSHA,
 			Space:   space,
 		}
 	}

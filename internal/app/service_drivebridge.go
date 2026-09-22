@@ -285,6 +285,10 @@ func (s *Service) AttachDrivebridge(ctx context.Context, req DrivebridgeAttachRe
 		err := &domain.CommandError{Code: "argument_required", Message: "attach-drivebridge requires a DriveBridge space", Hint: "pinax storage attach-drivebridge --space <space> --vault <vault> --json"}
 		return domain.NewErrorProjection("storage.attach_drivebridge", err), err
 	}
+	if !validDrivebridgeToken(space) {
+		err := &domain.CommandError{Code: "invalid_drivebridge_space", Message: "DriveBridge space must not look like a flag or a path", Hint: "The space name must not start with a dash and must not contain separators or dot segments"}
+		return domain.NewErrorProjection("storage.attach_drivebridge", err), err
+	}
 	profile, err := loadStorageProfile(root)
 	if err != nil {
 		return errorProjection("storage.attach_drivebridge", err), err
@@ -449,6 +453,10 @@ func (s *Service) BindWorkingCopy(ctx context.Context, req DrivebridgeBindWorkin
 		err := &domain.CommandError{Code: "argument_required", Message: "bind-working-copy requires a DriveBridge space", Hint: "pinax storage bind-working-copy --provider " + provider + " --space <space> --vault <vault> --json"}
 		return domain.NewErrorProjection("storage.bind_working_copy", err), err
 	}
+	if !validDrivebridgeToken(space) {
+		err := &domain.CommandError{Code: "invalid_drivebridge_space", Message: "DriveBridge space must not look like a flag or a path", Hint: "The space name must not start with a dash and must not contain separators or dot segments"}
+		return domain.NewErrorProjection("storage.bind_working_copy", err), err
+	}
 	if !drivebridgeInstalled() {
 		err := &domain.CommandError{
 			Code:    "drivebridge_not_installed",
@@ -609,7 +617,7 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 	projection.Facts["drivebridge_space"] = record.Space
 	projection.Facts["drivebridge_kind"] = record.Kind
 	downloaded, unchanged, conflicts, failures := 0, 0, 0, 0
-	skipProtected, skipUnsafe := 0, 0
+	skipProtected, skipUnsafe, skipUnverified := 0, 0, 0
 	for _, file := range listed.Files {
 		if file.Directory {
 			continue
@@ -626,6 +634,16 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 		// 索引与配置由本机 Pinax 重新生成，不从文件面回放。
 		if rel == ".pinax" || strings.HasPrefix(rel, ".pinax/") {
 			skipProtected++
+			continue
+		}
+		if file.SHA256 == "" {
+			// 无内容 digest 的清单条目不可校验：fail closed 跳过并计数，
+			// 不静默落地未验证字节（合同：hydrate 钉 ref/version/sha256）。
+			skipUnverified++
+			projection.Warnings = append(projection.Warnings, domain.ProjectionWarning{
+				Code:    "hydrate_unverifiable_file",
+				Message: rel + " has no sha256 in the DriveBridge listing; hydrate only lands verifiable files",
+			})
 			continue
 		}
 		target := filepath.Join(root, filepath.FromSlash(rel))
@@ -674,6 +692,7 @@ func (s *Service) StorageHydrate(ctx context.Context, req DrivebridgeHydrateRequ
 	projection.Facts["files_failed"] = fmt.Sprint(failures)
 	projection.Facts["protected_skipped"] = fmt.Sprint(skipProtected)
 	projection.Facts["unsafe_paths_skipped"] = fmt.Sprint(skipUnsafe)
+	projection.Facts["unverified_skipped"] = fmt.Sprint(skipUnverified)
 	projection.Facts["remote_write"] = "false"
 	if downloaded > 0 || unchanged > 0 {
 		// 工作副本落地后由 Pinax 重建索引；笔记 id 仍由 Pinax 管理。
@@ -728,7 +747,14 @@ func drivebridgeAttachmentFacts(root string) (map[string]string, domain.Drivebri
 		"remote_api_configured": fmt.Sprint(remoteAPIConfigured(root)),
 	}
 	record, attached, err := loadDrivebridgeAttach(root)
-	if err != nil || !attached {
+	if err != nil {
+		// 记录存在但读不了：如实标注，而不是当作未 attach。
+		facts["drivebridge_attached"] = "false"
+		facts["drivebridge_attach_unreadable"] = "true"
+		facts["drivebridge_content_mode"] = drivebridgeContentModeNone
+		return facts, domain.DrivebridgeAttach{}, false
+	}
+	if !attached {
 		facts["drivebridge_attached"] = "false"
 		facts["drivebridge_content_mode"] = drivebridgeContentModeNone
 		return facts, domain.DrivebridgeAttach{}, false
@@ -764,6 +790,18 @@ func drivebridgeAttachmentFacts(root string) (map[string]string, domain.Drivebri
 	return facts, record, attached
 }
 
+// validDrivebridgeToken reports whether a component (space, file id,
+// version) is safe to forward as a single DriveBridge CLI argv value:
+// it must not look like a flag (leading dash) or a path (separators,
+// dot segments), so it can never be re-parsed as an option by the
+// child CLI or escape its intended argument slot.
+func validDrivebridgeToken(value string) bool {
+	if value == "" || strings.HasPrefix(value, "-") || value == "." || value == ".." {
+		return false
+	}
+	return !strings.ContainsAny(value, "/\\")
+}
+
 // ParseDrivebridgeRef parses the pinned reference shape
 // drivebridge://<space>/<file-id>@<version> shared with external consumers.
 func ParseDrivebridgeRef(raw string) (space, fileID, version string, err error) {
@@ -775,6 +813,9 @@ func ParseDrivebridgeRef(raw string) (space, fileID, version string, err error) 
 	fileID, version, ok := strings.Cut(rest, "@")
 	if !ok || fileID == "" || version == "" {
 		return "", "", "", &domain.CommandError{Code: "invalid_drivebridge_ref", Message: "DriveBridge references must look like drivebridge://<space>/<file-id>@<version>", Hint: "The file id and pinned version are both required"}
+	}
+	if !validDrivebridgeToken(u.Host) || !validDrivebridgeToken(fileID) || !validDrivebridgeToken(version) {
+		return "", "", "", &domain.CommandError{Code: "invalid_drivebridge_ref", Message: "DriveBridge reference components must not look like flags or paths", Hint: "The space, file id, and version must not start with a dash and must not contain separators or dot segments"}
 	}
 	return u.Host, fileID, version, nil
 }
@@ -814,7 +855,12 @@ func (s *Service) ConsumeDrivebridgeAsset(ctx context.Context, req AssetRequest)
 		err := &domain.CommandError{Code: "drivebridge_ref_missing", Message: "Asset has no pinned DriveBridge reference", Hint: "Register one with pinax asset add <file> --register --drivebridge-ref drivebridge://<space>/<file-id>@<version>"}
 		return domain.NewErrorProjection("asset.consume_drivebridge", err), err
 	}
-	if _, attached, attachErr := loadDrivebridgeAttach(root); attachErr != nil || !attached {
+	if _, attached, attachErr := loadDrivebridgeAttach(root); attachErr != nil {
+		// 损坏/不可读的 attach 记录不得伪装成“未 attach”：单独报错并
+		// 指向修复路径，已落地副本不受影响。
+		err := &domain.CommandError{Code: "drivebridge_attach_unreadable", Message: "The DriveBridge attach record could not be read", Hint: "Repair or remove .pinax/drivebridge-attach.yaml (pinax storage detach-drivebridge removes it), then re-attach with pinax storage attach-drivebridge"}
+		return domain.NewErrorProjection("asset.consume_drivebridge", err), err
+	} else if !attached {
 		// detach/撤销后新的跨项目读取必须失败；已落地副本不受影响。
 		err := &domain.CommandError{Code: "drivebridge_not_attached", Message: "This vault has no active DriveBridge attach record; new cross-project reads are refused", Hint: "Re-attach with pinax storage attach-drivebridge; landed vault copies remain usable offline"}
 		return domain.NewErrorProjection("asset.consume_drivebridge", err), err
