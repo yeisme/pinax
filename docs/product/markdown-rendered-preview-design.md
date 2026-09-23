@@ -93,8 +93,8 @@ fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashbo
 
 | 期 | 内容 | 时点约束 |
 | --- | --- | --- |
-| P0（本设计） | 合同与分期落盘 | 现在可做，不写代码 |
-| P1 | L1 rendered projection + CLI rendered 出口 + `pinax://` 引用与 `note ref`（change `pinax-rendered-view-v1`） | 2026-10-10 主线完成后启动；纯 additive，不动顶层命令面 |
+| P0（本设计） | 合同与分期落盘 | 已完成；交互规格见 [rendered-preview-interaction-ux.md](./rendered-preview-interaction-ux.md)，排序见 [preview-agent-delivery-map.md](./preview-agent-delivery-map.md) |
+| P1 | L1 rendered projection + CLI rendered 出口 + `pinax://` 引用与 `note ref`（change [`pinax-rendered-view-v1`](../openspec/changes/pinax-rendered-view-v1/)，24 任务，strict 已验） | 2026-10-10 主线完成后启动；纯 additive，不动顶层命令面 |
 | P2 | DSH Pane `rendered` surface + 真实事件游标（change 归 DSH/pane 域） | P1 之后 |
 | P3 | workbench Pinax module 模块计划与实现 | 按 web-open-design admission，P1 验证合同后 |
 | P4 | pinax-web-renderer 切换 L1 数据源 + 编辑器 URI handler | 最后 |

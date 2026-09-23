@@ -85,7 +85,7 @@ agent-memory-runtime 已规划 `pinax.agent.*` proposal 面（memory 生命周�
 | 本设计条目 | 归属 | 动作 |
 | --- | --- | --- |
 | 3.1 / 3.3 | `pinax-agent-memory-runtime` | 以需求附录并入该 change 的 context compiler 与 MCP 面任务，不另立 |
-| 3.2 note 域 proposal | 新 change `pinax-agent-note-proposal-v1`（10-10 后） | additive MCP/CLI，复用 proof loop |
+| 3.2 note 域 proposal | 新 change [`pinax-agent-note-proposal-v1`](../openspec/changes/pinax-agent-note-proposal-v1/)（10-10 后，strict 已验） | additive MCP/CLI，复用 proof loop；审阅 UX 见[交互规格 §7](./rendered-preview-interaction-ux.md) |
 | 3.4 | 预览设计 P1 的 `pinax://` change | 同一 change 内带上 `--agent` 出口 |
 | 3.5 | dogfood change | 指标进 evidence profile，不改合同 |
 | 3.6 | 各 change 收尾项 | 检查清单化 |
