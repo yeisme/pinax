@@ -2,7 +2,7 @@
 
 - [x] 生成本变更 OpenSpec，并记录兼容窗口、回滚和数据安全边界。
 - [x] 用兼容提示层替换 `pinax kb` 的向量实现。
-- [x] 删除 Pinax semantic、Inferrum/LanceDB、provider、sidecar 和 KB generation/evaluation/review 代码。
+- [x] 删除 Pinax semantic、LanceDB、provider、sidecar 和 KB generation/evaluation/review 代码。
 - [x] 删除 `kb.sidecar.*` 配置、环境变量、Go module/vendor 依赖。
 - [x] 将旧 review API 改为 HTTP 410 `kb_decoupled`，保留一个迁移窗口。
 - [x] 清理 sidecar canary、Taskfile 质量门和 KB provider 测试。

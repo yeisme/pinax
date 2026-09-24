@@ -2,14 +2,14 @@
 
 ## 目标
 
-移除 Pinax 对向量数据库、embedding provider、Inferrum/LanceDB sidecar 和
+移除 Pinax 对向量数据库、embedding provider、LanceDB sidecar 和
 Pinax 内置 RAG 检索的运行时依赖。Pinax 继续拥有 Markdown vault、SQLite/GORM
 本地索引、确定性的全文检索、memory ledger 和加密同步；未来 RAG 系统由外部
 项目独立设计、索引和部署。
 
 ## 变更范围
 
-- 删除 `internal/semantic`、KB generation/evaluation/review 服务、Inferrum vendor
+- 删除 `internal/semantic`、KB generation/evaluation/review 服务、向量检索 vendor
   和 Go module 依赖。
 - 移除 `kb.sidecar.*` 配置与 `PINAX_KB_*` 环境变量。
 - 直接删除 `pinax kb` 命令树与 `kb.context`/`kb.review.*` 远端 capability：

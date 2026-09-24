@@ -25,4 +25,4 @@
 
 - 代码：`internal/domain`（信任字段与分级推导）、`internal/app`（verify/metadata/search/show/browse）、`internal/index`（记录字段）、`internal/output`（human/agent/json 渲染）、`cmd/pinax`（命令与测试）。
 - 兼容：现有 vault 与既有 `search` 输出不受影响；无信任字段的 note 按 `unverified` + 非 stale 处理；索引 schema 只增列，重建路径不变。
-- 下游：`brain answer`、DSH pane 投影、后续 `pinax-share-explore-v1`（本波配套 change）消费同一派生信号。
+- 下游：`brain answer`、Pane 投影、后续 `pinax-share-explore-v1`（本波配套 change）消费同一派生信号。

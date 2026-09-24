@@ -27,4 +27,4 @@ Pinax 已有五条 plan/apply 型管道（organize、metadata、repair、version
 
 - 代码：`internal/domain`（plan 读模型类型）、`internal/app`（聚合服务、共享事件 helper、各 apply 的 freshness 门）、`internal/cli`（pipeline 命令组）、`cmd/pinax`（测试）。
 - 兼容：既有 plan 文件、receipt、命令输出零破坏；freshness 拒绝路径为新增守卫（默认开启，`--allow-stale` 逃生门）；未保存的 plan（内存态 preview）不受影响。
-- 下游：proof loop 复用统一事件 helper；DSH pane/Workbench 后续可消费 `pipeline status` 投影。
+- 下游：proof loop 复用统一事件 helper；Pane/Workbench 后续可消费 `pipeline status` 投影。

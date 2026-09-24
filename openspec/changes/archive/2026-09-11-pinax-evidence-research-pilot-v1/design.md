@@ -67,7 +67,7 @@ openspec validate pinax-evidence-research-pilot-v1 --strict --no-interactive
 
 ## 回退与后续
 
-生产变化仅为片段字符边界、显式只读搜索和关联查询状态检查的局部修复；回退不会迁移任何数据，但会重新暴露旧行为。测试 profile 和试验文档可独立停用。未通过真实 gate 时，不发布或启用新的操作 Skill，不接入 Inferrum 或 DSH。通过后另建正确 owner 的固化任务，沿既有 CLI / profile 脚本维护结构化资产。
+生产变化仅为片段字符边界、显式只读搜索和关联查询状态检查的局部修复；回退不会迁移任何数据，但会重新暴露旧行为。测试 profile 和试验文档可独立停用。未通过真实 gate 时，不发布或启用新的操作 Skill，不接入外部检索或外部消费面。通过后另建正确 owner 的固化任务，沿既有 CLI / profile 脚本维护结构化资产。
 
 ## 本轮验证记录（2026-09-10）
 

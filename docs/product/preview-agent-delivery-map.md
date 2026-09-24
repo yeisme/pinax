@@ -12,7 +12,7 @@
    ├─► P1b pinax-agent-note-proposal-v1  (18 任务)  ──前置: memory-runtime 5.x 已合并
    │      └─ 合同稳定证据: agent-note-proposal profile
    ▼
-P2  DSH Pane rendered surface + 真实事件游标（DSH 域 change，消费 P1a 合同；
+P2  Pane rendered surface + 真实事件游标（pane 域 change，消费 P1a 合同；
     顺带评估 gated action `note.create_draft`）
    ▼
 P3  workbench Pinax module（client/yeisme-workbench，按 web-open-design admission
@@ -37,7 +37,7 @@ P4  pinax-web-renderer 切换 L1 数据源 + 编辑器 URI handler（`pinax://` 
 | G1 10-10 主线收口 | roadmap 连续性 Go/Iterate 判定完成，owner 出 release note |
 | G2 P1a 合同稳定 | `rendered-view-parity` 四断言族全绿 + strict validate 通过 |
 | G3 P1b 合同稳定 | `agent-note-proposal` evidence 全绿 + transport parity 通过 |
-| G4 P2 进入条件 | P1a 合同消费无 breaking 反馈 + DSH 侧 lane 空闲 |
+| G4 P2 进入条件 | P1a 合同消费无 breaking 反馈 + pane 侧 lane 空闲 |
 | G5 P3 进入条件 | workbench admission 模块计划过审 + P1a/P1b 均归档 |
 | G6 P4 进入条件 | `pinax://` 在 P1-P3 中 ≥30 天零格式变更 |
 

@@ -2,21 +2,10 @@
 
 ## Purpose
 
-Inferrum, LanceDB, embedding providers, and vector retrieval are no longer Pinax
-dependencies. A separate RAG project may choose and own those components.
+Vector databases, embedding providers, and retrieval runtimes are not Pinax
+dependencies. A separate RAG owner may choose and own those components.
 
 ## Requirements
-
-### Requirement: Pinax SHALL not consume Inferrum
-
-Pinax SHALL NOT import the Inferrum Go module, execute an Inferrum sidecar, or
-persist Inferrum/LanceDB projection data.
-
-#### Scenario: Dependency audit
-
-- **WHEN** Pinax builds the active CLI
-- **THEN** the module graph and vendor tree SHALL contain no Inferrum package or
-  sidecar dependency.
 
 ### Requirement: External RAG SHALL be reached through an explicit handoff
 

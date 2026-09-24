@@ -1,7 +1,7 @@
 # pinax-pane Specification
 
 ## Purpose
-TBD - created by archiving change pinax-dsh-pane-contract. Update Purpose after archive.
+定义 Pinax 作为领域 owner 的 Pane 投影合同：note list、backlinks、graph 摘要与 history 时间线以有界、脱敏、失败关闭的 envelope 交付；artifact 引用不含文件系统路径；结构化 mutation 只能经门控 action 走 Pinax 命令并携带幂等与回执。消费方不得复制 vault 真源、读取路径/正文/凭据，或绕过 Pinax parser 手写 metadata。
 ## Requirements
 ### Requirement: Pane 快照 SHALL 只投影有界笔记摘要
 

@@ -1,7 +1,7 @@
 """Shared QA mechanics; invoked only by an owner-bound project entry point.
 
 Source selection, baseline and questions are supplied by that owner. Each
-owner persists its own cases and review receipts; DSH never writes these files.
+owner persists its own cases and review receipts; consumers never write these files.
 """
 import argparse, contextlib, datetime, hashlib, json, os, re, subprocess, sys, tempfile, uuid
 from pathlib import Path

@@ -51,8 +51,8 @@ func TestBuildKnowledgeSourceAdapterProfile(t *testing.T) {
 	}
 }
 
-func TestBuildDshPaneProfile(t *testing.T) {
-	config := buildConfigForProfile("dsh-pane", "pane-run", io.Discard, io.Discard)
+func TestBuildPaneProfile(t *testing.T) {
+	config := buildConfigForProfile("pane", "pane-run", io.Discard, io.Discard)
 	command := strings.Join(config.Command, " ")
 	if !strings.Contains(command, "./internal/app") || !strings.Contains(command, "Pane") {
 		t.Fatalf("pane evidence command = %s", command)

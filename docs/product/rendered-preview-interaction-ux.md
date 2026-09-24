@@ -1,6 +1,6 @@
 # 渲染预览与 Agent 审阅交互体验规格
 
-- 状态：规格稿。本文定义各消费面的**交互合同**（Pinax 拥有交互语义，实现归各面 owner：CLI/MCP 在 `cli/pinax`，Pane 在 DSH 域，全功能阅读面在 `client/yeisme-workbench`）。
+- 状态：规格稿。本文定义各消费面的**交互合同**（Pinax 拥有交互语义，实现归各面 owner：CLI/MCP 在 `cli/pinax`，Pane 在消费方面，全功能阅读面在 `client/yeisme-workbench`）。
 - 日期：2026-09-23
 - 关联：[Markdown 预览设计](./markdown-rendered-preview-design.md)、[pinax-rendered-view-v1](../openspec/changes/pinax-rendered-view-v1/)、[pinax-agent-note-proposal-v1](../openspec/changes/pinax-agent-note-proposal-v1/)
 
@@ -45,7 +45,7 @@
 - **floating**：显示 `当前 v4（解析于 v3，已漂移 → stale）`——resolved 值不换、漂移只标状态；下一步给"复制新版本引用"单动作。
 - 所有 stale/unresolved 徽标可在 `--json` 中机器读取（`stale`、`resolved_revision`、`current_revision`）。
 
-## 5. DSH Pane rendered surface（P2，合同级交互）
+## 5. Pane rendered surface（P2，合同级交互）
 
 - 复用 pane 快照 envelope：渲染树装进 `payload.rendered`，红线不变（无路径/正文默认 bounded）。
 - 交互：点击锚点/卡片 → **gated 深链**（open in workbench / 复制引用），不直接在 Pane 内导航；Pane 保持快照语义，无内嵌滚动大战。

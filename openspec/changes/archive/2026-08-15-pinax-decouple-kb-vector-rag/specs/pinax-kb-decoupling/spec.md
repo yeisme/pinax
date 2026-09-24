@@ -4,7 +4,7 @@
 
 ### Requirement: Pinax SHALL own an in-process vector KB
 
-Pinax SHALL no longer own the vector database, embedding provider, Inferrum,
+Pinax SHALL no longer own the vector database, embedding provider,
 LanceDB, reranker, sidecar, semantic generation, or retrieval implementation
 previously exposed by `pinax kb`.
 

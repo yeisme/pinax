@@ -14,7 +14,7 @@ const (
 	PaneArtifactSchema = "pane.artifact.v1alpha1"
 )
 
-// PaneContext is the DSH Pane context carried on every envelope.
+// PaneContext is the pane context carried on every envelope.
 type PaneContext struct {
 	WorkspaceRef string `json:"workspaceRef"`
 	SessionRef   string `json:"sessionRef,omitempty"`

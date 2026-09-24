@@ -6,7 +6,7 @@
 
 ## 1. 目标
 
-让 Agent（Claude Code、Codex、Cursor、DSH 工作台内 agent）对 vault 的每一次读写都满足四条：
+让 Agent（Claude Code、Codex、Cursor、工作台内 agent）对 vault 的每一次读写都满足四条：
 
 1. **便宜**：默认 bounded 读取，token 花在刀刃上。
 2. **可提案**：写入门永远走 proposal + proof loop，Agent 只能 propose。
@@ -26,7 +26,7 @@
 | inbox 判断 | 进行中 | `pinax-inbox-judgment-v1`、`pinax-real-judgment-acceptance-v1` |
 | 连续性 dogfood | 进行中 | `pinax-trusted-continuity-dogfood-v1` |
 | mounted vault | 进行中 | `pinax-mounted-vault-local-v1` |
-| DSH pane gated actions（inbox.capture、sync.run） | 已支持 | — |
+| Pane gated actions（inbox.capture、sync.run） | 已支持 | — |
 
 ## 3. 六条优化线
 
@@ -61,7 +61,7 @@ agent-memory-runtime 已规划 `pinax.agent.*` proposal 面（memory 生命周�
 
 - Agent 任务产出统一记 `pinax://note/<object_id>?v=<revision>`（格式见[预览设计 §5](./markdown-rendered-preview-design.md)），消费方按需解析卡片——省 token 且可核验。
 - 资产闭环：agent 经 DriveBridge 上传文件 → note 内嵌 `drivebridge://file/<id>` → 渲染面显示状态卡。Pinax 与 DriveBridge 引用体系互不代理、互不感知对方内部状态。
-- DSH pane gated actions 在 P2（预览设计）时评估增加 `note.create_draft`，仍走 receipt。
+- Pane gated actions 在 P2（预览设计）时评估增加 `note.create_draft`，仍走 receipt。
 
 ### 3.5 可观测与验收
 

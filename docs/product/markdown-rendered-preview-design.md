@@ -2,7 +2,7 @@
 
 - 状态：设计稿（design-only）。本文只落合同与分期，不构成立即实施批准；任何实施 change 必须遵守 [Roadmap](./roadmap.md) 中 2026-10-10 前的可信 Agent 连续性主线。
 - 日期：2026-09-23
-- 关联：[Web/UI 归属](./web-open-design.md)、[DSH Pane 合同](../interfaces/dsh-pane.md)、[Agent 优化设计](./agent-optimization-design.md)
+- 关联：[Web/UI 归属](./web-open-design.md)、[Pane 合同](../interfaces/pane.md)、[Agent 优化设计](./agent-optimization-design.md)
 
 ## 1. 问题
 
@@ -12,7 +12,7 @@ Pinax 的可视化能力已经存在，但散落在五个互不复用的面上�
 | --- | --- | --- |
 | CLI `note preview` / `note show --view rendered` | 渲染预览正文 + `pinax-database-view` fence | 只支持一种 fence；wikilink/backlink/graph 不参与渲染 |
 | `web/pinax-web-renderer` | 静态发布 HTML（graph.json、search-index.json） | 面向公网发布产物，不是内部分析面，不消费运行时投影 |
-| DSH Pinax Pane | note list / backlinks / graph summary / history 四个 bounded envelope | 无正文渲染 surface；cursor/sequence 还是占位符 |
+| Pinax Pane | note list / backlinks / graph summary / history 四个 bounded envelope | 无正文渲染 surface；cursor/sequence 还是占位符 |
 | 本地 dashboard | 只读投影 | 独立实现，与上述面不共享渲染语义 |
 | Obsidian 兼容层（Preview） | wikilinks/backlinks/properties/attachments 兼容读取 | 无 Pinax 侧富阅读面，依赖用户装 Obsidian |
 
@@ -26,7 +26,7 @@ Pinax 的可视化能力已经存在，但散落在五个互不复用的面上�
 ```text
 L3 引用层    pinax://note/<object_id>?v=<revision> —— 任何 Markdown 可粘贴的稳定引用
                  + vault 内可嵌 drivebridge://file/<id> 外部资产引用
-L2 消费层    CLI rendered · DSH Pane rendered surface · workbench Pinax module ·
+L2 消费层    CLI rendered · Pane rendered surface · workbench Pinax module ·
              pinax-web-renderer 静态发布 · 编辑器薄适配 —— 全部消费同一合同
 L1 合同层    Rendered Projection Contract（versioned、renderer-agnostic、bounded）
              = 渲染树 + 已解析引用，不是 HTML
@@ -44,7 +44,7 @@ L1 合同层    Rendered Projection Contract（versioned、renderer-agnostic、b
 ### 3.2 Wikilink 与关系解析
 
 - wikilink 解析进树：resolved → `{object_id, title, status, version}` 卡片引用；broken → `broken` 标记。**永不输出文件系统路径**。
-- backlinks 不进正文树，作为投影附带的 bounded 面板数据（沿用 dsh-pane backlinks 规则：≤50 实体、`truncated`、`dropped_unsafe`）。
+- backlinks 不进正文树，作为投影附带的 bounded 面板数据（沿用 pane backlinks 规则：≤50 实体、`truncated`、`dropped_unsafe`）。
 - 渲染 footer 带 proof badge：`object_id · version · revision · rendered_at`——可核验来源是 Pinax 的品牌承诺，渲染产物同样要可核验。
 
 ### 3.3 Fence 注册表（从 1 种扩到 4 种）
@@ -54,7 +54,7 @@ L1 合同层    Rendered Projection Contract（versioned、renderer-agnostic、b
 | `pinax-database-view <name>` | bounded tab 投影（已支持） | database saved views |
 | `pinax-graph` | 当前 note ±N 跳局部图（默认 1，上限 2） | graph 只读投影 + notelinks |
 | `pinax-board <project>[/<sub>]` | 看板只读投影 | project board 投影 |
-| `pinax-timeline` | 本 note 的 ledger 修订时间线 | record ledger（同 dsh-pane history 规则，≤100） |
+| `pinax-timeline` | 本 note 的 ledger 修订时间线 | record ledger（同 pane history 规则，≤100） |
 
 fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashboard "failed 不能伪装成 ready 空集"的原则）。
 
@@ -76,7 +76,7 @@ fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashbo
 | 消费面 | 角色 | 变化 |
 | --- | --- | --- |
 | CLI `note preview --view rendered` | 管道/终端消费 | 升级为 L1 合同的 CLI 出口，`--json` 输出完整树 |
-| DSH Pinax Pane | 工作台内嵌 | 新增 `rendered` surface（envelope 扩展，仍走 `internal/app/pane.go` 装配）；顺带把 cursor/sequence 占位符换成真实事件游标 |
+| Pinax Pane | 工作台内嵌 | 新增 `rendered` surface（envelope 扩展，仍走 `internal/app/pane.go` 装配）；顺带把 cursor/sequence 占位符换成真实事件游标 |
 | workbench Pinax module（client/yeisme-workbench） | 内部全功能阅读面 | 按 [web-open-design](./web-open-design.md) 的 Module Admission 流程另立模块计划；只消费 L1 合同与 REST/RPC 投影，不读 `.pinax/**` |
 | pinax-web-renderer | 静态发布 | 发布构建改从 L1 合同取树，消除与内部渲染的语义分叉 |
 | 编辑器薄适配 | 跨工具 | 见 §5；不内置编辑器，不自研编辑器插件市场 |
@@ -85,7 +85,7 @@ fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashbo
 
 - 引用格式：`pinax://note/<object_id>?v=<revision>`（固定版本）；不带 `v` 解析为当前版本并标注 `floating`。
 - 复制命令：`pinax note ref "<title>" --copy` 同时输出 Markdown 链接与 `[[wikilink]]` 双格式进剪贴板；`--json`/`--agent` 输出引用对象。
-- 任何 Markdown 文件中出现 `pinax://` 引用：L1 渲染时解析为 hover-card 数据（title/kind/status/tags，同 dsh-pane note-list 实体边界）；解析失败显示 `unresolved` 占位。
+- 任何 Markdown 文件中出现 `pinax://` 引用：L1 渲染时解析为 hover-card 数据（title/kind/status/tags，同 pane note-list 实体边界）；解析失败显示 `unresolved` 占位。
 - 双向引用互通：Pinax note 内嵌 `drivebridge://file/<id>`（§3.4）；DriveBridge 侧不需要感知 Pinax。两个引用体系各自稳定、互不代理。
 - 编辑器路径分两步：先用 URI handler（`pinax://` → `pinax note show --view rendered` 终端/workbench 预览），编辑器扩展（VS Code/Obsidian 插件）留到验证引用格式稳定之后。
 
@@ -95,7 +95,7 @@ fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashbo
 | --- | --- | --- |
 | P0（本设计） | 合同与分期落盘 | 已完成；交互规格见 [rendered-preview-interaction-ux.md](./rendered-preview-interaction-ux.md)，排序见 [preview-agent-delivery-map.md](./preview-agent-delivery-map.md) |
 | P1 | L1 rendered projection + CLI rendered 出口 + `pinax://` 引用与 `note ref`（change [`pinax-rendered-view-v1`](../openspec/changes/pinax-rendered-view-v1/)，24 任务，strict 已验） | 2026-10-10 主线完成后启动；纯 additive，不动顶层命令面 |
-| P2 | DSH Pane `rendered` surface + 真实事件游标（change 归 DSH/pane 域） | P1 之后 |
+| P2 | Pane `rendered` surface + 真实事件游标（change 归 pane 域） | P1 之后 |
 | P3 | workbench Pinax module 模块计划与实现 | 按 web-open-design admission，P1 验证合同后 |
 | P4 | pinax-web-renderer 切换 L1 数据源 + 编辑器 URI handler | 最后 |
 

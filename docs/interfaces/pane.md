@@ -1,6 +1,6 @@
-# DSH Pane Interface Contract
+# Pane Interface Contract
 
-Pinax is the domain owner of the DSH Pinax Pane: the DSH Host (implemented in `agent/harness-plugins`, change `dsh-pinax-pane-v1`) consumes Pinax-owned projections and must never copy vault state or hand-write structured metadata. This document defines the Pinax-side contract implemented by `internal/app/pane.go`.
+Pinax is the domain owner of the Pinax Pane: external Pane consumers consume Pinax-owned projections and must never copy vault state or hand-write structured metadata. This document defines the Pinax-side contract implemented by `internal/app/pane.go`.
 
 ## Snapshot envelope (`pane.event.v1alpha1`)
 
@@ -10,7 +10,7 @@ Pinax is the domain owner of the DSH Pinax Pane: the DSH Host (implemented in `a
 - Unsafe refs are skipped: empty, absolute POSIX/Windows paths, URL schemes, and `token`/`authorization`/`cookie` substrings.
 - Status mapping: `success` → `ready`; `failed`/`error`/`offline` → `offline`; `permission_denied` → `permission_denied`. A failed projection is never presented as `ready` with empty entities.
 - `occurredAt`/`observedAt` are the real UTC assembly time (RFC3339). Snapshot `freshness` is `fresh`; negative snapshots report `unknown`.
-- `cursor`/`sequence` are placeholders (`c-1`/`-1`) until an event stream lands; after the first snapshot the Host must not poll to fake realtime — without a stream the Pane shows `offline`.
+- `cursor`/`sequence` are placeholders (`c-1`/`-1`) until an event stream lands; after the first snapshot the consumer must not poll to fake realtime — without a stream the Pane shows `offline`.
 
 Context (`PaneContext`) requires `workspaceRef` and `revision`; assembly fails closed without them.
 
@@ -64,10 +64,10 @@ Agents must not assemble JSON/YAML as canonical changes by hand. `RejectHandwrit
 
 ## Evidence
 
-The `dsh-pane` integration-evidence profile (component layer) runs the pane contract tests:
+The `pane` integration-evidence profile (component layer) runs the pane contract tests:
 
 ```bash
-go run ./tools/testkit/integrationevidence -profile dsh-pane
+go run ./tools/testkit/integrationevidence -profile pane
 ```
 
 Extra checks: `pane_snapshot_redaction`, `handwritten_metadata_rejected`, `backlinks_bounded`, `graph_summary_no_paths`, `history_timeline_bounded`.

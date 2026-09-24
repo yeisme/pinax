@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, dsh-pane, knowledge-source-adapter, or research-brief")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, pane, knowledge-source-adapter, or research-brief")
 	flag.Parse()
 	if *profile == "mcp-apps-browser" {
 		_, _ = fmt.Fprintln(os.Stderr, "The MCP Apps browser profile has been retired. Use --profile mcp-collaboration for Markdown tool verification.")
@@ -84,7 +84,7 @@ func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evid
 	if profile == "knowledge-source-adapter" {
 		return buildKnowledgeSourceAdapterConfig(runID, stdout, stderr)
 	}
-	if profile == "dsh-pane" {
+	if profile == "pane" {
 		return evidence.Config{
 			RunID:             runID,
 			ParentDir:         filepath.Join("temp", "integration-test-runs"),

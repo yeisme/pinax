@@ -16,7 +16,7 @@
 **Non-Goals**
 
 - 不实现 agent 自主审批（"agent 批 agent"不存在）。
-- 不改 dsh-pane gated actions、不动 memory-runtime 合同、不做配置化 auto-apply 白名单。
+- 不改 pane gated actions、不动 memory-runtime 合同、不做配置化 auto-apply 白名单。
 - 不做 workbench/pane 图形审阅面（后续）。
 
 ## Architecture

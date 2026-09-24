@@ -2,7 +2,7 @@
 
 ## Context
 
-五个渲染面各自为政、缺稳定引用——问题与三层设计（L1 合同 / L2 消费面 / L3 引用）见 [Markdown 预览设计](../../../docs/product/markdown-rendered-preview-design.md)，交互规格见 [交互体验规格](../../../docs/product/rendered-preview-interaction-ux.md)。本 change 只实施 L1 + CLI/MCP 出口 + L3 引用。现状关键事实：`note show --view rendered` 已渲染 `pinax-database-view` fence；dsh-pane 已固化 paneUnsafe 红线与 bounded 规则（backlinks ≤50、history ≤100）；graph/board/ledger 只读投影已存在；DriveBridge 引用 `drivebridge://file/<id>` 只经 `prepare_reference` 返回稳定引用。
+五个渲染面各自为政、缺稳定引用——问题与三层设计（L1 合同 / L2 消费面 / L3 引用）见 [Markdown 预览设计](../../../docs/product/markdown-rendered-preview-design.md)，交互规格见 [交互体验规格](../../../docs/product/rendered-preview-interaction-ux.md)。本 change 只实施 L1 + CLI/MCP 出口 + L3 引用。现状关键事实：`note show --view rendered` 已渲染 `pinax-database-view` fence；pane 合同已固化 paneUnsafe 红线与 bounded 规则（backlinks ≤50、history ≤100）；graph/board/ledger 只读投影已存在；DriveBridge 引用 `drivebridge://file/<id>` 只经 `prepare_reference` 返回稳定引用。
 
 ## Goals / Non-Goals
 
@@ -15,7 +15,7 @@
 
 **Non-Goals**
 
-- 不实现 DSH Pane rendered surface（P2）、workbench module（P3）、web-renderer 切换与编辑器 URI handler（P4）。
+- 不实现 Pane rendered surface（P2）、workbench module（P3）、web-renderer 切换与编辑器 URI handler（P4）。
 - 不做渲染面写路径、不代理外部资产字节、不新增常驻进程。
 - 不做非 note 目标的 `pinax://search|board` 引用（开放问题，P1 只做 note）。
 
@@ -54,7 +54,7 @@ note ref (object_id+version) ──► internal/app/render service
 - **D5 drivebridge:// 透传**：只识别 scheme 并输出 `external_ref` 状态卡（引用字符串原样 + 正文中声明的元数据），不调用 DriveBridge、不发网络 IO（测试断言零网络/零文件副作用）。
 - **D6 附件引用**：`pinax-asset://<object_id>`，mime 分类由投影给出，字节渲染由消费面负责。
 - **D7 MCP 默认 bounded**：`pinax.render_note` 默认 `display=card|context`；`body` 深度需显式参数且进审计（沿 NoteDisplay 纪律）。
-- **D8 与 pane envelope 的关系**：本 change 不改 dsh-pane 合同；P2 的 rendered surface 将把本合同装进 pane envelope，红线（paneUnsafe、fail-closed）已在两侧对齐。
+- **D8 与 pane envelope 的关系**：本 change 不改 pane 合同；P2 的 rendered surface 将把本合同装进 pane envelope，红线（paneUnsafe、fail-closed）已在两侧对齐。
 
 ## Risks / Migration / Rollback
 

@@ -15,7 +15,7 @@
 ## 2. 引用与关系解析
 
 - [ ] 2.1 Owner: links；Scope: `internal/render/wikilink.go` 及测试；Dependencies: 1.1；Lane: B；经 notelinks 投影解析 wikilink：resolved → 卡片引用（object_id/version/title/status），broken → 显式标记；Verification: `go test ./internal/render -run 'Wikilink|Broken' -count=1`；Expected: 不做路径推断、broken 不省略；Failure re-check: 用含别名/大小写差异的 fixture 对拍 notelinks 投影。
-- [ ] 2.2 Owner: links；Scope: `internal/render/backlinks.go` 及测试；Dependencies: 1.1；Lane: B；装配 backlinks 面板：≤50 实体、title ≤160、ok/broken、`truncated`/`dropped_unsafe`；Verification: `go test ./internal/render -run 'Backlinks|Bounded' -count=1`；Expected: 与 dsh-pane backlinks 规则一致；Failure re-check: 超限输入全量扫描 unsafe 再截断（沿 pane 修正过的语义）。
+- [ ] 2.2 Owner: links；Scope: `internal/render/backlinks.go` 及测试；Dependencies: 1.1；Lane: B；装配 backlinks 面板：≤50 实体、title ≤160、ok/broken、`truncated`/`dropped_unsafe`；Verification: `go test ./internal/render -run 'Backlinks|Bounded' -count=1`；Expected: 与 pane backlinks 规则一致；Failure re-check: 超限输入全量扫描 unsafe 再截断（沿 pane 修正过的语义）。
 - [ ] 2.3 Owner: refs；Scope: `internal/render/pinaxref.go` 及测试；Dependencies: 1.1；Lane: B；实现 `pinax://note/<id>?v=<rev>` 的生成与解析：固定版本精确解析、floating 带 `resolved_revision`+`stale`、漂移不换版、unresolved 显式；Verification: `go test ./internal/render -run 'PinaxRef|Floating|Stale|Unresolved' -count=1`；Expected: 漂移时 resolved 值不变仅标 stale；Failure re-check: 用双版本 note fixture 重放解析序列。
 
 ## 3. Fence 注册表
@@ -23,7 +23,7 @@
 - [ ] 3.1 Owner: fences；Scope: `internal/render/fenceregistry.go` 与 database-view 迁移；Dependencies: 1.1、1.2；Lane: C；建立 fence 注册表接口并把既有 `pinax-database-view` 迁入，行为与 golden 完全一致；Verification: `go test ./internal/render ./cmd/pinax -run 'FenceRegistry|DatabaseView|Golden' -count=1`；Expected: 0.2 的 golden diff 为空；Failure re-check: 逐字段对拍旧渲染输出。
 - [ ] 3.2 Owner: fences；Scope: `internal/render/fence_graph.go` 及测试；Dependencies: 3.1；Lane: C；实现 `pinax-graph` 局部图 fence：当前 note ±N 跳（默认 1、上限 2）、节点/边截断、`truncated`；Verification: `go test ./internal/render -run 'FenceGraph|Hops|Truncated' -count=1`；Expected: 截断确定、超限显式；Failure re-check: 用高联通 fixture 验证截断上限与排序确定性。
 - [ ] 3.3 Owner: fences；Scope: `internal/render/fence_board.go` 及测试；Dependencies: 3.1；Lane: C；实现 `pinax-board` fence：project/subproject 只读投影、列与卡片 bounded；Verification: `go test ./internal/render -run 'FenceBoard' -count=1`；Expected: 缺失 project → 失败占位不省略；Failure re-check: 对拍 project board 投影字段。
-- [ ] 3.4 Owner: fences；Scope: `internal/render/fence_timeline.go` 及测试；Dependencies: 3.1；Lane: C；实现 `pinax-timeline` fence：本 note ledger 事件 ≤100、op/ref/revision/time；Verification: `go test ./internal/render -run 'FenceTimeline|LedgerBounded' -count=1`；Expected: 与 dsh-pane history 规则一致；Failure re-check: 大 ledger fixture 验证截断与排序。
+- [ ] 3.4 Owner: fences；Scope: `internal/render/fence_timeline.go` 及测试；Dependencies: 3.1；Lane: C；实现 `pinax-timeline` fence：本 note ledger 事件 ≤100、op/ref/revision/time；Verification: `go test ./internal/render -run 'FenceTimeline|LedgerBounded' -count=1`；Expected: 与 pane history 规则一致；Failure re-check: 大 ledger fixture 验证截断与排序。
 - [ ] 3.5 Owner: fences；Scope: 失败占位语义与未知 fence；Dependencies: 3.1-3.4；Lane: C；失败 fence 输出稳定错误码+下一步动作的占位节点；未知 fence 原样透传为 code 节点；Verification: `go test ./internal/render -run 'FenceFailed|FenceUnknown' -count=1`；Expected: 无静默省略、无未知 fence 推断；Failure re-check: 注入投影错误逐 fence 验证占位。
 
 ## 4. 资产与外部引用

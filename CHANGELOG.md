@@ -6,7 +6,7 @@ First minor release after v0.1.x. Two breaking changes; read the migration notes
 
 ### Breaking
 
-- **`pinax kb` command tree removed.** Pinax no longer ships a vector/embedding/RAG runtime or the Inferrum/LanceDB sidecar; former `pinax kb *` commands now report unknown command and `/v1/kb/review/*` returns 404. `kb.*` config keys and `PINAX_KB_*` env vars are gone (leftover YAML keys are inert). Export Markdown and use an external RAG owner: `pinax export markdown` + `pinax search`. See `docs/commands/kb.md`.
+- **`pinax kb` command tree removed.** Pinax no longer ships a vector/embedding/RAG runtime or a vector-store sidecar; former `pinax kb *` commands now report unknown command and `/v1/kb/review/*` returns 404. `kb.*` config keys and `PINAX_KB_*` env vars are gone (leftover YAML keys are inert). Export Markdown and use an external RAG owner: `pinax export markdown` + `pinax search`. See `docs/commands/kb.md`.
 - **Sync encryption key derivation v2** (PBKDF2-SHA256 600k iterations, per-secret salt). Envelopes written by v0.2.0 cannot be read by older binaries — upgrade every device that syncs the vault before pushing. Legacy envelopes remain readable; migrate with `pinax sync pull --yes && pinax sync push --yes` and verify with `pinax sync keys --json` (`remote_derivation=v2`). Runbook: `docs/commands/sync.md`.
 
 ### Security

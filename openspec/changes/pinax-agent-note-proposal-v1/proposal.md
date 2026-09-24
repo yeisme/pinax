@@ -2,7 +2,7 @@
 
 ## Why
 
-Agent 对 vault 的写入目前只有两条窄路：DSH Pane 的两个 gated actions（`inbox.capture`、`sync.run`）和 proof loop 的 CLI 命令（用户本人终端执行）。MCP 默认只读。`pinax-agent-memory-runtime` 已为 memory 域建立 propose → review → approve 的纪律，但 **note 域**（日常笔记、journal、正文编辑）没有同等面：agent 要么不能写，要么被迫绕到 shell 命令。完整问题与六条优化线见 [Agent 优化设计](../../../docs/product/agent-optimization-design.md) §3.2/§3.5。
+Agent 对 vault 的写入目前只有两条窄路：Pane 的两个 gated actions（`inbox.capture`、`sync.run`）和 proof loop 的 CLI 命令（用户本人终端执行）。MCP 默认只读。`pinax-agent-memory-runtime` 已为 memory 域建立 propose → review → approve 的纪律，但 **note 域**（日常笔记、journal、正文编辑）没有同等面：agent 要么不能写，要么被迫绕到 shell 命令。完整问题与六条优化线见 [Agent 优化设计](../../../docs/product/agent-optimization-design.md) §3.2/§3.5。
 
 本 change 给 note 域补上同一纪律的 proposal 面：**agent 只能 propose，所有 apply 走 proof loop，中风险需用户确认**。
 
@@ -24,7 +24,7 @@ Agent 对 vault 的写入目前只有两条窄路：DSH Pane 的两个 gated act
 
 #### Modified Capabilities
 
-- 无。`pinax-agent-memory-runtime` 的合同不动（本 change 复用其 proposal 基型与 review 服务骨架，note payload 为新增 DTO）；dsh-pane gated actions 清本 change 不扩（P2 再评估 `note.create_draft`）。
+- 无。`pinax-agent-memory-runtime` 的合同不动（本 change 复用其 proposal 基型与 review 服务骨架，note payload 为新增 DTO）；pane gated actions 清单本 change 不扩（P2 再评估 `note.create_draft`）。
 
 ## Impact
 

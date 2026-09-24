@@ -8,7 +8,7 @@
 
 | 问题 | 固定目标旧笔记 | 回顾性找回 |
 | --- | --- | --- |
-| DSH design md | 通用 Frontend Design.md 模板 | 是 |
+| Pane design md | 通用 Frontend Design.md 模板 | 是 |
 | 项目生态 | OMH 项目偏移复盘：没有需求却制造监控审计需求 | 是 |
 | AI 网关 | Local-first Agent Gateway：BYOK 与本地 Agent CLI 的多 Adapter 架构 | 是 |
 | 未来方向 | AI 做剧开源生态的产品比较与 CEO 结论（2026-08） | 是 |
@@ -16,7 +16,7 @@
 
 回顾性找回 5/5；首轮找回率未测量。五题结论获批次认可；没有独立逐题评分。8 个去重引用来源均通过 CLI 读取、日期及正文摘要核对，程序检查相关文本位置，Agent 人工阅读支持相应的限界结论。程序的关键词检查不等于自动证明语义支持。证据：`temp/integration-test-runs/20260910T070350Z-research-citations/`。
 
-没有追加网络检索；历史笔记不证明当前 DSH 插件兼容性、Aigora 已实现能力或商业需求。剧本笔记中的模型机理描述未当作科学结论。未来方向保留为待真实用户和交付验证的假设。
+没有追加网络检索；历史笔记不证明当前插件兼容性、Aigora 已实现能力或商业需求。剧本笔记中的模型机理描述未当作科学结论。未来方向保留为待真实用户和交付验证的假设。
 
 ## 采纳与保存
 
@@ -24,7 +24,7 @@
 
 | 简报 slug | 实际 note ID | 来源关系 |
 | --- | --- | --- |
-| research-brief-dsh-design-20260910 | 01a08a29-c6db-7bbe-a92b-b0e0adfc2b4e | 2 |
+| research-brief-pane-design-20260910 | 01a08a29-c6db-7bbe-a92b-b0e0adfc2b4e | 2 |
 | research-brief-ecosystem-20260910 | 01a08a29-d807-7a04-9214-344a87c36219 | 2 |
 | research-brief-ai-gateway-20260910 | 01a08a29-e3f0-7e93-8a2b-102e5c3276d6 | 2 |
 | research-brief-product-direction-20260910 | 01a08a29-f14d-77e9-9850-bcc87cc7418f | 3 |
