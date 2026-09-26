@@ -63,7 +63,7 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Note workflow | [`pinax note`](./note.md) | Create, read, edit, move, archive, delete, tag, and view links for notes. |
 | Note workflow | [`pinax import markdown`](./import.md) | Bring external Markdown files or directories into the vault. |
 | Note workflow | [`pinax export markdown`](./export.md) | Export a Markdown bundle by criteria. |
-| Automation and integration | [`pinax knowledge`](./knowledge.md) | Export an allowlisted, refs-only knowledge projection for Inferrum ingestion. |
+| Automation and integration | [`pinax knowledge`](./knowledge.md) | Export an allowlisted, refs-only knowledge projection for retrieval-plane ingestion. |
 | Note workflow | [`pinax template`](./template.md) | Manage Markdown templates and template rendering records. |
 | Organization and retrieval | [`pinax view`](./view.md) | Save and reuse a set of note filtering criteria. |
 | Organization and retrieval | [`pinax folder`](./folder.md) | Uniformly create, move, delete, take over, and repair vault directories. |
@@ -127,7 +127,7 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Restore from a local backup | `pinax backup restore notes/example.md --revision <snapshot_id> --plan --vault work` |
 | Hand off semantic context | `pinax export markdown ./temp/rag-export --vault work --json` |
 | Export Markdown for external RAG | `pinax export markdown ./temp/rag-export --vault work --json` |
-| Export an allowlisted Inferrum projection | `pinax knowledge export-projection --output ./projection.json --allowlist notes/public.md --vault work --json` |
+| Export an allowlisted knowledge projection | `pinax knowledge export-projection --output ./projection.json --allowlist notes/public.md --vault work --json` |
 | Recall agent memory with ranking evidence | `pinax memory recall "release workflow" --entity pinax --vault work --json` |
 | Manage directories | `pinax folder create spaces/research --purpose notes --vault ./my-notes` |
 | View vault health | `pinax vault doctor --vault ./my-notes` |

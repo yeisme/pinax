@@ -11,7 +11,7 @@ and is not implemented by this project.
 ### Requirement: Pinax SHALL not own vector retrieval
 
 Pinax SHALL NOT import, start, or call a vector database, embedding provider,
-Inferrum, LanceDB, reranker, or RAG sidecar.
+LanceDB, reranker, or RAG sidecar.
 
 #### Scenario: Local search remains available
 

@@ -1,6 +1,6 @@
 # knowledge Command
 
-`pinax knowledge` exports an allowlisted, provider-neutral knowledge projection for Inferrum ingestion. The Pinax vault remains the source of truth. Export writes only the output package; it does not write vault Markdown, Inferrum/txtai databases, or retrieval indexes.
+`pinax knowledge` exports an allowlisted, provider-neutral knowledge projection for retrieval-plane ingestion. The Pinax vault remains the source of truth. Export writes only the output package; it does not write vault Markdown, external databases, or retrieval indexes.
 
 ## Usage
 
@@ -25,4 +25,4 @@ The default allowlist is empty. An empty allowlist produces an empty package wit
 
 ## Write Boundaries
 
-Export writes only `--output`. The path must be outside the vault. Vault notes, `.pinax/index.sqlite`, and any Inferrum/txtai database paths stay unchanged.
+Export writes only `--output`. The path must be outside the vault. Vault notes, `.pinax/index.sqlite`, and any external retrieval database paths stay unchanged.

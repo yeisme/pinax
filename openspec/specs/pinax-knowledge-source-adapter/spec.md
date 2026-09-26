@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change pinax-knowledge-source-adapter-v1. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 导出 SHALL 只覆盖 allowlisted 投影
 
 knowledge 投影导出 SHALL 只包含同时满足显式路径 allowlist 与条目 allow 标记的笔记；默认 allowlist 为空即零导出；MUST NOT 导出未授权内容或完整 vault 副本。
@@ -30,11 +32,10 @@ knowledge 投影导出 SHALL 只包含同时满足显式路径 allowlist 与条�
 
 ### Requirement: vault SHALL 保持唯一真源
 
-adapter MUST NOT 写 Inferrum/txtai DB 或任何检索索引；一切下游状态由消费方按投影自建。
+adapter MUST NOT 写任何外部检索 DB 或检索索引；一切下游状态由消费方按投影自建。
 
 #### Scenario: 只读边界
 
 - **WHEN** 导出运行
 - **THEN** vault 与外部 DB 均无写入
 - **AND** 架构测试锁定只读
-

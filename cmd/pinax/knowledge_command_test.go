@@ -117,12 +117,12 @@ func TestKnowledgeExportProjectionDefaultEmptyAllowlist(t *testing.T) {
 	writeCLIFixture(t, filepath.Join(root, "notes", "secret.md"), secretBody)
 	indexPath := filepath.Join(root, ".pinax", "index.sqlite")
 	writeCLIFixture(t, indexPath, "fake-index")
-	inferrumDB := filepath.Join(t.TempDir(), "inferrum.db")
-	writeCLIFixture(t, inferrumDB, "fake-inferrum")
+	externalDB := filepath.Join(t.TempDir(), "external-retrieval.db")
+	writeCLIFixture(t, externalDB, "fake-external-db")
 	beforeVault := snapshotTree(t, root)
-	beforeDB, err := os.ReadFile(inferrumDB)
+	beforeDB, err := os.ReadFile(externalDB)
 	if err != nil {
-		t.Fatalf("read inferrum db: %v", err)
+		t.Fatalf("read external db: %v", err)
 	}
 
 	outPath := filepath.Join(t.TempDir(), "empty.json")
@@ -148,12 +148,12 @@ func TestKnowledgeExportProjectionDefaultEmptyAllowlist(t *testing.T) {
 		t.Fatalf("empty export leaked note body:\n%s\n%s", out, raw)
 	}
 	assertTreeUnchanged(t, beforeVault, snapshotTree(t, root))
-	afterDB, err := os.ReadFile(inferrumDB)
+	afterDB, err := os.ReadFile(externalDB)
 	if err != nil {
-		t.Fatalf("reread inferrum db: %v", err)
+		t.Fatalf("reread external db: %v", err)
 	}
 	if string(afterDB) != string(beforeDB) {
-		t.Fatal("inferrum db mutated")
+		t.Fatal("external db mutated")
 	}
 }
 

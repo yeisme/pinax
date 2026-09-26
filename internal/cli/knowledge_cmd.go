@@ -14,7 +14,7 @@ func addKnowledgeCommands(root *cobra.Command, ctx commandBuildContext) {
 	knowledgeCmd := &cobra.Command{
 		Use:   "knowledge",
 		Short: "Export allowlisted knowledge projections",
-		Long:  "Export a provider-neutral, refs-only knowledge projection for Inferrum ingestion. The Pinax vault remains the source of truth; export never writes notes, Inferrum databases, or retrieval indexes.",
+		Long:  "Export a provider-neutral, refs-only knowledge projection for retrieval-plane ingestion. The Pinax vault remains the source of truth; export never writes notes, external databases, or retrieval indexes.",
 		Example: "pinax knowledge export-projection --output ./projection.json --vault ./my-notes --json\n" +
 			"pinax knowledge export-projection --output ./projection.json --allowlist notes/public.md --vault ./my-notes --json\n" +
 			"pinax knowledge export-projection --output ./projection.json --allowlist-file ./allowlist.txt --from-package ./prior.json --vault ./my-notes --json",

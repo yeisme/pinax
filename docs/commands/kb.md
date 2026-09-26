@@ -1,6 +1,6 @@
 # Removed: `pinax kb` and the native vector KB
 
-Pinax no longer owns a vector database, embedding provider, LanceDB/Inferrum
+Pinax no longer owns a vector database, embedding provider, LanceDB
 sidecar, or semantic RAG runtime, and the `pinax kb` command tree has been
 removed entirely. Running any `pinax kb` subcommand now reports an unknown
 command. Markdown remains the source of truth; Pinax continues to provide

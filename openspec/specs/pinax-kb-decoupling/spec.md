@@ -8,8 +8,8 @@ Pinax 不拥有向量数据库、embedding provider 或 RAG 运行时；Markdown
 
 ### Requirement: Pinax SHALL own an in-process vector KB
 
-Pinax SHALL no longer own the vector database, embedding provider, Inferrum,
-LanceDB, reranker, sidecar, semantic generation, or retrieval implementation
+Pinax SHALL no longer own the vector database, embedding provider, LanceDB,
+reranker, sidecar, semantic generation, or retrieval implementation
 previously exposed by `pinax kb`.
 
 #### Scenario: Vector rebuild is retired
@@ -29,7 +29,6 @@ data for `/v1/kb/review/*`.
 - **WHEN** a client requests a former KB review route
 - **THEN** Pinax SHALL return HTTP 404 and no generation, citation, provider
   credential, vector payload, or note body
-
 
 ### Requirement: Pinax SHALL provide an explicit external RAG handoff
 
