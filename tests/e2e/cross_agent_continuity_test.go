@@ -28,16 +28,16 @@ func TestCrossAgentContinuity(t *testing.T) {
 	// 使用 reference adapter harness
 	harness := agentadapter.NewHarness([]string{agentprotocol.SchemaVersion, agentprotocol.ContextSchemaVersion})
 	codexDesc := agentadapter.CodexDescriptor()
-	ordoDesc := agentadapter.OrdoDescriptor()
+	teamRuntimeDesc := agentadapter.TeamRuntimeDescriptor()
 	if _, err := harness.Negotiate(codexDesc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityHandoff}); err != nil {
 		t.Fatalf("codex negotiate: %v", err)
 	}
-	if _, err := harness.Negotiate(ordoDesc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityHandoff}); err != nil {
-		t.Fatalf("ordo negotiate: %v", err)
+	if _, err := harness.Negotiate(teamRuntimeDesc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityHandoff}); err != nil {
+		t.Fatalf("teamRuntime negotiate: %v", err)
 	}
 
-	// 阶段 1: Agent A (Ordo) 创建 handoff + proposal
-	agentA := agentadapter.OrdoPrincipal("ordo-worker-a")
+	// 阶段 1: Agent A (TeamRuntime) 创建 handoff + proposal
+	agentA := agentadapter.TeamRuntimePrincipal("team-runtime-worker-a")
 	handoff := harness.ConvertHandoff(agentA, agentadapter.CodexPrincipal("codex-agent-b"), scope,
 		"Prepare v0.2 release of Pinax Agent Continuity",
 		[]string{"chose deterministic truncation for continuity pack"},

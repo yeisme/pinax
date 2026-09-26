@@ -199,7 +199,7 @@ func TestAgentHandoff_CreateAndList(t *testing.T) {
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_h"}
 
 	from := agentprotocol.Principal{
-		SchemaVersion: agentprotocol.SchemaVersion, PrincipalID: "p_ordo", Runtime: "ordo",
+		SchemaVersion: agentprotocol.SchemaVersion, PrincipalID: "p_teamruntime", Runtime: "teamRuntime",
 		Trust:        agentprotocol.TrustLevelAdapter,
 		Capabilities: []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityPropose, agentprotocol.CapabilityHandoff, agentprotocol.CapabilityFeedback},
 	}

@@ -23,16 +23,16 @@ func TestHarness_NegotiateCodexCompatible(t *testing.T) {
 	}
 }
 
-func TestHarness_NegotiateOrdoCompatible(t *testing.T) {
+func TestHarness_NegotiateTeamRuntimeCompatible(t *testing.T) {
 	h := NewHarness([]string{agentprotocol.SchemaVersion, agentprotocol.ContextSchemaVersion})
-	desc := OrdoDescriptor()
+	desc := TeamRuntimeDescriptor()
 
 	result, err := h.Negotiate(desc, []agentprotocol.Capability{agentprotocol.CapabilityRead, agentprotocol.CapabilityPropose, agentprotocol.CapabilityHandoff})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !result.Compatible {
-		t.Errorf("Ordo should be compatible, reason=%s", result.Reason)
+		t.Errorf("TeamRuntime should be compatible, reason=%s", result.Reason)
 	}
 }
 
@@ -104,14 +104,14 @@ func TestHarness_ConvertProposal(t *testing.T) {
 
 func TestHarness_ConvertHandoff(t *testing.T) {
 	h := NewHarness([]string{agentprotocol.SchemaVersion})
-	from := OrdoPrincipal("ordo-worker")
+	from := TeamRuntimePrincipal("team-runtime-worker")
 	to := CodexPrincipal("codex-reviewer")
 	scope := agentprotocol.Scope{Kind: agentprotocol.ScopeKindProject, ID: "proj_1"}
 
 	handoff := h.ConvertHandoff(from, to, scope, "Review GORM migration",
 		[]string{"chose Gen"}, []string{"waiting on dbresolver"})
 
-	if handoff.FromPrincipal.Runtime != "ordo" {
+	if handoff.FromPrincipal.Runtime != "teamRuntime" {
 		t.Errorf("from runtime = %s", handoff.FromPrincipal.Runtime)
 	}
 	if handoff.ToPrincipal.Runtime != "codex" {
@@ -135,32 +135,32 @@ func TestHarness_CheckDegraded(t *testing.T) {
 	}
 }
 
-func TestHarness_CodexAndOrdoShareCoreSchema(t *testing.T) {
+func TestHarness_CodexAndTeamRuntimeShareCoreSchema(t *testing.T) {
 	// 验证两个 reference adapter 共用 100% core schema
 	codex := CodexDescriptor()
-	ordo := OrdoDescriptor()
+	teamRuntime := TeamRuntimeDescriptor()
 
 	// 相同的 supported versions
-	if codex.SupportedVersions[0] != ordo.SupportedVersions[0] {
+	if codex.SupportedVersions[0] != teamRuntime.SupportedVersions[0] {
 		t.Error("core schema versions should match")
 	}
 
 	// 相同的 core capabilities
-	if len(codex.Capabilities) != len(ordo.Capabilities) {
+	if len(codex.Capabilities) != len(teamRuntime.Capabilities) {
 		t.Error("core capabilities count should match")
 	}
 	codexCapSet := make(map[agentprotocol.Capability]bool)
 	for _, c := range codex.Capabilities {
 		codexCapSet[c] = true
 	}
-	for _, c := range ordo.Capabilities {
+	for _, c := range teamRuntime.Capabilities {
 		if !codexCapSet[c] {
 			t.Errorf("capability %s missing from Codex", c)
 		}
 	}
 
 	// Metadata 可以不同（runtime-specific）
-	if codex.Metadata["hook_version"] == ordo.Metadata["hook_version"] {
+	if codex.Metadata["hook_version"] == teamRuntime.Metadata["hook_version"] {
 		t.Error("runtime-specific metadata should differ")
 	}
 }

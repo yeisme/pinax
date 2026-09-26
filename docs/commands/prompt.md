@@ -49,7 +49,7 @@ Prompt asset imports use YAML with `schema_version: yeisme.prompt_asset.v1`. Req
 
 ## URI Boundary
 
-`pinax://prompt/<id>` is the stable cross-project reference. Auctra, Eikona, Ordo, scripts, and agents should call `pinax prompt resolve pinax://prompt/<id> --agent` or `--json` rather than reading Pinax SQLite tables, generated DAO files, or `.pinax` metadata directly.
+`pinax://prompt/<id>` is the stable cross-project reference. Auctra, Eikona, scripts, and agents should call `pinax prompt resolve pinax://prompt/<id> --agent` or `--json` rather than reading Pinax SQLite tables, generated DAO files, or `.pinax` metadata directly.
 
 Agent output is intentionally bounded: it includes decision-essential facts such as prompt asset ID, lifecycle, permission, domain, and next action. It does not include prompt body, local filesystem paths, provider payloads, hidden system prompts, private tool arguments, or full chain-of-thought.
 

@@ -35,4 +35,4 @@ Pinax 已有 experimental `pinax continue`、handoff、proposal/review 和 provi
 - Source evidence：扩展 bounded repository evidence resolution，并以真实 evidence 时间计算 freshness；缺失、stale、ambiguous 分开计数。
 - Split owner：Codex 与 Claude Code 的自然语言触发、安装和 CLI 调用编排归根仓库 `.skills/yeisme/pinax-agent/`，通过生成后的 `.agents/skills` 与 `.claude/skills` 消费 Pinax 合同；Pinax core 不嵌入 runtime-specific plugin。
 - Tests/evidence：补充 Go unit、command contract、testscript/process e2e、Codex/Claude fixture adapter 和真实 dogfood evidence；integration/e2e 运行写入 `temp/integration-test-runs/<run-id>/`。
-- Maturity：`pinax-agent-memory-runtime` 现有 Codex + Ordo 四周 stable gate 不变。本 change 只验证 personal continuity UX，不能替代或关闭该 runtime gate。
+- Maturity：`pinax-agent-memory-runtime` 现有 Codex + 第二 runtime（原 owner 已退役，待重新准入）四周 stable gate 不变。本 change 只验证 personal continuity UX，不能替代或关闭该 runtime gate。

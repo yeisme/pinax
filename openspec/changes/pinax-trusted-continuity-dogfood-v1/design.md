@@ -68,7 +68,7 @@ Pinax 已经具备以下 building blocks：
 - 不在 Pinax 内实现 Codex/Claude plugin、MCP Gateway、长期 daemon、聊天 SDK 或通信 bridge。
 - 不做团队 workspace、组织 ACL、公共 SaaS、定价、跨设备 onboarding、Web/桌面客户端。
 - 不扩大 action-capture canary，不新增 Feishu/task provider 或稳定 `intent=action_capture`。
-- 不以本 change 的 Codex + Claude / Pinax-only dogfood 替代 `pinax-agent-memory-runtime` 的 Codex + Ordo 四周 stable gate。
+- 不以本 change 的 Codex + Claude / Pinax-only dogfood 替代 `pinax-agent-memory-runtime` 的 Codex + 第二 runtime（待重新准入）四周 stable gate。
 
 ## Architecture
 
@@ -395,7 +395,7 @@ stateDiagram-v2
 - [每周 review 形成负担] → inline 只提示影响当前工作的一项；其余 review 有五分钟硬门槛。
 - [新增 registry 与 DB 增加状态面] → registry 仅存本机 mapping；DB 仅存最小 receipts；两者均可禁用且不成为 vault 内容真源。
 - [与 active action-capture canary 争抢方向] → 只完成其固定窗口与 closeout，不扩大接口；continuity 是唯一新增主线。
-- [产品 UX dogfood 被误当 runtime stable evidence] → 文档和 report 明确两个 gate 独立，现有 Codex + Ordo stable 条件不变。
+- [产品 UX dogfood 被误当 runtime stable evidence] → 文档和 report 明确两个 gate 独立，现有 Codex + 第二 runtime stable 条件不变。
 
 ## Migration Plan
 
@@ -415,4 +415,4 @@ Rollback：从 runtime profiles 移除 operator Skill 并重新 sync；关闭新
 
 - 第二 repository routing validation 选择哪个真实项目，必须在本 change Go 后由独立 CEO decision 确定；当前不预选。
 - Repository source 第一 slice 只保证 file/revision 级解析；是否支持 heading/line span，依据真实 stale/inspection failure 再决定。
-- `pinax-agent-memory-runtime` 何时满足 Codex + Ordo 四周 stable gate，继续由其现有 change 独立决定，本 change 不修改门槛。
+- `pinax-agent-memory-runtime` 何时满足 Codex + 第二 runtime（待重新准入）四周 stable gate，继续由其现有 change 独立决定，本 change 不修改门槛。

@@ -283,7 +283,7 @@ Root companion handoff 为 `openspec/changes/pinax-continuity-operator-handoff-v
 - 现有 `continue` 显式参数、`agent`、`memory`、`brain`、`review` 与 machine envelope 不删除、不重命名、不 repurpose。
 - 普通 `continue` 默认仍是 read-only；只有显式 recorded run 写最小 receipt。
 - 新能力继续标记 `experimental=true`。
-- 本 PRD 的 Codex + Claude / Pinax-only dogfood只验证产品 UX，不能关闭 `pinax-agent-memory-runtime` 已有 Codex + Ordo 四周 stable gate。
+- 本 PRD 的 Codex + Claude / Pinax-only dogfood只验证产品 UX，不能关闭 `pinax-agent-memory-runtime` 已有 Codex + 第二 runtime（原 owner 已退役，待重新准入）四周 stable gate。
 
 ## 13. OpenSpec 与执行真源
 
