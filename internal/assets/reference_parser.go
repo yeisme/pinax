@@ -81,6 +81,30 @@ func wikiAssetLinksInLine(req LinkExtractionRequest, line string, lineNo int) []
 
 func normalizeAssetReferenceTarget(target string) string {
 	target = strings.TrimSpace(target)
+	// Angle-bracketed destinations (<...>) run to the closing bracket:
+	// everything inside — spaces AND quotes — is the filename, and any
+	// markdown title follows the closing bracket and is discarded here.
+	// Fragment/query suffixes are still stripped afterwards.
+	if strings.HasPrefix(target, "<") {
+		if end := strings.Index(target, ">"); end > 1 {
+			inner := strings.TrimSpace(target[1:end])
+			if before, _, ok := strings.Cut(inner, "#"); ok {
+				inner = before
+			}
+			if before, _, ok := strings.Cut(inner, "?"); ok {
+				inner = before
+			}
+			return strings.TrimSpace(inner)
+		}
+	}
+	// Unbracketed destinations: a markdown title is separated from the
+	// destination by whitespace, so a quote NOT preceded by whitespace is
+	// part of the filename (O'Reilly.pdf) and must be preserved.
+	if index := strings.IndexAny(target, "\"'"); index > 0 {
+		if preceding := target[index-1]; preceding == ' ' || preceding == '\t' {
+			target = strings.TrimSpace(target[:index])
+		}
+	}
 	if strings.HasPrefix(target, "<") && strings.HasSuffix(target, ">") {
 		target = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(target, "<"), ">"))
 	}

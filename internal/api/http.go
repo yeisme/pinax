@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,6 +35,14 @@ type Server struct {
 	hideGroups   []string
 	tempSecret   string
 	manifest     ManifestProvider
+	// readerSessions holds the human reading sessions (P02). Nil disables
+	// the reader surface: requests fail with reader_disabled and never fall
+	// back to legacy token scopes.
+	readerSessions *ReaderSessionStore
+	// readerRootPinned captures the authorized vault directory identity at
+	// server construction; reader requests re-verify it so a replaced root
+	// fails with 409 source_changed instead of serving different content.
+	readerRootPinned os.FileInfo
 	// tokenFileErr is set when the token store could not be loaded; the server
 	// then refuses every request instead of downgrading to an open temp token.
 	tokenFileErr error
@@ -49,6 +58,9 @@ type ServerOptions struct {
 	HideGroups   []string
 	Logger       *zap.Logger
 	Manifest     ManifestProvider
+	// ReaderSessions enables the human reading surface. Nil keeps reader
+	// routes off (reader_disabled) without touching legacy auth.
+	ReaderSessions *ReaderSessionStore
 }
 
 type HTTPRPCRequest struct {
@@ -70,17 +82,21 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 		vault = abs
 	}
 	s := &Server{
-		service:      service,
-		vault:        vault,
-		allowWrite:   options.AllowWrite,
-		authMode:     options.AuthMode,
-		exposeGroups: options.ExposeGroups,
-		hideGroups:   options.HideGroups,
-		logger:       options.Logger,
-		manifest:     options.Manifest,
+		service:        service,
+		vault:          vault,
+		allowWrite:     options.AllowWrite,
+		authMode:       options.AuthMode,
+		exposeGroups:   options.ExposeGroups,
+		hideGroups:     options.HideGroups,
+		logger:         options.Logger,
+		manifest:       options.Manifest,
+		readerSessions: options.ReaderSessions,
 	}
 	if s.manifest == nil {
 		s.manifest = transportmanifest.DefaultProjection
+	}
+	if info, statErr := os.Stat(vault); statErr == nil {
+		s.readerRootPinned = info
 	}
 	switch options.AuthMode {
 	case AuthModeTemp:
@@ -165,6 +181,20 @@ func (s *Server) Handler() http.Handler {
 		{"/v1/memory", s.handleMemoryList, "memory"},
 		{"/v1/projects", s.handleProjects, "projects"},
 		{"/v1/projects/", s.handleProjects, "projects"},
+		// Human reading surface (pinax-human-reading-api-v1): dedicated reader
+		// session authorization, never exposed through legacy token scopes.
+		{"/v1/reader/source", s.handleReaderSource, "reader"},
+		{"/v1/reader/notes", s.handleReaderNotes, "reader"},
+		{"/v1/reader/notes/", s.handleReaderNoteItem, "reader"},
+		{"/v1/reader/search", s.handleReaderSearch, "reader"},
+		{"/v1/reader/assets/", s.handleReaderAssetContent, "reader"},
+		// Supervised writer surface (pinax-human-reading-write-v1): same
+		// session registry, independently granted writer scopes.
+		{"/v1/writer/capture", s.handleWriterCapture, "writer"},
+		{"/v1/writer/proposals", s.handleWriterPropose, "writer"},
+		{"/v1/writer/proposals:apply", s.handleWriterApply, "writer"},
+		{"/v1/writer/organize/plan", s.handleWriterOrganizePlan, "writer"},
+		{"/v1/writer/organize/apply", s.handleWriterOrganizeApply, "writer"},
 	}
 	mux.HandleFunc("/v1/rpc", s.handleRPC)
 

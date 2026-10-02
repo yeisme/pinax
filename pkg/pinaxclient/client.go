@@ -380,6 +380,12 @@ func (c *Client) getProjection(ctx context.Context, endpointPath string) (Projec
 }
 
 func (c *Client) doProjection(ctx context.Context, method, endpointPath string, body io.Reader, contentType string) (Projection, error) {
+	return c.doProjectionHeaders(ctx, method, endpointPath, body, contentType, nil)
+}
+
+// doProjectionHeaders is doProjection with extra request headers (writer
+// operation identity headers ride the same bounded transport).
+func (c *Client) doProjectionHeaders(ctx context.Context, method, endpointPath string, body io.Reader, contentType string, headers map[string]string) (Projection, error) {
 	endpoint, err := c.endpoint(endpointPath)
 	if err != nil {
 		return Projection{}, newError(CodeRequestInvalid, "Pinax request path is invalid", err)
@@ -391,6 +397,9 @@ func (c *Client) doProjection(ctx context.Context, method, endpointPath string, 
 	request.Header.Set("Accept", "application/json")
 	if contentType != "" {
 		request.Header.Set("Content-Type", contentType)
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 	if c.token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.token)
@@ -517,6 +526,12 @@ func projectionClientError(projection Projection, response *http.Response) *Erro
 			clientErr.Message = projection.Error.Message
 		}
 		clientErr.RequiredAction = projection.Error.Hint
+	}
+	if len(projection.Facts) > 0 {
+		clientErr.Facts = projection.Facts
+	}
+	if len(projection.Actions) > 0 {
+		clientErr.Actions = projection.Actions
 	}
 	return clientErr
 }

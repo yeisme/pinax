@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/yeisme/pinax/internal/api"
 	"github.com/yeisme/pinax/internal/app"
 	pinaxassets "github.com/yeisme/pinax/internal/assets"
 	pinaxconfig "github.com/yeisme/pinax/internal/config"
@@ -273,6 +275,12 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("markdown-style", staticCompletion("markdown-style", "auto", "ascii", "dark", "light", "notty"))
 	_ = cmd.RegisterFlagCompletionFunc("connection-mode", staticCompletion("connection-mode", "local-vault", "remote-service", "self-hosted-service"))
 	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		if sessionFlagErrorMode(cmd) {
+			// Flag-parse failures in supervised mode keep stdout on the
+			// frozen session event protocol; the parse detail (flag text,
+			// not private input) goes to stderr only.
+			return sessionPreRunError(cmd, "flag_error", "The command line arguments could not be parsed", cmd.CommandPath()+" --help", err)
+		}
 		return renderCommandError(cmd, selectedMode(jsonMode, agentMode, eventsMode, explainMode), "cli.flag", "flag_error", err.Error(), cmd.CommandPath()+" --help")
 	})
 
@@ -559,6 +567,13 @@ func loadCommandConfig(cmd *cobra.Command, ctx *commandBuildContext) error {
 	// Cobra/pflag defaults do not mean the user chose a value explicitly; do not blindly BindPFlag or flag defaults will override user/project config.
 	result, err := pinaxconfig.Load(pinaxconfig.LoadOptions{VaultPath: *ctx.vaultPath, UserConfigPath: paths.User, ProjectConfigPath: paths.Project, ExplicitFlags: flags})
 	if err != nil {
+		if isSupervisedSessionCmd(cmd) {
+			code := pinaxconfig.ErrorCode(err)
+			if code == "" {
+				code = "config_error"
+			}
+			return sessionPreRunError(cmd, code, "The command configuration could not be loaded", "Fix the reported configuration field and retry", err)
+		}
 		return renderConfigError(cmd, ctx.outputMode(), err)
 	}
 	if initUsesCurrentDirDefault {
@@ -566,6 +581,9 @@ func loadCommandConfig(cmd *cobra.Command, ctx *commandBuildContext) error {
 	}
 	if resolved, _, err := vaultregistry.ResolveSelector(registryPaths, result.Config.Vault); err == nil {
 		if vaultregistry.IsRemoteSelector(resolved) {
+			if isSupervisedSessionCmd(cmd) {
+				return sessionPreRunError(cmd, "remote_vault_readonly", "remote vault selectors are discovery-only and cannot be used as a local vault", "Run pinax vault remote list, then sync or register a local vault path", nil)
+			}
 			return renderCommandError(cmd, ctx.outputMode(), "vault.select", "remote_vault_readonly", "remote vault selectors are discovery-only and cannot be used as a local vault", "Run pinax vault remote list, then sync or register a local vault path")
 		}
 		result.Config.Vault = resolved
@@ -644,6 +662,93 @@ func selectedMode(jsonMode, agentMode, eventsMode, explainMode bool) output.Mode
 	}
 }
 
+// isSupervisedSessionCmd reports whether this invocation targets the
+// supervised reader session (api serve --session-stdin). Cobra parses
+// flags before PersistentPreRunE runs, so the value is already known.
+func isSupervisedSessionCmd(cmd *cobra.Command) bool {
+	if cmd.Name() != "serve" || cmd.Parent() == nil || cmd.Parent().Name() != "api" {
+		return false
+	}
+	// The parsed value is authoritative: an explicit --session-stdin=false
+	// opts OUT of supervised mode and keeps the legacy CLI output contract.
+	enabled, lookupErr := cmd.Flags().GetBool("session-stdin")
+	if lookupErr == nil && cmd.Flags().Changed("session-stdin") {
+		return enabled
+	}
+	// pflag stops at the FIRST flag error: when the error precedes the
+	// switch (api serve --port invalid --session-stdin) it was never
+	// parsed, so fall back to the raw command line for detection.
+	return rawArgsEnableSupervisedSession(cmd, os.Args[1:])
+}
+
+// rawArgsEnableSupervisedSession reports whether the raw command line
+// enables the supervised session, following pflag semantics: value-taking
+// flags consume the following token (it can never be a flag itself), every
+// ParseBool spelling is a valid value, the LAST explicit occurrence wins,
+// and tokens after a bare "--" terminator are positional arguments.
+func rawArgsEnableSupervisedSession(cmd *cobra.Command, args []string) bool {
+	// Build the set of long flag names that consume the next token.
+	consumesValue := map[string]bool{}
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Value.Type() != "bool" {
+			consumesValue["--"+f.Name] = true
+		}
+	})
+	enabled := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		if !strings.HasPrefix(arg, "--") {
+			continue // positional token or another flag's consumed value
+		}
+		name, inline, hasInline := arg, "", false
+		if idx := strings.Index(arg, "="); idx >= 0 {
+			name, inline, hasInline = arg[:idx], arg[idx+1:], true
+		}
+		if name == "--session-stdin" {
+			if hasInline {
+				if value, parseErr := strconv.ParseBool(inline); parseErr == nil {
+					enabled = value // last explicit occurrence wins
+				}
+			} else {
+				enabled = true
+			}
+			continue
+		}
+		if consumesValue[name] && !hasInline {
+			i++ // the next token is this flag's value, never a flag
+		}
+	}
+	return enabled
+}
+
+// sessionFlagErrorMode reports whether a FAILED flag parse belongs to the
+// supervised session. pflag stopped mid-parse, so any partial parsed
+// value (Changed with the first occurrence) is incomplete when the error
+// sits between two occurrences of the switch — the raw argv scan, where
+// the last explicit occurrence wins, is authoritative on error paths.
+func sessionFlagErrorMode(cmd *cobra.Command) bool {
+	if cmd.Name() != "serve" || cmd.Parent() == nil || cmd.Parent().Name() != "api" {
+		return false
+	}
+	return rawArgsEnableSupervisedSession(cmd, os.Args[1:])
+}
+
+// sessionPreRunError keeps supervised-session stdout on the frozen event
+// protocol when pre-run validation fails: one redacted JSON error event on
+// stdout, the human-readable diagnostic on stderr only, non-zero exit.
+func sessionPreRunError(cmd *cobra.Command, code, message, hint string, detail error) error {
+	_ = api.WriteSessionError(cmd.OutOrStdout(), code, message)
+	if detail != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s (%v); %s\n", code, message, detail, hint)
+	} else {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s; %s\n", code, message, hint)
+	}
+	return &domain.CommandError{Code: code, Message: message, Hint: hint}
+}
+
 func validateOutputMode(cmd *cobra.Command, jsonMode, agentMode, eventsMode, explainMode bool) error {
 	selected := 0
 	for _, enabled := range []bool{jsonMode, agentMode, eventsMode, explainMode} {
@@ -653,6 +758,9 @@ func validateOutputMode(cmd *cobra.Command, jsonMode, agentMode, eventsMode, exp
 	}
 	if selected <= 1 {
 		return nil
+	}
+	if isSupervisedSessionCmd(cmd) {
+		return sessionPreRunError(cmd, "output_mode_conflict", "Choose only one output mode", "Keep only one output mode: --json, --agent, --events, or --explain", nil)
 	}
 	errMode := selectedMode(jsonMode, agentMode, eventsMode, explainMode)
 	return renderCommandError(cmd, errMode, "cli.output_mode", "output_mode_conflict", "Choose only one output mode", "Keep only one output mode: --json, --agent, --events, or --explain")
@@ -721,6 +829,17 @@ func installRemoteMode(root *cobra.Command, ctx commandBuildContext) {
 var errRemoteTokenConflict = errors.New("remote token source conflict")
 
 func runRemoteCommand(cmd *cobra.Command, args []string, ctx commandBuildContext) error {
+	if cmd.CommandPath() == "pinax note preview" && (cmd.Flags().Changed("view") || cmd.Flags().Changed("format") || cmd.Flags().Changed("display") || cmd.Flags().Changed("resolved-revision")) {
+		return renderCommandError(cmd, ctx.outputMode(), "note.preview.rendered", "remote_command_unsupported", "Experimental rendered trees require the owner-local CLI or MCP surface", "Run pinax note preview <object-id> --view rendered on the vault owner")
+	}
+	// Capture 的 stdin 属于客户端输入，必须在发请求前读取，不能被 RPC flag 映射静默忽略。
+	if cmd.CommandPath() == "pinax inbox capture" && boolFlag(cmd, "stdin") {
+		body, err := inboxCaptureBody(cmd)
+		if err != nil {
+			return ctx.renderProjection(cmd, domain.NewErrorProjection("inbox.capture", err), err)
+		}
+		*ctx.noteBody = body
+	}
 	if vaultFlag := cmd.Root().PersistentFlags().Lookup("vault"); vaultFlag != nil && vaultFlag.Changed {
 		return renderCommandError(cmd, ctx.outputMode(), "remote.api", "remote_vault_conflict", "Remote API mode cannot be combined with an explicit --vault", "Remove --vault or omit --api-url")
 	}

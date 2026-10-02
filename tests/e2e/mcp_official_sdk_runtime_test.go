@@ -88,9 +88,7 @@ func TestMCPOfficialSDKRuntimeCandidateProcess(t *testing.T) {
 
 	tools := responseResult(t, responses, "tools")
 	toolList, _ := tools["tools"].([]any)
-	if len(toolList) != 20 {
-		t.Fatalf("candidate tools = %d, want 20", len(toolList))
-	}
+	assertDefaultMCPReadTools(t, toolList)
 
 	call := responseResult(t, responses, "call")
 	structured, _ := call["structuredContent"].(map[string]any)

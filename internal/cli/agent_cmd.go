@@ -22,6 +22,7 @@ func addAgentCommands(root *cobra.Command, ctx commandBuildContext) {
 	}
 	addAgentContextCommand(agentCmd, ctx)
 	addAgentMemoryCommands(agentCmd, ctx)
+	addAgentNoteCommands(agentCmd, ctx)
 	addAgentHandoffCommands(agentCmd, ctx)
 	addAgentFeedbackCommands(agentCmd, ctx)
 	addAgentStatusCommand(agentCmd, ctx)

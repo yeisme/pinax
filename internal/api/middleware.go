@@ -220,6 +220,16 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			writeAuthError(w, "token_store_unavailable", "The configured token store could not be loaded; refusing requests instead of downgrading authentication", http.StatusServiceUnavailable)
 			return
 		}
+		// Human reading surface: dedicated reader session registry. Legacy
+		// tokens never upgrade into reader scopes and reader bearers never
+		// widen legacy scopes, so this branch stays outside the scope map.
+		if strings.HasPrefix(r.URL.Path, "/v1/reader/") {
+			if !s.readerAuth(w, r) {
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
 		info, knownRoute := s.lookupRequestRouteInfo(r)
 		group := info.Group
 		if knownRoute && !s.isGroupExposed(group) {

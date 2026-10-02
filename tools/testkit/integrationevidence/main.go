@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, pane, knowledge-source-adapter, or research-brief")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, pane, knowledge-source-adapter, research-brief, daily-knowledge, daily-knowledge-quality, daily-review-followthrough, agent-note-proposal, rendered-view-parity, human-reading-api, human-reading-access, human-reading-document, human-reading-resources, human-reading-session, human-reading-client, human-reading-quality, human-reading-write-capture, human-reading-write-edit, human-reading-write-organize, human-reading-write-client, human-reading-write-api, or human-reading-write-quality")
 	flag.Parse()
 	if *profile == "mcp-apps-browser" {
 		_, _ = fmt.Fprintln(os.Stderr, "The MCP Apps browser profile has been retired. Use --profile mcp-collaboration for Markdown tool verification.")
@@ -68,6 +68,40 @@ func buildConfig(runID string, stdout, stderr io.Writer) evidence.Config {
 }
 
 func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	if isHumanReadingProfile(profile) {
+		return buildHumanReadingConfig(profile, runID, stdout, stderr)
+	}
+	if isHumanReadingWriteProfile(profile) {
+		return buildHumanReadingWriteConfig(profile, runID, stdout, stderr)
+	}
+	if profile == "daily-review-followthrough" {
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./internal/app", "./internal/cli", "./internal/mcpserver", "./internal/mcpserver/sdkruntime", "./cmd/pinax", "./tests/e2e", "-run", "TestScopedOrganize|TestAgentNoteProposalQuery|TestDailyReviewFollowthrough|TestNoteProposalToolsQuery|TestSDKNoteProposalQuery|TestOrganize|TestOpenAPISemanticValidation", "-count=1", "-v"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "e2e", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false}}
+	}
+	if profile == "agent-note-proposal" || profile == "rendered-view-parity" {
+		filter := "TestAgentNoteProposal|TestNoteProposalValidation|TestNoteProposalTools|TestSDKNoteProposal|TestNoteProposalWorkflow|TestNoteProposalTransportParity"
+		if profile == "rendered-view-parity" {
+			filter = "TestRendered|TestRenderNoteTool|TestSDKNoteProposal|TestNoteProposalWorkflow"
+		}
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./internal/agentprotocol", "./internal/agentmemory", "./internal/render", "./internal/app", "./internal/cli", "./internal/mcpserver", "./internal/mcpserver/sdkruntime", "./tests/e2e", "-run", filter, "-count=1", "-v"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "e2e", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false}}
+	}
+	if profile == "daily-knowledge-quality" {
+		return evidence.Config{
+			RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"task", "check"},
+			PassThroughStdout: stdout, PassThroughStderr: stderr,
+			PassStatus: "passed", Layer: "system",
+			ExtraChecks: map[string]any{"fixture_only": true, "real_user_evaluations": 0},
+		}
+	}
+	if profile == "daily-knowledge" {
+		return evidence.Config{
+			RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"go", "test", "./internal/app", "./internal/cli", "./cmd/pinax", "./tests/e2e", "-run", "TestDailyKnowledge|TestSearchShowCardCLI|TestVersionRestoreApplyRefusesStalePlan|TestVersionRestoreApplyRevertsBadLocalApply|TestResearchBriefWorkflow", "-count=1"},
+			PassThroughStdout: stdout, PassThroughStderr: stderr,
+			PassStatus: "passed", Layer: "e2e",
+			ExtraChecks: map[string]any{"fixture_only": true, "real_user_evaluations": 0, "model_calls": 0},
+		}
+	}
 	if profile == "mcp-collaboration" || profile == "mcp-collaboration-quality" || profile == "mcp-collaboration-race" || profile == "mcp-collaboration-go" || profile == "mcp-strict-client" || profile == "mcp-official-sdk" || profile == "mcp-inspector" {
 		return collaborationEvidenceConfig(profile, runID, stdout, stderr)
 	}
@@ -328,6 +362,172 @@ func buildPromptCatalogConfig(runID string, stdout, stderr io.Writer) evidence.C
 			"source_adapters_offline":  true,
 			"catalog_quarantine":       true,
 			"body_input_secret_backup": true,
+		},
+	}
+}
+
+// isHumanReadingProfile reports the pinax-human-reading-api-v1 evidence
+// profiles registered by P01: focused lanes for P02-P06 plus the P07
+// component run and the P08 quality gate.
+func isHumanReadingProfile(profile string) bool {
+	switch profile {
+	case "human-reading-api", "human-reading-access", "human-reading-document",
+		"human-reading-resources", "human-reading-session", "human-reading-client", "human-reading-quality":
+		return true
+	}
+	return false
+}
+
+// buildHumanReadingConfig wires each focused reader lane to the shared
+// contract test plus its implementation tests. Until P02-P06 land, the
+// contract cases keep every profile non-empty; lanes must never fabricate a
+// passing run with zero matched tests. No race, no real vault, no model, no
+// sync — synthetic fixtures only.
+func buildHumanReadingConfig(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	base := []string{"go", "test"}
+	contract := "TestReaderContract"
+	layer := "component"
+	var packages []string
+	var filter string
+	switch profile {
+	case "human-reading-access":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
+		filter = contract + "|TestReaderAccess"
+	case "human-reading-document":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/render"}
+		filter = contract + "|TestReaderDocument"
+	case "human-reading-resources":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
+		filter = contract + "|TestReaderResources"
+	case "human-reading-session":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./internal/cli", "./cmd/pinax", "./tests/e2e"}
+		filter = contract + "|TestReaderSession"
+	case "human-reading-client":
+		packages = []string{"./internal/transportcatalog/...", "./pkg/pinaxclient", "./internal/remoteapi"}
+		filter = contract + "|TestReader|TestRemoteTransport"
+	case "human-reading-api":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./tests/e2e"}
+		filter = contract + "|TestReaderComponent|TestReaderE2E"
+	case "human-reading-quality":
+		// P08 stable gate: task check has no race stage; verify explicitly before
+		// running when in doubt. Complete logs stay with the owner.
+		return evidence.Config{
+			RunID:             runID,
+			ParentDir:         filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"task", "check"},
+			PassThroughStdout: stdout,
+			PassThroughStderr: stderr,
+			PassStatus:        "passed",
+			Layer:             "system",
+			ExtraChecks: map[string]any{
+				"profile":                   profile,
+				"fixture_only":              true,
+				"real_user_evaluations":     0,
+				"model_calls":               0,
+				"remote_write":              false,
+				"race_detector":             false,
+				"reader_bindings_available": true,
+			},
+		}
+	}
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           append(append(base, packages...), "-run", filter, "-count=1"),
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             layer,
+		ExtraChecks: map[string]any{
+			"profile":                   profile,
+			"fixture_only":              true,
+			"real_user_evaluations":     0,
+			"model_calls":               0,
+			"remote_write":              false,
+			"race_detector":             false,
+			"reader_bindings_available": true,
+		},
+	}
+}
+
+// isHumanReadingWriteProfile reports the pinax-human-reading-write-v1
+// evidence profiles registered by W01: focused lanes for W02-W04 plus the
+// W05 client lane, the W06 component run and the W07 quality gate.
+func isHumanReadingWriteProfile(profile string) bool {
+	switch profile {
+	case "human-reading-write-capture", "human-reading-write-edit",
+		"human-reading-write-organize", "human-reading-write-client",
+		"human-reading-write-api", "human-reading-write-quality":
+		return true
+	}
+	return false
+}
+
+// buildHumanReadingWriteConfig wires each focused writer lane to the frozen
+// writer contract test plus its implementation tests. Until W02-W04 land,
+// the contract cases keep every profile non-empty; lanes must never
+// fabricate a passing run with zero matched tests. No race, no real vault,
+// no model, no sync — synthetic fixtures only.
+func buildHumanReadingWriteConfig(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	base := []string{"go", "test"}
+	contract := "TestWriterContract"
+	layer := "component"
+	var packages []string
+	var filter string
+	switch profile {
+	case "human-reading-write-capture":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
+		filter = contract + "|TestWriterCapture"
+	case "human-reading-write-edit":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
+		filter = contract + "|TestWriterEdit"
+	case "human-reading-write-organize":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
+		filter = contract + "|TestWriterOrganize"
+	case "human-reading-write-client":
+		packages = []string{"./internal/transportcatalog/...", "./pkg/pinaxclient", "./internal/remoteapi"}
+		filter = contract + "|TestWriterClient"
+	case "human-reading-write-api":
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./tests/e2e"}
+		filter = contract + "|TestWriterComponent|TestWriterE2E"
+	case "human-reading-write-quality":
+		// W07 stable gate: task check has no race stage; verify explicitly
+		// before running when in doubt. Complete logs stay with the owner.
+		return evidence.Config{
+			RunID:             runID,
+			ParentDir:         filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"task", "check"},
+			PassThroughStdout: stdout,
+			PassThroughStderr: stderr,
+			PassStatus:        "passed",
+			Layer:             "system",
+			ExtraChecks: map[string]any{
+				"profile":                   profile,
+				"fixture_only":              true,
+				"real_user_evaluations":     0,
+				"model_calls":               0,
+				"remote_write":              false,
+				"race_detector":             false,
+				"writer_bindings_available": true,
+			},
+		}
+	}
+	return evidence.Config{
+		RunID:             runID,
+		ParentDir:         filepath.Join("temp", "integration-test-runs"),
+		Command:           append(append(base, packages...), "-run", filter, "-count=1"),
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             layer,
+		ExtraChecks: map[string]any{
+			"profile":                   profile,
+			"fixture_only":              true,
+			"real_user_evaluations":     0,
+			"model_calls":               0,
+			"remote_write":              false,
+			"race_detector":             false,
+			"writer_bindings_available": true,
 		},
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"github.com/yeisme/pinax/internal/domain"
+	noterender "github.com/yeisme/pinax/internal/render"
 	"golang.org/x/term"
 )
 
@@ -105,6 +106,10 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 }
 
 func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
+	if v, ok := p.Data.(noterender.View); ok && p.Error == nil {
+		_, err := io.WriteString(w, noterender.Text(v))
+		return err
+	}
 	if strings.EqualFold(strings.TrimSpace(opts.Style), "compact") {
 		return renderCompactSummaryWithOptions(w, p, opts)
 	}

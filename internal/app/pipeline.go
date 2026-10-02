@@ -646,7 +646,19 @@ func pipelineShowOrganizePlan(ctx context.Context, root, id string) (domain.Proj
 		SavedPath: pipelineSavedPath(plan.SavedPath, filepath.ToSlash(filepath.Join(".pinax", "organize-plans", id+".json"))),
 	}
 	view.Fresh, view.FreshReason = pipelineFreshness(func() error { return ensureOrganizePlanFresh(ctx, root, &plan) })
-	return pipelinePlanShowProjection(root, view, ops), true
+	p := pipelinePlanShowProjection(root, view, ops)
+	if plan.SchemaVersion == domain.ScopedOrganizePlanSchema {
+		p.Facts["status"], p.Facts["selected"], p.Facts["snapshot_id"] = plan.Status, fmt.Sprint(len(plan.Selection)), plan.SnapshotID
+		data := p.Data.(map[string]any)
+		data["selection"], data["operation_results"] = plan.Selection, plan.OperationResults
+		p.Actions = []domain.Action{{Name: "history", Command: "pinax version history --vault " + shellQuote(root)}}
+		data["next"] = p.Actions[0].Command
+		if plan.Status == "planned" && view.Fresh {
+			p.Actions = []domain.Action{{Name: "preview_apply", Command: "pinax organize apply --plan " + shellQuote(plan.PlanID) + " --vault " + shellQuote(root)}}
+			data["next"] = p.Actions[0].Command
+		}
+	}
+	return p, true
 }
 
 func pipelineShowMetadataPlan(root, id string) (domain.Projection, bool) {
@@ -810,6 +822,10 @@ func pipelinePlanApplyCommand(root, kind, planID string) string {
 func pipelineNextCommands(root string, plans []domain.PipelinePlanView) []string {
 	commands := make([]string, 0, len(plans))
 	for _, plan := range plans {
+		if plan.SourceSchema == domain.ScopedOrganizePlanSchema {
+			commands = append(commands, "pinax pipeline show "+shellQuote(plan.PlanID)+" --vault "+shellQuote(root))
+			continue
+		}
 		commands = append(commands, pipelinePlanApplyCommand(root, plan.Kind, plan.PlanID))
 	}
 	return commands

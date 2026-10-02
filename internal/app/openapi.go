@@ -12,6 +12,10 @@ func BuildOpenAPI() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Additive human reading surface: implemented and available since P06.
+	contracts = append(contracts, readerRESTContracts()...)
+	// Supervised writer surface: implemented and available since W06.
+	contracts = append(contracts, writerRESTContracts()...)
 	registry, err := RemoteSchemaRegistry()
 	if err != nil {
 		return nil, err
@@ -122,6 +126,39 @@ func openAPIOperation(contract RemoteRESTContract) map[string]any {
 }
 
 func openAPIResponses(contract RemoteRESTContract) map[string]any {
+	if contract.ByteResponses {
+		// Raw byte endpoints: 200 serves the whole content when it fits
+		// one request window; 206 serves an explicit Range window. Both
+		// carry the ETag content digest; 206 adds Content-Range.
+		binary := map[string]any{"type": "string", "format": "binary"}
+		etagHeader := map[string]any{"schema": map[string]any{"type": "string"}, "description": "Content digest (sha256:...) of the full body."}
+		return map[string]any{
+			"200": map[string]any{
+				"description":         "Full content bytes within one request window.",
+				"content":             map[string]any{contract.SuccessMediaType: map[string]any{"schema": binary}},
+				"headers":             map[string]any{"ETag": etagHeader},
+				"x-pinax-data-schema": componentRef(contract.SuccessDataSchema),
+			},
+			"206": map[string]any{
+				"description": "One explicit byte window of the content.",
+				"content":     map[string]any{contract.SuccessMediaType: map[string]any{"schema": binary}},
+				"headers": map[string]any{
+					"ETag":          etagHeader,
+					"Content-Range": map[string]any{"schema": map[string]any{"type": "string"}, "description": "bytes start-end/total for the served window."},
+				},
+				"x-pinax-data-schema": componentRef(contract.SuccessDataSchema),
+			},
+			"default": map[string]any{
+				"description": "Pinax error projection.",
+				"content": map[string]any{
+					"application/json": map[string]any{
+						"schema": map[string]any{"$ref": componentRef(contract.ErrorSchema)},
+					},
+				},
+				"x-pinax-error-detail-schema": componentRef(contract.ErrorDetailSchema),
+			},
+		}
+	}
 	return map[string]any{
 		"200": map[string]any{
 			"description": "Pinax projection response.",

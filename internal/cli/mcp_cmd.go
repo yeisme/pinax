@@ -22,7 +22,7 @@ import (
 func addMCPCommands(root *cobra.Command, ctx commandBuildContext) {
 	mcpCmd := &cobra.Command{Use: "mcp", Short: "Start the Pinax MCP surface"}
 	var inputListen, inputBase string
-	var collaboration, allowBody, allowWrite bool
+	var collaboration, allowBody, allowWrite, allowProposals bool
 	serve := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the MCP server over stdio (read-only by default)",
@@ -61,6 +61,7 @@ func addMCPCommands(root *cobra.Command, ctx commandBuildContext) {
 				}()
 			}
 			options := mcpserver.ServerOptions{
+				NoteProposals: allowProposals,
 				Input:         input,
 				Manifest:      TransportManifestProjection,
 				Diagnostics:   cmd.ErrOrStderr(),
@@ -85,6 +86,7 @@ func addMCPCommands(root *cobra.Command, ctx commandBuildContext) {
 	serve.Flags().BoolVar(&collaboration, "collaboration", false, "Enable Markdown note interaction tools")
 	serve.Flags().BoolVar(&allowBody, "allow-note-body", false, "Allow explicit single-note body reads through collaboration tools")
 	serve.Flags().BoolVar(&allowWrite, "allow-note-write", false, "Allow preview-bound daily note writes through collaboration tools")
+	serve.Flags().BoolVar(&allowProposals, "allow-note-proposals", false, "Enable experimental proof-bound note proposals; edits still require local owner approval")
 	mcpCmd.AddCommand(serve)
 	root.AddCommand(mcpCmd)
 

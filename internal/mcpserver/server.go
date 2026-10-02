@@ -57,6 +57,7 @@ type Resource struct {
 }
 
 type Server struct {
+	noteProposals     bool
 	collaboration     bool
 	notePolicy        app.CollaborationPolicy
 	input             *inputrequests.Service
@@ -73,6 +74,7 @@ func NewServer(service *app.Service, vault string) *Server {
 }
 
 type ServerOptions struct {
+	NoteProposals   bool
 	Collaboration   bool
 	NotePolicy      app.CollaborationPolicy
 	Input           *inputrequests.Service
@@ -87,6 +89,7 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 		manifest = transportmanifest.ProjectionProvider(TransportManifest)
 	}
 	return &Server{
+		noteProposals:   options.NoteProposals,
 		collaboration:   options.Collaboration,
 		notePolicy:      options.NotePolicy,
 		service:         service,
@@ -106,6 +109,9 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			return resp, err
 		}
 		resp.Result = modernDiscoveryResult()
+		if s.noteProposals {
+			resp.Result["instructions"] = noteProposalInstructions
+		}
 		if s.collaboration {
 			s.addCollaborationDiscovery(resp.Result)
 		}
@@ -128,7 +134,7 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			"serverInfo": map[string]any{"name": "pinax", "version": "dev"},
 			// Keep the original fields for pre-standard Pinax MCP consumers.
 			"name":      "pinax",
-			"read_only": s.input == nil && (!s.collaboration || !s.notePolicy.AllowWrite),
+			"read_only": !s.noteProposals && s.input == nil && (!s.collaboration || !s.notePolicy.AllowWrite),
 		}
 		if s.collaboration {
 			s.addCollaborationDiscovery(resp.Result)
@@ -203,6 +209,7 @@ func (s *Server) Handle(ctx context.Context, req Request) (Response, error) {
 			return resp, err
 		}
 		tools := ToolInventory()
+		tools = append(tools, s.NoteProposalToolInventory()...)
 		if s.collaboration {
 			tools = append(tools, s.collaborationTools()...)
 		}
@@ -358,6 +365,36 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 	switch name {
+	case "pinax.agent.propose_note_draft", "pinax.agent.propose_note_edit":
+		p, err := s.noteProposalCall(ctx, name, args)
+		if err != nil {
+			if id := p.Facts["proposal_id"]; id != "" {
+				code := domain.ErrorCode(err)
+				if code == "" {
+					code = "note_proposal_failed"
+				}
+				e := newMCPError(-32001, code, "Inspect the original proposal and operation before any retry")
+				e.Data["proposal_id"] = id
+				e.Data["next_action"] = map[string]any{"tool": "pinax.agent.note_proposals", "arguments": map[string]any{"proposal_id": id}}
+				return resp, e
+			}
+			return resp, err
+		}
+		resp.Result = noteProposalMCPResult(p)
+		return resp, nil
+	case "pinax.agent.note_proposals":
+		return s.queryNoteProposals(ctx, resp, args)
+	case "pinax.render_note":
+		display := mcpStringArg(args, "display")
+		if display == "body" && !s.notePolicy.AllowBody {
+			return resp, newMCPError(-32001, "body_disabled", "The owner must enable note body access; otherwise use card or context")
+		}
+		p, err := s.service.RenderNote(ctx, app.RenderNoteRequest{VaultPath: s.vault, NoteRef: mcpStringArg(args, "note_ref"), Display: display, ResolvedRevision: mcpStringArg(args, "resolved_revision")})
+		if err != nil {
+			return resp, err
+		}
+		resp.Result = experimentalProjectionResult(p)
+		return resp, nil
 	case "pinax.brain.context":
 		question := mcpBrainQuestion(args)
 		projection, err := s.service.BrainAnswerPreview(ctx, app.BrainAnswerRequest{VaultPath: s.vault, Question: question})
@@ -526,6 +563,18 @@ func (s *Server) callTool(ctx context.Context, req Request) (Response, error) {
 		resp.Result["command"] = projection.Command
 		return resp, nil
 	case "pinax.organize.plan":
+		if _, present := args["note_refs"]; present {
+			p, err := s.service.PlanScopedOrganize(ctx, app.ScopedOrganizeRequest{VaultPath: s.vault, NoteRefs: mcpStringSliceArg(args, "note_refs")})
+			if err != nil {
+				return resp, noteQueryMCPError(err)
+			}
+			plan := p.Data.(domain.OrganizePlan)
+			plan.VaultRoot, plan.SourceCommand = "", ""
+			p.Data, p.Actions = plan, nil
+			resp.Result = experimentalProjectionResult(p)
+			resp.Result["owner_action"] = map[string]any{"execution_location": "vault_owner", "instruction": "Save and review the same selections with the owner-local CLI; MCP preview never saves or applies"}
+			return resp, nil
+		}
 		projection, err := s.service.PlanOrganize(ctx, app.VaultRequest{VaultPath: s.vault})
 		if err != nil {
 			return resp, err
@@ -613,6 +662,7 @@ func mcpKindSliceArg(args map[string]any, key string) []agentprotocol.MemoryKind
 func standardToolDefinitions(tools []Tool) []map[string]any {
 	result := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
+		idempotent := !strings.HasPrefix(tool.Name, "pinax.agent.propose_note_")
 		result = append(result, map[string]any{
 			"name":         tool.Name,
 			"description":  tool.Description,
@@ -621,7 +671,7 @@ func standardToolDefinitions(tools []Tool) []map[string]any {
 			"annotations": map[string]any{
 				"readOnlyHint":    tool.Readonly,
 				"destructiveHint": !tool.Readonly,
-				"idempotentHint":  true,
+				"idempotentHint":  idempotent,
 				"openWorldHint":   false,
 			},
 		})

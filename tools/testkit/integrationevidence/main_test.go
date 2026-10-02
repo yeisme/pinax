@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func TestBuildDailyReviewFollowthroughProfile(t *testing.T) {
+	config := buildConfigForProfile("daily-review-followthrough", "review-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	for _, required := range []string{"TestScopedOrganize", "TestAgentNoteProposalQuery", "TestDailyReviewFollowthrough", "TestSDKNoteProposalQuery", "./tests/e2e"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("missing check: %s", required)
+		}
+	}
+	if strings.Contains(command, "-race") || config.ParentDir != "temp/integration-test-runs" || config.ExtraChecks["remote_write"] != false || config.ExtraChecks["fixture_only"] != true {
+		t.Fatal("unsafe profile")
+	}
+}
+
 func TestBuildConfigIncludesPublishEvidenceEntrypoint(t *testing.T) {
 	config := buildConfig("test-run", io.Discard, io.Discard)
 	command := strings.Join(config.Command, " ")
@@ -124,5 +137,92 @@ func TestBuildPersonalAssistantGroundingProfile(t *testing.T) {
 	}
 	if config.ParentDir != "temp/integration-test-runs" || config.Layer != "e2e" || config.PassStatus != "passed" || config.ExtraChecks["deleted_source_suppression"] != true {
 		t.Fatalf("Personal Assistant grounding config = %#v", config)
+	}
+}
+
+func TestBuildHumanReadingProfiles(t *testing.T) {
+	laneFilters := map[string]string{
+		"human-reading-access":    "TestReaderAccess",
+		"human-reading-document":  "TestReaderDocument",
+		"human-reading-resources": "TestReaderResources",
+		"human-reading-session":   "TestReaderSession",
+		"human-reading-client":    "TestRemoteTransport",
+		"human-reading-api":       "TestReaderComponent",
+	}
+	for profile, laneFilter := range laneFilters {
+		config := buildConfigForProfile(profile, "reader-run", io.Discard, io.Discard)
+		command := strings.Join(config.Command, " ")
+		if !strings.Contains(command, "TestReaderContract") || !strings.Contains(command, laneFilter) {
+			t.Fatalf("%s command %q missing contract test or lane filter %q", profile, command, laneFilter)
+		}
+		if !strings.Contains(command, "./internal/transportcatalog/...") {
+			t.Fatalf("%s command %q must anchor on the transport catalog contract", profile, command)
+		}
+		if strings.Contains(command, "-race") || strings.Contains(command, "-count=2") {
+			t.Fatalf("%s unsafe command %q", profile, command)
+		}
+		if config.ParentDir != "temp/integration-test-runs" || config.Layer != "component" || config.PassStatus != "passed" {
+			t.Fatalf("%s config = %#v", profile, config)
+		}
+		if config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false || config.ExtraChecks["model_calls"] != 0 || config.ExtraChecks["race_detector"] != false || config.ExtraChecks["reader_bindings_available"] != true {
+			t.Fatalf("%s unsafe extra checks = %#v", profile, config.ExtraChecks)
+		}
+	}
+}
+
+func TestBuildHumanReadingQualityProfile(t *testing.T) {
+	config := buildConfigForProfile("human-reading-quality", "reader-quality-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	if command != "task check" {
+		t.Fatalf("human-reading-quality command = %q, want task check", command)
+	}
+	if strings.Contains(command, "race") {
+		t.Fatal("human-reading-quality must not run the race detector")
+	}
+	if config.ParentDir != "temp/integration-test-runs" || config.Layer != "system" || config.PassStatus != "passed" || config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false {
+		t.Fatalf("human-reading-quality config = %#v", config)
+	}
+}
+
+func TestBuildHumanReadingWriteProfiles(t *testing.T) {
+	laneFilters := map[string]string{
+		"human-reading-write-capture":  "TestWriterCapture",
+		"human-reading-write-edit":     "TestWriterEdit",
+		"human-reading-write-organize": "TestWriterOrganize",
+		"human-reading-write-client":   "TestWriterClient",
+		"human-reading-write-api":      "TestWriterComponent",
+	}
+	for profile, laneFilter := range laneFilters {
+		config := buildConfigForProfile(profile, "writer-run", io.Discard, io.Discard)
+		command := strings.Join(config.Command, " ")
+		if !strings.Contains(command, "TestWriterContract") || !strings.Contains(command, laneFilter) {
+			t.Fatalf("%s command %q missing contract test or lane filter %q", profile, command, laneFilter)
+		}
+		if !strings.Contains(command, "./internal/transportcatalog/...") {
+			t.Fatalf("%s command %q must anchor on the transport catalog contract", profile, command)
+		}
+		if strings.Contains(command, "-race") || strings.Contains(command, "-count=2") {
+			t.Fatalf("%s unsafe command %q", profile, command)
+		}
+		if config.ParentDir != "temp/integration-test-runs" || config.Layer != "component" || config.PassStatus != "passed" {
+			t.Fatalf("%s config = %#v", profile, config)
+		}
+		if config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false || config.ExtraChecks["model_calls"] != 0 || config.ExtraChecks["race_detector"] != false || config.ExtraChecks["writer_bindings_available"] != true {
+			t.Fatalf("%s unsafe extra checks = %#v", profile, config.ExtraChecks)
+		}
+	}
+}
+
+func TestBuildHumanReadingWriteQualityProfile(t *testing.T) {
+	config := buildConfigForProfile("human-reading-write-quality", "writer-quality-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	if command != "task check" {
+		t.Fatalf("human-reading-write-quality command = %q, want task check", command)
+	}
+	if strings.Contains(command, "race") {
+		t.Fatal("human-reading-write-quality must not run the race detector")
+	}
+	if config.ParentDir != "temp/integration-test-runs" || config.Layer != "system" || config.PassStatus != "passed" || config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false {
+		t.Fatalf("human-reading-write-quality config = %#v", config)
 	}
 }

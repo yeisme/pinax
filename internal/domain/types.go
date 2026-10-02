@@ -378,13 +378,23 @@ type AssetOperationPlan struct {
 }
 
 type Note struct {
-	ID          string            `json:"id,omitempty"`
-	Title       string            `json:"title"`
-	Path        string            `json:"path"`
-	Tags        []string          `json:"tags,omitempty"`
-	Labels      []string          `json:"labels,omitempty"`
-	Body        string            `json:"body,omitempty"`
-	Frontmatter map[string]string `json:"-"`
+	ID string `json:"id,omitempty"`
+	// ContentDigest is the sha256 of the FULL file content (frontmatter
+	// included) matching the legacy collaboration revision algorithm, so
+	// pinax://note URIs interop across reader and legacy surfaces.
+	// Transport only; never serialized.
+	ContentDigest string `json:"-"`
+	// RawSizeBytes is the raw source file size; OversizedSource marks a
+	// source beyond the interactive reading budget that was never fully
+	// loaded or parsed by the reader. Transport only; never serialized.
+	RawSizeBytes    int64             `json:"-"`
+	OversizedSource bool              `json:"-"`
+	Title           string            `json:"title"`
+	Path            string            `json:"path"`
+	Tags            []string          `json:"tags,omitempty"`
+	Labels          []string          `json:"labels,omitempty"`
+	Body            string            `json:"body,omitempty"`
+	Frontmatter     map[string]string `json:"-"`
 	// Trust 是 frontmatter 信任/生命周期字段的类型化投影（OKF 对齐）。
 	// 只在消费时派生分级，绝不写回 vault；nil 表示未解析或未携带字段。
 	Trust       *TrustSignals `json:"-"`
@@ -528,16 +538,19 @@ type RestorePlan struct {
 }
 
 type OrganizePlan struct {
-	SchemaVersion string              `json:"schema_version"`
-	PlanID        string              `json:"plan_id"`
-	CreatedAt     string              `json:"created_at"`
-	ExpiresAt     string              `json:"expires_at"`
-	VaultRoot     string              `json:"vault_root"`
-	SourceCommand string              `json:"source_command"`
-	SourceFacts   map[string]string   `json:"source_facts"`
-	Operations    []OrganizeOperation `json:"operations"`
-	Status        string              `json:"status"`
-	SavedPath     string              `json:"saved_path,omitempty"`
+	Selection        []OrganizeSelection       `json:"selection,omitempty"`
+	SnapshotID       string                    `json:"snapshot_id,omitempty"`
+	OperationResults []OrganizeOperationResult `json:"operation_results,omitempty"`
+	SchemaVersion    string                    `json:"schema_version"`
+	PlanID           string                    `json:"plan_id"`
+	CreatedAt        string                    `json:"created_at"`
+	ExpiresAt        string                    `json:"expires_at"`
+	VaultRoot        string                    `json:"vault_root"`
+	SourceCommand    string                    `json:"source_command"`
+	SourceFacts      map[string]string         `json:"source_facts"`
+	Operations       []OrganizeOperation       `json:"operations"`
+	Status           string                    `json:"status"`
+	SavedPath        string                    `json:"saved_path,omitempty"`
 }
 
 type OrganizeOperation struct {

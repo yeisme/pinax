@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -74,6 +75,9 @@ func New(service *app.Service, vault string, options mcpserver.ServerOptions) *m
 	if options.Collaboration {
 		instructions = mcpserver.CollaborationInstructions()
 	}
+	if options.NoteProposals {
+		instructions += " " + mcpserver.NoteProposalInstructions()
+	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "pinax", Version: "dev"}, &mcp.ServerOptions{
 		Instructions: instructions,
 		// 正文/查询是用户内容：candidate 运行时默认丢弃 SDK 结构化日志，
@@ -97,6 +101,7 @@ func New(service *app.Service, vault string, options mcpserver.ServerOptions) *m
 		}
 	}
 	tools := mcpserver.ToolInventory()
+	tools = append(tools, inner.NoteProposalToolInventory()...)
 	if options.Collaboration {
 		tools = append(tools, inner.CollaborationToolInventory()...)
 	}
@@ -185,7 +190,7 @@ func decodeArguments(arguments any) map[string]any {
 func sdkTool(tool mcpserver.Tool) *mcp.Tool {
 	readonly := tool.Readonly
 	destructive := !tool.Readonly
-	idempotent := true
+	idempotent := !strings.HasPrefix(tool.Name, "pinax.agent.propose_note_")
 	openWorld := false
 	return &mcp.Tool{
 		Name:         tool.Name,

@@ -1,0 +1,246 @@
+# Supervised reader session lifecycle (pinax-human-reading-api-v1 P05).
+# The real CLI process reads a private bootstrap frame from stdin, serves the
+# readonly loopback reader surface, and exits cleanly on stdin EOF.
+
+mkdir $WORK/vault/notes
+cp data/note.md $WORK/vault/notes/alpha.md
+exec pinax init vault --title Session --vault $WORK/vault --json
+exec pinax index refresh --vault $WORK/vault --json
+
+# A valid frame boots and shuts down cleanly on stdin EOF.
+write-session-frame frame.json $WORK/vault reader.metadata,reader.body
+stdin frame.json
+exec pinax api serve --vault $WORK/vault --session-stdin
+stdout '"type":"ready"'
+stdout '"readonly":true'
+stdout '127.0.0.1'
+! stdout '"bearer"'
+! stdout '3q2-7AAAA'
+stdout '"type":"shutdown"'
+
+# A malformed frame (unknown listen_host field) is rejected: redacted error,
+# non-zero exit, and the process never starts a listener.
+stdin bad-frame.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_bootstrap_invalid'
+
+# Mutation bootstrap requests are refused outright.
+write-session-frame ro-frame.json $WORK/vault reader.body
+exec sed s/true/false/ ro-frame.json
+cp stdout write-frame.json
+stdin write-frame.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+
+# Trailing content after a valid first frame fails the session (never a
+# graceful ready → shutdown): stray closing brace, closing bracket plus
+# garbage, plain garbage, and a second JSON object all exit non-zero with
+# the redacted session_bootstrap_invalid error event on stdout.
+write-session-frame trail1.json $WORK/vault reader.metadata
+exec sh -c 'cat data/trail-brace.txt >> trail1.json'
+stdin trail1.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_bootstrap_invalid'
+
+write-session-frame trail2.json $WORK/vault reader.metadata
+exec sh -c 'cat data/trail-bracket.txt >> trail2.json'
+stdin trail2.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_bootstrap_invalid'
+
+write-session-frame trail3.json $WORK/vault reader.metadata
+exec sh -c 'cat data/trail-garbage.txt >> trail3.json'
+stdin trail3.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_bootstrap_invalid'
+# stdout stays a pure JSON event stream: no human diagnostics leak into it.
+! stdout 'Status'
+! stdout 'Highlights'
+! stdout 'Next step'
+
+write-session-frame trail4.json $WORK/vault reader.metadata
+exec sh -c 'cat data/trail-object.txt >> trail4.json'
+stdin trail4.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_bootstrap_invalid'
+
+# A valid frame pointing at a missing vault root fails startup: redacted
+# session_vault_unavailable event AND a non-zero exit code.
+write-session-frame missing.json $WORK/vault-missing reader.metadata
+stdin missing.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_vault_unavailable'
+
+# Flag rejections in supervised mode stay machine events on stdout (JSON
+# error event + non-zero exit); the human status table never appears there.
+! exec pinax api serve --vault $WORK/vault --session-stdin --allow-write
+stdout '"type":"error"'
+stdout 'auth_mode_conflict'
+! stdout 'Status'
+! stdout 'Highlights'
+! stdout 'Next step'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin --readonly --allow-write
+stdout '"type":"error"'
+stdout 'write_mode_conflict'
+! stdout 'Status'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin --no-auth
+stdout '"type":"error"'
+stdout 'auth_mode_conflict'
+! stdout 'Status'
+
+# Machine-output flags in supervised mode stay on the frozen session event
+# schema: --json/--agent emit the JSON error event (never the legacy CLI
+# projection), and the hint must not suggest the incompatible --events.
+! exec pinax api serve --vault $WORK/vault --session-stdin --json
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout '"type":"error"'
+stdout 'unsupported_output_mode'
+! stdout 'Status'
+! stdout 'spec_version'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin --agent
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout '"type":"error"'
+stdout 'unsupported_output_mode'
+! stdout 'Status'
+! stdout 'mode=agent'
+
+# Pre-run validation failures (before RunE) also stay on the frozen
+# session event protocol in supervised mode: combined output flags,
+# conflicting event flags, and invalid config values all emit the JSON
+# error event on stdout with human diagnostics on stderr only.
+! exec pinax api serve --vault $WORK/vault --session-stdin --json --agent
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout '"type":"error"'
+stdout 'output_mode_conflict'
+! stdout 'spec_version'
+! stdout 'Status'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin --events --explain
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'output_mode_conflict'
+! stdout 'Status'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin --color invalid
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout '"type":"error"'
+! stdout 'Status'
+! stdout 'Highlights'
+! stdout 'Next step'
+
+# Flag-parse failures (before any hook) stay on the frozen session event
+# protocol in supervised mode; the parse detail goes to stderr only.
+! exec pinax api serve --vault $WORK/vault --session-stdin --port invalid
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout '"type":"error"'
+stdout 'flag_error'
+! stdout 'Status'
+! stdout 'Highlights'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin --unknown-flag
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'flag_error'
+! stdout 'Status'
+
+# Argument order must not change the protocol: when the invalid flag
+# precedes the switch, pflag stops before parsing it — detection falls
+# back to the raw command line, so stdout still carries the session
+# JSON flag_error event, never the human table.
+! exec pinax api serve --vault $WORK/vault --port invalid --session-stdin
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'flag_error'
+! stdout 'Status'
+! stdout 'Highlights'
+
+! exec pinax api serve --vault $WORK/vault --unknown-flag --session-stdin
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'flag_error'
+! stdout 'Status'
+
+# Explicit opt-out keeps the legacy contract in every position.
+! exec pinax api serve --vault $WORK/vault --port invalid --session-stdin=false
+stdout 'Status'
+
+# Detection follows pflag semantics: a value-taking flag consumes the
+# next token (so --session-stdin as a VALUE never enables the session),
+# every ParseBool spelling counts, and the LAST explicit occurrence wins.
+! exec pinax api serve --vault $WORK/vault --token-store --session-stdin --json --agent
+stdout 'spec_version'
+! stdout 'pinax.local_session'
+
+! exec pinax api serve --vault $WORK/vault --token-store=--session-stdin --json --agent
+stdout 'spec_version'
+! stdout 'pinax.local_session'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin=TRUE --port invalid
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'flag_error'
+
+! exec pinax api serve --vault $WORK/vault --port invalid --session-stdin=TRUE
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'flag_error'
+! stdout 'Status'
+
+! exec pinax api serve --vault $WORK/vault --port invalid --session-stdin=true --session-stdin=false
+stdout 'Status'
+! stdout 'pinax.local_session'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin=true --session-stdin=false --port invalid
+stdout 'Status'
+! stdout 'pinax.local_session'
+
+# An error BETWEEN two occurrences must follow the LAST explicit value:
+# the interrupted parse only saw the first one, so the error path judges
+# mode from the full argv scan (last occurrence wins).
+! exec pinax api serve --vault $WORK/vault --session-stdin=true --port invalid --session-stdin=false
+stdout 'Status'
+! stdout 'pinax.local_session'
+
+! exec pinax api serve --vault $WORK/vault --session-stdin=false --port invalid --session-stdin=true
+stdout '"schema_version":"pinax.local_session.event.v1alpha1"'
+stdout 'flag_error'
+! stdout 'Status'
+
+# Explicit opt-out (--session-stdin=false) keeps the legacy CLI contract.
+! exec pinax api serve --vault $WORK/vault --session-stdin=false --json --agent
+stdout 'spec_version'
+! stdout 'pinax.local_session'
+
+! exec pinax api serve --vault $WORK/vault --json --agent
+stdout 'spec_version'
+! stdout 'pinax.local_session'
+
+# A plain directory without the .pinax marker is not an initialized vault:
+# startup fails safely with session_vault_invalid (never ready, never a
+# listener, exit non-zero, no auto-initialization).
+mkdir $WORK/plain
+write-session-frame plain.json $WORK/plain reader.metadata
+stdin plain.json
+! exec pinax api serve --vault $WORK/vault --session-stdin
+stdout 'session_vault_invalid'
+! stdout '"type":"ready"'
+
+# Plain api serve flags are untouched outside supervised mode.
+
+-- data/trail-brace.txt --
+}
+-- data/trail-bracket.txt --
+] arbitrary-after-close
+-- data/trail-garbage.txt --
+trailing-not-json
+-- data/trail-object.txt --
+{"unknown_field":true}
+-- data/note.md --
+---
+schema_version: pinax.note.v1
+note_id: note_alpha
+title: Alpha
+status: active
+updated_at: 2026-09-10T10:00:00+00:00
+---
+
+Alpha zq-script-body-marker.
+-- bad-frame.json --
+{"schema_version":"pinax.local_session.bootstrap.v1alpha1","listen_host":"0.0.0.0"}
+

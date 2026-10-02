@@ -13,6 +13,10 @@ import (
 )
 
 func writeObjectApplyReceipt(ctx context.Context, root, command, planID, snapshotID string, before map[string]managedObjectPlanBinding, changedPaths []string) (domain.ApplyReceipt, error) {
+	return writeObjectApplyReceiptOutcome(ctx, root, command, planID, snapshotID, before, changedPaths, "applied", nil)
+}
+
+func writeObjectApplyReceiptOutcome(ctx context.Context, root, command, planID, snapshotID string, before map[string]managedObjectPlanBinding, changedPaths []string, status string, results []domain.OrganizeOperationResult) (domain.ApplyReceipt, error) {
 	afterByPathBindings, err := managedNotePlanBindings(ctx, root)
 	if err != nil {
 		return domain.ApplyReceipt{}, err
@@ -33,7 +37,10 @@ func writeObjectApplyReceipt(ctx context.Context, root, command, planID, snapsho
 			selected[binding.ObjectID] = struct{}{}
 		}
 		if binding, ok := afterByPath[path]; ok {
-			selected[binding.ObjectID] = struct{}{}
+			_, inSelection := before[binding.ObjectID]
+			if results == nil || inSelection {
+				selected[binding.ObjectID] = struct{}{}
+			}
 		}
 	}
 	for objectID := range before {
@@ -70,7 +77,7 @@ func writeObjectApplyReceipt(ctx context.Context, root, command, planID, snapsho
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	receiptID := "apply-" + shortSyncManifestDigest(command+"\x00"+planID+"\x00"+now)
 	rel := filepath.ToSlash(filepath.Join(".pinax", "receipts", receiptID+".json"))
-	receipt := domain.ApplyReceipt{SchemaVersion: domain.ApplyReceiptSchemaVersion, ReceiptID: receiptID, Command: command, PlanID: planID, Status: "applied", SnapshotID: snapshotID, LedgerSeq: ledger.Version.LastSeq, ChangedPaths: changedPaths, Objects: objects, SyncReady: syncReady, SyncReason: syncReason, SavedPath: rel, CreatedAt: now}
+	receipt := domain.ApplyReceipt{SchemaVersion: domain.ApplyReceiptSchemaVersion, ReceiptID: receiptID, Command: command, PlanID: planID, Status: status, OperationResults: results, SnapshotID: snapshotID, LedgerSeq: ledger.Version.LastSeq, ChangedPaths: changedPaths, Objects: objects, SyncReady: syncReady, SyncReason: syncReason, SavedPath: rel, CreatedAt: now}
 	if err := writeJSONAsset(filepath.Join(root, filepath.FromSlash(rel)), receipt); err != nil {
 		return domain.ApplyReceipt{}, err
 	}

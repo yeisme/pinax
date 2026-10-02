@@ -32,6 +32,12 @@ var defaultCachePolicies = map[string]CachePolicy{
 // cacheMiddleware adds Cache-Control and ETag support for GET requests.
 func (s *Server) cacheMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The human reading surface is private no-store by contract; it never
+		// participates in ETag/disk-cache handling and must stream untouched.
+		if strings.HasPrefix(r.URL.Path, "/v1/reader/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		// Only cache GET requests
 		if r.Method != http.MethodGet {
 			next.ServeHTTP(w, r)

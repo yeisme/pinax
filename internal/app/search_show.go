@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/yeisme/pinax/internal/app/searchops"
 	"github.com/yeisme/pinax/internal/domain"
@@ -138,8 +139,10 @@ func (s *Service) SearchShow(_ context.Context, req SearchShowRequest) (domain.P
 	projection.Facts["writes"] = "false"
 	projection.Evidence = []string{note.Path}
 	projection.Actions = []domain.Action{
-		{Name: "read", Command: fmt.Sprintf("pinax note show %s --vault %s", shellQuote(note.Title), shellQuote(root))},
-		{Name: "backlinks", Command: fmt.Sprintf("pinax note backlinks %s --vault %s", shellQuote(note.Title), shellQuote(root))},
+		{Name: "read", Command: fmt.Sprintf("pinax note show %s --vault %s", shellQuote(stableNoteRef(note)), shellQuote(root))},
+		{Name: "backlinks", Command: fmt.Sprintf("pinax note backlinks %s --vault %s", shellQuote(stableNoteRef(note)), shellQuote(root))},
+		{Name: "preview", Command: fmt.Sprintf("pinax note preview %s --vault %s", shellQuote(stableNoteRef(note)), shellQuote(root))},
+		{Name: "open", Command: fmt.Sprintf("pinax note open %s --vault %s", shellQuote(stableNoteRef(note)), shellQuote(root))},
 	}
 	if result.Fresh == domain.FreshnessStale {
 		projection.Actions = append(projection.Actions, domain.Action{Name: "verify", Command: fmt.Sprintf("pinax note verify %s --vault %s", shellQuote(note.Path), shellQuote(root))})
@@ -163,7 +166,18 @@ func boundedSnippet(value string) string {
 	if len(value) <= 200 {
 		return value
 	}
-	return value[:200]
+	end := 200
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end]
+}
+
+func stableNoteRef(note domain.Note) string {
+	if note.ID != "" {
+		return note.ID
+	}
+	return note.Path
 }
 
 func searchShowRefForLink(noteByPath map[string]domain.Note, link domain.NoteLink) SearchShowRef {

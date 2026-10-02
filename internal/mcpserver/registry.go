@@ -45,6 +45,8 @@ func toolRegistrations() []toolRegistration {
 		registeredTool("pinax.agent.context", "Read bounded permission-first agent context pack (experimental)", "agent.context", "pinax.agent.context.request.v1"),
 		registeredTool("pinax.agent.memory_recall", "Recall bounded agent memories (experimental, readonly)", "agent.memory.recall", "pinax.agent.memory.recall.request.v1"),
 		registeredTool("pinax.agent.handoff_read", "Read bounded cross-agent handoff working state (experimental, readonly)", "agent.handoff.read", "pinax.agent.handoff.read.request.v1"),
+		registeredTool("pinax.agent.note_proposals", "Read bounded note proposals (experimental, readonly)", "agent.note.proposals", "pinax.agent.note_proposals.request.v1alpha1"),
+		registeredTool("pinax.render_note", "Read a bounded rendered note tree (experimental, readonly)", "note.render", "pinax.render_note.request.v1alpha1"),
 	}
 }
 
@@ -154,6 +156,8 @@ func MCPAdditionalCapabilityDefinitions() ([]transportcatalog.CapabilityDefiniti
 		mcpReadonlyDefinition("note.context", "note.context", "pinax.note.context.request.v1"),
 		mcpReadonlyDefinition("version.snapshot.plan", "version.snapshot.plan", "pinax.version.snapshot_plan.request.v1"),
 		mcpReadonlyDefinition("agent.handoff.read", "agent.handoff.read", "pinax.agent.handoff.read.request.v1"),
+		mcpReadonlyDefinition("agent.note.proposals", "agent.note.proposal.list", "pinax.agent.note_proposals.request.v1alpha1"),
+		mcpReadonlyDefinition("note.render", "note.preview.rendered", "pinax.render_note.request.v1alpha1"),
 		mcpReadonlyDefinition("sync.logs.status", "sync.logs.status", "pinax.sync.logs.status.request.v1"),
 	}
 	declared := make(map[string][]string, len(definitions))

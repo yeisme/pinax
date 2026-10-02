@@ -21,6 +21,8 @@ func mustRegistry(definitions []Definition) *Registry {
 func defaultDefinitions() []Definition {
 	definitions := coreDefinitions()
 	definitions = append(definitions, mcpRequestDefinitions()...)
+	definitions = append(definitions, readerDefinitions()...)
+	definitions = append(definitions, writerDefinitions()...)
 	return definitions
 }
 
@@ -162,7 +164,7 @@ func mcpRequestDefinitions() []Definition {
 		request("pinax.graph.summary.request.v1", nil),
 		request("pinax.project_board.show.request.v1", map[string]any{"project": stringValue(), "slug": stringValue()}),
 		request("pinax.task.adopt_plan.request.v1", map[string]any{"item_id": stringValue(), "item": stringValue()}),
-		request("pinax.organize.plan.request.v1", nil),
+		request("pinax.organize.plan.request.v1", map[string]any{"note_refs": map[string]any{"type": "array", "minItems": 1, "maxItems": 100, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 512}}}),
 		request("pinax.version.snapshot_plan.request.v1", nil),
 		request("pinax.agent.context.request.v1", map[string]any{
 			"workspace": map[string]any{"type": "string", "default": "default"},
@@ -175,6 +177,18 @@ func mcpRequestDefinitions() []Definition {
 		request("pinax.agent.handoff.read.request.v1", map[string]any{
 			"workspace": map[string]any{"type": "string", "default": "default"},
 		}),
+		request("pinax.agent.note_proposals.request.v1alpha1", map[string]any{
+			"proposal_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 128},
+			"status":      enumValue("approval_required", "applying", "rejecting", "reconcile_required", "auto_applied", "approved", "rejected"),
+			"kind":        enumValue("inbox_capture", "journal_append", "note_draft", "note_edit"),
+			"limit":       map[string]any{"type": "integer", "minimum": 1, "maximum": 50},
+			"cursor":      map[string]any{"type": "string", "maxLength": 2048},
+		}),
+		request("pinax.render_note.request.v1alpha1", map[string]any{
+			"note_ref":          map[string]any{"type": "string", "maxLength": 512, "minLength": 1},
+			"display":           map[string]any{"type": "string", "enum": []any{"card", "context", "body"}},
+			"resolved_revision": map[string]any{"type": "string", "maxLength": 128},
+		}, "note_ref"),
 		// sync job status 只读投影（pinax-local-async-substrate-v1 §2.4）：
 		// MCP 消费者按 run_id 重放事件流结论，不触碰执行器状态。
 		request("pinax.sync.logs.status.request.v1", map[string]any{

@@ -85,6 +85,7 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 	repairCmd.AddCommand(repairApplyCmd)
 	root.AddCommand(repairCmd)
 
+	var organizeNotes []string
 	organizeCmd := &cobra.Command{Use: "organize", Short: "Plan and apply note structure organization"}
 	organizeSuggestCmd := &cobra.Command{
 		Use:     "suggest",
@@ -92,10 +93,15 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 		Long:    "Generate an agent-reviewable organization suggestion plan. By default this only outputs a plan and does not write Markdown or .pinax assets; with --save, the service writes .pinax/organize-plans/<plan_id>.json.",
 		Example: "pinax organize suggest --vault ./my-notes --json\npinax organize suggest --vault ./my-notes --save --agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("note") {
+				p, err := ctx.svc.PlanScopedOrganize(cmd.Context(), app.ScopedOrganizeRequest{VaultPath: *ctx.vaultPath, NoteRefs: organizeNotes, Save: *ctx.organizeSave})
+				return ctx.renderProjection(cmd, p, err)
+			}
 			projection, err := ctx.svc.SuggestOrganize(cmd.Context(), app.OrganizeSuggestRequest{VaultPath: *ctx.vaultPath, Save: *ctx.organizeSave})
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
+	organizeSuggestCmd.Flags().StringArrayVar(&organizeNotes, "note", nil, "Limit organization to an exact note ID or vault-relative path; repeat for up to 20 objects")
 	organizeSuggestCmd.Hidden = true
 	organizeSuggestCmd.Flags().BoolVar(ctx.organizeSave, "save", false, "Save the organize plan to .pinax/organize-plans")
 	organizeCmd.AddCommand(organizeSuggestCmd)
@@ -111,6 +117,10 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 		Use:   "plan",
 		Short: "Preview a structure organization plan",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("note") {
+				p, err := ctx.svc.PlanScopedOrganize(cmd.Context(), app.ScopedOrganizeRequest{VaultPath: *ctx.vaultPath, NoteRefs: organizeNotes, Save: *ctx.organizeSave})
+				return ctx.renderProjection(cmd, p, err)
+			}
 			if *ctx.organizeSave {
 				projection, err := ctx.svc.SuggestOrganize(cmd.Context(), app.OrganizeSuggestRequest{VaultPath: *ctx.vaultPath, Save: true})
 				return ctx.renderProjection(cmd, projection, err)
@@ -119,6 +129,7 @@ func addMetadataRepairOrganizeCommands(root *cobra.Command, ctx commandBuildCont
 			return ctx.renderProjection(cmd, projection, err)
 		},
 	}
+	organizePlanCmd.Flags().StringArrayVar(&organizeNotes, "note", nil, "Limit organization to an exact note ID or vault-relative path; repeat for up to 20 objects")
 	organizePlanCmd.Flags().BoolVar(ctx.organizeSave, "save", false, "Save the organize plan to .pinax/organize-plans")
 	organizeCmd.AddCommand(organizePlanCmd)
 	organizeApplyCmd := &cobra.Command{

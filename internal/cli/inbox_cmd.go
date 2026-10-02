@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"io"
+
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
@@ -27,11 +29,15 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 					"--operation-id/--idempotency-key require a remote mutation (--api-url); local capture has no operation ledger",
 					"pinax inbox capture <title> --vault <vault> --api-url <url> --operation-id <id>")
 			}
+			body, inputErr := inboxCaptureBody(cmd)
+			if inputErr != nil {
+				return ctx.renderProjection(cmd, domain.NewErrorProjection("inbox.capture", inputErr), inputErr)
+			}
 			projection, err := ctx.svc.InboxCapture(cmd.Context(), app.CreateNoteRequest{
 				VaultPath: *ctx.vaultPath,
 				Title:     args[0],
 				Tags:      splitCSV(*ctx.noteTags),
-				Body:      *ctx.noteBody,
+				Body:      body,
 				Slug:      *ctx.noteSlug,
 				DryRun:    *ctx.noteDryRun,
 			})
@@ -39,6 +45,7 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 		},
 	}
 	inboxCaptureCmd.Flags().StringVar(ctx.noteBody, "body", "", "Note body")
+	inboxCaptureCmd.Flags().Bool("stdin", false, "Read the body from stdin; cannot be combined with --body")
 	inboxCaptureCmd.Flags().StringVar(ctx.noteTags, "tags", "", "Comma-separated tags")
 	inboxCaptureCmd.Flags().StringVar(ctx.noteSlug, "slug", "", "Filename slug")
 	inboxCaptureCmd.Flags().BoolVar(ctx.noteDryRun, "dry-run", false, "Preview the capture without modifying files")
@@ -46,6 +53,7 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	inboxCaptureCmd.Flags().StringVar(&operationID, "operation-id", "", "Reuse an operation ID for a remote mutation retry")
 	inboxCaptureCmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "Reuse an idempotency key for a remote mutation retry")
 	inboxCmd.AddCommand(inboxCaptureCmd)
+	addInboxReviewCommand(inboxCmd, ctx)
 
 	// 2. inbox list
 	inboxCmd.AddCommand(&cobra.Command{
@@ -237,6 +245,24 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	inboxCmd.AddCommand(inboxIndexCmd)
 
 	root.AddCommand(inboxCmd)
+}
+
+// stdin 在本地与远端入口共用读取规则；不能静默丢弃任一显式正文来源。
+func inboxCaptureBody(cmd *cobra.Command) (string, *domain.CommandError) {
+	if !boolFlag(cmd, "stdin") {
+		return stringFlag(cmd, "body"), nil
+	}
+	if cmd.Flags().Changed("body") {
+		return "", &domain.CommandError{Code: "note_source_conflict", Message: "Choose one body source", Hint: "Use either --stdin or --body"}
+	}
+	body, err := io.ReadAll(cmd.InOrStdin())
+	if err != nil {
+		return "", &domain.CommandError{Code: "stdin_read_failed", Message: "Could not read the note body", Hint: "Check stdin input before retrying"}
+	}
+	if len(body) == 0 {
+		return "", &domain.CommandError{Code: "stdin_empty", Message: "No note content received on stdin", Hint: "Provide content on stdin or omit --stdin for a title-only note"}
+	}
+	return string(body), nil
 }
 
 func addDimensionRootCommands(root *cobra.Command, ctx commandBuildContext) {

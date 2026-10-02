@@ -36,27 +36,32 @@ type HTTPRequestBodySchema struct {
 }
 
 type RemoteRESTContract struct {
-	RouteID             string                 `json:"route_id"`
-	CapabilityID        string                 `json:"capability_id"`
-	Command             string                 `json:"command"`
-	Method              string                 `json:"method"`
-	Path                string                 `json:"path"`
-	Parameters          []HTTPParameterSchema  `json:"parameters"`
-	RequestBody         *HTTPRequestBodySchema `json:"request_body,omitempty"`
-	RequestSchema       string                 `json:"request_schema"`
-	SuccessSchema       string                 `json:"success_schema"`
-	SuccessDataSchema   string                 `json:"success_data_schema"`
-	ErrorSchema         string                 `json:"error_schema"`
-	ErrorDetailSchema   string                 `json:"error_detail_schema"`
-	BodyExposureDefault string                 `json:"body_exposure_default"`
-	ReleaseCore         bool                   `json:"release_core"`
-	Readonly            bool                   `json:"readonly"`
-	BodyAllowed         bool                   `json:"body_allowed"`
-	ApprovalRequired    bool                   `json:"approval_required"`
-	SnapshotRequired    bool                   `json:"snapshot_required"`
-	UIGroup             string                 `json:"ui_group"`
-	WriteGate           string                 `json:"write_gate"`
-	Stability           string                 `json:"stability"`
+	RouteID           string                 `json:"route_id"`
+	CapabilityID      string                 `json:"capability_id"`
+	Command           string                 `json:"command"`
+	Method            string                 `json:"method"`
+	Path              string                 `json:"path"`
+	Parameters        []HTTPParameterSchema  `json:"parameters"`
+	RequestBody       *HTTPRequestBodySchema `json:"request_body,omitempty"`
+	RequestSchema     string                 `json:"request_schema"`
+	SuccessSchema     string                 `json:"success_schema"`
+	SuccessDataSchema string                 `json:"success_data_schema"`
+	// ByteResponses marks endpoints whose success responses carry raw
+	// byte windows (200 full / 206 ranged with Content-Range + ETag)
+	// instead of the JSON projection envelope.
+	ByteResponses       bool   `json:"byte_responses,omitempty"`
+	SuccessMediaType    string `json:"success_media_type,omitempty"`
+	ErrorSchema         string `json:"error_schema"`
+	ErrorDetailSchema   string `json:"error_detail_schema"`
+	BodyExposureDefault string `json:"body_exposure_default"`
+	ReleaseCore         bool   `json:"release_core"`
+	Readonly            bool   `json:"readonly"`
+	BodyAllowed         bool   `json:"body_allowed"`
+	ApprovalRequired    bool   `json:"approval_required"`
+	SnapshotRequired    bool   `json:"snapshot_required"`
+	UIGroup             string `json:"ui_group"`
+	WriteGate           string `json:"write_gate"`
+	Stability           string `json:"stability"`
 }
 
 type restWireSpec struct {

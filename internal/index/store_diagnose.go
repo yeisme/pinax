@@ -13,6 +13,7 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/index/model"
 	"github.com/yeisme/pinax/internal/index/query"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
 	"gorm.io/gorm"
 )
 
@@ -131,6 +132,143 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 	}
 	status := Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: evidence}
 	return doctorReport(status, issues), nil
+}
+
+// InspectReadOnly reports the index status WITHOUT ever repairing it: the
+// database is opened read-only (mode=ro) and no migration, schema repair,
+// identity backfill or any other write runs. Reader surfaces use this path
+// so a read request can never persist changes to the owner's index. Status
+// semantics mirror Diagnose: an index whose schema needs migration or whose
+// projections drifted reports stale/partial instead of being fixed.
+func InspectReadOnly(root string, notes []domain.Note) (Status, error) {
+	indexPath := filepath.Join(root, ".pinax", "index.sqlite")
+	if _, err := os.Stat(indexPath); err != nil {
+		if os.IsNotExist(err) {
+			return Status{Status: "missing", Path: indexRelPath()}, nil
+		}
+		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
+	}
+	if err := verifySQLiteHeader(indexPath); err != nil {
+		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
+	}
+	db, err := sqlitedsn.OpenReadOnly(indexPath)
+	if err != nil {
+		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
+	}
+	// This inspection is one-shot: close the pool AND release it from the
+	// process exit registry on every path so long-running reader sessions
+	// accumulate neither file handles nor retained pool objects per
+	// request.
+	defer func() { _ = sqlitedsn.CloseAndRelease(db) }()
+	if schemaIssues := indexStorageSchemaIssues(db); len(schemaIssues) > 0 {
+		// A schema the write path would migrate is reported stale here:
+		// the reader never migrates, it only observes.
+		status := Status{Status: "stale", Path: indexRelPath(), Notes: len(notes), Evidence: issueEvidence(schemaIssues)}
+		if !schemaIssuesContainEvidence(schemaIssues, "missing_table=index_meta_records") {
+			status.SchemaVersion = metaValue(db, "schema_version")
+		}
+		return status, nil
+	}
+	schema := metaValue(db, "schema_version")
+	if schema == "" {
+		return Status{Status: "stale", Path: indexRelPath(), Evidence: []string{"schema_version=missing"}}, nil
+	}
+	if schema != SchemaVersion {
+		return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{"schema_version=" + schema}}, nil
+	}
+	propertySchema := metaValue(db, "property_schema_version")
+	if propertySchema != PropertySchemaVersion {
+		if propertySchema == "" {
+			propertySchema = "missing"
+		}
+		return Status{Status: "stale", Path: indexRelPath(), SchemaVersion: schema, Notes: len(notes), Evidence: []string{"property_schema_version=" + propertySchema}}, nil
+	}
+	q := query.Use(db)
+	records, err := q.NoteRecord.WithContext(context.Background()).Find()
+	if err != nil {
+		return Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{err.Error()}}, nil
+	}
+	byPath := map[string]*model.NoteRecord{}
+	for _, record := range records {
+		byPath[record.Path] = record
+	}
+	notePaths := map[string]bool{}
+	issues := []Issue{}
+	for _, note := range notes {
+		if isSystemJournalNotePath(note.Path) || isSystemIndexNotePath(note.Path) {
+			continue
+		}
+		notePaths[note.Path] = true
+		record, ok := byPath[note.Path]
+		if !ok {
+			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引缺少 vault note projection", []string{"missing_note=" + note.Path}))
+			continue
+		}
+		if record.SourceHash != noteSourceHash(note) {
+			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引 note projection 已过期", []string{"changed_note=" + note.Path}))
+		}
+	}
+	for _, record := range records {
+		if isSystemJournalNotePath(record.Path) || isSystemIndexNotePath(record.Path) {
+			continue
+		}
+		if !notePaths[record.Path] {
+			issues = append(issues, indexIssue("index_stale", "warning", indexRelPath(), "索引包含 vault 中不存在 of note projection", []string{"extra_note=" + record.Path}))
+		}
+		textRows, countErr := q.NoteTextRecord.WithContext(context.Background()).Where(q.NoteTextRecord.NotePath.Eq(record.Path)).Count()
+		if countErr != nil {
+			return Status{Status: "unreadable", Path: indexRelPath(), SchemaVersion: schema, Evidence: []string{countErr.Error()}}, nil
+		}
+		if textRows == 0 {
+			issues = append(issues, indexIssue("index_row_consistency", "warning", indexRelPath(), "索引 note/text projection 不一致", []string{"missing_note_text=" + record.Path}))
+		}
+	}
+	// Identity gaps are DETECTED (they surface as stale evidence) but never
+	// repaired here.
+	issues = append(issues, objectIdentityConsistencyIssues(q, records)...)
+	statusName := "fresh"
+	if len(issues) > 0 {
+		statusName = "partial"
+		for _, issue := range issues {
+			if issue.Code == "index_stale" || issue.Code == "index_schema_mismatch" || issue.Code == "index_identity_consistency" {
+				statusName = "stale"
+				break
+			}
+		}
+	}
+	return Status{Status: statusName, Path: indexRelPath(), SchemaVersion: schema, Notes: len(records), Evidence: issueEvidence(issues)}, nil
+}
+
+// RemoveNoteTextForTest deletes one note-text projection row so tests can
+// build the real partial index shape (note record present, text projection
+// missing) that reader surfaces must report as index_state=partial. The
+// typed DAO is used (never raw SQL); the write pool is closed before
+// returning.
+func RemoveNoteTextForTest(root, notePath string) error {
+	db, err := open(root)
+	if err != nil {
+		return err
+	}
+	q := query.Use(db)
+	if _, err := q.NoteTextRecord.WithContext(context.Background()).Where(q.NoteTextRecord.NotePath.Eq(notePath)).Delete(); err != nil {
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return err
+	}
+	if err := sqlitedsn.Checkpoint(db); err != nil {
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return err
+	}
+	if sqlDB, dbErr := db.DB(); dbErr == nil {
+		_ = sqlDB.Close()
+	}
+	for _, sidecar := range []string{"index.sqlite-wal", "index.sqlite-shm"} {
+		_ = os.Remove(filepath.Join(root, ".pinax", sidecar))
+	}
+	return nil
 }
 
 // sqliteHeaderMagic 是 SQLite 数据库文件头的前 16 字节。

@@ -26,6 +26,24 @@ func Compile(contributions ...Contribution) (transportcatalog.Manifest, error) {
 		return transportcatalog.Manifest{}, err
 	}
 
+	// Human reading contract (pinax-human-reading-api-v1): additive planned
+	// capabilities so consumers can discover the frozen surface early. Planned
+	// bindings never appear in available_surfaces and change no legacy schema.
+	definitions = append(definitions, transportcatalog.ReaderCapabilityDefinitions()...)
+	bindings = append(bindings, transportcatalog.ReaderTransportBindings()...)
+	for capabilityID, surfaces := range transportcatalog.ReaderDeclaredSurfaces() {
+		declaredSurfaces[capabilityID] = append(declaredSurfaces[capabilityID], surfaces...)
+	}
+
+	// Supervised write contract (pinax-human-reading-write-v1): additive
+	// writer capabilities. Backed by real handlers since W02-W04 and
+	// registered available with component evidence at W06.
+	definitions = append(definitions, transportcatalog.WriterCapabilityDefinitions()...)
+	bindings = append(bindings, transportcatalog.WriterTransportBindings()...)
+	for capabilityID, surfaces := range transportcatalog.WriterDeclaredSurfaces() {
+		declaredSurfaces[capabilityID] = append(declaredSurfaces[capabilityID], surfaces...)
+	}
+
 	for _, contribution := range contributions {
 		definitions = append(definitions, contribution.Definitions...)
 		bindings = append(bindings, contribution.Bindings...)

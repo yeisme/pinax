@@ -65,7 +65,8 @@ func TestMCPProtocolLifecycleCurrentAndLegacy(t *testing.T) {
 			}
 		}
 	}
-	if len(legacyTools) != 20 || len(legacyResources) != 9 {
+	assertDefaultMCPReadTools(t, legacyTools)
+	if len(legacyResources) != 9 {
 		t.Fatalf("legacy inventory tools=%d resources=%d", len(legacyTools), len(legacyResources))
 	}
 
@@ -93,7 +94,8 @@ func TestMCPProtocolLifecycleCurrentAndLegacy(t *testing.T) {
 	}
 	tools, _ := responseResult(t, defaultRuntime, "tools")["tools"].([]any)
 	resources, _ := responseResult(t, defaultRuntime, "resources")["resources"].([]any)
-	if len(tools) != 20 || len(resources) == 0 {
+	assertDefaultMCPReadTools(t, tools)
+	if len(resources) == 0 {
 		t.Fatalf("default runtime inventory tools=%d resources=%d", len(tools), len(resources))
 	}
 }

@@ -93,8 +93,43 @@ func registerForExitClose(db *sql.DB) {
 	openDBs = append(openDBs, db)
 }
 
+// CloseAndRelease 关闭连接池并把它从进程退出登记表中移除：一次性调用方
+// （如只读索引检查）必须用它收尾，否则进程内按请求次数累积已关闭的池
+// 引用，内存无界增长。长生命周期池不调用它，仍由退出时 CloseAll 收口；
+// 双重关闭与未登记句柄均安全。
+func CloseAndRelease(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	exitCloseMu.Lock()
+	for i, registered := range openDBs {
+		if registered == sqlDB {
+			openDBs = append(openDBs[:i], openDBs[i+1:]...)
+			break
+		}
+	}
+	exitCloseMu.Unlock()
+	return sqlDB.Close()
+}
+
+// OpenPoolCount 返回当前登记在退出表中的连接池数量。测试用它断言一次性
+// 调用方不随请求数累积登记项。
+func OpenPoolCount() int {
+	exitCloseMu.Lock()
+	defer exitCloseMu.Unlock()
+	return len(openDBs)
+}
+
 // CloseAll 关闭本进程内经本包打开的全部 SQLite 连接，应在 CLI 进程退出
 // （main 与进程内命令测试收尾）时调用。幂等；调用后既有句柄不可再用。
+// Checkpoint 把 WAL 内容 checkpoint 回主库文件（TRUNCATE 模式，wal 文件
+// 清零）。供需要确定性主文件字节（测试 digest、迁移后落盘）的调用方在
+// 关闭连接池之前使用；连接机制归本包所有。
+func Checkpoint(db *gorm.DB) error {
+	return db.Exec("PRAGMA wal_checkpoint(TRUNCATE)").Error
+}
+
 func CloseAll() {
 	exitCloseMu.Lock()
 	dbs := openDBs

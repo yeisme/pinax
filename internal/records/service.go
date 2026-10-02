@@ -131,6 +131,16 @@ func (s *Service) ReplayReadOnly(ctx context.Context) (domain.LedgerState, error
 	return materialize(events)
 }
 
+// HistoryReadOnly reads existing events without creating ledger projections.
+func (s *Service) HistoryReadOnly(ctx context.Context) ([]domain.RecordEvent, error) {
+	if err := ctxErr(ctx); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.readEvents()
+}
+
 func (s *Service) Replay(ctx context.Context) (domain.LedgerState, error) {
 	if err := ctxErr(ctx); err != nil {
 		return domain.LedgerState{}, err

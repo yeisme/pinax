@@ -690,7 +690,10 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		}
 	}
 	data := map[string]any{"note": domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Body: strings.TrimSpace(body), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status, CreatedAt: now, UpdatedAt: now}, "planned_path": rel, "frontmatter_preview": strings.SplitN(content, "---\n\n", 2)[0] + "---", "body_preview": strings.TrimSpace(body)}
-	projection.Actions = []domain.Action{{Name: "show", Command: fmt.Sprintf("pinax note show %s --vault %s", shellQuote(rel), shellQuote(root))}}
+	projection.Actions = []domain.Action{
+		{Name: "show", Command: fmt.Sprintf("pinax note show %s --vault %s", shellQuote(noteID), shellQuote(root))},
+		{Name: "open", Command: fmt.Sprintf("pinax note open %s --vault %s", shellQuote(noteID), shellQuote(root))},
+	}
 	if templateName != "" {
 		nextActions := templateMetadataActions(templateMeta.AfterCreateActions)
 		nextActions = append(nextActions, projection.Actions...)
@@ -728,6 +731,14 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	if err := atomicWriteFile(path, []byte(content), 0o644); err != nil {
 		return errorProjection("note.new", err), err
 	}
+	projection.Facts["writes"] = "true"
+	projection.Facts["readback_status"] = "unknown"
+	saved, readErr := os.ReadFile(path)
+	if readErr != nil || string(saved) != content {
+		err := &domain.CommandError{Code: "note_readback_failed", Message: "Note write completed but readback could not be verified", Hint: "Inspect the returned note_id before creating another note"}
+		return savedNoteFailure(projection, err), err
+	}
+	projection.Facts["readback_status"] = "verified"
 	dailyIndexRel, dailyErr := appendDailyIndex(root, domain.Note{ID: noteID, Title: req.Title, Path: rel, Tags: cleanTags(req.Tags), Project: req.Project, Folder: folder, Kind: kind, Status: req.Status}, s.currentTimeUTC())
 	if dailyErr != nil {
 		if code := templateengine.ErrorCode(dailyErr); strings.HasPrefix(code, "managed_block_") {
@@ -736,14 +747,14 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 			projection.Facts["daily_index_status"] = code
 			projection.Actions = append(projection.Actions, domain.Action{Name: "upgrade_daily_template", Command: fmt.Sprintf("pinax journal daily show --template journal.daily --vault %s --json", shellQuote(root))})
 		} else {
-			return errorProjection("note.new", dailyErr), dailyErr
+			return savedNoteFailure(projection, dailyErr), dailyErr
 		}
 	} else if dailyIndexRel != "" {
 		projection.Facts["daily_index"] = dailyIndexRel
 		projection.Facts["daily_index_status"] = "updated"
 	}
 	if err := refreshIndex(root); err != nil {
-		return errorProjection("note.new", err), err
+		return savedNoteFailure(projection, err), err
 	}
 	projection.Facts["index_updated"] = "true"
 	projection.Evidence = []string{dailyIndexRel, filepath.ToSlash(filepath.Join(".pinax", "index.sqlite"))}
@@ -760,7 +771,7 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 		}
 	})
 	if recordErr != nil {
-		return errorProjection("note.new", recordErr), recordErr
+		return savedNoteFailure(projection, recordErr), recordErr
 	}
 	applyRecordEventFacts(&projection, recordEvent)
 	eventFacts := map[string]string{"path": rel, "title": req.Title}
@@ -771,6 +782,16 @@ func (s *Service) CreateNote(ctx context.Context, req CreateNoteRequest) (domain
 	}
 	appendEventWarned(root, "note.new", "success", eventFacts)
 	return projection, nil
+}
+
+// 已保存对象与后续维护失败必须同时返回，避免调用方盲目重建导致重复笔记。
+func savedNoteFailure(saved domain.Projection, err error) domain.Projection {
+	failed := errorProjection("note.new", err)
+	failed.Summary = "Note saved; follow-up incomplete. Inspect this note before retrying."
+	failed.Facts = saved.Facts
+	failed.Actions = saved.Actions
+	failed.Evidence = []string{saved.Facts["path"]}
+	return failed
 }
 
 type resolverNoteAmbiguousError struct {
@@ -1826,7 +1847,12 @@ func (s *Service) ListOrganizePlans(_ context.Context, req VaultRequest) (domain
 	if len(plans) == 0 {
 		projection.Actions = []domain.Action{{Name: "plan", Command: fmt.Sprintf("pinax organize plan --vault %s --save", shellQuote(root))}}
 	} else {
-		projection.Actions = []domain.Action{{Name: "apply", Command: fmt.Sprintf("pinax organize apply --vault %s --plan %s --yes --snapshot-message %s", shellQuote(root), shellQuote(plans[0].PlanID), shellQuote("snapshot before organize"))}}
+		plan, loadErr := loadOrganizePlan(root, plans[0].PlanID)
+		if loadErr == nil && plan.SchemaVersion == domain.ScopedOrganizePlanSchema {
+			projection.Actions = []domain.Action{{Name: "inspect", Command: "pinax pipeline show " + shellQuote(plan.PlanID) + " --vault " + shellQuote(root)}}
+		} else {
+			projection.Actions = []domain.Action{{Name: "apply", Command: fmt.Sprintf("pinax organize apply --vault %s --plan %s --yes --snapshot-message %s", shellQuote(root), shellQuote(plans[0].PlanID), shellQuote("snapshot before organize"))}}
+		}
 	}
 	return projection, nil
 }
@@ -1861,6 +1887,10 @@ func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *
 		plan, err := loadOrganizePlan(root, req.PlanID)
 		if err != nil {
 			return errorProjection("organize.apply", err), err
+		}
+		if plan.SchemaVersion == domain.ScopedOrganizePlanSchema {
+			tracker.begin()
+			return s.applyScopedOrganize(ctx, root, req, plan)
 		}
 		tracker.begin()
 		if err := ensureOrganizePlanFresh(ctx, root, &plan); err != nil {
@@ -2580,7 +2610,7 @@ func planOrganize(root string) ([]domain.PlanOperation, error) {
 	return ops, nil
 }
 
-func buildOrganizePlan(root string) (domain.OrganizePlan, error) {
+func buildOrganizePlan(root string, fullContext ...bool) (domain.OrganizePlan, error) {
 	ops, err := planOrganize(root)
 	if err != nil {
 		return domain.OrganizePlan{}, err
@@ -2589,7 +2619,9 @@ func buildOrganizePlan(root string) (domain.OrganizePlan, error) {
 	if err != nil {
 		return domain.OrganizePlan{}, err
 	}
-	facts = organizeCandidateFacts(facts)
+	if len(fullContext) == 0 || !fullContext[0] {
+		facts = organizeCandidateFacts(facts)
+	}
 	ops = append(ops, organizeFactOperations(root, facts)...)
 	created := time.Now().UTC()
 	planID := organizePlanID(root, ops, created)
@@ -2952,6 +2984,9 @@ func loadOrganizePlan(root, planRef string) (domain.OrganizePlan, error) {
 	if err != nil {
 		return domain.OrganizePlan{}, err
 	}
+	if err := collaborationSafePath(root, rel); err != nil {
+		return domain.OrganizePlan{}, err
+	}
 	payload, err := os.ReadFile(path)
 	if err != nil {
 		return domain.OrganizePlan{}, err
@@ -2960,8 +2995,11 @@ func loadOrganizePlan(root, planRef string) (domain.OrganizePlan, error) {
 	if err := json.Unmarshal(payload, &plan); err != nil {
 		return domain.OrganizePlan{}, err
 	}
-	if plan.SchemaVersion != "pinax.organize_plan.v1" {
+	if plan.SchemaVersion != "pinax.organize_plan.v1" && plan.SchemaVersion != domain.ScopedOrganizePlanSchema {
 		return domain.OrganizePlan{}, &domain.CommandError{Code: "organize_plan_schema_invalid", Message: "organize plan schema is not supported", Hint: "Rerun pinax organize plan --save"}
+	}
+	if plan.SchemaVersion == domain.ScopedOrganizePlanSchema && (!paneRefPattern.MatchString(plan.PlanID) || filepath.ToSlash(rel) != ".pinax/organize-plans/"+plan.PlanID+".json") {
+		return domain.OrganizePlan{}, scopedOrganizeError("organize_plan_schema_invalid")
 	}
 	if plan.SavedPath == "" {
 		plan.SavedPath = filepath.ToSlash(rel)
@@ -2999,6 +3037,9 @@ func listOrganizePlans(root string) ([]domain.OrganizePlanSummary, error) {
 func ensureOrganizePlanFresh(ctx context.Context, root string, plan *domain.OrganizePlan) error {
 	if plan == nil {
 		return &domain.CommandError{Code: "plan_required", Message: "organize plan is required", Hint: "Rerun pinax organize plan --save"}
+	}
+	if plan.SchemaVersion == domain.ScopedOrganizePlanSchema {
+		return validateScopedOrganizePlan(ctx, root, plan)
 	}
 	if plan.Status != "planned" {
 		return &domain.CommandError{Code: "organize_plan_not_planned", Message: "organize plan status is not applicable", Hint: "Rerun pinax organize plan --save"}
@@ -3103,6 +3144,7 @@ func scanNotes(root string) ([]domain.Note, error) {
 			return nil
 		}
 		note := parseNote(filepath.ToSlash(rel), string(content))
+		note.ContentDigest = collaborationRevision(string(content))
 		if isSystemIndexNote(note) {
 			return nil
 		}

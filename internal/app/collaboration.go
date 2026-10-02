@@ -71,6 +71,7 @@ type CollaborationChange struct {
 	TargetPath       string   `json:"target_path,omitempty"`
 	Tags             []string `json:"tags,omitempty"`
 	TagOperation     string   `json:"tag_operation,omitempty"`
+	Status           string   `json:"status,omitempty"`
 }
 
 type CollaborationPreview struct {
@@ -118,6 +119,9 @@ func collaborationDigest(root string, change CollaborationChange) string {
 }
 
 func validateCollaborationChange(change CollaborationChange) error {
+	if change.Status != "" && (change.Action != "create" || (change.Status != "draft" && change.Status != "inbox")) {
+		return collaborationError("change_invalid", "Creation status must be inbox or draft")
+	}
 	if len(change.Body) > CollaborationMaxBodyBytes || !utf8.ValidString(change.Body) || strings.ContainsRune(change.Body, 0) {
 		return collaborationError("body_invalid", "Body must be valid UTF-8 text of at most 64 KiB")
 	}
@@ -266,6 +270,16 @@ func collaborationOperation(root string, change CollaborationChange, digest stri
 // CollaborationApply replays terminal outcomes without re-reading a now-stale preview.
 // A caller assertion never grants access: the owner policy remains authoritative.
 func (s *Service) CollaborationApply(ctx context.Context, root string, change CollaborationChange, digest, authorization string, policy CollaborationPolicy) (operation.View, error) {
+	return s.collaborationApplyWithRequest(ctx, root, change, digest, authorization, policy, collaborationOperation(root, change, digest))
+}
+
+// collaborationApplyWithRequest runs the shared proposal-apply flow under a
+// caller-supplied operation identity: the MCP surface passes its owner-local
+// identity, the supervised writer surface (pinax-human-reading-write-v1)
+// passes the writer session identity. Every gate — policy, caller-asserted
+// authorization (never a verified approval), change validation, unchanged
+// preview digest, safe paths, replay — is enforced here once.
+func (s *Service) collaborationApplyWithRequest(ctx context.Context, root string, change CollaborationChange, digest, authorization string, policy CollaborationPolicy, request operation.CreateRequest) (operation.View, error) {
 	if !policy.AllowBody || !policy.AllowWrite {
 		return operation.View{}, collaborationError("write_disabled", "The owner has not enabled note writes")
 	}
@@ -282,7 +296,6 @@ func (s *Service) CollaborationApply(ctx context.Context, root string, change Co
 	if digest == "" || digest != collaborationDigest(root, change) {
 		return operation.View{}, collaborationError("preview_mismatch", "Apply must use the unchanged preview, operation ID, and digest")
 	}
-	request := collaborationOperation(root, change, digest)
 	if err := operation.ValidateCreateRequest(request); err != nil {
 		return operation.View{}, err
 	}
@@ -374,7 +387,7 @@ func (s *Service) collaborationFailed(store *operation.Store, id string, outcome
 func (s *Service) applyCollaborationChange(ctx context.Context, root string, p CollaborationPreview) (domain.Projection, error) {
 	c := p.Change
 	if c.Action == "create" {
-		return s.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: c.Title, Body: c.Body, Tags: c.Tags, Dir: c.Dir, PlannedPath: p.Path, RecordIdempotencyKey: c.OperationID})
+		return s.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: c.Title, Body: c.Body, Tags: c.Tags, Dir: c.Dir, Status: c.Status, PlannedPath: p.Path, RecordIdempotencyKey: c.OperationID})
 	}
 	_, note, path, content, _, err := s.loadMutableNoteForWrite(ctx, root, c.NoteRef)
 	if err != nil {

@@ -167,7 +167,9 @@ func (s *Service) InboxCapture(ctx context.Context, req CreateNoteRequest) (doma
 	req.Status = "inbox"
 	projection, err := s.CreateNote(ctx, req)
 	projection.Command = "inbox.capture"
-	projection.Summary = "Inbox note captured."
+	if err == nil && !req.DryRun {
+		projection.Summary = "Inbox note captured."
+	}
 	return projection, err
 }
 

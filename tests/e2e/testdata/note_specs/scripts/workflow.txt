@@ -1,0 +1,54 @@
+# Fixture-only CLI proposal -> review -> rendered reference workflow.
+exec pinax init vault --title Contract --json
+exec sh -c 'pinax agent note propose --kind note_draft --title "Draft" --stdin --vault vault --json < body.md'
+stdout '"proposal_status":"auto_applied"'
+! stdout PRIVATE_BODY_SENTINEL
+cp stdout proposal.json
+contract-fact proposal.json target_object_id NOTE_ID
+
+vault-digest vault before.sha
+exec pinax note preview $NOTE_ID --view rendered --vault vault --json
+stdout render.view.v1alpha1
+! stdout PRIVATE_BODY_SENTINEL
+exec pinax note ref $NOTE_ID --vault vault --json
+cp stdout ref.json
+contract-fact ref.json resolved_revision REV
+contract-fact ref.json uri PINAX_URI
+exec pinax note ref resolve $PINAX_URI --vault vault --json
+stdout '"reference_status":"resolved"'
+exec pinax agent note proposal list --vault vault --json
+! stdout PRIVATE_BODY_SENTINEL
+vault-digest vault after.sha
+cmp before.sha after.sha
+
+exec sh -c 'pinax agent note propose --kind note_edit --target "$NOTE_ID" --expected-revision "$REV" --stdin --vault vault --json < edit.md'
+stdout '"approval_required":"true"'
+cp stdout edit-proposal.json
+contract-fact edit-proposal.json proposal_id PROP_ID
+vault-digest vault review-before.sha
+exec pinax agent note proposal approve $PROP_ID --vault vault --json
+stdout '"local_write":"false"'
+exec pinax agent note proposal reject $PROP_ID --vault vault --json
+stdout '"local_write":"false"'
+vault-digest vault review-after.sha
+cmp review-before.sha review-after.sha
+exec pinax agent note proposal approve $PROP_ID --yes --vault vault --json
+stdout '"proposal_status":"approved"'
+! exec pinax agent note proposal approve $PROP_ID --yes --vault vault --json
+stdout proposal_consumed
+exec pinax note preview $NOTE_ID --view rendered --display body --vault vault --json
+stdout replacement-marker
+! stdout PRIVATE_BODY_SENTINEL
+exec pinax agent note proposal stats --vault vault --json
+stdout '"approved":"1"'
+stdout '"auto_applied":"1"'
+
+-- body.md --
+# Fixture draft
+
+PRIVATE_BODY_SENTINEL
+
+-- edit.md --
+# Reviewed replacement
+
+replacement-marker

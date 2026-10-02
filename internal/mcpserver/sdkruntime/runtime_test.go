@@ -73,11 +73,12 @@ func TestSDKRuntimeDiscoveryMatchesRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(tools.Tools) != 20 {
-		t.Fatalf("tools = %d, want 20 (registry projection)", len(tools.Tools))
+	if len(tools.Tools) != len(mcpserver.ToolInventory()) {
+		t.Fatalf("tools = %d, want %d (registry projection)", len(tools.Tools), len(mcpserver.ToolInventory()))
 	}
 	names := toolNames(tools.Tools)
-	for _, want := range []string{"pinax.search", "pinax.note.read", "pinax.query.run", "pinax.agent.handoff_read"} {
+	for _, registered := range mcpserver.ToolInventory() {
+		want := registered.Name
 		if !names[want] {
 			t.Fatalf("missing tool %s in %#v", want, names)
 		}

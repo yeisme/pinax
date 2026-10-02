@@ -12,6 +12,7 @@ import (
 
 	"github.com/yeisme/pinax/internal/api"
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/output"
 )
 
@@ -23,6 +24,7 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	var noAuth bool
 	var exposeGroups string
 	var hideGroups string
+	var sessionStdin bool
 	newSchemaCmd := func(example string) *cobra.Command {
 		var schemaFormat string
 		schemaCmd := &cobra.Command{Use: "schema", Short: "Export the local API schema", Example: example}
@@ -54,18 +56,71 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 		return ctx.renderProjection(cmd, projection, err)
 	}}
 	serveCmd := &cobra.Command{Use: "serve", Short: "Start the local API server", RunE: func(cmd *cobra.Command, args []string) error {
+		// Supervised-session mode speaks the JSON event protocol on stdout:
+		// its flag rejections must stay machine events (stdout JSON event +
+		// stderr human text), never the human status table on stdout.
+		sessionFlagError := func(code, message, hint string) error {
+			_ = api.WriteSessionError(cmd.OutOrStdout(), code, message)
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s; %s\n", code, message, hint)
+			return &domain.CommandError{Code: code, Message: message, Hint: hint}
+		}
 		if readonly && allowWrite {
+			if sessionStdin {
+				return sessionFlagError("write_mode_conflict", "api serve cannot use --readonly and --allow-write together", "Keep only one write-mode flag")
+			}
 			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "write_mode_conflict", "api serve cannot use --readonly and --allow-write together", "Keep only one write-mode flag")
 		}
 		if tokenStore != "" && legacyTokenFile != "" {
+			if sessionStdin {
+				return sessionFlagError("auth_mode_conflict", "api serve cannot use --token-store and --token-file together", "Keep --token-store and remove the deprecated --token-file alias")
+			}
 			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "auth_mode_conflict", "api serve cannot use --token-store and --token-file together", "Keep --token-store and remove the deprecated --token-file alias")
 		}
 		if noAuth && (tokenStore != "" || legacyTokenFile != "") {
+			if sessionStdin {
+				return sessionFlagError("auth_mode_conflict", "api serve cannot combine --no-auth with a token store", "Keep only one authentication-mode flag")
+			}
 			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "auth_mode_conflict", "api serve cannot combine --no-auth with a token store", "Keep only one authentication-mode flag")
+		}
+		if sessionStdin && (allowWrite || noAuth || tokenStore != "" || legacyTokenFile != "") {
+			return sessionFlagError("auth_mode_conflict", "api serve --session-stdin is a readonly supervised reader session and cannot combine with write or legacy auth flags", "Keep --session-stdin alone")
 		}
 		mode := ctx.outputMode()
 		if mode == output.ModeJSON || mode == output.ModeAgent {
+			if sessionStdin {
+				// Supervised mode speaks the frozen session event schema on
+				// stdout; --events is also incompatible here, so the hint must
+				// not suggest it.
+				return sessionFlagError("unsupported_output_mode", "session-stdin speaks its own stdout protocol and does not support machine-output flags", "Drop the machine-output flag; consume stdout session events")
+			}
 			return renderCommandError(cmd, mode, "api.serve", "unsupported_output_mode", "api serve is long-running and does not support this output mode yet", "Use --events, or remove machine-output flags and read the URL from stderr")
+		}
+
+		if sessionStdin {
+			// Supervised human reading session: the private stdin first frame
+			// carries the bearer and grants; stdout speaks the redacted host
+			// protocol. The legacy server path below stays untouched.
+			if mode == output.ModeEvents {
+				return sessionFlagError("unsupported_output_mode", "session-stdin speaks its own stdout protocol and does not support --events", "Drop --events; consume stdout JSON events")
+			}
+			frame, frameErr := api.ReadSessionBootstrapWithDeadline(cmd.Context(), cmd.InOrStdin())
+			if frameErr != nil {
+				// Diagnostics stay generic: bootstrap frames are private
+				// input and their raw contents never reach logs. stdout
+				// stays a PURE JSON event stream for line-decoding hosts —
+				// the human-readable diagnostic goes to stderr only.
+				_ = api.WriteSessionError(cmd.OutOrStdout(), "session_bootstrap_invalid", "The supervised session bootstrap frame was rejected")
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "session_bootstrap_invalid: the supervised session bootstrap frame was rejected; check the first stdin frame against pinax.local_session.bootstrap.v1alpha1\n")
+				return &domain.CommandError{Code: "session_bootstrap_invalid", Message: "the supervised session bootstrap frame was rejected", Hint: "Check the first stdin frame against pinax.local_session.bootstrap.v1alpha1"}
+			}
+			return api.ServeSupervisedSession(cmd.Context(), api.ServeSupervisedSessionOptions{
+				Service:  ctx.svc,
+				Frame:    frame,
+				Stdin:    cmd.InOrStdin(),
+				Stdout:   cmd.OutOrStdout(),
+				Stderr:   cmd.ErrOrStderr(),
+				Manifest: TransportManifestProjection,
+			})
 		}
 
 		authMode := api.AuthModeTemp
@@ -112,6 +167,7 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	serveCmd.Flags().StringVar(&tokenStore, "token-store", "", "Load a hashed long-lived token registry")
 	serveCmd.Flags().StringVar(&legacyTokenFile, "token-file", "", "Deprecated alias for --token-store (hashed token registry)")
 	serveCmd.Flags().BoolVar(&noAuth, "no-auth", false, "No-auth mode (forces loopback)")
+	serveCmd.Flags().BoolVar(&sessionStdin, "session-stdin", false, "Supervised readonly human reading session: read a private bootstrap frame from stdin, serve /v1/reader on a random loopback port, stop on stdin EOF")
 	serveCmd.Flags().StringVar(&exposeGroups, "expose", "", "Expose only the specified route groups (comma-separated)")
 	serveCmd.Flags().StringVar(&hideGroups, "hide", "", "Hide the specified route groups (comma-separated)")
 	apiCmd.AddCommand(manifestCmd, routesCmd, statusCmd, newSchemaCmd("pinax api schema export --format openapi --vault ./my-notes --json"), serveCmd)

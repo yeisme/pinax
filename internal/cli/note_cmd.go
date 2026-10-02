@@ -210,6 +210,8 @@ func addNoteCommands(root *cobra.Command, ctx commandBuildContext) {
 	_ = noteReadCmd.RegisterFlagCompletionFunc("snapshot", noteRenderRunCompletion(func() string { return *ctx.vaultPath }))
 	notePreviewCmd := &cobra.Command{Use: "preview <note>", Short: "Read-only rendered note preview", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: noteShowRun("note.preview", "rendered")}
 	addPreviewFlags(notePreviewCmd)
+	extendNotePreview(notePreviewCmd, ctx)
+	addNoteRefCommands(noteCmd, ctx)
 	noteCmd.AddCommand(noteShowCmd, noteReadCmd, notePreviewCmd)
 	noteRefreshCmd := &cobra.Command{Use: "refresh <note>", Short: "Refresh note rendered managed blocks", ValidArgsFunction: noteRefCompletion(func() string { return *ctx.vaultPath }), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 1 {

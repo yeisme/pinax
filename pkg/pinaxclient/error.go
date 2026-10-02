@@ -26,7 +26,12 @@ type Error struct {
 	RequestID         string `json:"request_id,omitempty"`
 	OperationRef      string `json:"operation_ref,omitempty"`
 	ReconcileRequired bool   `json:"reconcile_required"`
-	cause             error
+	// Facts and Actions carry the machine-recoverable recovery contract
+	// (e.g. the fixed revision, source size and source-export action of a
+	// 413 document budget error) so consumers can follow it programmatically.
+	Facts   map[string]string `json:"facts,omitempty"`
+	Actions []Action          `json:"actions,omitempty"`
+	cause   error
 }
 
 func (e *Error) Error() string {
