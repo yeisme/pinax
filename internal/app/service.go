@@ -1991,6 +1991,12 @@ func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *
 		if err := os.Rename(source, target); err != nil {
 			return organizeFailureProjection(err)
 		}
+		// The file HAS moved: register the source/target in the recovery
+		// record and count the move BEFORE any follow-up (target read,
+		// record event) can fail — a later failure must never lose the
+		// already-executed move or undercount it as a clean failure.
+		changedPaths = append(changedPaths, op.Path, op.Target)
+		appliedMoves++
 		content, readErr := os.ReadFile(target)
 		if readErr != nil {
 			return organizeFailureProjection(readErr)
@@ -2001,8 +2007,6 @@ func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *
 				return organizeFailureProjection(recordErr)
 			}
 		}
-		changedPaths = append(changedPaths, op.Path, op.Target)
-		appliedMoves++
 		appendEventWarned(root, "organize.apply", "success", map[string]string{"from": op.Path, "to": op.Target})
 	}
 	if savedPlan != nil {

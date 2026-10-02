@@ -11,6 +11,11 @@ import (
 	"github.com/yeisme/pinax/internal/domain"
 )
 
+// WriterOrganizePersistTerminal persists the terminal consumption state.
+// It is a var so fault-injection tests can make exactly the terminal save
+// fail (after the writes landed); production always uses saveOrganizePlan.
+var WriterOrganizePersistTerminal = saveOrganizePlan
+
 // Supervised writer organize projection (pinax-human-reading-write-v1 W04).
 //
 // The human session projects the existing organize plan/apply semantics:
@@ -138,16 +143,19 @@ func (s *Service) WriterOrganizeApply(ctx context.Context, root, planID, snapsho
 	if projection.Command == "organize.apply" {
 		projection.Command = command
 	}
-	if saveErr := saveOrganizePlan(root, &plan); saveErr != nil {
+	if saveErr := WriterOrganizePersistTerminal(root, &plan); saveErr != nil {
 		// The writes may have landed but the consumption record could not
-		// be persisted: never return plain success — surface the outcome
-		// with a reconcile-required marker.
+		// be persisted: never return plain success — set the projection
+		// error explicitly so the HTTP boundary serves THIS outcome (with
+		// all recovery facts) under reconcile_required, overriding any
+		// stale apply error from below.
 		reconcile := &domain.CommandError{
 			Code: "reconcile_required", Message: "Writer organize finished but the plan consumption state could not be persisted",
 			Hint: "Inspect the plan id and the apply receipt before any re-issue; never re-issue blindly",
 		}
 		projection.Facts["plan_consumption"] = "unconfirmed"
 		projection.Facts["plan_status_intended"] = plan.Status
+		projection.Error = reconcile
 		return projection, reconcile
 	}
 	return projection, err

@@ -442,3 +442,142 @@ func rewritePlanStatus(t *testing.T, root, planID, status string) {
 		t.Fatal(err)
 	}
 }
+
+// TestWriterOrganizeTerminalSaveFailure injects a failure into exactly the
+// TERMINAL consumption save (after the writes landed) and proves both HTTP
+// branches: a successful apply and a failed apply both surface
+// reconcile_required with the full recovery record — never a bare envelope
+// losing the facts, and never the stale apply error overriding the
+// consumption outcome.
+func TestWriterOrganizeTerminalSaveFailure(t *testing.T) {
+
+	withTerminalSaveFailure := func(t *testing.T, fn func()) {
+		t.Helper()
+		original := app.WriterOrganizePersistTerminal
+		app.WriterOrganizePersistTerminal = func(root string, plan *domain.OrganizePlan) error {
+			return &domain.CommandError{Code: "plan_save_failed", Message: "injected terminal save failure"}
+		}
+		t.Cleanup(func() { app.WriterOrganizePersistTerminal = original })
+		fn()
+	}
+
+	t.Run("successful apply with terminal save failure", func(t *testing.T) {
+		root := writerOrganizeVault(t)
+		server, organizerBearer := newOrganizerTestServer(t, root)
+		svc := app.NewService()
+		p, err := svc.SuggestOrganize(context.Background(), app.OrganizeSuggestRequest{VaultPath: root, Save: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		planID := p.Data.(domain.OrganizePlan).PlanID
+		withTerminalSaveFailure(t, func() {
+			status, envelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+			if status != http.StatusConflict {
+				t.Fatalf("terminal save failure status = %d, envelope = %v", status, envelope)
+			}
+			if code, _ := envelope["error"].(map[string]any)["code"].(string); code != "reconcile_required" {
+				t.Fatalf("terminal save failure code = %q, want reconcile_required", code)
+			}
+			facts, _ := envelope["facts"].(map[string]any)
+			if facts["plan_consumption"] != "unconfirmed" {
+				t.Fatalf("recovery facts = %#v, want plan_consumption=unconfirmed", facts)
+			}
+			if _, hasApplied := facts["applied"]; !hasApplied {
+				t.Fatalf("recovery facts lost the applied count: %#v", facts)
+			}
+			if _, hasSnapshot := facts["snapshot_id"]; !hasSnapshot {
+				t.Fatalf("recovery facts lost the snapshot identity: %#v", facts)
+			}
+		})
+	})
+
+	t.Run("failed apply with terminal save failure", func(t *testing.T) {
+		root := writerOrganizeVault(t)
+		server, organizerBearer := newOrganizerTestServer(t, root)
+		svc := app.NewService()
+		p, err := svc.SuggestOrganize(context.Background(), app.OrganizeSuggestRequest{VaultPath: root, Save: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		planID := p.Data.(domain.OrganizePlan).PlanID
+		// The metadata phase fails partway (read-only notes/ directory),
+		// and the terminal save also fails: the consumption outcome
+		// (reconcile_required) must win over the stale apply error while
+		// preserving the partial recovery facts.
+		notesDir := filepath.Join(root, "notes")
+		if err := os.Chmod(notesDir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Chmod(notesDir, 0o755) }()
+		withTerminalSaveFailure(t, func() {
+			status, envelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+			if status != http.StatusConflict {
+				t.Fatalf("failed apply + terminal save failure status = %d, envelope = %v", status, envelope)
+			}
+			if code, _ := envelope["error"].(map[string]any)["code"].(string); code != "reconcile_required" {
+				t.Fatalf("code = %q, want reconcile_required to override the stale apply error", code)
+			}
+			facts, _ := envelope["facts"].(map[string]any)
+			if facts["applied"] != "2" {
+				t.Fatalf("recovery facts = %#v, want the partial applied=2 preserved", facts)
+			}
+			if facts["plan_consumption"] != "unconfirmed" {
+				t.Fatalf("recovery facts = %#v, want plan_consumption=unconfirmed", facts)
+			}
+		})
+	})
+}
+
+// TestWriterOrganizePostRenameFailure injects a failure AFTER a successful
+// move (the record-event append hits a read-only records store): the
+// response must preserve the already-executed move — source and target in
+// the changed paths, the move counted — and the plan must be recorded as
+// partial, never as a clean zero-applied failure.
+func TestWriterOrganizePostRenameFailure(t *testing.T) {
+	root := writerOrganizeVault(t)
+	server, organizerBearer := newOrganizerTestServer(t, root)
+	svc := app.NewService()
+	p, err := svc.SuggestOrganize(context.Background(), app.OrganizeSuggestRequest{VaultPath: root, Save: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID := p.Data.(domain.OrganizePlan).PlanID
+
+	// Block the record-event ledger only: the move itself (rename) still
+	// succeeds, the append after it fails.
+	recordsDir := filepath.Join(root, ".pinax", "records")
+	if err := os.MkdirAll(recordsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(recordsDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(recordsDir, 0o755) }()
+
+	status, envelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+	if status == http.StatusOK {
+		t.Fatalf("post-rename failure reported success: %v", envelope)
+	}
+	facts, _ := envelope["facts"].(map[string]any)
+	if facts["applied_moves"] != "1" {
+		t.Fatalf("post-rename facts = %#v, want applied_moves=1 (the executed move counted)", facts)
+	}
+	data, _ := envelope["data"].(map[string]any)
+	changed, _ := data["changed_paths"].([]any)
+	hasMove := false
+	for _, path := range changed {
+		if text, _ := path.(string); text == "Alpha.md" || text == "notes/alpha.md" {
+			hasMove = true
+		}
+	}
+	if !hasMove {
+		t.Fatalf("post-rename recovery lost the moved paths: %#v", data)
+	}
+	// The note physically moved; the plan records partial.
+	if _, err := os.Stat(filepath.Join(root, "notes", "alpha.md")); err != nil {
+		t.Fatalf("the move should have physically landed: %v", err)
+	}
+	if readPlanStatus(t, root, planID) != "partial" {
+		t.Fatalf("post-rename plan recorded as %q, want partial", readPlanStatus(t, root, planID))
+	}
+}
