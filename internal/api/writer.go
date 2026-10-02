@@ -190,23 +190,21 @@ func writeWriterProjection(w http.ResponseWriter, command string, projection dom
 			writeProjectionStatus(w, domain.NewErrorProjection(command, commandErr), status)
 			return
 		}
-		writeProjectionStatus(w, domain.NewErrorProjection(command, &domain.CommandError{Code: "operation_store_unavailable", Message: "Writer request failed"}), http.StatusServiceUnavailable)
+		writeProjectionStatus(w, domain.NewErrorProjection(command, &domain.CommandError{Code: "writer_unavailable", Message: "Writer request failed"}), http.StatusServiceUnavailable)
 		return
 	}
 	writeProjectionStatus(w, projection, http.StatusOK)
 }
 
-// writerCaptureBody is the closed writer.capture request payload; decoded
-// strictly and validated against the frozen schema before projecting.
-type writerCaptureBody struct {
-	Title string   `json:"title"`
-	Body  string   `json:"body"`
-	Tags  []string `json:"tags"`
-	Slug  string   `json:"slug"`
-	Dir   string   `json:"dir"`
-}
-
 const writerBodyMaxBytes int64 = 128 * 1024
+
+// stringField reads an optional string field from a validated writer
+// document; absent and null-forbidden inputs were already rejected by the
+// schema gate.
+func stringField(document map[string]any, key string) string {
+	value, _ := document[key].(string)
+	return value
+}
 
 // handleWriterCapture serves POST /v1/writer/capture: the supervised
 // projection of inbox.capture. The writer.capture scope is the host gate;
@@ -225,34 +223,29 @@ func (s *Server) handleWriterCapture(w http.ResponseWriter, r *http.Request) {
 	if session == nil {
 		return
 	}
-	body := writerCaptureBody{}
-	if r.Body != nil {
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, writerBodyMaxBytes))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil && err != io.EOF {
-			writeWriterError(w, r, command, &domain.CommandError{Code: "writer_request_invalid", Message: "Writer capture body must be a closed JSON object"}, http.StatusBadRequest)
-			return
-		}
+	// Validate the RAW request document against the frozen schema — the
+	// same path as every other writer endpoint — so null fields, trailing
+	// JSON garbage and oversized bodies are rejected on the wire value,
+	// never on a lossy Go struct round-trip.
+	document, ok := decodeWriterJSON(w, r, command, catalogschema.WriterCaptureRequestV1Alpha1)
+	if !ok {
+		return
 	}
-	// Trim BEFORE schema validation: a whitespace-only title must fail the
-	// frozen minLength here, never leak downstream as title_required.
-	body.Title = strings.TrimSpace(body.Title)
-	body.Slug = strings.TrimSpace(body.Slug)
-	body.Dir = strings.TrimSpace(body.Dir)
-	payloadFields := map[string]any{
-		"title": body.Title, "body": body.Body,
-		"slug": body.Slug, "dir": body.Dir,
+	title := strings.TrimSpace(stringField(document, "title"))
+	if title == "" {
+		// A whitespace-only title fails the frozen contract here, never
+		// downstream as title_required.
+		writeWriterError(w, r, command, &domain.CommandError{Code: "writer_request_invalid", Message: "Writer capture title is required after trimming"}, http.StatusBadRequest)
+		return
 	}
-	if body.Tags != nil {
-		payloadFields["tags"] = body.Tags
-	}
-	payload, err := json.Marshal(payloadFields)
-	if err == nil {
-		var value any
-		if json.Unmarshal(payload, &value) == nil {
-			if schemaErr := catalogschema.ValidatePayload(catalogschema.Default(), catalogschema.WriterCaptureRequestV1Alpha1, value); schemaErr != nil {
-				writeWriterError(w, r, command, &domain.CommandError{Code: "writer_request_invalid", Message: "Writer capture payload violates the frozen contract", Hint: schemaErr.Error()}, http.StatusBadRequest)
-				return
+	captureBody := strings.TrimSpace(stringField(document, "body"))
+	captureSlug := strings.TrimSpace(stringField(document, "slug"))
+	captureDir := strings.TrimSpace(stringField(document, "dir"))
+	captureTags := make([]string, 0)
+	if raw, present := document["tags"].([]any); present {
+		for _, value := range raw {
+			if text, isString := value.(string); isString {
+				captureTags = append(captureTags, text)
 			}
 		}
 	}
@@ -269,8 +262,8 @@ func (s *Server) handleWriterCapture(w http.ResponseWriter, r *http.Request) {
 	identity.OperationID = operationID
 	identity.IdempotencyKey = idempotencyKey
 	projection, err := s.service.WriterCapture(r.Context(), app.WriterCaptureRequest{
-		VaultPath: s.vault, Title: body.Title, Body: body.Body,
-		Tags: body.Tags, Slug: body.Slug, Dir: body.Dir,
+		VaultPath: s.vault, Title: title, Body: captureBody,
+		Tags: captureTags, Slug: captureSlug, Dir: captureDir,
 	}, identity)
 	if err != nil {
 		writeWriterProjection(w, command, projection, err)

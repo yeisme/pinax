@@ -121,11 +121,11 @@ func TestWriterContract(t *testing.T) {
 	// Error vocabulary freeze per the design audit: every code below must
 	// stay declared so W02-W04 projections cannot silently drop a gate.
 	errorFreeze := map[string][]string{
-		WriterCaptureCapabilityID:       {"operation_identity_required", "idempotency_conflict", "approval_required", "write_disabled", "operation_store_unavailable", "reconcile_required", "title_invalid", "body_invalid", "note_path_conflict", "writer_unavailable"},
-		WriterProposeCapabilityID:       {"change_invalid", "revision_conflict", "action_unsupported", "body_too_large", "unsafe_path", "note_not_found", "writer_unavailable"},
-		WriterApplyCapabilityID:         {"preview_mismatch", "authorization_required", "revision_conflict", "outcome_unknown", "body_invalid", "note_not_found", "writer_unavailable"},
-		WriterOrganizePlanCapabilityID:  {"vault_not_initialized", "plan_save_failed", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "writer_unavailable"},
-		WriterOrganizeApplyCapabilityID: {"snapshot_required", "plan_not_found", "plan_stale", "approval_required", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "organize_plan_not_planned", "scoped_plan_override_forbidden", "organize_operation_failed", "writer_unavailable"},
+		WriterCaptureCapabilityID:       {"token_required", "invalid_token", "loopback_required", "source_changed", "operation_identity_required", "idempotency_conflict", "approval_required", "write_disabled", "operation_store_unavailable", "reconcile_required", "title_invalid", "body_invalid", "note_path_conflict", "writer_unavailable"},
+		WriterProposeCapabilityID:       {"token_required", "invalid_token", "loopback_required", "source_changed", "change_invalid", "revision_conflict", "action_unsupported", "body_too_large", "unsafe_path", "note_not_found", "writer_unavailable"},
+		WriterApplyCapabilityID:         {"token_required", "invalid_token", "loopback_required", "source_changed", "preview_mismatch", "authorization_required", "revision_conflict", "outcome_unknown", "body_invalid", "note_not_found", "writer_unavailable"},
+		WriterOrganizePlanCapabilityID:  {"token_required", "invalid_token", "loopback_required", "source_changed", "vault_not_initialized", "plan_save_failed", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "writer_unavailable"},
+		WriterOrganizeApplyCapabilityID: {"token_required", "invalid_token", "loopback_required", "source_changed", "snapshot_required", "plan_not_found", "plan_stale", "approval_required", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "organize_plan_not_planned", "scoped_plan_override_forbidden", "organize_operation_failed", "writer_unavailable"},
 	}
 	for _, capability := range manifest.Capabilities {
 		for _, code := range errorFreeze[capability.ID] {

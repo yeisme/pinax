@@ -45,6 +45,7 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 			ResponseSchema: "pinax.writer.capture_receipt.v1alpha1",
 			Errors: []string{
 				"insufficient_scope", "writer_disabled", "writer_request_invalid", "method_not_allowed", "writer_unavailable",
+				"token_required", "invalid_token", "loopback_required", "source_changed",
 				"approval_required", "write_disabled", "operation_identity_required",
 				"idempotency_conflict", "operation_store_unavailable", "reconcile_required",
 				"title_invalid", "body_invalid", "note_path_conflict",
@@ -59,6 +60,7 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 			ResponseSchema: "pinax.writer.proposal_preview.v1alpha1",
 			Errors: []string{
 				"insufficient_scope", "writer_disabled", "writer_request_invalid", "method_not_allowed", "writer_unavailable",
+				"token_required", "invalid_token", "loopback_required", "source_changed",
 				"write_disabled", "change_invalid", "body_invalid", "title_invalid",
 				"action_unsupported", "revision_conflict", "path_unavailable",
 				"unsafe_path", "body_too_large", "note_not_found",
@@ -74,6 +76,7 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 			ResponseSchema: "pinax.writer.apply_receipt.v1alpha1",
 			Errors: []string{
 				"insufficient_scope", "writer_disabled", "writer_request_invalid", "method_not_allowed", "writer_unavailable",
+				"token_required", "invalid_token", "loopback_required", "source_changed",
 				"write_disabled", "authorization_required", "preview_mismatch",
 				"change_invalid", "revision_conflict", "operation_identity_required",
 				"idempotency_conflict", "operation_store_unavailable",
@@ -90,6 +93,7 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 			ResponseSchema: "pinax.writer.organize_plan.v1alpha1",
 			Errors: []string{
 				"insufficient_scope", "writer_disabled", "writer_request_invalid", "method_not_allowed", "writer_unavailable",
+				"token_required", "invalid_token", "loopback_required", "source_changed",
 				"vault_not_initialized", "plan_save_failed",
 				"organize_selection_invalid", "organize_identity_required",
 				"organize_plan_schema_invalid",
@@ -105,6 +109,7 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 			ResponseSchema: "pinax.writer.organize_apply_receipt.v1alpha1",
 			Errors: []string{
 				"insufficient_scope", "writer_disabled", "writer_request_invalid", "method_not_allowed", "writer_unavailable",
+				"token_required", "invalid_token", "loopback_required", "source_changed",
 				"write_disabled", "approval_required", "snapshot_required",
 				"plan_not_found", "plan_stale", "vault_not_initialized",
 				"organize_selection_invalid", "organize_identity_required",

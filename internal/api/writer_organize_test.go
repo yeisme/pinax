@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -204,4 +205,92 @@ func TestWriterOrganizeScopeGate(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("closed organize payload status = %d, want 400", status)
 	}
+}
+
+// TestWriterOrganizeWholeVaultConsumption pins the whole-vault plan
+// consumption contract: a legacy (non-scoped) plan applies once, its
+// consumed status persists to the plan file, and replaying the same plan id
+// fails explicitly with organize_plan_not_planned — the same explicit
+// consumption the scoped machinery enforces.
+func TestWriterOrganizeWholeVaultConsumption(t *testing.T) {
+	t.Parallel()
+	root := writerOrganizeVault(t)
+	server, organizerBearer := newOrganizerTestServer(t, root)
+
+	// Whole-vault plan (no note_refs).
+	status, wholeEnvelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/plan", `{}`)
+	if status != http.StatusOK {
+		t.Fatalf("whole-vault plan status = %d, envelope = %v", status, wholeEnvelope)
+	}
+	planID, _ := writerData(t, wholeEnvelope)["plan_id"].(string)
+	if planID == "" {
+		t.Fatal("whole-vault plan returned no plan_id")
+	}
+
+	// Apply once: succeeds (no operations is a valid whole-vault outcome)
+	// and persists consumption.
+	status, applyEnvelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+	if status != http.StatusOK {
+		t.Fatalf("whole-vault apply status = %d, envelope = %v", status, applyEnvelope)
+	}
+	receipt := writerData(t, applyEnvelope)
+	if got, _ := receipt["status"].(string); got != "succeeded" && got != "failed" {
+		t.Fatalf("whole-vault receipt status = %v", receipt["status"])
+	}
+
+	// The plan file records the consumed status.
+	consumedStatus := readPlanStatus(t, root, planID)
+	if consumedStatus != "applied" && consumedStatus != "failed" && consumedStatus != "partial" {
+		t.Fatalf("plan file status after apply = %q, want a consumed state", consumedStatus)
+	}
+
+	// Replay: explicit organize_plan_not_planned, never a silent re-plan.
+	status, replay := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+	if status == http.StatusOK {
+		t.Fatalf("consumed whole-vault plan replayed: %v", replay)
+	}
+	assertWriterErrorInTable(t, replay, "writer.organize.apply")
+	if code, _ := replay["error"].(map[string]any)["code"].(string); code != "organize_plan_not_planned" {
+		t.Fatalf("consumed plan code = %q, want organize_plan_not_planned", code)
+	}
+}
+
+// TestWriterOrganizeCorruptedPlan pins the frozen-table guard on raw load
+// errors: corrupted plan JSON surfaces as the frozen writer_unavailable
+// umbrella, never an undeclared code on the wire.
+func TestWriterOrganizeCorruptedPlan(t *testing.T) {
+	t.Parallel()
+	root := writerOrganizeVault(t)
+	server, organizerBearer := newOrganizerTestServer(t, root)
+
+	plansDir := filepath.Join(root, ".pinax", "organize-plans")
+	if err := os.MkdirAll(plansDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plansDir, "plan-corrupt-1.json"), []byte(`{"schema_version": `), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, envelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "plan-corrupt-1"}`)
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("corrupted plan status = %d, envelope = %v", status, envelope)
+	}
+	if code, _ := envelope["error"].(map[string]any)["code"].(string); code != "writer_unavailable" {
+		t.Fatalf("corrupted plan code = %q, want writer_unavailable", code)
+	}
+	assertWriterErrorInTable(t, envelope, "writer.organize.apply")
+}
+
+func readPlanStatus(t *testing.T, root, planID string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(root, ".pinax", "organize-plans", planID+".json"))
+	if err != nil {
+		t.Fatalf("read plan file: %v", err)
+	}
+	var plan struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatalf("decode plan file: %v", err)
+	}
+	return plan.Status
 }

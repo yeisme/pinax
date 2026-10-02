@@ -421,3 +421,42 @@ func TestWriterErrorGuard(t *testing.T) {
 		t.Fatalf("propose does not declare preview_mismatch: %#v", wrapped)
 	}
 }
+
+// TestWriterCaptureRawWireValidation pins that capture validates the RAW
+// wire document, not a rebuilt Go struct: JSON null fields violate the
+// frozen string types, and trailing content after the single object is
+// rejected — no lossy round-trip can launder an invalid request.
+func TestWriterCaptureRawWireValidation(t *testing.T) {
+	t.Parallel()
+	root := readerHTTPVault(t)
+	server, writerBearer, _ := newWriterTestServer(t, root)
+
+	capture := func(body string) (int, map[string]any) {
+		return writerCaptureDo(t, server, writerBearer, body, "wop-raw-1", "wkey-raw-1")
+	}
+
+	// null body violates the frozen string type on the wire.
+	status, envelope := capture(`{"title": "null 正文", "body": null}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("null body status = %d, want 400", status)
+	}
+	if code, _ := envelope["error"].(map[string]any)["code"].(string); code != "writer_request_invalid" {
+		t.Fatalf("null body code = %q, want writer_request_invalid", code)
+	}
+
+	// Trailing garbage after the single JSON object is rejected.
+	status, _ = capture(`{"title": "尾随垃圾"} {"title": "第二个对象"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("trailing object status = %d, want 400", status)
+	}
+	status, _ = capture(`{"title": "尾随垃圾"} garbage`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("trailing garbage status = %d, want 400", status)
+	}
+
+	// Oversized raw body hits the bounded reader.
+	status, _ = capture(`{"title": "超限", "body": "` + strings.Repeat("a", 200*1024) + `"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("oversized raw body status = %d, want 400", status)
+	}
+}
