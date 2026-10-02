@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"strconv"
 	"strings"
 
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
 )
 
@@ -69,39 +71,84 @@ func (s *Service) WriterOrganizeApply(ctx context.Context, root, planID, snapsho
 		// frozen-table guard at the HTTP boundary (writer_unavailable).
 		return errorProjection(command, loadErr), loadErr
 	}
-	if plan.SchemaVersion != domain.ScopedOrganizePlanSchema && plan.Status != "planned" {
-		consumed := scopedOrganizeError("organize_plan_not_planned")
-		projection := errorProjection(command, consumed)
-		projection.Data = map[string]any{"plan_id": plan.PlanID, "status": plan.Status}
-		return projection, consumed
-	}
 	if strings.TrimSpace(snapshotMessage) == "" {
 		snapshotMessage = "Before writer organize " + planID
 	}
-	projection, err := s.ApplyOrganize(ctx, ApplyRequest{
-		VaultPath: root, PlanID: planID, Yes: true,
-		SnapshotMessage: snapshotMessage, AllowStale: allowStale,
-	})
 	if plan.SchemaVersion == domain.ScopedOrganizePlanSchema {
-		// The scoped machinery owns its own consumption state.
+		// The scoped machinery owns its own lock, in-lock reload and
+		// consumption state.
+		projection, err := s.ApplyOrganize(ctx, ApplyRequest{
+			VaultPath: root, PlanID: planID, Yes: true,
+			SnapshotMessage: snapshotMessage, AllowStale: allowStale,
+		})
 		if projection.Command == "organize.apply" {
 			projection.Command = command
 		}
 		return projection, err
 	}
-	// Legacy whole-vault plan: persist the consumption outcome so a replay
-	// re-fails explicitly on the guard above.
-	consumed := plan
-	if err == nil {
-		consumed.Status = "applied"
-	} else if applied := projection.Facts["applied"]; applied != "" && applied != "0" {
-		consumed.Status = "partial"
-	} else {
-		consumed.Status = "failed"
+	// Legacy whole-vault plan: enforce the same consumption discipline as
+	// the scoped machinery at the writer layer — one owner lock, an in-lock
+	// reload of the consumption state, an "applying" marker persisted
+	// BEFORE any write (a crash mid-apply leaves a non-planned plan that a
+	// replay explicitly rejects), and a terminal state whose persistence
+	// failure is surfaced instead of silently returning success.
+	lock, lockErr := syncdaemon.AcquireOperationLock(root, "organize.apply")
+	if lockErr != nil {
+		return errorProjection(command, lockErr), lockErr
 	}
-	_ = saveOrganizePlan(root, &consumed)
+	defer lock.Release()
+	plan, loadErr = loadOrganizePlan(root, planID)
+	if loadErr != nil {
+		if errors.Is(loadErr, fs.ErrNotExist) {
+			notFound := &domain.CommandError{Code: "plan_not_found", Message: "Organize plan was not found"}
+			return domain.NewErrorProjection(command, notFound), notFound
+		}
+		return errorProjection(command, loadErr), loadErr
+	}
+	if plan.Status != "planned" {
+		consumed := scopedOrganizeError("organize_plan_not_planned")
+		projection := errorProjection(command, consumed)
+		projection.Data = map[string]any{"plan_id": plan.PlanID, "status": plan.Status}
+		return projection, consumed
+	}
+	plan.Status = "applying"
+	if saveErr := saveOrganizePlan(root, &plan); saveErr != nil {
+		// Nothing has been written yet: fail closed before any mutation.
+		saveFailed := &domain.CommandError{
+			Code: "plan_save_failed", Message: "Writer organize could not persist the applying state",
+			Hint: "No writes were performed; inspect the plan file and re-issue the same plan id",
+		}
+		return domain.NewErrorProjection(command, saveFailed), saveFailed
+	}
+	projection, err := s.ApplyOrganize(ctx, ApplyRequest{
+		VaultPath: root, PlanID: planID, Yes: true,
+		SnapshotMessage: snapshotMessage, AllowStale: allowStale,
+	})
+	applied := 0
+	if raw, present := projection.Facts["applied"]; present {
+		applied, _ = strconv.Atoi(raw)
+	}
+	if err == nil {
+		plan.Status = "applied"
+	} else if applied > 0 {
+		plan.Status = "partial"
+	} else {
+		plan.Status = "failed"
+	}
 	if projection.Command == "organize.apply" {
 		projection.Command = command
+	}
+	if saveErr := saveOrganizePlan(root, &plan); saveErr != nil {
+		// The writes may have landed but the consumption record could not
+		// be persisted: never return plain success — surface the outcome
+		// with a reconcile-required marker.
+		reconcile := &domain.CommandError{
+			Code: "reconcile_required", Message: "Writer organize finished but the plan consumption state could not be persisted",
+			Hint: "Inspect the plan id and the apply receipt before any re-issue; never re-issue blindly",
+		}
+		projection.Facts["plan_consumption"] = "unconfirmed"
+		projection.Facts["plan_status_intended"] = plan.Status
+		return projection, reconcile
 	}
 	return projection, err
 }

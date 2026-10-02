@@ -100,6 +100,10 @@ func writerErrorStatus(code string) int {
 		return http.StatusNotFound
 	case "snapshot_required", "plan_stale":
 		return http.StatusPreconditionFailed
+	case "plan_save_failed":
+		return http.StatusInternalServerError
+	case "reconcile_required":
+		return http.StatusConflict
 	}
 	return http.StatusServiceUnavailable
 }
@@ -177,17 +181,18 @@ func writerCommandError(err error) (bool, *domain.CommandError) {
 func writeWriterProjection(w http.ResponseWriter, command string, projection domain.Projection, err error) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	if err != nil {
+		// An app-layer error projection (possibly carrying recovery facts
+		// like applied counts and changed paths) is served through the
+		// frozen-table guard instead of being discarded for a bare envelope.
+		if projection.Error != nil && projection.Command == command {
+			normalized := normalizeWriterError(command, projection.Error)
+			projection.Error = normalized
+			writeProjectionStatus(w, projection, writerErrorStatus(normalized.Code))
+			return
+		}
 		if known, commandErr := writerCommandError(err); known {
 			commandErr = normalizeWriterError(command, commandErr)
-			status := writerErrorStatus(commandErr.Code)
-			if projection.Error != nil && projection.Command == command {
-				// Serve the app-layer projection but with the normalized,
-				// frozen-table error code.
-				projection.Error = commandErr
-				writeProjectionStatus(w, projection, status)
-				return
-			}
-			writeProjectionStatus(w, domain.NewErrorProjection(command, commandErr), status)
+			writeProjectionStatus(w, domain.NewErrorProjection(command, commandErr), writerErrorStatus(commandErr.Code))
 			return
 		}
 		writeProjectionStatus(w, domain.NewErrorProjection(command, &domain.CommandError{Code: "writer_unavailable", Message: "Writer request failed"}), http.StatusServiceUnavailable)
@@ -492,7 +497,7 @@ func (s *Server) handleWriterOrganizePlan(w http.ResponseWriter, r *http.Request
 	}
 	projection, err := s.service.WriterOrganizePlan(r.Context(), s.vault, noteRefs)
 	if err != nil {
-		writeWriterProjection(w, command, domain.Projection{}, err)
+		writeWriterProjection(w, command, projection, err)
 		return
 	}
 	plan, isPlan := projection.Data.(domain.OrganizePlan)
@@ -549,7 +554,7 @@ func (s *Server) handleWriterOrganizeApply(w http.ResponseWriter, r *http.Reques
 	}
 	projection, err := s.service.WriterOrganizeApply(r.Context(), s.vault, planID, snapshotMessage, allowStale)
 	if err != nil {
-		writeWriterProjection(w, command, domain.Projection{}, err)
+		writeWriterProjection(w, command, projection, err)
 		return
 	}
 	status := "succeeded"

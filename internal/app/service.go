@@ -1931,20 +1931,44 @@ func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *
 		return errorProjection("organize.apply", err), err
 	}
 	appliedMetadata := 0
+	appliedMoves := 0
+	skipped := 0
 	changedPaths := make([]string, 0)
+	// Write-phase failures preserve the recovery record: applied counts,
+	// potentially changed paths and the snapshot identity ride on the error
+	// projection so a partial apply is never misread as a clean failure.
+	organizeFailureProjection := func(err error) (domain.Projection, error) {
+		projection := errorProjection("organize.apply", err)
+		if savedPlan != nil {
+			projection.Facts["plan_id"] = savedPlan.PlanID
+		}
+		projection.Facts["applied"] = fmt.Sprint(appliedMoves + appliedMetadata)
+		projection.Facts["applied_moves"] = fmt.Sprint(appliedMoves)
+		projection.Facts["applied_metadata"] = fmt.Sprint(appliedMetadata)
+		if snapshotID != "" {
+			projection.Facts["snapshot_id"] = snapshotID
+		}
+		if len(changedPaths) > 0 {
+			projection.Facts["changed_paths_status"] = "changed"
+			data := map[string]any{"applied_moves": appliedMoves, "applied_metadata": appliedMetadata, "changed_paths": append([]string(nil), changedPaths...)}
+			if savedPlan != nil {
+				data["plan_id"] = savedPlan.PlanID
+			}
+			projection.Data = data
+		}
+		return projection, err
+	}
 	for _, op := range ops {
 		if op.Status != "planned" || (op.Kind != "tag_patch" && op.Kind != "status_patch") {
 			continue
 		}
 		if err := applyOrganizeMetadataOperation(root, op); err != nil {
-			return errorProjection("organize.apply", err), err
+			return organizeFailureProjection(err)
 		}
 		appliedMetadata++
 		changedPaths = append(changedPaths, op.Path)
 		appendEventWarned(root, "organize.apply", "success", map[string]string{"kind": op.Kind, "path": op.Path})
 	}
-	appliedMoves := 0
-	skipped := 0
 	for _, op := range ops {
 		if op.Kind == "tag_patch" || op.Kind == "status_patch" {
 			continue
@@ -1955,26 +1979,26 @@ func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *
 		}
 		source, err := safeJoin(root, op.Path)
 		if err != nil {
-			return errorProjection("organize.apply", err), err
+			return organizeFailureProjection(err)
 		}
 		target, err := safeJoin(root, op.Target)
 		if err != nil {
-			return errorProjection("organize.apply", err), err
+			return organizeFailureProjection(err)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return errorProjection("organize.apply", err), err
+			return organizeFailureProjection(err)
 		}
 		if err := os.Rename(source, target); err != nil {
-			return errorProjection("organize.apply", err), err
+			return organizeFailureProjection(err)
 		}
 		content, readErr := os.ReadFile(target)
 		if readErr != nil {
-			return errorProjection("organize.apply", readErr), readErr
+			return organizeFailureProjection(readErr)
 		}
 		movedNote := parseNote(op.Target, string(content))
 		if movedNote.ID != "" {
 			if _, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMoved, "organize.move:"+movedNote.ID+":"+op.Path+":"+op.Target, movedNote, op.Path); recordErr != nil {
-				return errorProjection("organize.apply", recordErr), recordErr
+				return organizeFailureProjection(recordErr)
 			}
 		}
 		changedPaths = append(changedPaths, op.Path, op.Target)
@@ -2003,7 +2027,9 @@ func (s *Service) applyOrganize(ctx context.Context, req ApplyRequest, tracker *
 	}
 	receipt, receiptErr := writeObjectApplyReceipt(ctx, root, "organize.apply", planID, snapshotID, beforeBindings, changedPaths)
 	if receiptErr != nil {
-		return errorProjection("organize.apply", receiptErr), receiptErr
+		// The writes landed but the durable receipt could not: surface the
+		// full recovery record instead of a bare failure.
+		return organizeFailureProjection(receiptErr)
 	}
 	addApplyReceiptProjection(&projection, receipt)
 	projection.Data = map[string]any{"applied_moves": appliedMoves, "applied_metadata": appliedMetadata, "skipped": skipped, "receipt": receipt}
@@ -3041,7 +3067,7 @@ func ensureOrganizePlanFresh(ctx context.Context, root string, plan *domain.Orga
 	if plan.SchemaVersion == domain.ScopedOrganizePlanSchema {
 		return validateScopedOrganizePlan(ctx, root, plan)
 	}
-	if plan.Status != "planned" {
+	if plan.Status != "planned" && plan.Status != "applying" {
 		return &domain.CommandError{Code: "organize_plan_not_planned", Message: "organize plan status is not applicable", Hint: "Rerun pinax organize plan --save"}
 	}
 	expires, err := time.Parse(time.RFC3339, plan.ExpiresAt)

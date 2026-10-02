@@ -125,7 +125,7 @@ func TestWriterContract(t *testing.T) {
 		WriterProposeCapabilityID:       {"token_required", "invalid_token", "loopback_required", "source_changed", "change_invalid", "revision_conflict", "action_unsupported", "body_too_large", "unsafe_path", "note_not_found", "writer_unavailable"},
 		WriterApplyCapabilityID:         {"token_required", "invalid_token", "loopback_required", "source_changed", "preview_mismatch", "authorization_required", "revision_conflict", "outcome_unknown", "body_invalid", "note_not_found", "writer_unavailable"},
 		WriterOrganizePlanCapabilityID:  {"token_required", "invalid_token", "loopback_required", "source_changed", "vault_not_initialized", "plan_save_failed", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "writer_unavailable"},
-		WriterOrganizeApplyCapabilityID: {"token_required", "invalid_token", "loopback_required", "source_changed", "snapshot_required", "plan_not_found", "plan_stale", "approval_required", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "organize_plan_not_planned", "scoped_plan_override_forbidden", "organize_operation_failed", "writer_unavailable"},
+		WriterOrganizeApplyCapabilityID: {"token_required", "invalid_token", "loopback_required", "source_changed", "snapshot_required", "plan_save_failed", "plan_not_found", "plan_stale", "approval_required", "organize_selection_invalid", "organize_identity_required", "organize_plan_schema_invalid", "organize_plan_not_planned", "scoped_plan_override_forbidden", "organize_operation_failed", "writer_unavailable"},
 	}
 	for _, capability := range manifest.Capabilities {
 		for _, code := range errorFreeze[capability.ID] {

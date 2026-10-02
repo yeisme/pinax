@@ -115,6 +115,7 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 				"organize_selection_invalid", "organize_identity_required",
 				"organize_plan_schema_invalid", "organize_plan_not_planned",
 				"scoped_plan_override_forbidden", "organize_operation_failed",
+				"plan_save_failed",
 				"outcome_unknown", "reconcile_required",
 			},
 			Stability: StabilityExperimental,

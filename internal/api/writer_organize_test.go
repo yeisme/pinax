@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/domain"
 	catalogschema "github.com/yeisme/pinax/internal/transportcatalog/schema"
 )
 
@@ -293,4 +294,151 @@ func readPlanStatus(t *testing.T, root, planID string) string {
 		t.Fatalf("decode plan file: %v", err)
 	}
 	return plan.Status
+}
+
+// TestWriterOrganizeFaultInjection covers the four fault windows of the
+// whole-vault consumption contract with fixture injection: (1) a crash
+// between the writes and the terminal state save, (2) a consumption-state
+// save failure BEFORE any write (fail closed, nothing mutated), (3) a
+// partial apply failure (recovery facts preserved, plan marked partial),
+// and (4) concurrent consumption of the same plan (exactly one winner).
+func TestWriterOrganizeFaultInjection(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	wholeVaultPlan := func(t *testing.T, root string) string {
+		t.Helper()
+		svc := app.NewService()
+		p, err := svc.SuggestOrganize(ctx, app.OrganizeSuggestRequest{VaultPath: root, Save: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.Data.(domain.OrganizePlan).PlanID
+	}
+
+	t.Run("crash after writes before terminal save", func(t *testing.T) {
+		root := writerOrganizeVault(t)
+		server, organizerBearer := newOrganizerTestServer(t, root)
+		planID := wholeVaultPlan(t, root)
+		if status, _ := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`); status != http.StatusOK {
+			t.Fatalf("first apply failed")
+		}
+		// Simulate the crash window: the terminal save never landed, the
+		// plan still says applying.
+		rewritePlanStatus(t, root, planID, "applying")
+		status, replay := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+		if status == http.StatusOK {
+			t.Fatalf("crash-window plan replayed: %v", replay)
+		}
+		if code, _ := replay["error"].(map[string]any)["code"].(string); code != "organize_plan_not_planned" {
+			t.Fatalf("crash-window replay code = %q", code)
+		}
+	})
+
+	t.Run("consumption save failure before writes", func(t *testing.T) {
+		root := writerOrganizeVault(t)
+		server, organizerBearer := newOrganizerTestServer(t, root)
+		planID := wholeVaultPlan(t, root)
+		planFile := filepath.Join(root, ".pinax", "organize-plans", planID+".json")
+		if err := os.Chmod(planFile, 0o444); err != nil {
+			t.Fatal(err)
+		}
+		status, envelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+		if status != http.StatusInternalServerError {
+			t.Fatalf("pre-write save failure status = %d, envelope = %v", status, envelope)
+		}
+		if code, _ := envelope["error"].(map[string]any)["code"].(string); code != "plan_save_failed" {
+			t.Fatalf("pre-write save failure code = %q, want plan_save_failed", code)
+		}
+		// Nothing was written: Alpha stays at the vault root.
+		if _, err := os.Stat(filepath.Join(root, "notes", "alpha.md")); !os.IsNotExist(err) {
+			t.Fatal("pre-write save failure still moved notes")
+		}
+		// After the fault clears, the SAME plan id applies cleanly.
+		if err := os.Chmod(planFile, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if status, _ := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`); status != http.StatusOK {
+			t.Fatalf("retry after cleared fault failed")
+		}
+	})
+
+	t.Run("partial apply failure preserves recovery facts", func(t *testing.T) {
+		root := writerOrganizeVault(t)
+		server, organizerBearer := newOrganizerTestServer(t, root)
+		planID := wholeVaultPlan(t, root)
+		// Beta's status patch fails mid-apply AFTER Alpha's metadata
+		// patches already landed: the response must carry the recovery
+		// record and the plan must be marked partial, never failed.
+		// Metadata patches write via atomic rename, so the blocker is a
+		// read-only notes/ DIRECTORY, not a read-only file.
+		notesDir := filepath.Join(root, "notes")
+		if err := os.Chmod(notesDir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = os.Chmod(notesDir, 0o755) }()
+		status, envelope := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+		if status == http.StatusOK {
+			t.Fatalf("partial apply reported success: %v", envelope)
+		}
+		facts, _ := envelope["facts"].(map[string]any)
+		if facts["applied"] != "2" {
+			t.Fatalf("partial apply facts = %#v, want applied=2 preserved", facts)
+		}
+		if _, hasChanged := facts["changed_paths_status"]; !hasChanged {
+			t.Fatalf("partial apply lost the changed-paths marker: %#v", facts)
+		}
+		if readPlanStatus(t, root, planID) != "partial" {
+			t.Fatalf("partial plan recorded as %q", readPlanStatus(t, root, planID))
+		}
+		// The already-applied metadata is on disk; replay is rejected.
+		status, replay := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+		if status == http.StatusOK {
+			t.Fatalf("partial plan replayed: %v", replay)
+		}
+	})
+
+	t.Run("concurrent consumption has exactly one winner", func(t *testing.T) {
+		root := writerOrganizeVault(t)
+		server, organizerBearer := newOrganizerTestServer(t, root)
+		planID := wholeVaultPlan(t, root)
+		results := make(chan int, 2)
+		for i := 0; i < 2; i++ {
+			go func() {
+				status, _ := writerPost(t, server, organizerBearer, "/v1/writer/organize/apply", `{"plan_id": "`+planID+`"}`)
+				results <- status
+			}()
+		}
+		first, second := <-results, <-results
+		winners := 0
+		for _, status := range []int{first, second} {
+			if status == http.StatusOK {
+				winners++
+			}
+		}
+		if winners != 1 {
+			t.Fatalf("concurrent apply winners = %d (statuses %d, %d), want exactly 1", winners, first, second)
+		}
+	})
+}
+
+func rewritePlanStatus(t *testing.T, root, planID, status string) {
+	t.Helper()
+	path := filepath.Join(root, ".pinax", "organize-plans", planID+".json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan map[string]any
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	plan["status"] = status
+	encoded, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
