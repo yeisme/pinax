@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/operation"
@@ -56,6 +57,20 @@ const writerCaptureBindingID = "rest.writer.capture"
 // capture without X-Pinax-Operation-ID plus Idempotency-Key never enters
 // the ledger and fails closed with operation_identity_required.
 func (s *Service) WriterCapture(ctx context.Context, req WriterCaptureRequest, identity RemoteOperationIdentity) (domain.Projection, error) {
+	// Frozen byte budgets the JSON Schema char limits cannot express:
+	// title ≤ 512 BYTES on a single line, body ≤ 64 KiB BYTES of valid
+	// UTF-8, no NUL in either. Multi-byte scripts must not slip past the
+	// character limits, and control characters never reach note storage.
+	title := strings.TrimSpace(req.Title)
+	if len(title) > catalogschema.WriterTitleMaxBytes || strings.ContainsAny(title, "\r\n\x00") {
+		err := &domain.CommandError{Code: "title_invalid", Message: "Writer capture title must be a single line of at most 512 bytes"}
+		return domain.NewErrorProjection("writer.capture", err), err
+	}
+	if len(req.Body) > catalogschema.WriterMaxBodyBytes || !utf8.ValidString(req.Body) || strings.ContainsRune(req.Body, 0) {
+		err := &domain.CommandError{Code: "body_invalid", Message: "Writer capture body must be valid UTF-8 text of at most 64 KiB"}
+		return domain.NewErrorProjection("writer.capture", err), err
+	}
+	req.Title = title
 	operationID := strings.TrimSpace(identity.OperationID)
 	idempotencyKey := strings.TrimSpace(identity.IdempotencyKey)
 	if operationID == "" || idempotencyKey == "" {

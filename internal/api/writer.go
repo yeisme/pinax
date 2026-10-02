@@ -13,6 +13,7 @@ import (
 	"github.com/yeisme/pinax/internal/app"
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/operation"
+	"github.com/yeisme/pinax/internal/transportcatalog"
 	catalogschema "github.com/yeisme/pinax/internal/transportcatalog/schema"
 )
 
@@ -73,10 +74,11 @@ func (s *Server) requireWriterScope(w http.ResponseWriter, r *http.Request, comm
 }
 
 // writeWriterError renders writer errors with the no-store policy; user
-// content never appears in the error body or logs.
+// content never appears in the error body or logs. Every error passes the
+// frozen-table guard first.
 func writeWriterError(w http.ResponseWriter, r *http.Request, command string, err *domain.CommandError, status int) {
 	w.Header().Set("Cache-Control", "private, no-store")
-	writeProjectionStatus(w, domain.NewErrorProjection(command, err), status)
+	writeProjectionStatus(w, domain.NewErrorProjection(command, normalizeWriterError(command, err)), status)
 }
 
 // writerErrorStatus maps the frozen writer error table to HTTP statuses.
@@ -94,10 +96,60 @@ func writerErrorStatus(code string) int {
 		return http.StatusServiceUnavailable
 	case "plan_not_found":
 		return http.StatusNotFound
+	case "note_not_found":
+		return http.StatusNotFound
 	case "snapshot_required", "plan_stale":
 		return http.StatusPreconditionFailed
 	}
 	return http.StatusServiceUnavailable
+}
+
+// writerCommandCapability maps writer commands to their frozen capability.
+func writerCommandCapability(command string) string {
+	switch command {
+	case "writer.capture":
+		return "writer.capture"
+	case "writer.propose":
+		return "writer.propose"
+	case "writer.apply":
+		return "writer.apply"
+	case "writer.organize.plan":
+		return "writer.organize.plan"
+	case "writer.organize.apply":
+		return "writer.organize.apply"
+	}
+	return ""
+}
+
+// normalizeWriterError closes the frozen error contract: every error the
+// writer surface emits must belong to the capability's frozen error table.
+// An off-table downstream code is wrapped as writer_unavailable with the
+// original code preserved in the hint — clients never see an undeclared
+// code, and nothing is silently reclassified.
+func normalizeWriterError(command string, err *domain.CommandError) *domain.CommandError {
+	if err == nil {
+		return nil
+	}
+	capabilityID := writerCommandCapability(command)
+	if capabilityID == "" {
+		return err
+	}
+	for _, definition := range transportcatalog.WriterCapabilityDefinitions() {
+		if definition.ID != capabilityID {
+			continue
+		}
+		for _, declared := range definition.Errors {
+			if declared == err.Code {
+				return err
+			}
+		}
+		break
+	}
+	return &domain.CommandError{
+		Code:    "writer_unavailable",
+		Message: "Writer request failed",
+		Hint:    "upstream code: " + err.Code,
+	}
 }
 
 // writerCommandError flattens app/operation errors into the frozen writer
@@ -126,8 +178,12 @@ func writeWriterProjection(w http.ResponseWriter, command string, projection dom
 	w.Header().Set("Cache-Control", "private, no-store")
 	if err != nil {
 		if known, commandErr := writerCommandError(err); known {
+			commandErr = normalizeWriterError(command, commandErr)
 			status := writerErrorStatus(commandErr.Code)
 			if projection.Error != nil && projection.Command == command {
+				// Serve the app-layer projection but with the normalized,
+				// frozen-table error code.
+				projection.Error = commandErr
 				writeProjectionStatus(w, projection, status)
 				return
 			}
@@ -178,6 +234,11 @@ func (s *Server) handleWriterCapture(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Trim BEFORE schema validation: a whitespace-only title must fail the
+	// frozen minLength here, never leak downstream as title_required.
+	body.Title = strings.TrimSpace(body.Title)
+	body.Slug = strings.TrimSpace(body.Slug)
+	body.Dir = strings.TrimSpace(body.Dir)
 	payloadFields := map[string]any{
 		"title": body.Title, "body": body.Body,
 		"slug": body.Slug, "dir": body.Dir,
@@ -208,7 +269,7 @@ func (s *Server) handleWriterCapture(w http.ResponseWriter, r *http.Request) {
 	identity.OperationID = operationID
 	identity.IdempotencyKey = idempotencyKey
 	projection, err := s.service.WriterCapture(r.Context(), app.WriterCaptureRequest{
-		VaultPath: s.vault, Title: strings.TrimSpace(body.Title), Body: body.Body,
+		VaultPath: s.vault, Title: body.Title, Body: body.Body,
 		Tags: body.Tags, Slug: body.Slug, Dir: body.Dir,
 	}, identity)
 	if err != nil {

@@ -39,7 +39,7 @@ pinax-human-reading-api-v1 已交付只读人读面（P01–P08：合同冻结�
 3. **结构写复用既有合同**：folder/inbox 等结构写不在本合同内复制；如人类会话需要，引用既有 REST/RPC capability 并以 write scope 投影授权。
 4. **revision/snapshot/operation 语义不降级**：apply 携带 expected_revision；变更冲突 409；snapshot_required 能力必须先建快照（或显式声明免快照理由）；每个 apply 发 operation receipt，unknown 走 operation.show/reconcile 恢复，禁止换 identity 盲重试。
 5. **失败与恢复**：网络/宿主崩溃后客户端带同一 operation identity 查询恢复；receipt 缺失不等于失败，也不等于成功；不做自动补偿写。
-6. **首片只读不变**：本 change 交付期不新增任何可写路由；manifest/OpenAPI 不出现写 binding。
+6. **首片只读不变**：合同冻结期（W01）不新增任何可写路由，manifest/OpenAPI 不出现写 binding；实现阶段（W02–W06）仅经由本 change 冻结的五个 binding 交付写路由，W06 组件证据后 available。
 
 ## Architecture
 

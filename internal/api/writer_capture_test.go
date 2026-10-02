@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/app"
+	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/transportcatalog"
 	catalogschema "github.com/yeisme/pinax/internal/transportcatalog/schema"
 )
@@ -345,4 +346,78 @@ func mustJSONString(value any) string {
 		panic(err)
 	}
 	return string(encoded)
+}
+
+// TestWriterCaptureContentBoundaries pins the frozen byte budgets the JSON
+// Schema character limits cannot express: the 64 KiB body budget is BYTES
+// (a multi-byte body below the character limit still overflows), the title
+// is a single line without NUL, and a whitespace-only title fails the
+// frozen schema instead of leaking downstream as title_required.
+func TestWriterCaptureContentBoundaries(t *testing.T) {
+	t.Parallel()
+	root := readerHTTPVault(t)
+	server, writerBearer, _ := newWriterTestServer(t, root)
+
+	capture := func(body string) (int, map[string]any) {
+		return writerCaptureDo(t, server, writerBearer, body, "wop-boundary-1", "wkey-boundary-1")
+	}
+
+	// 22,000 CJK characters = 66,000 bytes: under the 65,536 CHARACTER
+	// schema limit but over the 64 KiB BYTE budget.
+	oversized := `{"title": "字节预算", "body": "` + strings.Repeat("字", 22000) + `"}`
+	status, envelope := capture(oversized)
+	if status != http.StatusBadRequest {
+		t.Fatalf("oversized byte body status = %d, want 400", status)
+	}
+	assertWriterErrorInTable(t, envelope, "writer.capture")
+
+	// Title with an embedded newline is never a single line.
+	status, envelope = capture(`{"title": "第一行\n第二行"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("multiline title status = %d, want 400", status)
+	}
+	assertWriterErrorInTable(t, envelope, "writer.capture")
+
+	// NUL in the title or body never reaches note storage.
+	status, envelope = capture(`{"title": "标题\u0000"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("NUL title status = %d, want 400", status)
+	}
+	assertWriterErrorInTable(t, envelope, "writer.capture")
+	status, envelope = capture(`{"title": "正文 NUL", "body": "a\u0000b"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("NUL body status = %d, want 400", status)
+	}
+	assertWriterErrorInTable(t, envelope, "writer.capture")
+
+	// Whitespace-only title fails the frozen schema (trimmed before
+	// validation), not a downstream title_required.
+	status, envelope = capture(`{"title": "   "}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("blank title status = %d, want 400", status)
+	}
+	if code, _ := envelope["error"].(map[string]any)["code"].(string); code != "writer_request_invalid" {
+		t.Fatalf("blank title code = %q, want writer_request_invalid", code)
+	}
+}
+
+// TestWriterErrorGuard pins the boundary guard: an off-table downstream
+// error code is wrapped as the frozen writer_unavailable umbrella with the
+// original preserved in the hint — never an undeclared code on the wire.
+func TestWriterErrorGuard(t *testing.T) {
+	t.Parallel()
+	normalized := normalizeWriterError("writer.capture", &domain.CommandError{Code: "some_new_downstream_code", Message: "boom"})
+	if normalized.Code != "writer_unavailable" || !strings.Contains(normalized.Hint, "some_new_downstream_code") {
+		t.Fatalf("off-table code not wrapped: %#v", normalized)
+	}
+	kept := normalizeWriterError("writer.capture", &domain.CommandError{Code: "title_invalid"})
+	if kept.Code != "title_invalid" {
+		t.Fatalf("declared code should pass through: %#v", kept)
+	}
+	if kept := normalizeWriterError("writer.apply", &domain.CommandError{Code: "preview_mismatch"}); kept.Code != "preview_mismatch" {
+		t.Fatalf("apply preview_mismatch should pass through: %#v", kept)
+	}
+	if wrapped := normalizeWriterError("writer.propose", &domain.CommandError{Code: "preview_mismatch"}); wrapped.Code != "writer_unavailable" {
+		t.Fatalf("propose does not declare preview_mismatch: %#v", wrapped)
+	}
 }
