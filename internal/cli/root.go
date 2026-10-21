@@ -241,6 +241,10 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if strings.HasPrefix(cmd.Name(), "__complete") {
+				cmd.Root().SetErr(io.Discard)
+				return nil
+			}
 			if cmd.Name() == "help" || cmd.CommandPath() == "pinax completion" {
 				return nil
 			}
@@ -355,6 +359,26 @@ func NewRootCommandWithDeps(deps Deps) *cobra.Command {
 	addMCPCommands(cmd, ctx)
 	addCommandsCommand(cmd, ctx)
 
+	cmd.InitDefaultCompletionCmd()
+	for _, group := range cmd.Commands() {
+		if group.Name() == "completion" {
+			group.AddCommand(resourceCompletionCommands(func(c *cobra.Command, r resourceCompletionReport) error {
+				p := domain.NewProjection("completion."+c.Name(), resourceCompletionMessage(r))
+				p.Data = map[string]any{"completion": r}
+				p.Facts = resourceCompletionStringFacts(r)
+				p.Actions = []domain.Action{{Name: "next", Command: resourceCompletionNext(c, r)}}
+				var err error
+				if r.ErrorCode != "" {
+					e := &domain.CommandError{Code: r.ErrorCode, Message: p.Summary, Hint: "pinax completion --help"}
+					p.Error = e
+					p.Status = "failed"
+					err = e
+				}
+				return ctx.renderProjection(c, p, err)
+			})...)
+		}
+	}
+	registerResourceViews(cmd, ctx)
 	installRemoteMode(cmd, ctx)
 
 	annotateRootHelpGroups(cmd)
@@ -799,7 +823,7 @@ func splitCSV(value string) []string {
 }
 
 func (ctx commandBuildContext) renderProjection(cmd *cobra.Command, projection domain.Projection, err error) error {
-	return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), *ctx.renderOptions, projection, err)
+	return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), *ctx.renderOptions, resourceProjection(cmd, projection), err)
 }
 
 func renderProjection(w io.Writer, mode output.Mode, projection domain.Projection, err error) error {
