@@ -77,7 +77,7 @@ Vault attachments SHALL resolve to bounded asset references. External schemes SH
 
 ### Requirement: Pinax SHALL emit and resolve stable note references
 
-Pinax SHALL emit `pinax://note/<object_id>?v=<revision>` references in dual format and SHALL resolve them with explicit version semantics. Floating references SHALL flag drift instead of silently switching versions.
+Pinax SHALL emit `pinax://note/<object_id>?v=<revision>` references in dual format and SHALL resolve them with explicit version semantics. Floating references SHALL return a caller-retained `resolved_revision`; subsequent calls SHALL use that supplied baseline to flag drift instead of silently switching versions. Resolution SHALL NOT persist reference state or create snapshots.
 
 #### Scenario: Dual-format reference emission
 - **WHEN** a user runs the note reference command with copy
@@ -90,7 +90,7 @@ Pinax SHALL emit `pinax://note/<object_id>?v=<revision>` references in dual form
 - **AND** it SHALL NOT substitute a different revision.
 
 #### Scenario: Floating reference drift is explicit
-- **WHEN** a floating reference is resolved after the target has moved to a newer revision
+- **WHEN** a caller supplies the original `resolved_revision` while resolving a floating reference after the target has moved to a newer revision
 - **THEN** the result SHALL report the originally resolved revision with `stale=true` and the current revision as a separate fact
 - **AND** it SHALL NOT silently re-resolve to the newer revision.
 

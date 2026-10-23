@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-29
+goal: 让两个 Agent 通过同一 provider-neutral Pinax 合同执行 resume、checkpoint、review 与
+  outcome feedback。
