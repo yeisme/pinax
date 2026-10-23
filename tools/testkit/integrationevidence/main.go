@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, pane, knowledge-source-adapter, research-brief, daily-knowledge, daily-knowledge-quality, daily-review-followthrough, agent-note-proposal, rendered-view-parity, human-reading-api, human-reading-access, human-reading-document, human-reading-resources, human-reading-session, human-reading-client, human-reading-quality, human-reading-write-capture, human-reading-write-edit, human-reading-write-organize, human-reading-write-client, human-reading-write-api, or human-reading-write-quality")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, remote-write-parity, pane, knowledge-source-adapter, research-brief, daily-knowledge, daily-knowledge-quality, daily-review-followthrough, agent-note-proposal, rendered-view-parity, human-reading-api, human-reading-access, human-reading-document, human-reading-resources, human-reading-session, human-reading-client, human-reading-quality, human-reading-write-capture, human-reading-write-edit, human-reading-write-organize, human-reading-write-client, human-reading-write-api, human-reading-write-quality, notebook-editor-source, notebook-navigation, notebook-daily, notebook-backend, notebook-backend-packages, notebook-quality, or notebook-backend-final")
 	flag.Parse()
 	if *profile == "mcp-apps-browser" {
 		_, _ = fmt.Fprintln(os.Stderr, "The MCP Apps browser profile has been retired. Use --profile mcp-collaboration for Markdown tool verification.")
@@ -68,6 +68,30 @@ func buildConfig(runID string, stdout, stderr io.Writer) evidence.Config {
 }
 
 func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	if profile == "notebook-quality" {
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./cmd/pinax", "./internal/cli", "./internal/output", "./tests/e2e", "-run", "Completion|TestCLITreeHelpSmoke|TestPromptCatalogCommandTreeIsAdditive|TestBackendProviderCLI|TestProjectAndStorageCLIJSON|TestProjectSubprojectWorkspaceCLI|TestPipelineStatus|TestBackendNotesCommands|TestRenderRunSnapshot|TestSummaryRendersProject|TestNarrowSummary|TestResource", "-count=1"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "component", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "remote_write": false, "race_detector": false}}
+	}
+	if profile == "notebook-backend-packages" {
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "-timeout=10m", "./internal/app/...", "./internal/api", "./internal/inputrequests", "./internal/mcpserver/...", "./internal/operation", "./pkg/pinaxclient", "./pkg/inputcontract", "./tools/testkit/integrationevidence", "-count=1"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "component", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false, "race_detector": false}}
+	}
+
+	if profile == "notebook-backend" || profile == "notebook-backend-final" {
+		command := []string{"go", "test", "./internal/app", "./internal/api", "./internal/inputrequests", "./internal/mcpserver", "./internal/mcpserver/sdkruntime", "./internal/cli", "./pkg/pinaxclient", "./pkg/inputcontract", "./tests/e2e", "-run", "TestInputAttachment|TestInputIntake|TestSyncOperation|TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick|TestSyncLockStalePidRecovery|TestCollaborationConcurrentPreviewsDoNotLoseUpdate|TestLocalRPCSync|TestSyncControl|TestRemoteMutationRecoverySync|TestOpenAPI", "-count=1", "-v"}
+		if profile == "notebook-backend-final" {
+			command = []string{"task", "check"}
+		}
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: command, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "e2e", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false, "race_detector": false}}
+	}
+
+	if profile == "notebook-daily" {
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./internal/transportcatalog/...", "./internal/templateengine", "./internal/operation", "./internal/app", "./internal/api", "./pkg/pinaxclient", "-run", "TestWriterDaily|TestDailyBounded|TestReconcile|TestWriterContract|TestOpenAPI", "-count=1", "-v"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "component", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false, "race_detector": false}}
+	}
+	if profile == "notebook-navigation" {
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./internal/transportcatalog/...", "./internal/app", "./internal/api", "./pkg/pinaxclient", "-run", "TestReaderNavigation|TestReaderContract|TestReaderAccess|TestReaderResources|TestOpenAPI", "-count=1", "-v"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "component", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false, "race_detector": false}}
+	}
+	if profile == "notebook-editor-source" {
+		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./internal/transportcatalog/...", "./internal/app", "./internal/api", "./pkg/pinaxclient", "-run", "TestWriterEditorSource|TestWriterContract|TestWriterEdit|TestWriterClient|TestOpenAPI|TestTagNote|TestWriterTagsPlan|TestWriterTagsApply|TestWriterTagsLookup|TestWriterTagsHTTP|TestWriterTagsClient|TestCollaboration|TestNoteHardeningFrontmatterPatch", "-count=1", "-v"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "component", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "real_user_evaluations": 0, "model_calls": 0, "remote_write": false, "race_detector": false}}
+	}
 	if isHumanReadingProfile(profile) {
 		return buildHumanReadingConfig(profile, runID, stdout, stderr)
 	}
@@ -157,6 +181,9 @@ func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evid
 	if profile == "operation-recovery" {
 		return buildOperationRecoveryConfig(runID, stdout, stderr)
 	}
+	if profile == "remote-write-parity" {
+		return buildRemoteWriteParityConfig(runID, stdout, stderr)
+	}
 	if profile == "identity-benchmark" {
 		return evidence.Config{
 			RunID:             runID,
@@ -189,6 +216,34 @@ func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evid
 			"manifest_v2_migration":     true,
 			"agent_proof_receipts":      true,
 			"two_device_kernel":         true,
+		},
+	}
+}
+
+func buildRemoteWriteParityConfig(runID string, stdout, stderr io.Writer) evidence.Config {
+	return evidence.Config{
+		RunID:     runID,
+		ParentDir: filepath.Join("temp", "integration-test-runs"),
+		Command: []string{
+			"go", "test", "./internal/transportcatalog/...", "./internal/app", "./internal/api", "./internal/cli", "./pkg/pinaxclient", "./cmd/pinax",
+			"-run", "RemoteWriteInteractionMetadata|TypedRemoteWriteMethods|InboxCapture|FolderRename|Writer|RemoteTransportManifest|OpenAPI|OperationRecovery|RemoteMutationRecovery|RemoteMode",
+			"-count=1", "-v",
+		},
+		PassThroughStdout: stdout,
+		PassThroughStderr: stderr,
+		PassStatus:        "passed",
+		Layer:             "e2e",
+		ExtraChecks: map[string]any{
+			"manifest_metadata_parity":     true,
+			"remote_cli_write_contract":    true,
+			"operation_identity_preserved": true,
+			"revision_and_snapshot_gates":  true,
+			"no_blind_retry":               true,
+			"mcp_readonly_boundary":        true,
+			"fixture_only":                 true,
+			"real_user_evaluations":        0,
+			"model_calls":                  0,
+			"remote_write":                 false,
 		},
 	}
 }
@@ -288,7 +343,7 @@ func buildOperationRecoveryConfig(runID string, stdout, stderr io.Writer) eviden
 	return evidence.Config{
 		RunID:             runID,
 		ParentDir:         filepath.Join("temp", "integration-test-runs"),
-		Command:           []string{"go", "test", "./pkg/pinaxclient", "./internal/remoteapi", "./internal/cli", "./tests/e2e", "-run", "Ambiguous|NoBlindRetry|ReplaySafe|RemoteMutationRecovery|OperationReconcile", "-count=1"},
+		Command:           []string{"go", "test", "./pkg/pinaxclient", "./internal/remoteapi", "./internal/app", "./internal/cli", "./tests/e2e", "-run", "Ambiguous|NoBlindRetry|ReplaySafe|RemoteMutationRecovery|OperationReconcile|OperationShow", "-count=1"},
 		PassThroughStdout: stdout,
 		PassThroughStderr: stderr,
 		PassStatus:        "passed",
@@ -394,14 +449,14 @@ func buildHumanReadingConfig(profile, runID string, stdout, stderr io.Writer) ev
 		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
 		filter = contract + "|TestReaderAccess"
 	case "human-reading-document":
-		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/render"}
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/render", "./internal/api", "./pkg/pinaxclient"}
 		filter = contract + "|TestReaderDocument"
 	case "human-reading-resources":
 		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api"}
 		filter = contract + "|TestReaderResources"
 	case "human-reading-session":
-		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./internal/cli", "./cmd/pinax", "./tests/e2e"}
-		filter = contract + "|TestReaderSession"
+		packages = []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./internal/cli", "./cmd/pinax", "./tests/e2e", "./pkg/localsession", "./pkg/pinaxclient", "./internal/index", "./internal/sqlitedsn"}
+		filter = contract + "|TestReaderSession|TestInspectReadOnly|TestReadSnapshot"
 	case "human-reading-client":
 		packages = []string{"./internal/transportcatalog/...", "./pkg/pinaxclient", "./internal/remoteapi"}
 		filter = contract + "|TestReader|TestRemoteTransport"

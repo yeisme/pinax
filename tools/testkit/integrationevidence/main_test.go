@@ -6,6 +6,45 @@ import (
 	"testing"
 )
 
+func TestBuildNotebookDailyProfile(t *testing.T) {
+	config := buildConfigForProfile("notebook-daily", "daily-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	for _, required := range []string{"./internal/transportcatalog/...", "./internal/templateengine", "./internal/operation", "./internal/app", "./internal/api", "./pkg/pinaxclient", "TestWriterDaily", "TestDailyBounded", "TestReconcile", "TestWriterContract", "TestOpenAPI"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("missing check: %s", required)
+		}
+	}
+	if strings.Contains(command, "-race") || config.Layer != "component" || config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false {
+		t.Fatal("unsafe daily profile")
+	}
+}
+
+func TestBuildNotebookNavigationProfile(t *testing.T) {
+	config := buildConfigForProfile("notebook-navigation", "navigation-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	for _, required := range []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./pkg/pinaxclient", "TestReaderNavigation", "TestReaderContract", "TestOpenAPI"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("missing check: %s", required)
+		}
+	}
+	if strings.Contains(command, "-race") || config.Layer != "component" || config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false {
+		t.Fatal("unsafe navigation profile")
+	}
+}
+
+func TestBuildNotebookEditorSourceProfile(t *testing.T) {
+	config := buildConfigForProfile("notebook-editor-source", "editor-run", io.Discard, io.Discard)
+	command := strings.Join(config.Command, " ")
+	for _, required := range []string{"./internal/transportcatalog/...", "./internal/app", "./internal/api", "./pkg/pinaxclient", "TestWriterEditorSource", "TestWriterContract", "TestOpenAPI"} {
+		if !strings.Contains(command, required) {
+			t.Fatalf("missing check: %s", required)
+		}
+	}
+	if strings.Contains(command, "-race") || config.ParentDir != "temp/integration-test-runs" || config.Layer != "component" || config.ExtraChecks["fixture_only"] != true || config.ExtraChecks["remote_write"] != false {
+		t.Fatal("unsafe notebook profile")
+	}
+}
+
 func TestBuildDailyReviewFollowthroughProfile(t *testing.T) {
 	config := buildConfigForProfile("daily-review-followthrough", "review-run", io.Discard, io.Discard)
 	command := strings.Join(config.Command, " ")
