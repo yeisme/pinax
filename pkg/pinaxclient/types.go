@@ -81,6 +81,10 @@ type ManifestCapability struct {
 	WriteGate           string             `json:"write_gate,omitempty"`
 	CopyCommand         string             `json:"copy_command,omitempty"`
 	LocalOnlyReason     string             `json:"local_only_reason,omitempty"`
+	ExecutionLocation   string             `json:"execution_location,omitempty"`
+	WriteStrategy       string             `json:"write_strategy,omitempty"`
+	Recovery            *RecoveryContract  `json:"recovery,omitempty"`
+	OwnerAction         *OwnerAction       `json:"owner_action,omitempty"`
 	RequestSchema       string             `json:"request_schema"`
 	ResponseSchema      string             `json:"response_schema"`
 	Errors              []string           `json:"errors,omitempty"`
@@ -91,20 +95,33 @@ type ManifestCapability struct {
 }
 
 type TransportBinding struct {
-	ID             string     `json:"id"`
-	CapabilityID   string     `json:"capability_id"`
-	Transport      string     `json:"transport"`
-	Availability   string     `json:"availability"`
-	BackingRef     string     `json:"backing_ref,omitempty"`
-	Method         string     `json:"method,omitempty"`
-	Path           string     `json:"path,omitempty"`
-	ProtocolName   string     `json:"protocol_name,omitempty"`
-	Readonly       bool       `json:"readonly"`
-	WriteGate      string     `json:"write_gate,omitempty"`
-	RequestSchema  string     `json:"request_schema"`
-	ResponseSchema string     `json:"response_schema"`
-	Blockers       []string   `json:"blockers,omitempty"`
-	Readiness      *Readiness `json:"readiness,omitempty"`
+	ID                string     `json:"id"`
+	CapabilityID      string     `json:"capability_id"`
+	Transport         string     `json:"transport"`
+	Availability      string     `json:"availability"`
+	BackingRef        string     `json:"backing_ref,omitempty"`
+	Method            string     `json:"method,omitempty"`
+	Path              string     `json:"path,omitempty"`
+	ProtocolName      string     `json:"protocol_name,omitempty"`
+	Readonly          bool       `json:"readonly"`
+	WriteGate         string     `json:"write_gate,omitempty"`
+	ExecutionLocation string     `json:"execution_location,omitempty"`
+	RequestSchema     string     `json:"request_schema"`
+	ResponseSchema    string     `json:"response_schema"`
+	Blockers          []string   `json:"blockers,omitempty"`
+	Readiness         *Readiness `json:"readiness,omitempty"`
+}
+
+type RecoveryContract struct {
+	IdentityRequired bool   `json:"identity_required,omitempty"`
+	StatusCommand    string `json:"status_command,omitempty"`
+	ReconcileCommand string `json:"reconcile_command,omitempty"`
+}
+
+type OwnerAction struct {
+	ExecutionLocation string `json:"execution_location"`
+	Command           string `json:"command,omitempty"`
+	Reason            string `json:"reason,omitempty"`
 }
 
 type Readiness struct {

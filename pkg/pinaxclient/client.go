@@ -149,7 +149,48 @@ func (c *Client) Manifest(ctx context.Context) (Manifest, error) {
 	if payload.Manifest.SchemaVersion != TransportManifestSchemaV1 || !validSHA256Digest(payload.Manifest.Digest) {
 		return Manifest{}, newError(CodeUpstreamInvalidResponse, "Pinax manifest identity is invalid", nil)
 	}
+	for _, capability := range payload.Manifest.Capabilities {
+		if err := validateManifestCapabilityMetadata(capability); err != nil {
+			return Manifest{}, err
+		}
+		for _, binding := range capability.Bindings {
+			if binding.ExecutionLocation != "" && !validExecutionLocation(binding.ExecutionLocation) {
+				return Manifest{}, newError(CodeUpstreamInvalidResponse, "Pinax manifest binding execution location is invalid", nil)
+			}
+		}
+	}
 	return payload.Manifest, nil
+}
+
+func validateManifestCapabilityMetadata(capability ManifestCapability) error {
+	if capability.ExecutionLocation != "" && !validExecutionLocation(capability.ExecutionLocation) {
+		return newError(CodeUpstreamInvalidResponse, "Pinax manifest execution location is invalid", nil)
+	}
+	if capability.WriteStrategy != "" && !validWriteStrategy(capability.WriteStrategy) {
+		return newError(CodeUpstreamInvalidResponse, "Pinax manifest write strategy is invalid", nil)
+	}
+	if capability.OwnerAction != nil && !validExecutionLocation(capability.OwnerAction.ExecutionLocation) {
+		return newError(CodeUpstreamInvalidResponse, "Pinax manifest owner action location is invalid", nil)
+	}
+	return nil
+}
+
+func validExecutionLocation(value string) bool {
+	switch value {
+	case "vault_owner", "remote_service", "client_local":
+		return true
+	default:
+		return false
+	}
+}
+
+func validWriteStrategy(value string) bool {
+	switch value {
+	case "readonly", "dry_run_then_apply", "proposal_then_apply", "snapshot_then_apply":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) Readiness(ctx context.Context) (ConnectionReadiness, error) {
@@ -190,6 +231,12 @@ func (c *Client) Operation(ctx context.Context, operationID string) (Operation, 
 	return decodeOperationProjection(projection, operationID)
 }
 
+// OperationGet is the explicit typed SDK name for the remote operation.show
+// recovery surface. Operation remains as a backwards-compatible shorthand.
+func (c *Client) OperationGet(ctx context.Context, operationID string) (Operation, error) {
+	return c.Operation(ctx, operationID)
+}
+
 func (c *Client) ReconcileOperation(ctx context.Context, operationID string) (Operation, error) {
 	if !operationIDPattern.MatchString(operationID) {
 		return Operation{}, newError(CodeRequestInvalid, "Pinax operation ID is invalid", nil)
@@ -199,6 +246,13 @@ func (c *Client) ReconcileOperation(ctx context.Context, operationID string) (Op
 		return Operation{}, withOperationReconcile(err, operationID)
 	}
 	return decodeOperationProjection(projection, operationID)
+}
+
+// OperationReconcile is the explicit typed SDK name for the remote
+// operation.reconcile recovery surface. ReconcileOperation remains as a
+// backwards-compatible shorthand.
+func (c *Client) OperationReconcile(ctx context.Context, operationID string) (Operation, error) {
+	return c.ReconcileOperation(ctx, operationID)
 }
 
 func decodeOperationProjection(projection Projection, operationID string) (Operation, error) {

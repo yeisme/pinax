@@ -414,8 +414,8 @@ func TestReaderClientDiscoversRealBindingDigest(t *testing.T) {
 			available++
 		}
 	}
-	if available != 7 {
-		t.Fatalf("reader capabilities with REST availability = %d, want 7", available)
+	if available != 14 {
+		t.Fatalf("reader capabilities with REST availability = %d, want 14", available)
 	}
 }
 

@@ -226,6 +226,45 @@ func TestCallMutationRPCReplaySafeRetryReusesExactBindingOnce(t *testing.T) {
 	}
 }
 
+func TestTypedRemoteWriteMethodsPreserveMutationIdentityAndRevision(t *testing.T) {
+	identity := MutationIdentity{OperationID: "op_typed_remote_write", IdempotencyKey: "idem_typed_remote_write"}
+	seen := make([]RPCRequest, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/rpc" {
+			http.NotFound(w, r)
+			return
+		}
+		var request RPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode RPC request: %v", err)
+		}
+		seen = append(seen, request)
+		writeTestProjection(t, w, request.Method, map[string]any{"operation_id": identity.OperationID})
+	}))
+	defer server.Close()
+	client, err := New(Config{BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.InboxCapture(context.Background(), InboxCaptureRequest{Title: "Idea", Body: "body", Yes: true}, identity); err != nil {
+		t.Fatalf("InboxCapture: %v", err)
+	}
+	if _, err := client.FolderRename(context.Background(), FolderRenameRequest{Path: "notes/old", TargetPath: "notes/new", ExpectedRevision: "sha256:revision", Yes: true}, identity); err != nil {
+		t.Fatalf("FolderRename: %v", err)
+	}
+	if len(seen) != 2 || seen[0].Method != "Pinax.Inbox.Capture" || seen[1].Method != "Pinax.Folder.Rename" {
+		t.Fatalf("typed methods = %#v", seen)
+	}
+	for _, request := range seen {
+		if request.Params["operation_id"] != identity.OperationID || request.Params["idempotency_key"] != identity.IdempotencyKey {
+			t.Fatalf("request identity = %#v", request.Params)
+		}
+	}
+	if seen[1].Params["expected_revision"] != "sha256:revision" {
+		t.Fatalf("folder revision = %#v", seen[1].Params["expected_revision"])
+	}
+}
+
 func mutationTestRequest(identity MutationIdentity) RPCRequest {
 	return RPCRequest{Method: "Pinax.Inbox.Capture", Params: map[string]any{
 		"title": "recovery", "yes": true,

@@ -62,6 +62,10 @@ func TestClientReadsManifestReadinessOperationAndRPC(t *testing.T) {
 	if err != nil || operation.OperationID != operationID || operation.CapabilityID != "inbox.capture" {
 		t.Fatalf("operation=%#v err=%v", operation, err)
 	}
+	operationByTypedName, err := client.OperationGet(context.Background(), operationID)
+	if err != nil || operationByTypedName.OperationID != operationID {
+		t.Fatalf("operation get=%#v err=%v", operationByTypedName, err)
+	}
 	projection, err := client.CallRPC(context.Background(), RPCRequest{Method: "Pinax.Note.Read", Params: map[string]any{"ref": "note-1"}})
 	if err != nil || projection.Command != "note.show" {
 		t.Fatalf("projection=%#v err=%v", projection, err)
@@ -109,6 +113,10 @@ func TestClientReconcileOperationUsesSameIdentityAndValidatesRecoveryFacts(t *te
 	operation, err := client.ReconcileOperation(context.Background(), operationID)
 	if err != nil || operation.OperationID != operationID || !operation.ReconcileRequired {
 		t.Fatalf("reconcile operation = %#v err=%v", operation, err)
+	}
+	typedOperation, err := client.OperationReconcile(context.Background(), operationID)
+	if err != nil || typedOperation.OperationID != operationID || !typedOperation.ReconcileRequired {
+		t.Fatalf("typed reconcile operation = %#v err=%v", typedOperation, err)
 	}
 }
 
