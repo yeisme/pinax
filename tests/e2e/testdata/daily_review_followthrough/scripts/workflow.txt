@@ -1,0 +1,65 @@
+exec pinax init vault --title Review --json
+exec pinax note add Alpha --body 'original #topic' --dir index --vault vault --json
+cp stdout created.json
+review-fact created.json note_id NOTE
+exec pinax note add Unselected --body 'keep #untouched' --dir index --vault vault --json
+cp stdout other.json
+review-fact other.json path OTHER_PATH
+cp vault/$OTHER_PATH other-before.md
+vault-digest vault before.sha
+exec pinax inbox review --limit 5 --vault vault --json
+stdout organize_preview
+exec pinax organize plan --note $NOTE --vault vault --json
+stdout pinax.organize_plan.scoped.v1
+vault-digest vault after.sha
+cmp before.sha after.sha
+exec pinax organize plan --note $NOTE --save --vault vault --json
+cp stdout plan.json
+review-fact plan.json plan_id PLAN
+! exec pinax organize apply --plan $PLAN --vault vault --json
+stdout approval_required
+! exec pinax organize apply --plan $PLAN --allow-stale --yes --vault vault --json
+stdout scoped_plan_override_forbidden
+exec pinax organize apply --plan $PLAN --yes --vault vault --json
+stdout '"evidence_complete":"true"'
+cp stdout apply.json
+review-fact apply.json snapshot_id SNAPSHOT
+cmp vault/$OTHER_PATH other-before.md
+! exec pinax organize apply --plan $PLAN --yes --vault vault --json
+stdout organize_plan_not_planned
+exec pinax pipeline show $PLAN --vault vault --json
+stdout '"status":"applied"'
+! stdout '--yes'
+exec pinax version show notes/index/alpha.md --revision $SNAPSHOT --vault vault --json
+stdout original
+
+exec pinax note ref $NOTE --vault vault --json
+cp stdout ref.json
+review-fact ref.json resolved_revision REV
+exec sh -c 'pinax agent note propose --kind note_edit --target "$NOTE" --expected-revision "$REV" --stdin --vault vault --json < edit.md'
+cp stdout proposal.json
+review-fact proposal.json proposal_id PROP
+exec sh -c 'pinax agent note propose --kind note_edit --target "$NOTE" --expected-revision "$REV" --stdin --vault vault --json < edit.md'
+vault-digest vault query-before.sha
+exec pinax agent note proposal list --status approval_required --limit 1 --vault vault --json
+! stdout PRIVATE_QUERY_PAYLOAD
+cp stdout page.json
+review-fact page.json next_cursor CURSOR
+review-action page.json next NEXT
+mkdir elsewhere
+cd elsewhere
+exec sh -c 'eval "$NEXT --json"'
+stdout '"remaining":"0"'
+cd ..
+exec pinax agent note proposal show $PROP --vault vault --json
+! stdout PRIVATE_QUERY_PAYLOAD
+vault-digest vault query-after.sha
+cmp query-before.sha query-after.sha
+exec pinax agent note proposal reject $PROP --yes --vault vault --json
+! exec pinax agent note proposal list --status approval_required --limit 1 --cursor $CURSOR --vault vault --json
+stdout proposal_cursor_stale
+! exec pinax organize plan --note $NOTE --api-url https://unreachable.invalid --json
+stdout remote_command_unsupported
+
+-- edit.md --
+PRIVATE_QUERY_PAYLOAD

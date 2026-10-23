@@ -1,0 +1,73 @@
+# Fixture-only personal capture -> review -> editor -> retrieval loop.
+exec pinax init vault --title Daily --json
+exec sh -c 'pinax inbox capture "Reading fragment" --slug fragment --stdin --vault vault --json < body.md'
+stdout '"readback_status":"verified"'
+exec sh -c 'pinax note add "Compiled note" --dir index --slug compiled --stdin --vault vault --json < body.md'
+stdout '"readback_status":"verified"'
+exists vault/notes/index/compiled.md
+
+vault-digest vault before.sha
+exec pinax inbox review --vault vault --json
+stdout '"total":"2"'
+stdout '"writes":"false"'
+exec pinax inbox review --limit 1 --vault vault --agent
+stdout 'fact.returned=1'
+exec pinax search show compiled --vault vault --json
+stdout '"name":"open"'
+exec pinax note preview compiled --vault vault
+stdout 'original-word'
+exec pinax note attachments compiled --vault vault --json
+exec pinax note links compiled --vault vault --json
+stdout 'Missing source'
+! exec pinax note open compiled --editor missing-daily-editor-executable --vault vault --json
+stdout 'editor_failed'
+vault-digest vault after.sha
+cmp before.sha after.sha
+
+# Editor edits only source body; subsequent native search sees it immediately.
+exec pinax note open compiled --editor 'sh editor.sh' --vault vault --json
+stdout '"status":"success"'
+exec pinax search editor-added-marker --engine native --lazy-index off --vault vault --agent
+stdout 'compiled.md'
+exec pinax note show compiled --display body --vault vault --json
+stdout 'editor-added-marker'
+stdout 'original-word'
+
+# Explicit previews do not become records or alter source content.
+vault-digest vault preview-before.sha
+exec sh -c 'pinax inbox capture "No write" --slug no-write --stdin --dry-run --vault vault --json < body.md'
+! exec sh -c 'pinax inbox capture "Conflict" --stdin --body other --vault vault --json < body.md'
+stdout 'note_source_conflict'
+vault-digest vault preview-after.sha
+cmp preview-before.sha preview-after.sha
+
+# A broken/missing index has a native read fallback, with no rebuild on read.
+rm vault/.pinax/index.sqlite
+vault-digest vault fallback-before.sha
+exec pinax search editor-added-marker --lazy-index off --vault vault --agent
+stdout 'fact.engine=native'
+stdout 'compiled.md'
+exec pinax inbox review --vault vault --json
+stdout '"total":"2"'
+vault-digest vault fallback-after.sha
+cmp fallback-before.sha fallback-after.sha
+
+-- body.md --
+# 中文资料
+
+original-word：保留这段原文、来源和格式。
+
+```go
+fmt.Println("original")
+```
+
+| 项目 | 值 |
+|---|---|
+| 阅读 | 完成 |
+
+[来源](https://example.org/source)
+[[Missing source]]
+![Missing image](missing.png)
+
+-- editor.sh --
+printf '\neditor-added-marker\n' >> "$1"
