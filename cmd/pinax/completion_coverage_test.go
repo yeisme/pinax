@@ -25,30 +25,30 @@ func TestHighValueCompletionCoverageCLI(t *testing.T) {
 	runCLI(t, "collection", "import", "--from", bundle, "--yes", "--vault", root, "--json")
 	writeCLIFixture(t, filepath.Join(root, "notes", "research", "alpha.20260625101010.conflict.md"), "# Conflict\n")
 
-	assertCompletionContains(t, runCLI(t, "__complete", "--color", ""), "auto\tcolor", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "--theme", "h"), "high-contrast\ttheme", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "--markdown-style", "d"), "dark\tmarkdown-style", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "--color", ""), "auto\tcolor", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "--theme", "h"), "high-contrast\ttheme", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "--markdown-style", "d"), "dark\tmarkdown-style", ":4\n")
 
-	assertCompletionContains(t, runCLI(t, "__complete", "project", "switch", "--vault", root, ""), "research\tResearch", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "project", "subproject", "show", "research", "--vault", root, ""), "stock-learning\tStock Learning", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "project", "board", "show", "research", "--vault", root, "--subproject", ""), "stock-learning\tStock Learning", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "project", "switch", "--vault", root, ""), "research\tResearch", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "project", "subproject", "show", "research", "--vault", root, ""), "stock-learning\tStock Learning", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "project", "board", "show", "research", "--vault", root, "--subproject", ""), "stock-learning\tStock Learning", ":4\n")
 
-	assertCompletionContains(t, runCLI(t, "__complete", "folder", "show", "--vault", root, ""), "notes/research\tnotes", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "folder", "list", "--vault", root, "--under", "notes/r"), "notes/research\tnotes", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "profile", "show", ""), "cloud-work\tprofile workspace=ws_test", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "folder", "show", "--vault", root, ""), "notes/research\tnotes", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "folder", "list", "--vault", root, "--under", "notes/r"), "notes/research\tnotes", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "profile", "show", ""), "cloud-work\tprofile workspace=ws_test", ":4\n")
 	assertCompletionDoesNotContain(t, runCLI(t, "__complete", "profile", "show", ""), "PINAX_TEST_TOKEN", "https://pinax.example.test")
-	assertCompletionContains(t, runCLI(t, "__complete", "backend", "show", "--vault", root, ""), "local-dev\tlocal", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "backend", "show", "--vault", root, ""), "local-dev\tlocal", ":4\n")
 
-	assertCompletionContains(t, runCLI(t, "__complete", "prompt", "show", "--vault", root, ""), "storyboard_prompt_v1\tNovel character portrait", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "prompt", "lifecycle", "storyboard_prompt_v1", "--vault", root, "--to", ""), "tested\tlifecycle", "accepted\tlifecycle", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "plugin", "inspect", "--vault", root, ""), "project-dashboard\tProject Dashboard", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "plugin", "run", "project-dashboard", "--vault", root, ""), "render_dashboard\tview.render", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "collection", "export", "--vault", root, "--format", ""), "eikona.prompt_bundle.v1\tformat", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "graph", "query", "--vault", root, "--kind", ""), "technique\tgraph node kind", "prompt\tgraph node kind", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "sync", "conflicts", "show", "--vault", root, ""), "notes/research/alpha.20260625101010.conflict.md\tconflict", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "note", "list", "--limit", ""), "10\tlimit", "25\tlimit", "50\tlimit", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "note", "list", "--period", ""), "5h\tperiod", "daily\tperiod", "weekly\tperiod", "monthly\tperiod", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "share", "start", "--view", ""), "published\tview", "explore\tview", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "prompt", "show", "--vault", root, ""), "storyboard_prompt_v1\tNovel character portrait", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "prompt", "lifecycle", "storyboard_prompt_v1", "--vault", root, "--to", ""), "tested\tlifecycle", "accepted\tlifecycle", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "plugin", "inspect", "--vault", root, ""), "project-dashboard\tProject Dashboard", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "plugin", "run", "project-dashboard", "--vault", root, ""), "render_dashboard\tview.render", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "collection", "export", "--vault", root, "--format", ""), "eikona.prompt_bundle.v1\tformat", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "graph", "query", "--vault", root, "--kind", ""), "technique\tgraph node kind", "prompt\tgraph node kind", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "sync", "conflicts", "show", "--vault", root, ""), "notes/research/alpha.20260625101010.conflict.md\tconflict", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "note", "list", "--limit", ""), "10\tlimit", "25\tlimit", "50\tlimit", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "note", "list", "--period", ""), "5h\tperiod", "daily\tperiod", "weekly\tperiod", "monthly\tperiod", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "share", "start", "--view", ""), "published\tview", "explore\tview", ":4\n")
 }
 
 func TestNoteOperationReferenceCompletionCLI(t *testing.T) {
@@ -76,7 +76,7 @@ func TestNoteOperationReferenceCompletionCLI(t *testing.T) {
 	for _, command := range commands {
 		args := append([]string{"__complete"}, command...)
 		args = append(args, "--vault", root, "")
-		assertCompletionContains(t, runCLI(t, args...), "Alpha Note\tnote", "ShellCompDirectiveNoFileComp")
+		assertCompletionContains(t, runCLI(t, args...), "Alpha Note\tnote", ":4\n")
 	}
 }
 
@@ -100,15 +100,15 @@ func TestInboxDraftReferenceAndFlagCompletionCLI(t *testing.T) {
 		args := append([]string{"__complete"}, command...)
 		args = append(args, "--vault", root, "")
 		out := runCLI(t, args...)
-		assertCompletionContains(t, out, "ShellCompDirectiveNoFileComp")
+		assertCompletionContains(t, out, ":4\n")
 		if !strings.Contains(out, "Inbox Alpha\tnote") && !strings.Contains(out, "Draft Alpha\tnote") {
 			t.Fatalf("%v completion missing note candidates:\n%s", command, out)
 		}
 	}
 
-	assertCompletionContains(t, runCLI(t, "__complete", "inbox", "show", "Inbox", "--vault", root, "--view", ""), "source\tview", "rendered\tview", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "inbox", "promote", "Inbox", "--vault", root, "--to", ""), "draft\tstatus", "active\tstatus", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "draft", "promote", "Draft", "--vault", root, "--status", ""), "active\tstatus", "archived\tstatus", "discarded\tstatus", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "inbox", "show", "Inbox", "--vault", root, "--view", ""), "source\tview", "rendered\tview", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "inbox", "promote", "Inbox", "--vault", root, "--to", ""), "draft\tstatus", "active\tstatus", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "draft", "promote", "Draft", "--vault", root, "--status", ""), "active\tstatus", "archived\tstatus", "discarded\tstatus", ":4\n")
 }
 
 func TestAssetNoteFlagCompletionCLI(t *testing.T) {
@@ -119,9 +119,9 @@ func TestAssetNoteFlagCompletionCLI(t *testing.T) {
 	writeCLIFixture(t, filepath.Join(root, "assets", "diagram.png"), "png")
 	runCLI(t, "index", "rebuild", "--vault", root, "--json")
 
-	assertCompletionContains(t, runCLI(t, "__complete", "asset", "link", "diagram", "--vault", root, "--note", ""), "Asset Context\tnote", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "asset", "show", "diagram", "--vault", root, "--context-note", ""), "Asset Context\tnote", "ShellCompDirectiveNoFileComp")
-	assertCompletionContains(t, runCLI(t, "__complete", "asset", "preview", "diagram", "--vault", root, "--context-note", ""), "Asset Context\tnote", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, runCLI(t, "__complete", "asset", "link", "diagram", "--vault", root, "--note", ""), "Asset Context\tnote", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "asset", "show", "diagram", "--vault", root, "--context-note", ""), "Asset Context\tnote", ":4\n")
+	assertCompletionContains(t, runCLI(t, "__complete", "asset", "preview", "diagram", "--vault", root, "--context-note", ""), "Asset Context\tnote", ":4\n")
 }
 
 func TestRootHelpGroupsCurrentTopLevelCommandsCLI(t *testing.T) {
@@ -149,7 +149,7 @@ func TestPathLikeCompletionKeepsFileCompletionCLI(t *testing.T) {
 		t.Fatalf("write token fixture: %v", err)
 	}
 	out := runCLIInDir(t, root, "__complete", "note", "add", "Title", "--from", "tok")
-	if strings.Contains(out, "ShellCompDirectiveNoFileComp") {
+	if !strings.HasSuffix(out, ":0\n") {
 		t.Fatalf("--from should keep file completion enabled:\n%s", out)
 	}
 }

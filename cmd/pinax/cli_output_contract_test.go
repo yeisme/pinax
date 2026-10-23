@@ -22,7 +22,7 @@ func TestCLITreeHelpSmoke(t *testing.T) {
 		{args: []string{"journal", "--help"}, want: []string{"daily", "weekly", "monthly"}},
 		{args: []string{"storage", "--help"}, want: []string{"set", "status", "doctor"}, absent: []string{"\n  set-local ", "\n  set-s3 "}},
 		{args: []string{"storage", "set", "--help"}, want: []string{"local", "s3"}},
-		{args: []string{"note", "--help"}, want: []string{"new", "show", "tags", "folders", "kinds", "groups"}},
+		{args: []string{"note", "--help"}, want: []string{"new", "get", "describe", "tags", "folders", "kinds", "groups"}},
 		{args: []string{"organize", "--help"}, want: []string{"plan", "list", "apply"}, absent: []string{"\n  suggest "}},
 	} {
 		out := runCLI(t, tc.args...)
@@ -54,8 +54,10 @@ func TestCLICommandCatalogOutputModes(t *testing.T) {
 		Status  string `json:"status"`
 		Data    struct {
 			Commands []struct {
-				Name       string `json:"name"`
-				Visibility string `json:"visibility"`
+				Name         string   `json:"name"`
+				Visibility   string   `json:"visibility"`
+				Capabilities []string `json:"capabilities"`
+				RemoteStatus string   `json:"remote_status"`
 			} `json:"commands"`
 		} `json:"data"`
 	}
@@ -67,6 +69,9 @@ func TestCLICommandCatalogOutputModes(t *testing.T) {
 	}
 	wantVisibility := map[string]string{"note": "core", "backup": "core", "version": "advanced", "sync": "advanced"}
 	for _, entry := range envelope.Data.Commands {
+		if entry.Name == "inbox" && (entry.RemoteStatus != "remote_supported" || len(entry.Capabilities) == 0) {
+			t.Fatalf("inbox command parity metadata = %#v", entry)
+		}
 		if want, ok := wantVisibility[entry.Name]; ok {
 			if entry.Visibility != want {
 				t.Fatalf("command %s visibility = %q, want %q", entry.Name, entry.Visibility, want)

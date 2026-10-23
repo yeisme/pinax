@@ -60,7 +60,7 @@ func TestVaultRegistryDefaultAndCompletionCLI(t *testing.T) {
 			t.Fatalf("vault completion missing %q:\n%s", want, vaultCompletion)
 		}
 	}
-	if strings.Contains(vaultCompletion, "ShellCompDirectiveNoFileComp") {
+	if strings.Contains(vaultCompletion, ":4\n") {
 		t.Fatalf("vault completion should keep path completion enabled:\n%s", vaultCompletion)
 	}
 
@@ -199,7 +199,7 @@ func TestProjectAndStorageCLIJSON(t *testing.T) {
 	runCLI(t, "project", "create", "archive", "--name", "Archive", "--description", "Cold notes", "--notes-prefix", "notes/archive", "--vault", root, "--json")
 
 	defaultListOut := runCLI(t, "project", "list", "--vault", root)
-	for _, want := range []string{"Projects", "Slug", "Name", "Notes prefix", "Description", "research", "研究", "notes/research", "长期研究", "archive", "Archive", "notes/archive", "Cold notes", "Current project", "Recommended next step"} {
+	for _, want := range []string{"Projects", "ID", "Name", "Notes prefix", "Description", "research", "研究", "notes/research", "长期研究", "archive", "Archive", "notes/archive", "Cold notes", "Current project", "Recommended next step"} {
 		if !strings.Contains(defaultListOut, want) {
 			t.Fatalf("project default output missing %q:\n%s", want, defaultListOut)
 		}
@@ -442,7 +442,7 @@ func TestProjectSubprojectWorkspaceCLI(t *testing.T) {
 	}
 
 	subprojectCompletion := runCLI(t, "__complete", "project", "board", "show", "research", "--vault", root, "--subproject", "")
-	if !strings.Contains(subprojectCompletion, "stock-learning\tStock Learning") || !strings.Contains(subprojectCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(subprojectCompletion, "stock-learning\tStock Learning") || !strings.Contains(subprojectCompletion, ":4\n") {
 		t.Fatalf("board show subproject completion invalid:\n%s", subprojectCompletion)
 	}
 

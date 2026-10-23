@@ -247,7 +247,7 @@ func TestRenderRunSnapshotAndPruneCLI(t *testing.T) {
 		t.Fatalf("inspect runs = %s", inspectRuns)
 	}
 	templateRunCompletion := runCLI(t, "__complete", "template", "render", "study", "--vault", root, "--run", "")
-	if !strings.Contains(templateRunCompletion, "go-run	render-run") || !strings.Contains(templateRunCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(templateRunCompletion, "go-run	render-run") || !strings.Contains(templateRunCompletion, ":4\n") {
 		t.Fatalf("template run completion = %s", templateRunCompletion)
 	}
 
@@ -270,7 +270,7 @@ func TestRenderRunSnapshotAndPruneCLI(t *testing.T) {
 		t.Fatalf("snapshot out = %s", snapshotOut)
 	}
 	snapshotCompletion := runCLI(t, "__complete", "note", "show", "Dashboard", "--view", "rendered", "--vault", root, "--snapshot", "")
-	if !strings.Contains(snapshotCompletion, "dash	render-run") || !strings.Contains(snapshotCompletion, "latest	render-run") || !strings.Contains(snapshotCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(snapshotCompletion, "dash	render-run") || !strings.Contains(snapshotCompletion, "latest	render-run") || !strings.Contains(snapshotCompletion, ":4\n") {
 		t.Fatalf("snapshot completion = %s", snapshotCompletion)
 	}
 
@@ -554,17 +554,17 @@ func TestTemplateCompletionJournalTemplateCompletionIndexTemplateCompletionNoteT
 	root := t.TempDir()
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 	inspect := runCLI(t, "__complete", "template", "inspect", "--vault", root, "")
-	for _, want := range []string{"journal.daily\tbuiltin journal_template", "index.home\tbuiltin index_template", "ShellCompDirectiveNoFileComp"} {
+	for _, want := range []string{"journal.daily\tbuiltin journal_template", "index.home\tbuiltin index_template", ":4\n"} {
 		if !strings.Contains(inspect, want) {
 			t.Fatalf("template inspect completion missing %q:\n%s", want, inspect)
 		}
 	}
 	journal := runCLI(t, "__complete", "journal", "daily", "show", "--vault", root, "--template", "")
-	if !strings.Contains(journal, "journal.daily\tbuiltin journal_template") || !strings.Contains(journal, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(journal, "journal.daily\tbuiltin journal_template") || !strings.Contains(journal, ":4\n") {
 		t.Fatalf("journal template completion = %s", journal)
 	}
 	index := runCLI(t, "__complete", "index", "page", "preview", "home", "--vault", root, "--template", "")
-	if !strings.Contains(index, "index.home\tbuiltin index_template") || !strings.Contains(index, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(index, "index.home\tbuiltin index_template") || !strings.Contains(index, ":4\n") {
 		t.Fatalf("index template completion = %s", index)
 	}
 	note := runCLI(t, "__complete", "note", "add", "Demo", "--vault", root, "--template", "")
@@ -572,7 +572,7 @@ func TestTemplateCompletionJournalTemplateCompletionIndexTemplateCompletionNoteT
 		t.Fatalf("note template completion = %s", note)
 	}
 	deleteOut := runCLI(t, "__complete", "template", "delete", "--vault", root, "")
-	if strings.Contains(deleteOut, "journal.daily") || !strings.Contains(deleteOut, "ShellCompDirectiveNoFileComp") {
+	if strings.Contains(deleteOut, "journal.daily") || !strings.Contains(deleteOut, ":4\n") {
 		t.Fatalf("template delete should only complete local templates:\n%s", deleteOut)
 	}
 }
@@ -588,12 +588,12 @@ func TestTemplateFlagCompletionTemplateVarCompletionTemplateRunCompletion(t *tes
 	body := strings.Join([]string{"---", "schema_version: pinax.template.v2", "engine: go-template", "variables:", "  url:", "    required: true", "---", "# {{ .Vars.url }}"}, "\n")
 	runCLI(t, "template", "create", "video-study", "--body", body, "--vault", root, "--json")
 	vars := runCLI(t, "__complete", "template", "render", "video-study", "--vault", root, "--var", "")
-	if !strings.Contains(vars, "url=\trequired string") || !strings.Contains(vars, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(vars, "url=\trequired string") || !strings.Contains(vars, ":4\n") {
 		t.Fatalf("template var completion = %s", vars)
 	}
 	runCLI(t, "template", "render", "video-study", "--var", "url=https://example.test", "--save-run", "video-run", "--vault", root, "--json")
 	runs := runCLI(t, "__complete", "template", "render", "video-study", "--vault", root, "--run", "")
-	if !strings.Contains(runs, "video-run") || !strings.Contains(runs, "render-run") || !strings.Contains(runs, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(runs, "video-run") || !strings.Contains(runs, "render-run") || !strings.Contains(runs, ":4\n") {
 		t.Fatalf("template run completion = %s", runs)
 	}
 }

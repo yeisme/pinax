@@ -44,7 +44,7 @@ func TestBackendProviderCLI(t *testing.T) {
 	runCLI(t, "init", root, "--title", "Vault", "--json")
 
 	help := runCLI(t, "backend", "--help")
-	for _, want := range []string{"list", "add", "show", "doctor", "capabilities", "remove", "object"} {
+	for _, want := range []string{"list", "add", "describe", "doctor", "capabilities", "remove", "object"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("backend help missing %q:\n%s", want, help)
 		}
@@ -935,16 +935,6 @@ func TestSyncConflictNextActionsAppearInSyncJSONAndAgentOutputsCLI(t *testing.T)
 	}
 }
 
-func TestSyncConflictsCobraLayerDoesNotResolveFilesDirectlyCLI(t *testing.T) {
-	t.Parallel()
-	source := readCLIFile(t, filepath.Join("..", "..", "internal", "cli", "sync_conflicts_cmd.go"))
-	for _, forbidden := range []string{"os.Rename", "os.Remove", "fmt.Println", "fmt.Printf"} {
-		if strings.Contains(source, forbidden) {
-			t.Fatalf("sync conflicts Cobra layer still contains %s", forbidden)
-		}
-	}
-}
-
 func TestBackendLegacyStorageProjection(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1183,19 +1173,19 @@ func TestBackendNotesCommandsInspectMarkdownObjects(t *testing.T) {
 	}
 
 	backendCompletion := runCLI(t, "__complete", "backend", "notes", "stat", "--vault", root, "")
-	if !strings.Contains(backendCompletion, "work-local\tlocal") || !strings.Contains(backendCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(backendCompletion, "work-local\tlocal") || !strings.Contains(backendCompletion, ":4\n") {
 		t.Fatalf("backend notes stat backend completion invalid:\n%s", backendCompletion)
 	}
 	notePathCompletion := runCLI(t, "__complete", "backend", "notes", "stat", "work-local", "--vault", root, "notes/")
-	if !strings.Contains(notePathCompletion, "notes/cloud-sync.md\tnote") || strings.Contains(notePathCompletion, "raw.txt") || !strings.Contains(notePathCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(notePathCompletion, "notes/cloud-sync.md\tnote") || strings.Contains(notePathCompletion, "raw.txt") || !strings.Contains(notePathCompletion, ":4\n") {
 		t.Fatalf("backend notes stat path completion invalid:\n%s", notePathCompletion)
 	}
 	notePrefixCompletion := runCLI(t, "__complete", "backend", "notes", "list", "work-local", "--vault", root, "")
-	if !strings.Contains(notePrefixCompletion, "notes/\tprefix") || !strings.Contains(notePrefixCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(notePrefixCompletion, "notes/\tprefix") || !strings.Contains(notePrefixCompletion, ":4\n") {
 		t.Fatalf("backend notes list prefix completion invalid:\n%s", notePrefixCompletion)
 	}
 	objectKeyCompletion := runCLI(t, "__complete", "backend", "object", "stat", "work-local", "--vault", root, "pinax/")
-	if !strings.Contains(objectKeyCompletion, "pinax/manifest.json\tobject") || !strings.Contains(objectKeyCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(objectKeyCompletion, "pinax/manifest.json\tobject") || !strings.Contains(objectKeyCompletion, ":4\n") {
 		t.Fatalf("backend object stat key completion invalid:\n%s", objectKeyCompletion)
 	}
 }

@@ -32,7 +32,7 @@ func main() {
 		if !errors.As(err, &commandErr) {
 			fmt.Fprintln(os.Stderr, err)
 		}
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err))
 	}
 }
 

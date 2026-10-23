@@ -563,7 +563,7 @@ func TestJournalDateCompletionCLI(t *testing.T) {
 	writeCLIFixture(t, filepath.Join(root, "notes", "monthly", "2026-06.md"), "# Monthly 2026-06\n")
 
 	daily := runCLI(t, "__complete", "daily", "show", "--vault", root, "--date", "")
-	for _, want := range []string{"\t", "ShellCompDirectiveNoFileComp"} {
+	for _, want := range []string{"\t", ":4\n"} {
 		if !strings.Contains(daily, want) {
 			t.Fatalf("daily date completion missing %q:\n%s", want, daily)
 		}

@@ -103,7 +103,7 @@ func TestMonitorAndActivityShowCompletionCLI(t *testing.T) {
 	runID := monitorRuns[0].(map[string]any)["run_id"].(string)
 
 	monitorCompletion := runCLI(t, "__complete", "monitor", "show", "--vault", root, "")
-	assertCompletionContains(t, monitorCompletion, runID+"\tnote.search success", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, monitorCompletion, runID+"\tnote.search success", ":4\n")
 	assertCompletionDoesNotContain(t, monitorCompletion, "secret-token", "raw prompt", "system prompt")
 
 	activityOut := runCLI(t, "activity", "list", "--vault", root, "--source", "monitor_runs", "--json")
@@ -118,6 +118,6 @@ func TestMonitorAndActivityShowCompletionCLI(t *testing.T) {
 	eventID := activityEntries[0].(map[string]any)["event_id"].(string)
 
 	activityCompletion := runCLI(t, "__complete", "activity", "show", "--vault", root, "")
-	assertCompletionContains(t, activityCompletion, eventID+"\tmonitor_runs note.search success", "ShellCompDirectiveNoFileComp")
+	assertCompletionContains(t, activityCompletion, eventID+"\tmonitor_runs note.search success", ":4\n")
 	assertCompletionDoesNotContain(t, activityCompletion, "secret-token", "raw prompt", "system prompt")
 }

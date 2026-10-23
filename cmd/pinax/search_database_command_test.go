@@ -243,19 +243,19 @@ func TestDatabaseViewQueryCompletionAndHelp(t *testing.T) {
 	runCLI(t, "view", "save", "active-notes", "--status", "active", "--vault", root, "--json")
 
 	viewCompletion := runCLI(t, "__complete", "view", "show", "--vault", root, "")
-	for _, want := range []string{"active-notes\tview", "ShellCompDirectiveNoFileComp"} {
+	for _, want := range []string{"active-notes\tview", ":4\n"} {
 		if !strings.Contains(viewCompletion, want) {
 			t.Fatalf("view show completion missing %q:\n%s", want, viewCompletion)
 		}
 	}
 
 	databaseViewCompletion := runCLI(t, "__complete", "database", "view", "show", "--vault", root, "")
-	if !strings.Contains(databaseViewCompletion, "active-notes\tview") || !strings.Contains(databaseViewCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(databaseViewCompletion, "active-notes\tview") || !strings.Contains(databaseViewCompletion, ":4\n") {
 		t.Fatalf("database view completion = %s", databaseViewCompletion)
 	}
 
 	noteCompletion := runCLI(t, "__complete", "note", "show", "--vault", root, "")
-	if !strings.Contains(noteCompletion, "Active Note\tnote") || !strings.Contains(noteCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(noteCompletion, "Active Note\tnote") || !strings.Contains(noteCompletion, ":4\n") {
 		t.Fatalf("note show completion = %s", noteCompletion)
 	}
 

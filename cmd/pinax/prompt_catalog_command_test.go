@@ -15,7 +15,7 @@ func TestPromptCatalogCommandTreeIsAdditive(t *testing.T) {
 	t.Parallel()
 	helpOut := runCLI(t, "prompt", "--help")
 	for _, want := range []string{
-		"create", "import", "search", "show", "resolve", "lifecycle", "feedback",
+		"create", "import", "search", "describe", "resolve", "lifecycle", "feedback",
 		"repository", "catalog",
 	} {
 		if !strings.Contains(helpOut, want) {
@@ -23,13 +23,13 @@ func TestPromptCatalogCommandTreeIsAdditive(t *testing.T) {
 		}
 	}
 	repositoryOut := runCLI(t, "prompt", "repository", "--help")
-	for _, want := range []string{"add", "list", "show", "remove", "enable", "disable", "sync", "doctor"} {
+	for _, want := range []string{"add", "list", "describe", "remove", "enable", "disable", "sync", "doctor"} {
 		if !strings.Contains(repositoryOut, want) {
 			t.Fatalf("repository help missing %q:\n%s", want, repositoryOut)
 		}
 	}
 	catalogOut := runCLI(t, "prompt", "catalog", "--help")
-	for _, want := range []string{"search", "show", "resolve", "inspect", "validate", "preview", "install"} {
+	for _, want := range []string{"search", "describe", "resolve", "inspect", "validate", "preview", "install"} {
 		if !strings.Contains(catalogOut, want) {
 			t.Fatalf("catalog help missing %q:\n%s", want, catalogOut)
 		}

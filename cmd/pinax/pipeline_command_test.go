@@ -36,7 +36,7 @@ func TestPipelineStatusAggregatesPlansAndReceipts(t *testing.T) {
 	runCLI(t, "metadata", "apply", "--vault", root, "--plan", planID, "--yes", "--json")
 
 	human := runCLI(t, "pipeline", "status", "--vault", root)
-	for _, want := range []string{"Pending plans (2)", "Recent runs (1)", "repair", "metadata", "metadata.apply", "applied", "pinax pipeline show"} {
+	for _, want := range []string{"Pending plans (2)", "Recent runs (1)", "repair", "metadata", "metadata.apply", "applied", "pinax pipeline describe"} {
 		if !strings.Contains(human, want) {
 			t.Fatalf("pipeline status human missing %q:\n%s", want, human)
 		}
@@ -273,7 +273,7 @@ func TestPipelineCommandTreeAndCompletion(t *testing.T) {
 
 	// completion：plan id / receipt id 补全 + kind flag 补全。
 	completion := runCLI(t, "__complete", "pipeline", "show", "--vault", root, "")
-	if !strings.Contains(completion, "repair-") || !strings.Contains(completion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(completion, "repair-") || !strings.Contains(completion, ":4\n") {
 		t.Fatalf("pipeline show completion missing plan id:\n%s", completion)
 	}
 	kindCompletion := runCLI(t, "__complete", "pipeline", "status", "--kind", "")

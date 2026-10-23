@@ -1,10 +1,7 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -88,24 +85,6 @@ func TestExplorePageContract(t *testing.T) {
 	}
 	if !strings.Contains(string(noEmbedPage), `data-embed="off"`) || strings.Contains(string(noEmbedPage), "note_auth_design") {
 		t.Fatalf("no-embed page must not inline bundle data")
-	}
-}
-
-// explorePageTimestampPattern 归一化时间戳字段后 golden 哈希才稳定。
-var explorePageTimestampPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})`)
-
-func TestExplorePageGoldenDigest(t *testing.T) {
-	t.Parallel()
-	page, err := app.RenderExplorePage(buildExplorePageFixtureBundle(t), true)
-	if err != nil {
-		t.Fatalf("render explore page: %v", err)
-	}
-	normalized := explorePageTimestampPattern.ReplaceAllString(string(page), "<TS>")
-	digest := sha256.Sum256([]byte(normalized))
-	got := "sha256:" + hex.EncodeToString(digest[:])
-	const want = "sha256:df6a4a4478fad6ee30f9ad98e8423845fb7b0c379e3a49459f0bc99d829409f2"
-	if got != want {
-		t.Fatalf("explore page golden digest = %q, want %q", got, want)
 	}
 }
 

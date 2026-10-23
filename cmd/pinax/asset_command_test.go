@@ -264,27 +264,27 @@ func TestAssetCompletionUsesIndexedAttachmentCandidatesCLI(t *testing.T) {
 	runCLI(t, "index", "rebuild", "--vault", root, "--json")
 
 	showCompletion := runCLI(t, "__complete", "asset", "show", "--vault", root, "")
-	for _, want := range []string{"diagram.png\timage/png linked_notes=1", "assets/diagram.png\timage/png linked_notes=1", "diagram\timage/png linked_notes=1", "ShellCompDirectiveNoFileComp"} {
+	for _, want := range []string{"diagram.png\timage/png linked_notes=1", "assets/diagram.png\timage/png linked_notes=1", "diagram\timage/png linked_notes=1", ":4\n"} {
 		if !strings.Contains(showCompletion, want) {
 			t.Fatalf("asset show completion missing %q:\n%s", want, showCompletion)
 		}
 	}
 
 	backlinksCompletion := runCLI(t, "__complete", "asset", "backlinks", "--vault", root, "dia")
-	if !strings.Contains(backlinksCompletion, "diagram.png\timage/png linked_notes=1") || !strings.Contains(backlinksCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(backlinksCompletion, "diagram.png\timage/png linked_notes=1") || !strings.Contains(backlinksCompletion, ":4\n") {
 		t.Fatalf("asset backlinks completion = %s", backlinksCompletion)
 	}
 	moveCompletion := runCLI(t, "__complete", "asset", "move", "--vault", root, "dia")
-	if !strings.Contains(moveCompletion, "diagram.png\timage/png linked_notes=1") || !strings.Contains(moveCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(moveCompletion, "diagram.png\timage/png linked_notes=1") || !strings.Contains(moveCompletion, ":4\n") {
 		t.Fatalf("asset move completion = %s", moveCompletion)
 	}
 	removeCompletion := runCLI(t, "__complete", "asset", "remove", "--vault", root, "dia")
-	if !strings.Contains(removeCompletion, "diagram.png\timage/png linked_notes=1") || !strings.Contains(removeCompletion, "ShellCompDirectiveNoFileComp") {
+	if !strings.Contains(removeCompletion, "diagram.png\timage/png linked_notes=1") || !strings.Contains(removeCompletion, ":4\n") {
 		t.Fatalf("asset remove completion = %s", removeCompletion)
 	}
 
 	attachSourceCompletion := runCLI(t, "__complete", "note", "attach", "Alpha", "--vault", root, "")
-	if strings.Contains(attachSourceCompletion, "ShellCompDirectiveNoFileComp") {
+	if strings.Contains(attachSourceCompletion, ":4\n") {
 		t.Fatalf("note attach source file completion should remain enabled:\n%s", attachSourceCompletion)
 	}
 }
