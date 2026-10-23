@@ -164,6 +164,11 @@ func newCloudSyncRun(ctx context.Context, command, root string, req SyncRequest,
 		return nil, projection, gateErr
 	}
 	r.receipt = syncRunStart(command, direction, r.state, r.pathPolicy, r.outputTarget)
+	if req.operationID != "" {
+		r.receipt.OperationID = req.operationID
+		r.receipt.RunID = syncOperationRunID(req.operationID)
+		r.receipt.RequestID = r.receipt.RunID
+	}
 	// 受理即入账（pinax-local-async-substrate-v1 §2.4）：run 级受理事件让
 	// status 投影在执行期就能重放出 accepted 相，外部 cancel 方也能从
 	// 事件流发现 run_id。

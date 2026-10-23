@@ -49,19 +49,23 @@ type RemoteRESTContract struct {
 	// ByteResponses marks endpoints whose success responses carry raw
 	// byte windows (200 full / 206 ranged with Content-Range + ETag)
 	// instead of the JSON projection envelope.
-	ByteResponses       bool   `json:"byte_responses,omitempty"`
-	SuccessMediaType    string `json:"success_media_type,omitempty"`
-	ErrorSchema         string `json:"error_schema"`
-	ErrorDetailSchema   string `json:"error_detail_schema"`
-	BodyExposureDefault string `json:"body_exposure_default"`
-	ReleaseCore         bool   `json:"release_core"`
-	Readonly            bool   `json:"readonly"`
-	BodyAllowed         bool   `json:"body_allowed"`
-	ApprovalRequired    bool   `json:"approval_required"`
-	SnapshotRequired    bool   `json:"snapshot_required"`
-	UIGroup             string `json:"ui_group"`
-	WriteGate           string `json:"write_gate"`
-	Stability           string `json:"stability"`
+	ByteResponses       bool                           `json:"byte_responses,omitempty"`
+	SuccessMediaType    string                         `json:"success_media_type,omitempty"`
+	ErrorSchema         string                         `json:"error_schema"`
+	ErrorDetailSchema   string                         `json:"error_detail_schema"`
+	BodyExposureDefault string                         `json:"body_exposure_default"`
+	ReleaseCore         bool                           `json:"release_core"`
+	Readonly            bool                           `json:"readonly"`
+	BodyAllowed         bool                           `json:"body_allowed"`
+	ApprovalRequired    bool                           `json:"approval_required"`
+	SnapshotRequired    bool                           `json:"snapshot_required"`
+	UIGroup             string                         `json:"ui_group"`
+	WriteGate           string                         `json:"write_gate"`
+	ExecutionLocation   string                         `json:"execution_location"`
+	WriteStrategy       string                         `json:"write_strategy"`
+	Recovery            *domain.RemoteRecoveryContract `json:"recovery,omitempty"`
+	OwnerAction         *domain.RemoteOwnerAction      `json:"owner_action,omitempty"`
+	Stability           string                         `json:"stability"`
 }
 
 type restWireSpec struct {
@@ -112,6 +116,10 @@ func RemoteRESTContracts() ([]RemoteRESTContract, error) {
 			SnapshotRequired:    capability.SnapshotRequired,
 			UIGroup:             capability.UIGroup,
 			WriteGate:           capability.WriteGate,
+			ExecutionLocation:   capability.ExecutionLocation,
+			WriteStrategy:       capability.WriteStrategy,
+			Recovery:            capability.Recovery,
+			OwnerAction:         capability.OwnerAction,
 			Stability:           "legacy",
 		}
 		if err := contract.Validate(); err != nil {
@@ -138,7 +146,7 @@ func (c RemoteRESTContract) Validate() error {
 	if c.RequestSchema == "" || c.SuccessSchema == "" || c.SuccessDataSchema == "" || c.ErrorSchema == "" || c.ErrorDetailSchema == "" {
 		return fmt.Errorf("REST contract %q schema refs are incomplete", c.RouteID)
 	}
-	if c.BodyExposureDefault == "" || c.WriteGate == "" || c.Stability == "" {
+	if c.BodyExposureDefault == "" || c.WriteGate == "" || c.ExecutionLocation == "" || c.WriteStrategy == "" || c.Stability == "" {
 		return fmt.Errorf("REST contract %q capability metadata is incomplete", c.RouteID)
 	}
 	seen := make(map[string]bool, len(c.Parameters))
@@ -253,6 +261,13 @@ func restWireSpecs() map[string]restWireSpec {
 		"rest.workbench.status":          noWireInput(),
 		"rest.workbench.activity.list":   wire(queryString("source"), queryString("query"), queryString("status"), queryString("object"), queryString("since"), queryString("until"), queryInteger("limit")),
 		"rest.workbench.activity.show":   wire(pathString("event_id")),
+		"rest.sync.status":               noWireInput(),
+		"rest.sync.diff":                 wire(queryString("target"), queryBoolean("dry_run"), queryString("base_revision"), queryString("remote_revision"), queryBoolean("content_diff")),
+		"rest.sync.push":                 wire(queryString("target"), queryBoolean("dry_run"), queryBoolean("yes"), queryString("base_revision"), queryString("remote_revision"), headerString("X-Pinax-Operation-ID"), headerString("Idempotency-Key")),
+		"rest.sync.pull":                 wire(queryString("target"), queryBoolean("dry_run"), queryBoolean("yes"), queryString("base_revision"), queryString("remote_revision"), headerString("X-Pinax-Operation-ID"), headerString("Idempotency-Key")),
+		"rest.sync.conflicts.list":       noWireInput(),
+		"rest.sync.conflicts.diff":       wire(queryString("file")),
+		"rest.sync.conflicts.resolve":    wire(queryString("file"), queryBoolean("keep_local"), queryBoolean("keep_remote"), queryString("merged_path"), requiredQueryBoolean("yes"), headerString("X-Pinax-Operation-ID"), headerString("Idempotency-Key")),
 		"rest.monitor.list":              wire(queryString("command"), queryString("query"), queryString("status"), queryString("since"), queryString("until"), queryInteger("limit")),
 		"rest.monitor.show":              wire(pathString("run_id")),
 		"rest.monitor.summary":           wire(queryString("command"), queryString("query"), queryString("status"), queryString("since"), queryString("until"), queryInteger("limit")),

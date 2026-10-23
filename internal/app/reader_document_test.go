@@ -702,6 +702,26 @@ func TestReaderDocumentWikiEmbedResolvesExactlyOnce(t *testing.T) {
 	if images != 1 {
 		t.Fatalf("wiki embed resolved %d times, want exactly 1 (no duplicate nodes)", images)
 	}
+	// A visible note with the same dotted title cannot override an asset
+	// already resolved by the owner attachment manifest.
+	composedTarget(t, root, "note_collision", "attachments/pic.png", "not asset body")
+	raw, err := os.ReadFile(filepath.Join(root, "notes", "embed.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	composed, err := NewService().ReaderComposedDocument(t.Context(), ReaderDocumentRequest{VaultPath: root, Session: documentSession(), ObjectID: "note_embed", Revision: collaborationRevision(string(raw)), CursorSecret: readerCursorSecret()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	composedPage := composed.Data.(ReaderComposedDocumentPage)
+	if len(composedPage.Embeds) != 0 {
+		t.Fatal("asset was reinterpreted as note")
+	}
+	images = 0
+	walk(composedPage.RichDocument.Document.Nodes)
+	if images != 1 {
+		t.Fatal("composed asset reference lost")
+	}
 	if !page.Complete || len(page.Warnings) > 0 {
 		t.Fatalf("complete=%v warnings=%v", page.Complete, page.Warnings)
 	}
@@ -998,7 +1018,7 @@ func TestReaderDocumentFragmentLinksResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "notes", "beta.md"),
-		[]byte("---\nschema_version: pinax.note.v1\nnote_id: note_beta\ntitle: Beta\nstatus: active\n---\n\nBeta body.\n"), 0o644); err != nil {
+		[]byte("---\nschema_version: pinax.note.v1\nnote_id: note_beta\ntitle: Beta\nstatus: active\n---\n\n# 章节\n\nBeta body.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := refreshIndex(root); err != nil {

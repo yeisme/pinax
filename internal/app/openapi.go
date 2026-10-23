@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/yeisme/pinax/internal/domain"
 	catalogschema "github.com/yeisme/pinax/internal/transportcatalog/schema"
 )
 
@@ -16,6 +17,7 @@ func BuildOpenAPI() (map[string]any, error) {
 	contracts = append(contracts, readerRESTContracts()...)
 	// Supervised writer surface: implemented and available since W06.
 	contracts = append(contracts, writerRESTContracts()...)
+	decorateRESTContractMetadata(contracts)
 	registry, err := RemoteSchemaRegistry()
 	if err != nil {
 		return nil, err
@@ -48,6 +50,34 @@ func BuildOpenAPI() (map[string]any, error) {
 		return nil, err
 	}
 	return document, nil
+}
+
+func decorateRESTContractMetadata(contracts []RemoteRESTContract) {
+	for index := range contracts {
+		contract := &contracts[index]
+		if contract.ExecutionLocation == "" {
+			contract.ExecutionLocation = "remote_service"
+		}
+		if contract.WriteStrategy == "" {
+			switch {
+			case contract.Readonly:
+				contract.WriteStrategy = "readonly"
+			case strings.HasPrefix(contract.CapabilityID, "writer.") && strings.Contains(contract.CapabilityID, ".apply"):
+				contract.WriteStrategy = "proposal_then_apply"
+			case contract.SnapshotRequired:
+				contract.WriteStrategy = "snapshot_then_apply"
+			default:
+				contract.WriteStrategy = "dry_run_then_apply"
+			}
+		}
+		if contract.Recovery == nil && (contract.CapabilityID == "inbox.capture" || contract.CapabilityID == "folder.rename" || strings.Contains(contract.CapabilityID, "writer.apply")) {
+			contract.Recovery = &domain.RemoteRecoveryContract{
+				IdentityRequired: true,
+				StatusCommand:    "pinax operation show <operation-id> --json",
+				ReconcileCommand: "pinax operation reconcile <operation-id> --json",
+			}
+		}
+	}
 }
 
 func openAPIComponents(registry *catalogschema.Registry) map[string]any {
@@ -87,23 +117,27 @@ func openAPIOperation(contract RemoteRESTContract) map[string]any {
 		parameters = append(parameters, entry)
 	}
 	operation := map[string]any{
-		"operationId":               contract.RouteID,
-		"parameters":                parameters,
-		"security":                  []map[string]any{{"BearerAuth": []string{}}},
-		"responses":                 openAPIResponses(contract),
-		"x-pinax-command":           contract.Command,
-		"x-pinax-capability":        contract.CapabilityID,
-		"x-pinax-capability-id":     contract.CapabilityID,
-		"x-pinax-release-core":      contract.ReleaseCore,
-		"x-pinax-readonly":          contract.Readonly,
-		"x-pinax-body-allowed":      contract.BodyAllowed,
-		"x-pinax-approval-required": contract.ApprovalRequired,
-		"x-pinax-snapshot-required": contract.SnapshotRequired,
-		"x-pinax-ui-group":          contract.UIGroup,
-		"x-pinax-body-exposure":     contract.BodyExposureDefault,
-		"x-pinax-write-gate":        contract.WriteGate,
-		"x-pinax-stability":         contract.Stability,
-		"x-pinax-request-schema":    componentRef(contract.RequestSchema),
+		"operationId":                contract.RouteID,
+		"parameters":                 parameters,
+		"security":                   []map[string]any{{"BearerAuth": []string{}}},
+		"responses":                  openAPIResponses(contract),
+		"x-pinax-command":            contract.Command,
+		"x-pinax-capability":         contract.CapabilityID,
+		"x-pinax-capability-id":      contract.CapabilityID,
+		"x-pinax-release-core":       contract.ReleaseCore,
+		"x-pinax-readonly":           contract.Readonly,
+		"x-pinax-body-allowed":       contract.BodyAllowed,
+		"x-pinax-approval-required":  contract.ApprovalRequired,
+		"x-pinax-snapshot-required":  contract.SnapshotRequired,
+		"x-pinax-ui-group":           contract.UIGroup,
+		"x-pinax-body-exposure":      contract.BodyExposureDefault,
+		"x-pinax-write-gate":         contract.WriteGate,
+		"x-pinax-execution-location": contract.ExecutionLocation,
+		"x-pinax-write-strategy":     contract.WriteStrategy,
+		"x-pinax-recovery":           openAPIRecovery(contract.Recovery),
+		"x-pinax-owner-action":       openAPIOwnerAction(contract.OwnerAction),
+		"x-pinax-stability":          contract.Stability,
+		"x-pinax-request-schema":     componentRef(contract.RequestSchema),
 		"x-pinax-readiness": map[string]any{
 			"status":     "degraded",
 			"maturity":   "exploratory",
@@ -123,6 +157,28 @@ func openAPIOperation(contract RemoteRESTContract) map[string]any {
 		}
 	}
 	return operation
+}
+
+func openAPIRecovery(recovery *domain.RemoteRecoveryContract) any {
+	if recovery == nil {
+		return nil
+	}
+	return map[string]any{
+		"identity_required": recovery.IdentityRequired,
+		"status_command":    recovery.StatusCommand,
+		"reconcile_command": recovery.ReconcileCommand,
+	}
+}
+
+func openAPIOwnerAction(action *domain.RemoteOwnerAction) any {
+	if action == nil {
+		return nil
+	}
+	return map[string]any{
+		"execution_location": action.ExecutionLocation,
+		"command":            action.Command,
+		"reason":             action.Reason,
+	}
 }
 
 func openAPIResponses(contract RemoteRESTContract) map[string]any {

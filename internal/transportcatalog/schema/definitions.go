@@ -6,6 +6,8 @@ const (
 	capabilityDefinitionV1 = "pinax.capability_definition.v1"
 	transportBindingV1     = "pinax.transport_binding.v1"
 	manifestCapabilityV1   = "pinax.manifest_capability.v1"
+	recoveryContractV1     = "pinax.recovery_contract.v1"
+	ownerActionV1          = "pinax.owner_action.v1"
 )
 
 var defaultRegistry = mustRegistry(defaultDefinitions())
@@ -23,6 +25,14 @@ func defaultDefinitions() []Definition {
 	definitions = append(definitions, mcpRequestDefinitions()...)
 	definitions = append(definitions, readerDefinitions()...)
 	definitions = append(definitions, writerDefinitions()...)
+	definitions = append(definitions, writerEditorSourceDefinitions()...)
+	definitions = append(definitions, readerNavigationDefinitions()...)
+	definitions = append(definitions, writerDailyDefinitions()...)
+	definitions = append(definitions, writerDailyEditDefinitions()...)
+	definitions = append(definitions, writerTagsDefinitions()...)
+	definitions = append(definitions, readerRichDefinitions()...)
+	definitions = append(definitions, readerComposedDefinitions()...)
+	definitions = append(definitions, readerRecoveryDefinitions()...)
 	return definitions
 }
 
@@ -74,23 +84,34 @@ func coreDefinitions() []Definition {
 				"production":        refValue(ReadinessV1),
 			}, "contract", "transport", "auth", "owner", "mutation_recovery", "production"),
 		}, "schema_version", "overall", "layers")),
+		define(recoveryContractV1, closedObject(map[string]any{
+			"identity_required": boolValue(),
+			"status_command":    stringValue(),
+			"reconcile_command": stringValue(),
+		})),
+		define(ownerActionV1, closedObject(map[string]any{
+			"execution_location": enumValue("vault_owner", "remote_service", "client_local"),
+			"command":            stringValue(),
+			"reason":             stringValue(),
+		}, "execution_location", "command")),
 		define(capabilityDefinitionV1, closedObject(capabilityProperties(),
 			"id", "command", "release_core", "readonly", "body_allowed", "approval_required", "snapshot_required", "request_schema", "response_schema", "stability")),
 		define(transportBindingV1, closedObject(map[string]any{
-			"id":              stringValue(),
-			"capability_id":   stringValue(),
-			"transport":       enumValue("cli", "rest", "rpc", "mcp_tool", "mcp_resource", "dashboard"),
-			"availability":    enumValue("available", "planned", "blocked", "future_owner"),
-			"backing_ref":     stringValue(),
-			"method":          stringValue(),
-			"path":            stringValue(),
-			"protocol_name":   stringValue(),
-			"readonly":        boolValue(),
-			"write_gate":      stringValue(),
-			"request_schema":  stringValue(),
-			"response_schema": stringValue(),
-			"blockers":        arrayValue(stringValue()),
-			"readiness":       refValue(ReadinessV1),
+			"id":                 stringValue(),
+			"capability_id":      stringValue(),
+			"transport":          enumValue("cli", "rest", "rpc", "mcp_tool", "mcp_resource", "dashboard"),
+			"availability":       enumValue("available", "planned", "blocked", "future_owner"),
+			"backing_ref":        stringValue(),
+			"method":             stringValue(),
+			"path":               stringValue(),
+			"protocol_name":      stringValue(),
+			"readonly":           boolValue(),
+			"write_gate":         stringValue(),
+			"execution_location": enumValue("vault_owner", "remote_service", "client_local"),
+			"request_schema":     stringValue(),
+			"response_schema":    stringValue(),
+			"blockers":           arrayValue(stringValue()),
+			"readiness":          refValue(ReadinessV1),
 		}, "id", "capability_id", "transport", "availability", "readonly", "request_schema", "response_schema")),
 		define(manifestCapabilityV1, closedObject(manifestCapabilityProperties(),
 			"id", "command", "release_core", "readonly", "body_allowed", "approval_required", "snapshot_required", "request_schema", "response_schema", "stability")),
@@ -270,6 +291,10 @@ func capabilityProperties() map[string]any {
 		"write_gate":            stringValue(),
 		"copy_command":          stringValue(),
 		"local_only_reason":     stringValue(),
+		"execution_location":    enumValue("vault_owner", "remote_service", "client_local"),
+		"write_strategy":        enumValue("readonly", "dry_run_then_apply", "proposal_then_apply", "snapshot_then_apply"),
+		"recovery":              refValue(recoveryContractV1),
+		"owner_action":          refValue(ownerActionV1),
 		"request_schema":        stringValue(),
 		"response_schema":       stringValue(),
 		"errors":                arrayValue(stringValue()),

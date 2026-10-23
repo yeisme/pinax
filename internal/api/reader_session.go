@@ -18,6 +18,7 @@ import (
 
 	"github.com/yeisme/pinax/internal/app"
 	catalogschema "github.com/yeisme/pinax/internal/transportcatalog/schema"
+	"github.com/yeisme/pinax/pkg/localsession"
 )
 
 // Supervised local session (pinax-human-reading-api-v1 P05).
@@ -30,7 +31,7 @@ import (
 
 // Session event schema versions for the host protocol on stdout.
 const (
-	LocalSessionReadyEventV1Alpha1 = "pinax.local_session.event.v1alpha1"
+	LocalSessionReadyEventV1Alpha1 = localsession.EventVersion
 	sessionBootstrapMaxFrameBytes  = catalogschema.ReaderSessionBootstrapMaxFrame
 	sessionDrainDeadline           = 5 * time.Second
 )
@@ -41,41 +42,10 @@ var sessionBootstrapDeadline time.Duration = 10 * time.Second
 
 // SessionBootstrapFrame is the versioned private stdin first frame
 // (pinax.local_session.bootstrap.v1alpha1). Secret fields never reach logs.
-type SessionBootstrapFrame struct {
-	SchemaVersion string   `json:"schema_version"`
-	SessionNonce  string   `json:"session_nonce"`
-	Bearer        string   `json:"bearer"`
-	BindingID     string   `json:"binding_id"`
-	VaultRoot     string   `json:"vault_root"`
-	Scopes        []string `json:"scopes"`
-	Readonly      bool     `json:"readonly"`
-}
+type SessionBootstrapFrame = localsession.Bootstrap
 
 // SessionEvent is one redacted stdout protocol message.
-type SessionEvent struct {
-	SchemaVersion  string `json:"schema_version"`
-	Type           string `json:"type"`
-	SessionID      string `json:"session_id,omitempty"`
-	SessionNonce   string `json:"session_nonce,omitempty"`
-	BindingID      string `json:"binding_id,omitempty"`
-	Address        string `json:"address,omitempty"`
-	ContractDigest string `json:"contract_digest,omitempty"`
-	Readonly       *bool  `json:"readonly,omitempty"`
-	Code           string `json:"code,omitempty"`
-	Message        string `json:"message,omitempty"`
-}
-
-// HasWriterScope reports whether the frame opens the supervised writer
-// surface (pinax-human-reading-write-v1): any owner-granted writer scope
-// flips the session out of readonly mode.
-func (f SessionBootstrapFrame) HasWriterScope() bool {
-	for _, scope := range f.Scopes {
-		if app.IsWriterScope(scope) {
-			return true
-		}
-	}
-	return false
-}
+type SessionEvent = localsession.Event
 
 // ReadSessionBootstrap reads and validates the private first frame. The
 // host keeps stdin open for liveness after the frame, so exactly one
@@ -200,12 +170,13 @@ func ReadSessionBootstrapWithDeadline(ctx context.Context, reader io.Reader) (Se
 
 // ServeSupervisedSessionOptions configures the supervised reader server.
 type ServeSupervisedSessionOptions struct {
-	Service  *app.Service
-	Frame    SessionBootstrapFrame
-	Stdin    io.Reader // liveness channel; closed stdin stops the server
-	Stdout   io.Writer // redacted host protocol
-	Stderr   io.Writer // human diagnostics; never secrets
-	Manifest ManifestProvider
+	Service       *app.Service
+	Frame         SessionBootstrapFrame
+	Stdin         io.Reader // liveness channel; closed stdin stops the server
+	Stdout        io.Writer // redacted host protocol
+	Stderr        io.Writer // human diagnostics; never secrets
+	Manifest      ManifestProvider
+	RecoveryStdin bool // explicit private host handshake; never enabled by bootstrap fields
 }
 
 // ServeSupervisedSession runs the readonly loopback reader surface for one
@@ -254,6 +225,13 @@ func ServeSupervisedSession(ctx context.Context, options ServeSupervisedSessionO
 		return sessionStartupFailure(options.Stdout, "session_conflict", "The reader session could not be registered")
 	}
 
+	defer sessions.Revoke(sessionID)
+	if options.RecoveryStdin {
+		if err := prepareSessionRecovery(ctx, options, sessions, sessionID, vaultRoot); err != nil {
+			return sessionStartupFailure(options.Stdout, "session_recovery_invalid", "The private recovery authorization handshake failed")
+		}
+	}
+
 	// pinax-human-reading-write-v1: a frame carrying writer scopes opens
 	// the supervised writer surface alongside the reader routes; writer
 	// routes still enforce their own scope, so a reader-only session never
@@ -299,7 +277,7 @@ func ServeSupervisedSession(ctx context.Context, options ServeSupervisedSessionO
 	closeStdinOnce := sync.OnceFunc(func() { close(stdinClosed) })
 	illegalInput := make(chan struct{}, 1)
 	go func() {
-		// The bootstrap channel carries EXACTLY ONE frame: after it, stdin
+		// After the bootstrap and optional opted-in recovery grant, stdin
 		// may hold only whitespace until EOF. Any further content — garbage
 		// or another JSON object — is an illegal bootstrap and fails the
 		// session instead of being silently drained.

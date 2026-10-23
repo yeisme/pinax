@@ -479,6 +479,8 @@ type ApplyRequest struct {
 }
 
 type SyncRequest struct {
+	Operation      RemoteOperationIdentity
+	operationID    string
 	VaultPath      string
 	Target         string
 	Yes            bool

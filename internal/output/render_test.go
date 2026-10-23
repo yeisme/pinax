@@ -3,12 +3,34 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/yeisme/pinax/internal/domain"
 )
+
+func TestNarrowSummaryTablePropagatesWriteErrors(t *testing.T) {
+	for _, successfulWrites := range []int{0, 1} {
+		w := &limitedSummaryWriter{remaining: successfulWrites}
+		err := renderSummaryTable(w, summaryTheme{width: 1}, []string{"ID"}, [][]string{{"note-123"}})
+		if !errors.Is(err, io.ErrClosedPipe) {
+			t.Fatalf("after %d writes: error = %v", successfulWrites, err)
+		}
+	}
+}
+
+type limitedSummaryWriter struct{ remaining int }
+
+func (w *limitedSummaryWriter) Write(p []byte) (int, error) {
+	if w.remaining == 0 {
+		return 0, io.ErrClosedPipe
+	}
+	w.remaining--
+	return len(p), nil
+}
 
 func TestSummaryColorModes(t *testing.T) {
 	projection := domain.NewProjection("test.summary", "Color output test.")
@@ -165,7 +187,7 @@ func TestSummaryRendersProjectListAsTable(t *testing.T) {
 		t.Fatalf("render summary: %v", err)
 	}
 	got := summary.String()
-	for _, want := range []string{"Slug", "Name", "Notes prefix", "Description", "history", "History", "notes/history", "Past work", "Current project"} {
+	for _, want := range []string{"ID", "Name", "Notes prefix", "Description", "history", "History", "notes/history", "Past work", "Current project"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("summary missing project table value %q:\n%s", want, got)
 		}

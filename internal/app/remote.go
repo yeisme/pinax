@@ -80,9 +80,16 @@ func RemoteCapabilities() []domain.RemoteCapability {
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "draft.promote", Surfaces: []string{"cli", "rest", "rpc"}, Command: "draft.promote", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.draft.promote.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "draft.archive", Surfaces: []string{"cli", "rest", "rpc"}, Command: "draft.archive", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.draft.archive.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "draft.discard", Surfaces: []string{"cli", "rest", "rpc"}, Command: "draft.discard", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.draft.discard.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition"}},
-		// Sync capabilities
-		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.push", Surfaces: []string{"cli", "rpc"}, Command: "sync.push", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.sync.push.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "cloud_not_configured", "revision_conflict"}},
-		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.pull", Surfaces: []string{"cli", "rpc"}, Command: "sync.pull", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.sync.pull.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "cloud_not_configured", "revision_conflict"}},
+		// Sync control is exposed to the supervised local DriveBridge client as
+		// the same application facts already used by the CLI. DriveBridge is a
+		// consumer of this control plane; it never becomes a Capsa transport.
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.status", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.status", Readonly: true, BodyAllowed: false, UIGroup: "sync.status", BodyExposureDefault: "none", WriteGate: "readonly", RequestSchema: "pinax.sync.status.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"cloud_not_configured", "transport_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.diff", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.diff", Readonly: true, BodyAllowed: false, UIGroup: "sync.plan", BodyExposureDefault: "none", WriteGate: "readonly", RequestSchema: "pinax.sync.diff.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"cloud_not_configured", "revision_conflict"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.push", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.push", Readonly: false, BodyAllowed: false, ApprovalRequired: true, UIGroup: "sync.apply", BodyExposureDefault: "none", WriteGate: "approval", RequestSchema: "pinax.sync.push.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "cloud_not_configured", "revision_conflict", "reconcile_required", "operation_identity_required", "idempotency_conflict", "operation_store_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.pull", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.pull", Readonly: false, BodyAllowed: false, ApprovalRequired: true, UIGroup: "sync.apply", BodyExposureDefault: "none", WriteGate: "approval", RequestSchema: "pinax.sync.pull.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "cloud_not_configured", "revision_conflict", "reconcile_required", "operation_identity_required", "idempotency_conflict", "operation_store_unavailable"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.conflicts.list", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.conflicts.list", Readonly: true, BodyAllowed: false, UIGroup: "sync.conflicts", BodyExposureDefault: "none", WriteGate: "readonly", RequestSchema: "pinax.sync.conflicts.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"vault_not_initialized"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.conflicts.diff", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.conflicts.diff", Readonly: true, BodyAllowed: false, UIGroup: "sync.conflicts", BodyExposureDefault: "none", WriteGate: "readonly", RequestSchema: "pinax.sync.conflicts.diff.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"conflict_not_found", "invalid_conflict_file"}},
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "sync.conflicts.resolve", Surfaces: []string{"cli", "rest", "rpc"}, Command: "sync.conflicts.resolve", Readonly: false, BodyAllowed: false, ApprovalRequired: true, UIGroup: "sync.conflicts", BodyExposureDefault: "none", WriteGate: "approval", RequestSchema: "pinax.sync.conflicts.resolve.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"approval_required", "conflict_not_found", "invalid_conflict_file", "reconcile_required", "operation_identity_required", "idempotency_conflict", "operation_store_unavailable"}},
 		// CLI proof-loop release core capabilities. These are the agent-safe loop
 		// commands that own writes and diagnostics locally. They have no REST/RPC
 		// route by design — agents discover them as metadata and copy the CLI next
@@ -183,11 +190,70 @@ func decorateRemoteCapabilities(caps []domain.RemoteCapability) []domain.RemoteC
 		if cap.CopyCommand == "" {
 			cap.CopyCommand = copyCommandForCapability(*cap)
 		}
+		if cap.ExecutionLocation == "" {
+			cap.ExecutionLocation = executionLocationForCapability(*cap)
+		}
+		if cap.WriteStrategy == "" {
+			cap.WriteStrategy = writeStrategyForCapability(*cap)
+		}
+		if cap.Recovery == nil && capabilityNeedsRecovery(*cap) {
+			cap.Recovery = &domain.RemoteRecoveryContract{
+				IdentityRequired: true,
+				StatusCommand:    "pinax operation show <operation-id> --json",
+				ReconcileCommand: "pinax operation reconcile <operation-id> --json",
+			}
+		}
+		if cap.OwnerAction == nil && cap.LocalOnlyReason != "" {
+			cap.OwnerAction = &domain.RemoteOwnerAction{
+				ExecutionLocation: "client_local",
+				Command:           cap.CopyCommand,
+				Reason:            cap.LocalOnlyReason,
+			}
+		}
 		if releaseCore[cap.ID] {
 			cap.ReleaseCore = true
 		}
 	}
 	return caps
+}
+
+func executionLocationForCapability(cap domain.RemoteCapability) string {
+	if cap.LocalOnlyReason != "" {
+		return "client_local"
+	}
+	for _, surface := range cap.Surfaces {
+		if surface == "rest" || surface == "rpc" {
+			return "remote_service"
+		}
+	}
+	for _, surface := range cap.Surfaces {
+		if surface == "mcp" {
+			return "vault_owner"
+		}
+	}
+	return "client_local"
+}
+
+func writeStrategyForCapability(cap domain.RemoteCapability) string {
+	if cap.Readonly {
+		return "readonly"
+	}
+	if strings.HasPrefix(cap.ID, "writer.") && strings.Contains(cap.ID, ".apply") {
+		return "proposal_then_apply"
+	}
+	if cap.SnapshotRequired {
+		return "snapshot_then_apply"
+	}
+	return "dry_run_then_apply"
+}
+
+func capabilityNeedsRecovery(cap domain.RemoteCapability) bool {
+	for _, code := range cap.Errors {
+		if code == "reconcile_required" || code == "outcome_unknown" || code == "operation_identity_required" {
+			return true
+		}
+	}
+	return false
 }
 
 func webUIGroupForCommand(command, id string) string {
@@ -254,6 +320,13 @@ func RemoteRoutes() []domain.RemoteRoute {
 		remoteRoute("rest.workbench.status", "rest", "GET", "/v1/workbench/status", "", byID["workbench.status"]),
 		remoteRoute("rest.workbench.activity.list", "rest", "GET", "/v1/workbench/activity", "", byID["workbench.activity.list"]),
 		remoteRoute("rest.workbench.activity.show", "rest", "GET", "/v1/workbench/activity/{event_id}", "", byID["workbench.activity.show"]),
+		remoteRoute("rest.sync.status", "rest", "GET", "/v1/sync/status", "", byID["sync.status"]),
+		remoteRoute("rest.sync.diff", "rest", "POST", "/v1/sync:diff", "", byID["sync.diff"]),
+		remoteRoute("rest.sync.push", "rest", "POST", "/v1/sync:push", "", byID["sync.push"]),
+		remoteRoute("rest.sync.pull", "rest", "POST", "/v1/sync:pull", "", byID["sync.pull"]),
+		remoteRoute("rest.sync.conflicts.list", "rest", "GET", "/v1/sync/conflicts", "", byID["sync.conflicts.list"]),
+		remoteRoute("rest.sync.conflicts.diff", "rest", "GET", "/v1/sync/conflicts:diff", "", byID["sync.conflicts.diff"]),
+		remoteRoute("rest.sync.conflicts.resolve", "rest", "POST", "/v1/sync/conflicts:resolve", "", byID["sync.conflicts.resolve"]),
 		remoteRoute("rest.monitor.list", "rest", "GET", "/v1/monitor/runs", "", byID["monitor.list"]),
 		remoteRoute("rest.monitor.show", "rest", "GET", "/v1/monitor/runs/{run_id}", "", byID["monitor.show"]),
 		remoteRoute("rest.monitor.summary", "rest", "GET", "/v1/monitor/summary", "", byID["monitor.summary"]),
@@ -349,6 +422,11 @@ func RemoteRoutes() []domain.RemoteRoute {
 		remoteRoute("rpc.draft.discard", "rpc", "CALL", "", "Pinax.Draft.Discard", byID["draft.discard"]),
 		remoteRoute("rpc.sync.push", "rpc", "CALL", "", "Pinax.Sync.Push", byID["sync.push"]),
 		remoteRoute("rpc.sync.pull", "rpc", "CALL", "", "Pinax.Sync.Pull", byID["sync.pull"]),
+		remoteRoute("rpc.sync.status", "rpc", "CALL", "", "Pinax.Sync.Status", byID["sync.status"]),
+		remoteRoute("rpc.sync.diff", "rpc", "CALL", "", "Pinax.Sync.Diff", byID["sync.diff"]),
+		remoteRoute("rpc.sync.conflicts.list", "rpc", "CALL", "", "Pinax.Sync.Conflicts.List", byID["sync.conflicts.list"]),
+		remoteRoute("rpc.sync.conflicts.diff", "rpc", "CALL", "", "Pinax.Sync.Conflicts.Diff", byID["sync.conflicts.diff"]),
+		remoteRoute("rpc.sync.conflicts.resolve", "rpc", "CALL", "", "Pinax.Sync.Conflicts.Resolve", byID["sync.conflicts.resolve"]),
 	}
 }
 
@@ -362,7 +440,7 @@ func FindRemoteRPCMethod(method string) (domain.RemoteRoute, bool) {
 }
 
 func remoteRoute(routeID, surface, method, path, rpcMethod string, cap domain.RemoteCapability) domain.RemoteRoute {
-	return domain.RemoteRoute{RouteID: routeID, Surface: surface, Method: method, Path: path, RPCMethod: rpcMethod, Command: cap.Command, CapabilityID: cap.ID, SchemaVersion: cap.SchemaVersion, ReleaseCore: cap.ReleaseCore, Readonly: cap.Readonly, BodyAllowed: cap.BodyAllowed, ApprovalRequired: cap.ApprovalRequired, SnapshotRequired: cap.SnapshotRequired, UIGroup: cap.UIGroup, BodyExposureDefault: cap.BodyExposureDefault, WriteGate: cap.WriteGate, CopyCommand: cap.CopyCommand, LocalOnlyReason: cap.LocalOnlyReason, Errors: cap.Errors}
+	return domain.RemoteRoute{RouteID: routeID, Surface: surface, Method: method, Path: path, RPCMethod: rpcMethod, Command: cap.Command, CapabilityID: cap.ID, SchemaVersion: cap.SchemaVersion, ReleaseCore: cap.ReleaseCore, Readonly: cap.Readonly, BodyAllowed: cap.BodyAllowed, ApprovalRequired: cap.ApprovalRequired, SnapshotRequired: cap.SnapshotRequired, UIGroup: cap.UIGroup, BodyExposureDefault: cap.BodyExposureDefault, WriteGate: cap.WriteGate, CopyCommand: cap.CopyCommand, LocalOnlyReason: cap.LocalOnlyReason, ExecutionLocation: cap.ExecutionLocation, WriteStrategy: cap.WriteStrategy, Recovery: cap.Recovery, OwnerAction: cap.OwnerAction, Errors: cap.Errors}
 }
 
 func (s *Service) WorkbenchStatus(ctx context.Context, req APIRequest) (domain.Projection, error) {

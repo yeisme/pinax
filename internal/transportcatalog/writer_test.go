@@ -32,11 +32,20 @@ func TestWriterContract(t *testing.T) {
 		requestSchema  string
 		responseSchema string
 	}{
-		RestWriterCaptureBindingID:       {WriterCaptureCapabilityID, "POST", "/v1/writer/capture", "pinax.writer.capture.request.v1alpha1", "pinax.writer.capture_receipt.v1alpha1"},
-		RestWriterProposeBindingID:       {WriterProposeCapabilityID, "POST", "/v1/writer/proposals", "pinax.writer.propose.request.v1alpha1", "pinax.writer.proposal_preview.v1alpha1"},
-		RestWriterApplyBindingID:         {WriterApplyCapabilityID, "POST", "/v1/writer/proposals:apply", "pinax.writer.apply.request.v1alpha1", "pinax.writer.apply_receipt.v1alpha1"},
-		RestWriterOrganizePlanBindingID:  {WriterOrganizePlanCapabilityID, "POST", "/v1/writer/organize/plan", "pinax.writer.organize_plan.request.v1alpha1", "pinax.writer.organize_plan.v1alpha1"},
-		RestWriterOrganizeApplyBindingID: {WriterOrganizeApplyCapabilityID, "POST", "/v1/writer/organize/apply", "pinax.writer.organize_apply.request.v1alpha1", "pinax.writer.organize_apply_receipt.v1alpha1"},
+		"rest.writer.tags.plan":           {"writer.tags.plan", "POST", "/v1/writer/tags:plan", catalogschema.WriterTagsPlanRequestV1Alpha1, catalogschema.WriterTagsPlanV1Alpha1},
+		"rest.writer.tags.apply":          {"writer.tags.apply", "POST", "/v1/writer/tags:apply", catalogschema.WriterTagsApplyRequestV1Alpha1, catalogschema.WriterTagsReceiptV1Alpha1},
+		"rest.writer.tags.lookup":         {"writer.tags.lookup", "POST", "/v1/writer/tags:lookup", catalogschema.WriterTagsLookupRequestV1Alpha1, catalogschema.WriterTagsReceiptV1Alpha1},
+		"rest.writer.daily.editor_source": {"writer.daily.editor_source", "GET", "/v1/writer/journals/daily/editor-source", catalogschema.WriterDailyEditorSourceRequestV1Alpha1, catalogschema.WriterEditorSourceV1Alpha1},
+		"rest.writer.daily.edit.propose":  {"writer.daily.edit.propose", "POST", "/v1/writer/journals/daily/edit:propose", catalogschema.WriterDailyEditProposeRequestV1Alpha1, catalogschema.WriterDailyEditProposalV1Alpha1},
+		"rest.writer.daily.edit":          {"writer.daily.edit", "POST", "/v1/writer/journals/daily/edit:apply", catalogschema.WriterDailyEditApplyRequestV1Alpha1, catalogschema.WriterApplyReceiptV1Alpha1},
+		RestWriterDailyProposeBindingID:   {WriterDailyProposeCapabilityID, "POST", "/v1/writer/journals/daily:propose", catalogschema.WriterDailyProposeRequestV1Alpha1, catalogschema.WriterDailyProposalV1Alpha1},
+		RestWriterDailyApplyBindingID:     {WriterDailyApplyCapabilityID, "POST", "/v1/writer/journals/daily:apply", catalogschema.WriterDailyApplyRequestV1Alpha1, catalogschema.WriterApplyReceiptV1Alpha1},
+		RestWriterEditorSourceBindingID:   {WriterEditorSourceCapabilityID, "GET", "/v1/writer/notes/{object_id}/editor-source", "pinax.writer.editor_source.request.v1alpha1", "pinax.writer.editor_source.v1alpha1"},
+		RestWriterCaptureBindingID:        {WriterCaptureCapabilityID, "POST", "/v1/writer/capture", "pinax.writer.capture.request.v1alpha1", "pinax.writer.capture_receipt.v1alpha1"},
+		RestWriterProposeBindingID:        {WriterProposeCapabilityID, "POST", "/v1/writer/proposals", "pinax.writer.propose.request.v1alpha1", "pinax.writer.proposal_preview.v1alpha1"},
+		RestWriterApplyBindingID:          {WriterApplyCapabilityID, "POST", "/v1/writer/proposals:apply", "pinax.writer.apply.request.v1alpha1", "pinax.writer.apply_receipt.v1alpha1"},
+		RestWriterOrganizePlanBindingID:   {WriterOrganizePlanCapabilityID, "POST", "/v1/writer/organize/plan", "pinax.writer.organize_plan.request.v1alpha1", "pinax.writer.organize_plan.v1alpha1"},
+		RestWriterOrganizeApplyBindingID:  {WriterOrganizeApplyCapabilityID, "POST", "/v1/writer/organize/apply", "pinax.writer.organize_apply.request.v1alpha1", "pinax.writer.organize_apply_receipt.v1alpha1"},
 	}
 
 	if len(manifest.Capabilities) != len(expectedRoutes) {
@@ -105,6 +114,15 @@ func TestWriterContract(t *testing.T) {
 		readonly, approval, snapshot bool
 		writeGate                    string
 	}{
+		"writer.tags.plan":              {true, false, false, "readonly"},
+		"writer.tags.lookup":            {true, false, false, "readonly"},
+		"writer.tags.apply":             {false, true, true, "approval_and_snapshot"},
+		"writer.daily.editor_source":    {true, false, false, "readonly"},
+		"writer.daily.edit.propose":     {true, false, false, "readonly"},
+		"writer.daily.edit":             {false, true, true, "approval_and_snapshot"},
+		WriterDailyProposeCapabilityID:  {true, false, false, "readonly"},
+		WriterDailyApplyCapabilityID:    {false, true, true, "approval_and_snapshot"},
+		WriterEditorSourceCapabilityID:  {true, false, false, "readonly"},
 		WriterCaptureCapabilityID:       {false, true, false, "write"},
 		WriterProposeCapabilityID:       {true, false, false, "readonly"},
 		WriterApplyCapabilityID:         {false, true, true, "approval_and_snapshot"},

@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/yeisme/pinax/internal/app/syncdaemon"
+	"github.com/yeisme/pinax/internal/domain"
 )
 
 func TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	store := t.TempDir()
 	root := t.TempDir()
@@ -26,8 +27,13 @@ func TestSyncDaemonRunPerformsStartupCycleBeforeFirstTick(t *testing.T) {
 	if _, err := svc.CloudLogin(ctx, CloudLoginRequest{VaultPath: root, Endpoint: "file://" + store, WorkspaceID: "ws", DeviceID: "dev", SecretRef: "test-secret", EncryptionSecretRef: "plain:test-secret"}); err != nil {
 		t.Fatalf("cloud login: %v", err)
 	}
-	time.AfterFunc(250*time.Millisecond, cancel)
-	_, err := svc.SyncDaemonRun(ctx, SyncDaemonRequest{VaultPath: root, Target: "cloud", Yes: true, PollInterval: time.Hour, SyncTimeout: 5 * time.Second})
+	_, err := svc.SyncDaemonRun(ctx, SyncDaemonRequest{VaultPath: root, Target: "cloud", Yes: true, PollInterval: time.Hour, SyncTimeout: 5 * time.Second,
+		LiveEvents: func(event syncdaemon.SyncDaemonEvent) {
+			if event.Type == "push_completed" && event.Trigger == "startup" && event.RemoteWrite {
+				cancel()
+			}
+		},
+	})
 	if err != nil {
 		t.Fatalf("SyncDaemonRun: %v", err)
 	}
@@ -161,6 +167,29 @@ func TestSyncLockStalePidRecovery(t *testing.T) {
 		t.Fatalf("stale lock was not recovered: %v", err)
 	}
 	lock.Release()
+}
+
+func TestSyncOperationLockIncompleteMetadataFailsClosed(t *testing.T) {
+	for _, payload := range []string{"", `{"pid":`, `{"pid":"invalid"}`} {
+		t.Run(payload, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, ".pinax", "sync", "operation.lock")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := syncdaemon.AcquireOperationLock(root, "contender")
+			if domain.ErrorCode(err) != "lock_held" {
+				t.Fatalf("incomplete lock must block with a domain error: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != payload {
+				t.Fatalf("contender modified the existing lock: %q, %v", got, err)
+			}
+		})
+	}
 }
 
 func TestSyncDaemonWatcherDebounce(t *testing.T) {

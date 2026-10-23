@@ -41,37 +41,44 @@ type RouteInfo struct {
 
 // routeGroupMap maps URL path patterns to route groups.
 var routeGroupMap = map[string]RouteInfo{
-	"/":                       {Group: "capabilities", Method: "GET", Readonly: true},
-	"/workbench":              {Group: "capabilities", Method: "GET", Action: "workbench.ui", Readonly: true},
-	"/v1/capabilities":        {Group: "capabilities", Method: "GET", Readonly: true},
-	"/v1/manifest":            {Group: "capabilities", Method: "GET", Action: "transport.manifest", Readonly: true},
-	"/v1/readiness":           {Group: "capabilities", Method: "GET", Action: "connection.readiness", Readonly: true},
-	"/v1/operations/":         {Group: "operations", Method: "GET", Action: "operation.show", Readonly: true},
-	"/v1/workbench/status":    {Group: "capabilities", Method: "GET", Action: "workbench.status", Readonly: true},
-	"/v1/workbench/activity":  {Group: "capabilities", Method: "GET", Action: "activity.list", Readonly: true},
-	"/v1/workbench/activity/": {Group: "capabilities", Method: "GET", Action: "activity.show", Readonly: true},
-	"/v1/monitor/runs":        {Group: "capabilities", Method: "GET", Action: "monitor.runs", Readonly: true},
-	"/v1/monitor/runs/":       {Group: "capabilities", Method: "GET", Action: "monitor.show", Readonly: true},
-	"/v1/monitor/summary":     {Group: "capabilities", Method: "GET", Action: "monitor.summary", Readonly: true},
-	"/v1/folders":             {Group: "folders", Method: "GET", Readonly: true},
-	"/v1/folders/":            {Group: "folders", Method: "GET", Readonly: false},
-	"/v1/folders:repair-plan": {Group: "folders", Method: "POST", Action: "folder.repair", Readonly: true},
-	"/v1/inbox":               {Group: "inbox", Method: "GET", Readonly: true},
-	"/v1/inbox:capture":       {Group: "inbox", Method: "POST", Action: "inbox.capture", Readonly: false},
-	"/v1/inbox/":              {Group: "inbox", Method: "GET", Readonly: false},
-	"/v1/drafts":              {Group: "drafts", Method: "GET", Readonly: true},
-	"/v1/drafts/":             {Group: "drafts", Method: "GET", Readonly: false},
-	"/v1/notes/":              {Group: "notes", Method: "GET", Readonly: true},
-	"/v1/project-items/":      {Group: "projects", Method: "POST", Readonly: true},
-	"/v1/tasks/":              {Group: "tasks", Method: "POST", Action: "task.adopt", Readonly: true},
-	"/v1/database/views/":     {Group: "database", Method: "GET", Action: "database.view.render", Readonly: true},
-	"/v1/graph/summary":       {Group: "graph", Method: "GET", Action: "graph.summary", Readonly: true},
-	"/v1/memory":              {Group: "memory", Method: "GET", Action: "memory.list", Readonly: true},
-	"/v1/memory:capture":      {Group: "memory", Method: "POST", Action: "memory.capture", Readonly: false},
-	"/v1/memory:recall":       {Group: "memory", Method: "GET", Action: "memory.recall", Readonly: true},
-	"/v1/memory:context":      {Group: "memory", Method: "GET", Action: "memory.context", Readonly: true},
-	"/v1/memory:stats":        {Group: "memory", Method: "GET", Action: "memory.stats", Readonly: true},
-	"/v1/projects/":           {Group: "projects", Method: "GET", Readonly: true},
+	"/":                          {Group: "capabilities", Method: "GET", Readonly: true},
+	"/workbench":                 {Group: "capabilities", Method: "GET", Action: "workbench.ui", Readonly: true},
+	"/v1/capabilities":           {Group: "capabilities", Method: "GET", Readonly: true},
+	"/v1/manifest":               {Group: "capabilities", Method: "GET", Action: "transport.manifest", Readonly: true},
+	"/v1/readiness":              {Group: "capabilities", Method: "GET", Action: "connection.readiness", Readonly: true},
+	"/v1/operations/":            {Group: "operations", Method: "GET", Action: "operation.show", Readonly: true},
+	"/v1/workbench/status":       {Group: "capabilities", Method: "GET", Action: "workbench.status", Readonly: true},
+	"/v1/workbench/activity":     {Group: "capabilities", Method: "GET", Action: "activity.list", Readonly: true},
+	"/v1/workbench/activity/":    {Group: "capabilities", Method: "GET", Action: "activity.show", Readonly: true},
+	"/v1/sync/status":            {Group: "sync", Method: "GET", Action: "sync.status", Readonly: true},
+	"/v1/sync:diff":              {Group: "sync", Method: "POST", Action: "sync.diff", Readonly: true},
+	"/v1/sync:push":              {Group: "sync", Method: "POST", Action: "sync.push", Readonly: false},
+	"/v1/sync:pull":              {Group: "sync", Method: "POST", Action: "sync.pull", Readonly: false},
+	"/v1/sync/conflicts":         {Group: "sync", Method: "GET", Action: "sync.conflicts.list", Readonly: true},
+	"/v1/sync/conflicts:diff":    {Group: "sync", Method: "GET", Action: "sync.conflicts.diff", Readonly: true},
+	"/v1/sync/conflicts:resolve": {Group: "sync", Method: "POST", Action: "sync.conflicts.resolve", Readonly: false},
+	"/v1/monitor/runs":           {Group: "capabilities", Method: "GET", Action: "monitor.runs", Readonly: true},
+	"/v1/monitor/runs/":          {Group: "capabilities", Method: "GET", Action: "monitor.show", Readonly: true},
+	"/v1/monitor/summary":        {Group: "capabilities", Method: "GET", Action: "monitor.summary", Readonly: true},
+	"/v1/folders":                {Group: "folders", Method: "GET", Readonly: true},
+	"/v1/folders/":               {Group: "folders", Method: "GET", Readonly: false},
+	"/v1/folders:repair-plan":    {Group: "folders", Method: "POST", Action: "folder.repair", Readonly: true},
+	"/v1/inbox":                  {Group: "inbox", Method: "GET", Readonly: true},
+	"/v1/inbox:capture":          {Group: "inbox", Method: "POST", Action: "inbox.capture", Readonly: false},
+	"/v1/inbox/":                 {Group: "inbox", Method: "GET", Readonly: false},
+	"/v1/drafts":                 {Group: "drafts", Method: "GET", Readonly: true},
+	"/v1/drafts/":                {Group: "drafts", Method: "GET", Readonly: false},
+	"/v1/notes/":                 {Group: "notes", Method: "GET", Readonly: true},
+	"/v1/project-items/":         {Group: "projects", Method: "POST", Readonly: true},
+	"/v1/tasks/":                 {Group: "tasks", Method: "POST", Action: "task.adopt", Readonly: true},
+	"/v1/database/views/":        {Group: "database", Method: "GET", Action: "database.view.render", Readonly: true},
+	"/v1/graph/summary":          {Group: "graph", Method: "GET", Action: "graph.summary", Readonly: true},
+	"/v1/memory":                 {Group: "memory", Method: "GET", Action: "memory.list", Readonly: true},
+	"/v1/memory:capture":         {Group: "memory", Method: "POST", Action: "memory.capture", Readonly: false},
+	"/v1/memory:recall":          {Group: "memory", Method: "GET", Action: "memory.recall", Readonly: true},
+	"/v1/memory:context":         {Group: "memory", Method: "GET", Action: "memory.context", Readonly: true},
+	"/v1/memory:stats":           {Group: "memory", Method: "GET", Action: "memory.stats", Readonly: true},
+	"/v1/projects/":              {Group: "projects", Method: "GET", Readonly: true},
 }
 
 type auditStatusRecorder struct {
@@ -159,6 +166,24 @@ func lookupRouteInfo(path string, method string) (RouteInfo, bool) {
 	}
 	if strings.HasPrefix(path, "/v1/workbench/activity/") {
 		return routeGroupMap["/v1/workbench/activity/"], true
+	}
+	if strings.HasPrefix(path, "/v1/sync/conflicts") {
+		if strings.HasPrefix(path, "/v1/sync/conflicts:resolve") {
+			return routeGroupMap["/v1/sync/conflicts:resolve"], true
+		}
+		if strings.HasPrefix(path, "/v1/sync/conflicts:diff") {
+			return routeGroupMap["/v1/sync/conflicts:diff"], true
+		}
+		return routeGroupMap["/v1/sync/conflicts"], true
+	}
+	if strings.HasPrefix(path, "/v1/sync:") {
+		if strings.HasPrefix(path, "/v1/sync:push") {
+			return routeGroupMap["/v1/sync:push"], true
+		}
+		if strings.HasPrefix(path, "/v1/sync:pull") {
+			return routeGroupMap["/v1/sync:pull"], true
+		}
+		return routeGroupMap["/v1/sync:diff"], true
 	}
 	if strings.HasPrefix(path, "/v1/monitor/runs/") {
 		return routeGroupMap["/v1/monitor/runs/"], true

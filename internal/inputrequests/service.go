@@ -251,6 +251,9 @@ func (s *Service) Preview(ctx context.Context, who intake.Identity, id, conflict
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return Preview{}, err
 	}
+	if v.Purpose == "attachment" {
+		return s.legacyAttachmentPreview(ctx, who, id, note, confirm, expected)
+	}
 	// Copy into a server-owned per-request directory so user names cannot escape staging.
 	dir := filepath.Join(s.root, ".pinax", "input-files", id+"-import")
 	if e = os.MkdirAll(dir, 0700); e != nil {
@@ -298,17 +301,6 @@ func (s *Service) Preview(ctx context.Context, who intake.Identity, id, conflict
 			targetDigests = append(targetDigests, hex.EncodeToString(h.Sum(nil)))
 		}
 		plan = items
-	} else {
-		if note == "" {
-			return Preview{}, intake.ErrInvalid
-		}
-		resolved, err := s.app.ShowNote(ctx, app.ShowNoteRequest{VaultPath: s.root, NoteRef: note})
-		if err != nil {
-			return Preview{}, err
-		}
-		h := sha256.Sum256([]byte(resolved.Body))
-		targetDigests = append(targetDigests, hex.EncodeToString(h[:]))
-		plan = map[string]any{"note_ref": resolved.ID, "attachment": v.File.Name}
 	}
 	raw, _ := json.Marshal([]any{id, v.File.SHA256, conflict, note, projection.Data, targetDigests})
 	h := sha256.Sum256(raw)
@@ -325,11 +317,7 @@ func (s *Service) Preview(ctx context.Context, who intake.Identity, id, conflict
 	if e = s.repo.db.WithContext(ctx).Create(&claim).Error; e != nil {
 		return Preview{}, intake.ErrConflict
 	}
-	if v.Purpose == "markdown" {
-		projection, e = s.app.ImportMarkdown(ctx, app.ImportMarkdownRequest{VaultPath: s.root, Source: source, Conflict: conflict, Yes: true})
-	} else {
-		projection, e = s.app.AttachNoteFile(ctx, app.NoteAttachRequest{VaultPath: s.root, NoteRef: note, SourcePath: source, Mode: "copy"})
-	}
+	projection, e = s.app.ImportMarkdown(ctx, app.ImportMarkdownRequest{VaultPath: s.root, Source: source, Conflict: conflict, Yes: true})
 	if e != nil {
 		return Preview{}, e
 	}

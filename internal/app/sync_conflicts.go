@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
 )
 
@@ -22,12 +23,14 @@ type SyncConflictFileRequest struct {
 }
 
 type SyncConflictResolveRequest struct {
-	VaultPath  string
-	File       string
-	KeepLocal  bool
-	KeepRemote bool
-	MergedPath string
-	Yes        bool
+	Operation   RemoteOperationIdentity
+	operationID string
+	VaultPath   string
+	File        string
+	KeepLocal   bool
+	KeepRemote  bool
+	MergedPath  string
+	Yes         bool
 }
 
 func (s *Service) SyncConflictsList(_ context.Context, req SyncConflictsListRequest) (domain.Projection, error) {
@@ -86,7 +89,28 @@ func (s *Service) syncConflictInspect(command string, req SyncConflictFileReques
 	return projection, nil
 }
 
-func (s *Service) SyncConflictsResolve(_ context.Context, req SyncConflictResolveRequest) (domain.Projection, error) {
+func (s *Service) SyncConflictsResolve(ctx context.Context, req SyncConflictResolveRequest) (domain.Projection, error) {
+	if !req.Yes {
+		return s.syncConflictsResolveLocked(req)
+	}
+	root, err := cleanVaultPath(req.VaultPath)
+	if err != nil {
+		return errorProjection("sync.conflicts.resolve", err), err
+	}
+	lock, err := syncdaemon.AcquireOperationLock(root, "sync.conflicts.resolve")
+	if err != nil {
+		return commandErrorProjection("sync.conflicts.resolve", err)
+	}
+	defer lock.Release()
+	return s.syncOperationLocked(ctx, root, "sync.conflicts.resolve", req.Operation, map[string]any{
+		"file": req.File, "keep_local": req.KeepLocal, "keep_remote": req.KeepRemote, "merged_path": req.MergedPath,
+	}, func(operationID string) (domain.Projection, error) {
+		req.operationID = operationID
+		return s.syncConflictsResolveLocked(req)
+	})
+}
+
+func (s *Service) syncConflictsResolveLocked(req SyncConflictResolveRequest) (domain.Projection, error) {
 	root, entry, err := resolveSyncConflictEntry(req.VaultPath, req.File)
 	if err != nil {
 		return errorProjection("sync.conflicts.resolve", err), err
@@ -142,7 +166,7 @@ func (s *Service) SyncConflictsResolve(_ context.Context, req SyncConflictResolv
 			return errorProjection("sync.conflicts.resolve", err), err
 		}
 	}
-	receipt, err := writeSyncConflictResolutionReceipt(root, entry, resolution)
+	receipt, err := writeSyncConflictResolutionReceipt(root, entry, resolution, req.operationID)
 	if err != nil {
 		return errorProjection("sync.conflicts.resolve", err), err
 	}
@@ -291,9 +315,12 @@ func syncConflictResolution(req SyncConflictResolveRequest) (string, *domain.Com
 	return resolution, nil
 }
 
-func writeSyncConflictResolutionReceipt(root string, entry domain.SyncConflictEntry, resolution string) (domain.SyncConflictResolutionReceipt, error) {
+func writeSyncConflictResolutionReceipt(root string, entry domain.SyncConflictEntry, resolution, operationID string) (domain.SyncConflictResolutionReceipt, error) {
 	rel := filepath.ToSlash(filepath.Join(".pinax", "sync-conflicts", "receipts", time.Now().UTC().Format("20060102150405.000000000")+".json"))
-	receipt := domain.SyncConflictResolutionReceipt{SchemaVersion: "pinax.sync_conflict_resolution.v1", Command: "sync.conflicts.resolve", Status: "resolved", ConflictFile: entry.File, MainPath: entry.MainPath, Resolution: resolution, ReceiptPath: rel, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	if operationID != "" {
+		rel = syncConflictOperationReceiptPath(operationID)
+	}
+	receipt := domain.SyncConflictResolutionReceipt{OperationID: operationID, SchemaVersion: "pinax.sync_conflict_resolution.v1", Command: "sync.conflicts.resolve", Status: "resolved", ConflictFile: entry.File, MainPath: entry.MainPath, Resolution: resolution, ReceiptPath: rel, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	return receipt, writeJSONAsset(filepath.Join(root, filepath.FromSlash(rel)), receipt)
 }
 

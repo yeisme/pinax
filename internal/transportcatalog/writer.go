@@ -10,12 +10,14 @@ package transportcatalog
 // writes, operation.show/reconcile and sync keep their existing contracts and
 // are never duplicated here.
 const (
+	WriterEditorSourceCapabilityID  = "writer.editor_source"
 	WriterCaptureCapabilityID       = "writer.capture"
 	WriterProposeCapabilityID       = "writer.propose"
 	WriterApplyCapabilityID         = "writer.apply"
 	WriterOrganizePlanCapabilityID  = "writer.organize.plan"
 	WriterOrganizeApplyCapabilityID = "writer.organize.apply"
 
+	RestWriterEditorSourceBindingID  = "rest.writer.editor_source"
 	RestWriterCaptureBindingID       = "rest.writer.capture"
 	RestWriterProposeBindingID       = "rest.writer.propose"
 	RestWriterApplyBindingID         = "rest.writer.apply"
@@ -35,7 +37,16 @@ const (
 // caller-asserted authorization (never a verified approval) and snapshots
 // before mutating existing notes; organize apply is approval_and_snapshot.
 func WriterCapabilityDefinitions() []CapabilityDefinition {
-	return []CapabilityDefinition{
+	return append(append(append(writerTagsCapabilities(), writerDailyEditCapabilities()...), writerDailyCapabilities()...), []CapabilityDefinition{
+		{
+			ID: WriterEditorSourceCapabilityID, Command: WriterEditorSourceCapabilityID,
+			Readonly: true, BodyAllowed: true,
+			UIGroup: "human.writing", BodyExposureDefault: "explicit", WriteGate: "readonly",
+			RequestSchema:  "pinax.writer.editor_source.request.v1alpha1",
+			ResponseSchema: "pinax.writer.editor_source.v1alpha1",
+			Errors:         []string{"insufficient_scope", "writer_disabled", "writer_request_invalid", "method_not_allowed", "writer_unavailable", "token_required", "invalid_token", "loopback_required", "source_changed", "revision_conflict", "body_too_large", "body_invalid", "unsafe_path", "note_not_found", "note_identity_ambiguous"},
+			Stability:      StabilityExperimental,
+		},
 		{
 			ID: WriterCaptureCapabilityID, Command: WriterCaptureCapabilityID,
 			Readonly: false, BodyAllowed: true,
@@ -120,11 +131,11 @@ func WriterCapabilityDefinitions() []CapabilityDefinition {
 			},
 			Stability: StabilityExperimental,
 		},
-	}
+	}...)
 }
 
 // WriterTransportBindings returns the REST bindings for the supervised
-// write surface: POST-only writer routes under the human session, backed by
+// write surface under the human session, backed by
 // real HTTP handlers since W02-W04 and registered available with component
 // evidence at W06. Each binding names its HTTP handler backing so manifest
 // consumers can trace availability to implementation.
@@ -150,7 +161,11 @@ func WriterTransportBindings() []TransportBinding {
 			},
 		}
 	}
-	return []TransportBinding{
+	editorSource := bound(RestWriterEditorSourceBindingID, WriterEditorSourceCapabilityID, "GET", "/v1/writer/notes/{object_id}/editor-source",
+		"pinax.writer.editor_source.request.v1alpha1", "pinax.writer.editor_source.v1alpha1", true, "readonly")
+	editorSource.Readiness.EvidenceRefs = []string{"test:TestWriterEditorSource", "test:TestWriterEditorSourceClient"}
+	return append(append(append(writerTagsBindings(), writerDailyEditBindings()...), writerDailyBindings()...), []TransportBinding{
+		editorSource,
 		bound(RestWriterCaptureBindingID, WriterCaptureCapabilityID, "POST", "/v1/writer/capture",
 			"pinax.writer.capture.request.v1alpha1", "pinax.writer.capture_receipt.v1alpha1", false, "write"),
 		bound(RestWriterProposeBindingID, WriterProposeCapabilityID, "POST", "/v1/writer/proposals",
@@ -161,7 +176,7 @@ func WriterTransportBindings() []TransportBinding {
 			"pinax.writer.organize_plan.request.v1alpha1", "pinax.writer.organize_plan.v1alpha1", true, "readonly"),
 		bound(RestWriterOrganizeApplyBindingID, WriterOrganizeApplyCapabilityID, "POST", "/v1/writer/organize/apply",
 			"pinax.writer.organize_apply.request.v1alpha1", "pinax.writer.organize_apply_receipt.v1alpha1", false, "approval_and_snapshot"),
-	}
+	}...)
 }
 
 // WriterDeclaredSurfaces declares the REST surface for writer capabilities.

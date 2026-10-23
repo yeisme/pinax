@@ -46,16 +46,17 @@ func (s *ReaderSession) HasScope(scope string) bool {
 
 // Expired reports whether the session passed its deadline.
 func (s *ReaderSession) Expired() bool {
-	return !s.ExpiresAt.IsZero() && time.Now().UTC().After(s.ExpiresAt)
+	return !s.ExpiresAt.IsZero() && !time.Now().UTC().Before(s.ExpiresAt)
 }
 
 // ReaderSessionStore keeps bearer digests in process memory. Secrets are
 // hashed at rest and never persisted.
 type ReaderSessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*ReaderSession // bearer digest -> session
-	byID     map[string]string         // session id -> bearer digest
-	secret   []byte                    // cursor signing secret
+	mu         sync.RWMutex
+	sessions   map[string]*ReaderSession       // bearer digest -> session
+	byID       map[string]string               // session id -> bearer digest
+	secret     []byte                          // cursor signing secret
+	recoveries map[string]*app.RecoverySession // private owner recovery objects
 }
 
 // NewReaderSessionStore creates an empty in-memory registry with a random
@@ -66,9 +67,10 @@ func NewReaderSessionStore() (*ReaderSessionStore, error) {
 		return nil, err
 	}
 	return &ReaderSessionStore{
-		sessions: make(map[string]*ReaderSession),
-		byID:     make(map[string]string),
-		secret:   []byte(bearer),
+		sessions:   make(map[string]*ReaderSession),
+		byID:       make(map[string]string),
+		secret:     []byte(bearer),
+		recoveries: make(map[string]*app.RecoverySession),
 	}, nil
 }
 
@@ -88,6 +90,10 @@ func (s *ReaderSessionStore) Create(session ReaderSession, bearer string) error 
 	if _, exists := s.byID[session.SessionID]; exists {
 		return fmt.Errorf("reader session %q already exists", session.SessionID)
 	}
+	if _, exists := s.sessions[digest]; exists {
+		return fmt.Errorf("reader bearer is already registered")
+	}
+	session.Scopes = append([]string(nil), session.Scopes...)
 	s.sessions[digest] = &session
 	s.byID[session.SessionID] = digest
 	return nil
@@ -96,22 +102,34 @@ func (s *ReaderSessionStore) Create(session ReaderSession, bearer string) error 
 // Verify resolves a bearer to its live session.
 func (s *ReaderSessionStore) Verify(bearer string) (*ReaderSession, error) {
 	digest := readerBearerDigest(bearer)
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	session, ok := s.sessions[digest]
-	s.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("invalid reader session")
 	}
 	if session.Expired() {
+		s.revokeLocked(session.SessionID)
 		return nil, fmt.Errorf("reader session expired")
 	}
-	return session, nil
+	copy := *session
+	copy.Scopes = append([]string(nil), session.Scopes...)
+	return &copy, nil
 }
 
 // Revoke removes a session by ID.
 func (s *ReaderSessionStore) Revoke(sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.revokeLocked(sessionID)
+}
+
+// revokeLocked keeps registry and owner grants in the same revocation order.
+func (s *ReaderSessionStore) revokeLocked(sessionID string) {
+	if recovery := s.recoveries[sessionID]; recovery != nil {
+		recovery.Revoke()
+		delete(s.recoveries, sessionID)
+	}
 	if digest, ok := s.byID[sessionID]; ok {
 		delete(s.sessions, digest)
 		delete(s.byID, sessionID)

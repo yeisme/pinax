@@ -12,7 +12,7 @@ import (
 // schema using the keyword subset the frozen contracts use: type (incl.
 // type arrays), properties, required, additionalProperties:false, items,
 // enum, const, minLength/maxLength, minimum/maximum, uniqueItems, pattern
-// and $ref. Real HTTP payloads are validated through this gate so the
+// oneOf and $ref. Real HTTP payloads are validated through this gate so the
 // generated consumer types never drift from the served wire format.
 func ValidatePayload(registry *Registry, schemaID string, value any) error {
 	schema, ok := registry.Lookup(schemaID)
@@ -34,6 +34,24 @@ func validateValue(registry *Registry, schema any, value any, path string) error
 			return fmt.Errorf("%s: dangling reference %q", path, ref)
 		}
 		return validateValue(registry, resolved, value, path)
+	}
+	if branches, present := node["oneOf"]; present {
+		choices, ok := branches.([]any)
+		if !ok || len(choices) == 0 {
+			return fmt.Errorf("%s: invalid oneOf schema", path)
+		}
+		matches := 0
+		for _, choice := range choices {
+			if _, ok := choice.(map[string]any); !ok {
+				return fmt.Errorf("%s: invalid oneOf branch", path)
+			}
+			if validateValue(registry, choice, value, path) == nil {
+				matches++
+			}
+		}
+		if matches != 1 {
+			return fmt.Errorf("%s: oneOf matched %d branches, expected one", path, matches)
+		}
 	}
 	if allowed := stringList(node["enum"]); allowed != nil {
 		if !containsValue(allowed, value) {

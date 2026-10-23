@@ -115,11 +115,112 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 	// the implemented writer operations. Removing the writer paths, writer
 	// schema components and the W02 bootstrap evolution must restore the
 	// pre-writer digest exactly.
-	const wantDigest = "sha256:bc8cc6059608d03a73fa92cccaaf6bc9024610cb95405a5f87ca0616acb9abd4"
+	// The sync-control routes are the additive DriveBridge consumer contract.
+	const wantDigest = "sha256:792537ecc26d6778ed0eb09496821b8be3d8dd6c08d4caf448ca1cd8d6ea3519"
 	if digest != wantDigest {
 		t.Fatalf("OpenAPI golden digest = %q, want %q", digest, wantDigest)
 	}
+	for _, path := range []string{"/v1/sync/status", "/v1/sync:diff", "/v1/sync:push", "/v1/sync:pull", "/v1/sync/conflicts", "/v1/sync/conflicts:diff", "/v1/sync/conflicts:resolve"} {
+		delete(roundTripped["paths"].(map[string]any), path)
+	}
+	for id := range roundTripped["components"].(map[string]any)["schemas"].(map[string]any) {
+		if strings.HasPrefix(id, "pinax.sync.") && id != "pinax.sync.logs.status.request.v1" {
+			delete(roundTripped["components"].(map[string]any)["schemas"].(map[string]any), id)
+		}
+	}
+	delete(roundTripped["paths"].(map[string]any), "/v1/reader/recovery/operation")
+	delete(roundTripped["components"].(map[string]any)["schemas"].(map[string]any), catalogschema.ReaderRecoveryLookupRequestV1Alpha1)
+	preRecovery, err := OpenAPIDigest(roundTripped)
+	if err != nil || preRecovery != "sha256:127fe7b474db1e7609dfff82fe5dcf69a5be3e75e7941f9775fb9f6ad31240c1" {
+		t.Fatal("OpenAPI changed beyond recovery lookup", preRecovery, err)
+	}
+	delete(roundTripped["paths"].(map[string]any), "/v1/reader/notes/{object_id}/composed-document")
+	preComposedRoute, err := OpenAPIDigest(roundTripped)
+	if err != nil || preComposedRoute != "sha256:21820196e4db286959a2683190c170f8d8dbb431a5f147e1763d40ed848aa860" {
+		t.Fatal("OpenAPI changed beyond composed route", preComposedRoute, err)
+	}
+	composedComponents := roundTripped["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, id := range []string{catalogschema.ReaderComposedRequestV1Alpha1, catalogschema.ReaderEmbedTargetV1Alpha1, catalogschema.ReaderEmbedV1Alpha1, catalogschema.ReaderNodeOriginV1Alpha1, catalogschema.ReaderComposedDocumentV1Alpha1} {
+		delete(composedComponents, id)
+	}
+	preComposed, err := OpenAPIDigest(roundTripped)
+	if err != nil || preComposed != "sha256:0e316364bebc98fa1ce37eec0c7530805d5856c97cbd489db0bb661c0e84cdda" {
+		t.Fatal("OpenAPI changed beyond composed schemas", preComposed, err)
+	}
+	// The notebook source is additive: removing only its path and schemas
+	// must restore the exact previous writer/reader/legacy contract.
+	delete(roundTripped["paths"].(map[string]any), "/v1/reader/notes/{object_id}/rich-document")
+	preRichRoute, err := OpenAPIDigest(roundTripped)
+	if err != nil || preRichRoute != "sha256:9cbc3954185266e3246e7b50bbd0c98740b1217c83ccc4ccf429d932b1e7d4d9" {
+		t.Fatal("OpenAPI changed beyond rich route", preRichRoute, err)
+	}
+	richComponents := roundTripped["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, id := range []string{catalogschema.ReaderRichDocumentRequestV1Alpha1, catalogschema.ReaderRichAnnotationV1Alpha1, catalogschema.ReaderRichDocumentV1Alpha1} {
+		delete(richComponents, id)
+	}
+	preRich, err := OpenAPIDigest(roundTripped)
+	if err != nil || preRich != "sha256:56e5577a782ed83614a7b0cb234fa1e1fe2646e6552342d8948ff6c8fc9d7cab" {
+		t.Fatal("OpenAPI changed beyond rich schemas", preRich, err)
+	}
 	paths := roundTripped["paths"].(map[string]any)
+	for _, path := range []string{"/v1/writer/tags:plan", "/v1/writer/tags:apply", "/v1/writer/tags:lookup"} {
+		delete(paths, path)
+	}
+	preTagRoutes, err := OpenAPIDigest(roundTripped)
+	if err != nil || preTagRoutes != "sha256:904b2cde178840262dadcec796de974ef6e7c7b3152f61f7575eb87c59f89c4c" {
+		t.Fatal("OpenAPI changed beyond tag routes", preTagRoutes, err)
+	}
+	components := roundTripped["components"].(map[string]any)["schemas"].(map[string]any)
+	for _, id := range []string{catalogschema.WriterTagsPlanRequestV1Alpha1, catalogschema.WriterTagsPlanV1Alpha1, catalogschema.WriterTagsApplyRequestV1Alpha1, catalogschema.WriterTagsLookupRequestV1Alpha1, catalogschema.WriterTagsReceiptV1Alpha1} {
+		delete(components, id)
+	}
+	preTags, err := OpenAPIDigest(roundTripped)
+	if err != nil || preTags != "sha256:79473f6d2313e13942f2c252b60ea295285b33d067886491f7451200b8ed3d15" {
+		t.Fatal("OpenAPI changed beyond tag schemas", preTags, err)
+	}
+	for _, path := range []string{"/v1/writer/journals/daily/editor-source", "/v1/writer/journals/daily/edit:propose", "/v1/writer/journals/daily/edit:apply"} {
+		delete(paths, path)
+	}
+	for _, id := range []string{catalogschema.WriterDailyEditorSourceRequestV1Alpha1, catalogschema.WriterDailyEditProposeRequestV1Alpha1, catalogschema.WriterDailyEditProposalV1Alpha1, catalogschema.WriterDailyEditApplyRequestV1Alpha1} {
+		delete(components, id)
+	}
+	preDailyEdit, err := OpenAPIDigest(roundTripped)
+	if err != nil || preDailyEdit != "sha256:d7117ab0a11baf434e833d66ba3d2311e007695d96b7a87265662b0c848d10e1" {
+		t.Fatal("OpenAPI changed beyond daily edit", preDailyEdit, err)
+	}
+	delete(paths, "/v1/reader/journals/daily/document")
+	delete(components, catalogschema.ReaderDailyDocumentRequestV1Alpha1)
+	preDailyDocument, err := OpenAPIDigest(roundTripped)
+	if err != nil || preDailyDocument != "sha256:aec005c500eff8f993d3ed18f6d2c099745bef834e8f1cab3d5a7abce5b6cf2e" {
+		t.Fatal("OpenAPI changed beyond daily document", preDailyDocument, err)
+	}
+	delete(paths, "/v1/writer/journals/daily:propose")
+	delete(paths, "/v1/writer/journals/daily:apply")
+	for _, id := range []string{"pinax.writer.daily_propose.request.v1alpha1", "pinax.writer.daily_apply.request.v1alpha1", "pinax.writer.daily_proposal.v1alpha1"} {
+		delete(components, id)
+	}
+	preDailyDigest, err := OpenAPIDigest(roundTripped)
+	if err != nil || preDailyDigest != "sha256:5279a91d607e0039a514576424a699aa977ea143965c1edf8e7e7342cbdac6f6" {
+		t.Fatal("OpenAPI changed beyond the admitted daily write paths and schemas", err)
+	}
+	for _, path := range []string{"/v1/reader/tags", "/v1/reader/graph", "/v1/reader/journals/daily"} {
+		delete(paths, path)
+	}
+	for _, id := range []string{"tags", "graph", "daily"} {
+		delete(components, "pinax.reader."+id+".v1alpha1")
+		delete(components, "pinax.reader."+id+".request.v1alpha1")
+	}
+	preNavigationDigest, err := OpenAPIDigest(roundTripped)
+	if err != nil || preNavigationDigest != "sha256:af9d7f3caca6268ed54f56de14175419d16ce0ce0cdf365c5dc78c3b6d57bff3" {
+		t.Fatal("OpenAPI changed beyond the admitted navigation paths and schemas", err)
+	}
+	delete(paths, "/v1/writer/notes/{object_id}/editor-source")
+	delete(components, "pinax.writer.editor_source.v1alpha1")
+	delete(components, "pinax.writer.editor_source.request.v1alpha1")
+	preEditorDigest, err := OpenAPIDigest(roundTripped)
+	if err != nil || preEditorDigest != "sha256:7414054277f21ea2c48461c2f7b29fe8ad7e74310320d1e8f846b0dc50ecacfd" {
+		t.Fatal("OpenAPI changed beyond the admitted editor source path and schemas", err)
+	}
 	for path := range paths {
 		if strings.HasPrefix(path, "/v1/writer/") {
 			delete(paths, path)
@@ -139,7 +240,7 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 	bootstrapItems := bootstrapScopes["items"].(map[string]any)
 	bootstrapItems["enum"] = []string{"reader.metadata", "reader.body", "reader.relations", "reader.assets"}
 	preWriterDigest, err := OpenAPIDigest(roundTripped)
-	if err != nil || preWriterDigest != "sha256:07458efaaffb4473eee6eb2582b61948584510f3e9b10a044dc83d21f54811ed" {
+	if err != nil || preWriterDigest != "sha256:7857d6eebaf0b0eb6243ab550328ca56a8e0897af4d9d94ab9127a51a27ff5d8" {
 		t.Fatal("OpenAPI changed beyond the admitted writer paths, schema components and bootstrap evolution", err)
 	}
 	// pinax-human-reading-api-v1 P06 registers the implemented reader
@@ -164,7 +265,7 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 		}
 	}
 	preReaderDigest, err := OpenAPIDigest(roundTripped)
-	if err != nil || preReaderDigest != "sha256:cb01a21303e2d7736bf742b439c82ad75dc8f70ef1eceeedc9a7a9ce7b2360ef" {
+	if err != nil || preReaderDigest != "sha256:44b9aca4d32411e1d8cb608948a9a090c427899de14fa9f7c17e2ced3e2a73c8" {
 		t.Fatal("OpenAPI changed beyond the admitted reader paths and schema components", err)
 	}
 	// Remove only this change's optional MCP parameters and preserve both older
@@ -177,7 +278,7 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 	}
 	delete(proposalProps["proposal_id"].(map[string]any), "minLength")
 	previousDigest, err := OpenAPIDigest(roundTripped)
-	if err != nil || previousDigest != "sha256:bddeeb9ad35a81ef0dc62c3e6d5851ade0c3942689ce42784aa46821bce688c7" {
+	if err != nil || previousDigest != "sha256:03d6f033fd8f20aa13518c37b3dd06121254415a648a55ece4031df5ae868d55" {
 		t.Fatal("OpenAPI changed beyond admitted optional MCP parameters", err)
 	}
 	for _, id := range []string{"pinax.agent.note_proposals.request.v1alpha1", "pinax.render_note.request.v1alpha1"} {
@@ -187,7 +288,7 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 		delete(schemas, id)
 	}
 	legacyDigest, err := OpenAPIDigest(roundTripped)
-	if err != nil || legacyDigest != "sha256:e6a61ee97fadb7258290533f591b91e5319a771d893da1ee9753f6d4e3ee577f" {
+	if err != nil || legacyDigest != "sha256:8495dad290fb5d2e745a571f65fce98c81075d931e07c40c44947e53e0364556" {
 		t.Fatal("existing OpenAPI changed beyond the two admitted components", err)
 	}
 }

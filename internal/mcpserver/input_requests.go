@@ -35,7 +35,7 @@ func inputTools() []Tool {
 		}
 		result = append(result, Tool{Name: "pinax.input." + op, Description: "Explicitly enabled file input. Upload returns a staged reference; preview and confirm separately before importing a note or attaching a file.", Readonly: op == "status", InputSchema: map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}})
 	}
-	return result
+	return append(result, inputAttachmentTools()...)
 }
 func (s *Server) inputResource(req Request) Response {
 	var caps map[string]any
@@ -88,6 +88,8 @@ func (s *Server) inputCall(ctx context.Context, req Request) (Response, error) {
 	var access intake.Access
 	var err error
 	switch strings.TrimPrefix(name, "pinax.input.") {
+	case "attachment.preview", "attachment.apply", "attachment.status", "attachment.reconcile":
+		value, err = s.inputAttachmentCall(ctx, name, raw, who)
 	case "prepare":
 		access, err = s.input.Prepare(ctx, who, intake.Prepare{Purpose: input.Purpose, IdempotencyKey: input.Key, File: input.File})
 		value = access.Request

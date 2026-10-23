@@ -25,6 +25,7 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	var exposeGroups string
 	var hideGroups string
 	var sessionStdin bool
+	var sessionRecoveryStdin bool
 	newSchemaCmd := func(example string) *cobra.Command {
 		var schemaFormat string
 		schemaCmd := &cobra.Command{Use: "schema", Short: "Export the local API schema", Example: example}
@@ -63,6 +64,9 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 			_ = api.WriteSessionError(cmd.OutOrStdout(), code, message)
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s; %s\n", code, message, hint)
 			return &domain.CommandError{Code: code, Message: message, Hint: hint}
+		}
+		if sessionRecoveryStdin && !sessionStdin {
+			return renderCommandError(cmd, ctx.outputMode(), "api.serve", "session_mode_required", "Private recovery requires --session-stdin", "Add --session-stdin and use the private host protocol")
 		}
 		if readonly && allowWrite {
 			if sessionStdin {
@@ -114,12 +118,13 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 				return &domain.CommandError{Code: "session_bootstrap_invalid", Message: "the supervised session bootstrap frame was rejected", Hint: "Check the first stdin frame against pinax.local_session.bootstrap.v1alpha1"}
 			}
 			return api.ServeSupervisedSession(cmd.Context(), api.ServeSupervisedSessionOptions{
-				Service:  ctx.svc,
-				Frame:    frame,
-				Stdin:    cmd.InOrStdin(),
-				Stdout:   cmd.OutOrStdout(),
-				Stderr:   cmd.ErrOrStderr(),
-				Manifest: TransportManifestProjection,
+				Service:       ctx.svc,
+				Frame:         frame,
+				Stdin:         cmd.InOrStdin(),
+				Stdout:        cmd.OutOrStdout(),
+				Stderr:        cmd.ErrOrStderr(),
+				Manifest:      TransportManifestProjection,
+				RecoveryStdin: sessionRecoveryStdin,
 			})
 		}
 
@@ -168,6 +173,7 @@ func addAPICommands(root *cobra.Command, ctx commandBuildContext) {
 	serveCmd.Flags().StringVar(&legacyTokenFile, "token-file", "", "Deprecated alias for --token-store (hashed token registry)")
 	serveCmd.Flags().BoolVar(&noAuth, "no-auth", false, "No-auth mode (forces loopback)")
 	serveCmd.Flags().BoolVar(&sessionStdin, "session-stdin", false, "Supervised readonly human reading session: read a private bootstrap frame from stdin, serve /v1/reader on a random loopback port, stop on stdin EOF")
+	serveCmd.Flags().BoolVar(&sessionRecoveryStdin, "session-recovery-stdin", false, "Require a private recovery challenge and one approved lookup grant before ready (requires --session-stdin)")
 	serveCmd.Flags().StringVar(&exposeGroups, "expose", "", "Expose only the specified route groups (comma-separated)")
 	serveCmd.Flags().StringVar(&hideGroups, "hide", "", "Hide the specified route groups (comma-separated)")
 	apiCmd.AddCommand(manifestCmd, routesCmd, statusCmd, newSchemaCmd("pinax api schema export --format openapi --vault ./my-notes --json"), serveCmd)

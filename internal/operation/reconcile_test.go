@@ -77,7 +77,7 @@ func TestReconcileRepositoryKeepsAmbiguousOperationAndFinalizesSameIdentity(t *t
 		t.Fatal(err)
 	}
 	completed, err := store.ApplyReconcileDecision(ctx, request.OperationID, decision)
-	if err != nil || completed.OperationID != request.OperationID || completed.Status != StatusSucceeded || completed.ReconcileCount != 1 {
+	if err != nil || completed.OperationID != request.OperationID || completed.Status != StatusSucceeded || completed.ReconcileCount != 1 || completed.ErrorCode != "" || completed.ErrorMessage != "" || ViewFromRow(completed).Error != nil {
 		t.Fatalf("reconciled operation = %#v err=%v", completed, err)
 	}
 }

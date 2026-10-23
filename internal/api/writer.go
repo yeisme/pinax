@@ -111,6 +111,12 @@ func writerErrorStatus(code string) int {
 // writerCommandCapability maps writer commands to their frozen capability.
 func writerCommandCapability(command string) string {
 	switch command {
+	case "writer.tags.plan", "writer.tags.apply", "writer.tags.lookup":
+		return command
+	case "writer.daily.propose", "writer.daily.apply", "writer.daily.editor_source", "writer.daily.edit.propose", "writer.daily.edit":
+		return command
+	case "writer.editor_source":
+		return "writer.editor_source"
 	case "writer.capture":
 		return "writer.capture"
 	case "writer.propose":

@@ -150,6 +150,10 @@ func (s *Server) handleReaderNoteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch action {
+	case "composed-document":
+		s.handleReaderRichPage(w, r, objectID, true)
+	case "rich-document":
+		s.handleReaderRichDocument(w, r, objectID)
 	case "document":
 		s.handleReaderDocument(w, r, objectID)
 	case "links":

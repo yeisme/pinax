@@ -2,6 +2,7 @@ package templateengine
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"text/template/parse"
 	"time"
 	"unicode"
 
@@ -111,6 +113,124 @@ func (e *Engine) Render(doc TemplateDocument, ctx Context) (RenderResult, error)
 		return RenderResult{}, renderError(err)
 	}
 	return RenderResult{Body: out.String()}, nil
+}
+
+// RenderBounded is the interactive owner path: output is byte-bounded and
+// date() is pinned to the requested calendar context, not the machine clock.
+// Existing Render callers retain their established behavior.
+func (e *Engine) RenderBounded(ctx context.Context, doc TemplateDocument, values Context, maxBytes int) (RenderResult, error) {
+	if err := ctx.Err(); err != nil {
+		return RenderResult{}, err
+	}
+	if maxBytes < 1 || len(doc.Body) > maxBytes {
+		return RenderResult{}, &Error{Code: "template_budget_exceeded", Message: "Template exceeds the interactive budget"}
+	}
+	if doc.Engine != EngineGoTemplate {
+		out := &boundedTemplateWriter{ctx: ctx, remaining: maxBytes}
+		variables := simpleContext(values)
+		position := 0
+		for _, match := range simpleVariablePattern.FindAllStringSubmatchIndex(doc.Body, -1) {
+			value, ok := variables[doc.Body[match[2]:match[3]]]
+			if !ok {
+				return RenderResult{}, &Error{Code: "template_variable_missing", Message: "Template variable is unavailable"}
+			}
+			if _, err := out.Write([]byte(doc.Body[position:match[0]])); err != nil {
+				return RenderResult{}, err
+			}
+			if _, err := out.Write([]byte(value)); err != nil {
+				return RenderResult{}, err
+			}
+			position = match[1]
+		}
+		if _, err := out.Write([]byte(doc.Body[position:])); err != nil {
+			return RenderResult{}, err
+		}
+		return RenderResult{Body: out.String()}, nil
+	}
+	dateValue, err := time.Parse("2006-01-02", values.Date)
+	if err != nil {
+		return RenderResult{}, &Error{Code: "template_variable_missing", Message: "Bounded template requires a calendar date"}
+	}
+	functions := safeFuncMap()
+	functions["date"] = func(layout string) string {
+		if layout == "" {
+			layout = "2006-01-02"
+		}
+		return dateValue.Format(layout)
+	}
+	tmpl, err := template.New(doc.Name).Option("missingkey=error").Funcs(functions).Parse(doc.Body)
+	if err != nil {
+		return RenderResult{}, &Error{Code: "template_parse_failed", Message: "Template could not be parsed"}
+	}
+	// Output caps alone do not bound printf allocations or empty recursive
+	// templates. Interactive proposals admit only scalar fields and date().
+	if !boundedTemplateSyntax(tmpl) {
+		return RenderResult{}, &Error{Code: "template_unsupported", Message: "Interactive templates support scalar fields and date() only"}
+	}
+	out := &boundedTemplateWriter{ctx: ctx, remaining: maxBytes}
+	if err := tmpl.Execute(out, values.withDefaults(doc.Metadata)); err != nil {
+		return RenderResult{}, &Error{Code: "template_render_failed", Message: "Template exceeded its budget or could not be rendered", Err: err}
+	}
+	return RenderResult{Body: out.String()}, nil
+}
+
+func boundedTemplateSyntax(tmpl *template.Template) bool {
+	if len(tmpl.Templates()) != 1 {
+		return false
+	}
+	for _, node := range tmpl.Root.Nodes {
+		switch node := node.(type) {
+		case *parse.TextNode:
+		case *parse.ActionNode:
+			if len(node.Pipe.Decl) != 0 || len(node.Pipe.Cmds) != 1 {
+				return false
+			}
+			args := node.Pipe.Cmds[0].Args
+			if len(args) == 1 {
+				field, ok := args[0].(*parse.FieldNode)
+				if !ok {
+					return false
+				}
+				if len(field.Ident) == 1 {
+					switch field.Ident[0] {
+					case "Title", "Date", "DateTime", "Project":
+					default:
+						return false
+					}
+				} else if len(field.Ident) != 2 || field.Ident[0] != "Vars" && field.Ident[0] != "Defaults" {
+					return false
+				}
+			} else if len(args) == 2 {
+				fn, ok := args[0].(*parse.IdentifierNode)
+				layout, literal := args[1].(*parse.StringNode)
+				if !ok || fn.Ident != "date" || !literal || len(layout.Text) > 64 {
+					return false
+				}
+			} else {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+type boundedTemplateWriter struct {
+	bytes.Buffer
+	ctx       context.Context
+	remaining int
+}
+
+func (w *boundedTemplateWriter) Write(p []byte) (int, error) {
+	if err := w.ctx.Err(); err != nil {
+		return 0, err
+	}
+	if len(p) > w.remaining {
+		return 0, &Error{Code: "template_budget_exceeded", Message: "Template result exceeds the interactive budget"}
+	}
+	w.remaining -= len(p)
+	return w.Buffer.Write(p)
 }
 
 var simpleVariablePattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_:-]*)\s*\}\}`)

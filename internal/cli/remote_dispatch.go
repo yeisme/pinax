@@ -80,6 +80,9 @@ func remoteSupportedRPCMethods() map[string]string {
 // from the registry, enforcing positional arity.
 func remoteRPCRequestForCommand(cmd *cobra.Command, args []string) (pinaxclient.RPCRequest, bool) {
 	commandPath := strings.TrimPrefix(cmd.CommandPath(), "pinax ")
+	if legacy := cmd.Annotations["resource.legacy"]; legacy != "" {
+		commandPath = legacy
+	}
 	remoteCommandRegistryMu.RLock()
 	spec, ok := remoteCommandRegistry[commandPath]
 	remoteCommandRegistryMu.RUnlock()

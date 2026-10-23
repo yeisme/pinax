@@ -106,6 +106,9 @@ func RenderWithOptions(w io.Writer, mode Mode, projection domain.Projection, opt
 }
 
 func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {
+	if strings.HasSuffix(p.Command, ".describe") {
+		p.Command = strings.TrimSuffix(p.Command, ".describe") + ".show"
+	}
 	if v, ok := p.Data.(noterender.View); ok && p.Error == nil {
 		_, err := io.WriteString(w, noterender.Text(v))
 		return err
@@ -409,6 +412,37 @@ func summaryStatusLabel(status string) string {
 }
 
 func renderSummaryTable(w io.Writer, theme summaryTheme, header []string, rows [][]string) error {
+	if len(header) > 0 && (header[0] == "ID" || header[0] == "Path" || header[0] == "Ref") {
+		widths := make([]int, len(header))
+		for i, h := range header {
+			widths[i] = lipgloss.Width(h)
+		}
+		for _, row := range rows {
+			for i, cell := range row {
+				if i < len(widths) && lipgloss.Width(cell) > widths[i] {
+					widths[i] = lipgloss.Width(cell)
+				}
+			}
+		}
+		total := 2 * len(header)
+		for _, width := range widths {
+			total += width
+		}
+		if theme.width > 0 && total > theme.width {
+			for _, row := range rows {
+				for i, cell := range row {
+					if _, err := fmt.Fprintf(w, "%s: %s\n", header[i], cell); err != nil {
+						return err
+					}
+				}
+				if _, err := fmt.Fprintln(w); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}
+
 	tw := charmtable.New().
 		Headers(header...).
 		Rows(rows...).
@@ -1233,8 +1267,12 @@ func renderSummaryCommandCatalog(w io.Writer, theme summaryTheme, data any) erro
 	rows := make([][]string, 0, len(items))
 	for _, item := range items {
 		row := make([]string, 0, len(columns))
-		for _, column := range columns {
-			row = append(row, summaryCell(summaryColumnValue(item, column), column.MaxWidth))
+		for index, column := range columns {
+			width := column.MaxWidth
+			if index == 0 {
+				width = 0
+			}
+			row = append(row, summaryCell(summaryColumnValue(item, column), width))
 		}
 		rows = append(rows, row)
 	}
@@ -2002,7 +2040,7 @@ func renderSummaryProjectList(w io.Writer, theme summaryTheme, p domain.Projecti
 			return err
 		}
 		limit := len(registry.Projects)
-		if limit > summaryListLimit {
+		if !p.AllRows && limit > summaryListLimit {
 			limit = summaryListLimit
 		}
 		if len(registry.Projects) > limit {
@@ -2016,9 +2054,9 @@ func renderSummaryProjectList(w io.Writer, theme summaryTheme, p domain.Projecti
 			if project.Slug == registry.CurrentProject {
 				current = "*"
 			}
-			rows = append(rows, []string{current, summaryCell(project.Slug, 24), summaryCell(project.Name, 28), summaryCell(project.NotesPrefix, 36), summaryCell(project.Description, 44)})
+			rows = append(rows, []string{summaryCell(project.Slug, 0), current, summaryCell(project.Name, 28), summaryCell(project.NotesPrefix, 36), summaryCell(project.Description, 44)})
 		}
-		if err := renderSummaryTable(w, theme, []string{"Current", "Slug", "Name", "Notes prefix", "Description"}, rows); err != nil {
+		if err := renderSummaryTable(w, theme, []string{"ID", "Current", "Name", "Notes prefix", "Description"}, rows); err != nil {
 			return err
 		}
 	}
@@ -2649,7 +2687,7 @@ func renderSummaryNoteList(w io.Writer, theme summaryTheme, data any, key string
 			tags = "#" + strings.Join(note.Tags, ",#")
 		}
 		rows = append(rows, []string{
-			summaryCell(note.Path, 56),
+			summaryCell(note.Path, 0),
 			summaryCell(note.Title, 32),
 			summaryCell(summaryHumanValue("note.kind", note.Kind), 10),
 			summaryCell(tags, 22),

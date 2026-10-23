@@ -219,7 +219,18 @@ func (s *Service) syncTransfer(ctx context.Context, req SyncRequest, direction s
 	}
 	defer lock.Release()
 	tracker := newPipelineStageTracker(domain.PipelineKindSync, "", "", verb)
-	projection, err := s.syncTransferLocked(ctx, req, direction, root, target, tracker)
+	var projection domain.Projection
+	if req.Yes && !req.DryRun {
+		projection, err = s.syncOperationLocked(ctx, root, command, req.Operation, map[string]any{
+			"target": target, "base_revision": req.BaseRevision, "remote_revision": req.RemoteRevision,
+			"endpoint": req.Endpoint, "workspace_id": req.WorkspaceID, "device_id": req.DeviceID,
+		}, func(operationID string) (domain.Projection, error) {
+			req.operationID = operationID
+			return s.syncTransferLocked(ctx, req, direction, root, target, tracker)
+		})
+	} else {
+		projection, err = s.syncTransferLocked(ctx, req, direction, root, target, tracker)
+	}
 	// run_id 由底层 sync run 生成，回填到阶段事件后再收口。
 	tracker.setRunID(projection.Facts["run_id"])
 	tracker.finish(&projection, err, pipelineStageCounts(projection, "operations"))

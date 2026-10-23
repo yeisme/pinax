@@ -83,7 +83,9 @@ func readLock(path string) (lockFile, error) {
 	}
 	var lock lockFile
 	if err := json.Unmarshal(payload, &lock); err != nil {
-		return lockFile{}, err
+		// The exclusive file may already exist while its owner is still
+		// writing metadata. Never treat incomplete metadata as a stale lock.
+		return lockFile{}, &domain.CommandError{Code: "lock_held", Message: "sync lock metadata is incomplete or invalid", Hint: "Wait for the running sync operation or inspect sync daemon status"}
 	}
 	return lock, nil
 }

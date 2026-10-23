@@ -33,7 +33,7 @@ const (
 // capabilities. They are readonly, experimental, and disjoint from the legacy
 // Agent projection surface; the owner grants reader scopes explicitly.
 func ReaderCapabilityDefinitions() []CapabilityDefinition {
-	return []CapabilityDefinition{
+	return append(append(append(append(readerRecoveryCapabilities(), readerComposedCapabilities()...), readerRichCapabilities()...), readerNavigationCapabilities()...), []CapabilityDefinition{
 		{
 			ID: ReaderSourceCapabilityID, Command: ReaderSourceCapabilityID,
 			Readonly: true, BodyAllowed: false,
@@ -102,7 +102,7 @@ func ReaderCapabilityDefinitions() []CapabilityDefinition {
 			Errors:         []string{"reader_request_invalid", "insufficient_scope", "reader_disabled", "reader_object_not_found", "revision_unavailable", "document_too_large", "reader_range_invalid"},
 			Stability:      StabilityExperimental,
 		},
-	}
+	}...)
 }
 
 // ReaderTransportBindings returns the REST bindings for the human reading
@@ -131,7 +131,7 @@ func ReaderTransportBindings() []TransportBinding {
 			},
 		}
 	}
-	return []TransportBinding{
+	return append(append(append(append(readerRecoveryBindings(), readerComposedBindings()...), readerRichBindings()...), readerNavigationBindings()...), []TransportBinding{
 		bound(RestReaderSourceBindingID, ReaderSourceCapabilityID, "GET", "/v1/reader/source",
 			"pinax.reader.source.request.v1alpha1", "pinax.reader.source.v1alpha1"),
 		bound(RestReaderNotesBindingID, ReaderNotesCapabilityID, "GET", "/v1/reader/notes",
@@ -146,7 +146,7 @@ func ReaderTransportBindings() []TransportBinding {
 			"pinax.reader.asset_content.request.v1alpha1", "pinax.reader.asset_ref.v1alpha1"),
 		bound(RestReaderSourceExportBindingID, ReaderSourceExportCapabilityID, "GET", "/v1/reader/notes/{object_id}/source",
 			"pinax.reader.source_export.request.v1alpha1", "pinax.reader.source_export.v1alpha1"),
-	}
+	}...)
 }
 
 // ReaderDeclaredSurfaces declares the REST surface for reader capabilities.

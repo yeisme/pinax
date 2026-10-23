@@ -113,6 +113,65 @@ func (m Maturity) valid() bool {
 	}
 }
 
+// ExecutionLocation describes where a caller must execute an advertised
+// operation. It is deliberately transport-neutral so MCP, REST/RPC and CLI
+// consumers can explain the same capability without guessing filesystem
+// ownership.
+type ExecutionLocation string
+
+const (
+	ExecutionLocationVaultOwner    ExecutionLocation = "vault_owner"
+	ExecutionLocationRemoteService ExecutionLocation = "remote_service"
+	ExecutionLocationClientLocal   ExecutionLocation = "client_local"
+)
+
+func (l ExecutionLocation) valid() bool {
+	switch l {
+	case ExecutionLocationVaultOwner, ExecutionLocationRemoteService, ExecutionLocationClientLocal:
+		return true
+	default:
+		return false
+	}
+}
+
+// WriteStrategy explains the minimum interaction sequence for a mutation.
+// The field is additive metadata; the existing approval, snapshot and
+// operation contracts remain authoritative for enforcement.
+type WriteStrategy string
+
+const (
+	WriteStrategyReadonly          WriteStrategy = "readonly"
+	WriteStrategyDryRunThenApply   WriteStrategy = "dry_run_then_apply"
+	WriteStrategyProposalThenApply WriteStrategy = "proposal_then_apply"
+	WriteStrategySnapshotThenApply WriteStrategy = "snapshot_then_apply"
+)
+
+func (s WriteStrategy) valid() bool {
+	switch s {
+	case WriteStrategyReadonly, WriteStrategyDryRunThenApply, WriteStrategyProposalThenApply, WriteStrategySnapshotThenApply:
+		return true
+	default:
+		return false
+	}
+}
+
+// RecoveryContract gives clients the bounded, executable recovery path for a
+// mutation whose transport result is ambiguous.
+type RecoveryContract struct {
+	IdentityRequired bool   `json:"identity_required,omitempty"`
+	StatusCommand    string `json:"status_command,omitempty"`
+	ReconcileCommand string `json:"reconcile_command,omitempty"`
+}
+
+// OwnerAction is returned when the current surface cannot perform the next
+// step. Commands are templates and must never contain credentials or private
+// absolute paths.
+type OwnerAction struct {
+	ExecutionLocation ExecutionLocation `json:"execution_location"`
+	Command           string            `json:"command,omitempty"`
+	Reason            string            `json:"reason,omitempty"`
+}
+
 type Readiness struct {
 	Status       ReadinessStatus `json:"status"`
 	Maturity     Maturity        `json:"maturity"`
@@ -132,22 +191,26 @@ func (r Readiness) Validate() error {
 }
 
 type CapabilityDefinition struct {
-	ID                  string    `json:"id"`
-	Command             string    `json:"command"`
-	ReleaseCore         bool      `json:"release_core"`
-	Readonly            bool      `json:"readonly"`
-	BodyAllowed         bool      `json:"body_allowed"`
-	ApprovalRequired    bool      `json:"approval_required"`
-	SnapshotRequired    bool      `json:"snapshot_required"`
-	UIGroup             string    `json:"ui_group,omitempty"`
-	BodyExposureDefault string    `json:"body_exposure_default,omitempty"`
-	WriteGate           string    `json:"write_gate,omitempty"`
-	CopyCommand         string    `json:"copy_command,omitempty"`
-	LocalOnlyReason     string    `json:"local_only_reason,omitempty"`
-	RequestSchema       string    `json:"request_schema"`
-	ResponseSchema      string    `json:"response_schema"`
-	Errors              []string  `json:"errors,omitempty"`
-	Stability           Stability `json:"stability"`
+	ID                  string            `json:"id"`
+	Command             string            `json:"command"`
+	ReleaseCore         bool              `json:"release_core"`
+	Readonly            bool              `json:"readonly"`
+	BodyAllowed         bool              `json:"body_allowed"`
+	ApprovalRequired    bool              `json:"approval_required"`
+	SnapshotRequired    bool              `json:"snapshot_required"`
+	UIGroup             string            `json:"ui_group,omitempty"`
+	BodyExposureDefault string            `json:"body_exposure_default,omitempty"`
+	WriteGate           string            `json:"write_gate,omitempty"`
+	CopyCommand         string            `json:"copy_command,omitempty"`
+	LocalOnlyReason     string            `json:"local_only_reason,omitempty"`
+	ExecutionLocation   ExecutionLocation `json:"execution_location,omitempty"`
+	WriteStrategy       WriteStrategy     `json:"write_strategy,omitempty"`
+	Recovery            *RecoveryContract `json:"recovery,omitempty"`
+	OwnerAction         *OwnerAction      `json:"owner_action,omitempty"`
+	RequestSchema       string            `json:"request_schema"`
+	ResponseSchema      string            `json:"response_schema"`
+	Errors              []string          `json:"errors,omitempty"`
+	Stability           Stability         `json:"stability"`
 }
 
 func (d CapabilityDefinition) Validate() error {
@@ -166,24 +229,39 @@ func (d CapabilityDefinition) Validate() error {
 	if strings.TrimSpace(d.ResponseSchema) == "" {
 		return fmt.Errorf("capability %q response_schema is required", d.ID)
 	}
+	if d.ExecutionLocation != "" && !d.ExecutionLocation.valid() {
+		return fmt.Errorf("capability %q has invalid execution_location %q", d.ID, d.ExecutionLocation)
+	}
+	if d.WriteStrategy != "" && !d.WriteStrategy.valid() {
+		return fmt.Errorf("capability %q has invalid write_strategy %q", d.ID, d.WriteStrategy)
+	}
+	if d.OwnerAction != nil {
+		if !d.OwnerAction.ExecutionLocation.valid() {
+			return fmt.Errorf("capability %q owner_action has invalid execution_location %q", d.ID, d.OwnerAction.ExecutionLocation)
+		}
+		if strings.TrimSpace(d.OwnerAction.Command) == "" {
+			return fmt.Errorf("capability %q owner_action command is required", d.ID)
+		}
+	}
 	return nil
 }
 
 type TransportBinding struct {
-	ID             string       `json:"id"`
-	CapabilityID   string       `json:"capability_id"`
-	Transport      Transport    `json:"transport"`
-	Availability   Availability `json:"availability"`
-	BackingRef     string       `json:"backing_ref,omitempty"`
-	Method         string       `json:"method,omitempty"`
-	Path           string       `json:"path,omitempty"`
-	ProtocolName   string       `json:"protocol_name,omitempty"`
-	Readonly       bool         `json:"readonly"`
-	WriteGate      string       `json:"write_gate,omitempty"`
-	RequestSchema  string       `json:"request_schema"`
-	ResponseSchema string       `json:"response_schema"`
-	Blockers       []string     `json:"blockers,omitempty"`
-	Readiness      *Readiness   `json:"readiness,omitempty"`
+	ID                string            `json:"id"`
+	CapabilityID      string            `json:"capability_id"`
+	Transport         Transport         `json:"transport"`
+	Availability      Availability      `json:"availability"`
+	BackingRef        string            `json:"backing_ref,omitempty"`
+	Method            string            `json:"method,omitempty"`
+	Path              string            `json:"path,omitempty"`
+	ProtocolName      string            `json:"protocol_name,omitempty"`
+	Readonly          bool              `json:"readonly"`
+	WriteGate         string            `json:"write_gate,omitempty"`
+	ExecutionLocation ExecutionLocation `json:"execution_location,omitempty"`
+	RequestSchema     string            `json:"request_schema"`
+	ResponseSchema    string            `json:"response_schema"`
+	Blockers          []string          `json:"blockers,omitempty"`
+	Readiness         *Readiness        `json:"readiness,omitempty"`
 }
 
 func (b TransportBinding) Validate() error {
@@ -207,6 +285,9 @@ func (b TransportBinding) Validate() error {
 	}
 	if strings.TrimSpace(b.ResponseSchema) == "" {
 		return fmt.Errorf("binding %q response_schema is required", b.ID)
+	}
+	if b.ExecutionLocation != "" && !b.ExecutionLocation.valid() {
+		return fmt.Errorf("binding %q has invalid execution_location %q", b.ID, b.ExecutionLocation)
 	}
 	if b.Readiness != nil {
 		if err := b.Readiness.Validate(); err != nil {
@@ -232,7 +313,7 @@ type ManifestCapability struct {
 func Compile(definitions []CapabilityDefinition, bindings []TransportBinding, declaredSurfaces map[string][]string) (Manifest, error) {
 	definitionByID := make(map[string]CapabilityDefinition, len(definitions))
 	for _, raw := range definitions {
-		definition := cloneDefinition(raw)
+		definition := normalizeDefinition(cloneDefinition(raw))
 		if err := definition.Validate(); err != nil {
 			return Manifest{}, err
 		}
@@ -286,9 +367,13 @@ func Compile(definitions []CapabilityDefinition, bindings []TransportBinding, de
 				availableSurfaces = append(availableSurfaces, binding.Transport.Surface())
 			}
 		}
+		definition := definitionByID[capabilityID]
+		if len(availableSurfaces) == 1 && availableSurfaces[0] == "mcp" && definition.LocalOnlyReason == "" {
+			definition.ExecutionLocation = ExecutionLocationVaultOwner
+		}
 
 		manifest.Capabilities = append(manifest.Capabilities, ManifestCapability{
-			CapabilityDefinition: definitionByID[capabilityID],
+			CapabilityDefinition: definition,
 			DeclaredSurfaces:     append([]string(nil), declaredByID[capabilityID]...),
 			AvailableSurfaces:    sortedUnique(availableSurfaces),
 			Bindings:             append([]TransportBinding(nil), capabilityBindings...),
@@ -385,11 +470,22 @@ func (m Manifest) computeDigest() (string, error) {
 func cloneDefinition(in CapabilityDefinition) CapabilityDefinition {
 	out := in
 	out.Errors = sortedUnique(in.Errors)
+	if in.Recovery != nil {
+		recovery := *in.Recovery
+		out.Recovery = &recovery
+	}
+	if in.OwnerAction != nil {
+		action := *in.OwnerAction
+		out.OwnerAction = &action
+	}
 	return out
 }
 
 func cloneBinding(in TransportBinding) TransportBinding {
 	out := in
+	if out.ExecutionLocation == "" {
+		out.ExecutionLocation = executionLocationForTransport(out.Transport)
+	}
 	out.Blockers = sortedUnique(in.Blockers)
 	if in.Readiness != nil {
 		readiness := *in.Readiness
@@ -399,6 +495,73 @@ func cloneBinding(in TransportBinding) TransportBinding {
 		out.Readiness = &readiness
 	}
 	return out
+}
+
+func normalizeDefinition(definition CapabilityDefinition) CapabilityDefinition {
+	if definition.ExecutionLocation == "" {
+		definition.ExecutionLocation = executionLocationForDeclaredSurfaces(definition)
+	}
+	if definition.WriteStrategy == "" {
+		definition.WriteStrategy = writeStrategyForDefinition(definition)
+	}
+	if definition.Recovery == nil && definitionNeedsRecovery(definition) {
+		definition.Recovery = &RecoveryContract{
+			IdentityRequired: true,
+			StatusCommand:    "pinax operation show <operation-id> --json",
+			ReconcileCommand: "pinax operation reconcile <operation-id> --json",
+		}
+	}
+	if definition.OwnerAction == nil && definition.LocalOnlyReason != "" && definition.CopyCommand != "" {
+		definition.OwnerAction = &OwnerAction{
+			ExecutionLocation: ExecutionLocationClientLocal,
+			Command:           definition.CopyCommand,
+			Reason:            definition.LocalOnlyReason,
+		}
+	}
+	return definition
+}
+
+func executionLocationForDeclaredSurfaces(definition CapabilityDefinition) ExecutionLocation {
+	if definition.LocalOnlyReason != "" {
+		return ExecutionLocationClientLocal
+	}
+	if definition.Readonly && strings.Contains(definition.Command, "mcp") {
+		return ExecutionLocationVaultOwner
+	}
+	return ExecutionLocationRemoteService
+}
+
+func executionLocationForTransport(transport Transport) ExecutionLocation {
+	switch transport {
+	case TransportMCPTool, TransportMCPResource:
+		return ExecutionLocationVaultOwner
+	case TransportREST, TransportRPC:
+		return ExecutionLocationRemoteService
+	default:
+		return ExecutionLocationClientLocal
+	}
+}
+
+func writeStrategyForDefinition(definition CapabilityDefinition) WriteStrategy {
+	if definition.Readonly {
+		return WriteStrategyReadonly
+	}
+	if strings.HasPrefix(definition.ID, "writer.") && strings.Contains(definition.ID, ".apply") {
+		return WriteStrategyProposalThenApply
+	}
+	if definition.SnapshotRequired {
+		return WriteStrategySnapshotThenApply
+	}
+	return WriteStrategyDryRunThenApply
+}
+
+func definitionNeedsRecovery(definition CapabilityDefinition) bool {
+	for _, code := range definition.Errors {
+		if code == "reconcile_required" || code == "outcome_unknown" || code == "operation_identity_required" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateIdentifier(field, value string) error {

@@ -151,7 +151,7 @@ func resourceCompletionCommands(render func(*cobra.Command, resourceCompletionRe
 				report.ErrorCode = "completion_write_failed"
 				return render(cmd, report)
 			}
-			defer os.Remove(tmp.Name())
+			defer func() { _ = os.Remove(tmp.Name()) }()
 			_, err = tmp.WriteString(content)
 			closeErr := tmp.Close()
 			if err != nil || closeErr != nil {

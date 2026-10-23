@@ -248,6 +248,16 @@ func (s *Service) CollaborationPreview(ctx context.Context, root string, change 
 				tags = removeTags(note.Tags, tags)
 			}
 			p.After = strings.Join(tags, ", ")
+			_, _, _, source, _, err := s.loadMutableNoteForWrite(ctx, root, change.NoteRef)
+			if err != nil {
+				return p, err
+			}
+			if collaborationRevision(source) != revision {
+				return p, collaborationError("revision_conflict", "Note changed while preparing tag metadata")
+			}
+			if _, err := patchTagMetadata(source, formatTags(tags), "2000-01-01T00:00:00Z"); err != nil {
+				return p, err
+			}
 		case "archive":
 			p.Before, p.After = note.Status, "archived"
 		}
@@ -280,6 +290,12 @@ func (s *Service) CollaborationApply(ctx context.Context, root string, change Co
 // authorization (never a verified approval), change validation, unchanged
 // preview digest, safe paths, replay — is enforced here once.
 func (s *Service) collaborationApplyWithRequest(ctx context.Context, root string, change CollaborationChange, digest, authorization string, policy CollaborationPolicy, request operation.CreateRequest) (operation.View, error) {
+	return s.collaborationApplyGuarded(ctx, root, change, digest, authorization, policy, request, nil)
+}
+
+// A private owner guard can narrow a mutation. No transport can supply it or
+// use it to bypass the shared writer gates, lock, snapshot or ledger.
+func (s *Service) collaborationApplyGuarded(ctx context.Context, root string, change CollaborationChange, digest, authorization string, policy CollaborationPolicy, request operation.CreateRequest, guard func() error) (operation.View, error) {
 	if !policy.AllowBody || !policy.AllowWrite {
 		return operation.View{}, collaborationError("write_disabled", "The owner has not enabled note writes")
 	}
@@ -315,10 +331,21 @@ func (s *Service) collaborationApplyWithRequest(ctx context.Context, root string
 		return operation.View{}, err
 	}
 	defer func() { _ = store.Close() }()
+	return s.collaborationApplyStored(ctx, root, change, digest, authorization, policy, request, guard, store)
+}
+
+// Only owner orchestration holding the vault operation lock may reuse this
+// engine with its existing store. Requests must already be validated.
+func (s *Service) collaborationApplyStored(ctx context.Context, root string, change CollaborationChange, digest, authorization string, policy CollaborationPolicy, request operation.CreateRequest, guard func() error, store *operation.Store) (operation.View, error) {
 	if replay, found, err := store.FindReplay(ctx, request); err != nil {
 		return operation.View{}, err
 	} else if found {
 		return operation.ViewFromRow(replay.Operation), nil
+	}
+	if guard != nil {
+		if err := guard(); err != nil {
+			return operation.View{}, err
+		}
 	}
 	p, err := s.CollaborationPreview(ctx, root, change, policy)
 	if err != nil {
@@ -354,7 +381,16 @@ func (s *Service) collaborationApplyWithRequest(ctx context.Context, root string
 	if err := store.CheckpointApplying(ctx, change.OperationID, outcome); err != nil {
 		return s.collaborationFailed(store, change.OperationID, outcome, err)
 	}
-	projection, err := s.applyCollaborationChange(ctx, root, p)
+	var beforeWrite func(domain.Note, string) error
+	if request.CapabilityID == writerDailyEditCapability {
+		beforeWrite = func(note domain.Note, updated string) error {
+			proof := dailyEditResult{NoteID: note.ID, Path: note.Path, ContentDigest: collaborationRevision(updated), RecordDigest: hashString(note.Title + "\x00" + p.After)}
+			outcome.Result, _ = json.Marshal(proof)
+			outcome.ResourceRef = "pinax://note/" + note.ID
+			return store.CheckpointApplying(ctx, change.OperationID, outcome)
+		}
+	}
+	projection, err := s.applyCollaborationChangeGuarded(ctx, root, p, guard, beforeWrite)
 	if err != nil {
 		return s.collaborationFailed(store, change.OperationID, outcome, err)
 	}
@@ -363,9 +399,19 @@ func (s *Service) collaborationApplyWithRequest(ctx context.Context, root string
 	if err != nil {
 		return s.collaborationFailed(store, change.OperationID, outcome, err)
 	}
-	outcome.ResourceRef = "pinax://note/" + url.PathEscape(path)
+	if request.CapabilityID == writerDailyEditCapability {
+		var proof dailyEditResult
+		if json.Unmarshal(outcome.Result, &proof) != nil || revision != proof.ContentDigest {
+			return s.collaborationFailed(store, change.OperationID, outcome, collaborationError("revision_conflict", "Daily source changed after replacement"))
+		}
+	}
+	if request.CapabilityID != writerDailyEditCapability {
+		outcome.ResourceRef = "pinax://note/" + url.PathEscape(path)
+	}
 	outcome.RevisionAfter = revision
-	outcome.Result, _ = json.Marshal(map[string]string{"path": path, "note_id": projection.Facts["note_id"], "authorization_source": "caller_assertion", "authorization": authorization, "index_status": projection.Facts["index_status"]})
+	if request.CapabilityID != writerDailyEditCapability {
+		outcome.Result, _ = json.Marshal(map[string]string{"path": path, "note_id": projection.Facts["note_id"], "authorization_source": "caller_assertion", "authorization": authorization, "index_status": projection.Facts["index_status"]})
+	}
 	outcome.Receipt, _ = json.Marshal(map[string]string{"operation_id": change.OperationID, "snapshot": outcome.ReceiptRef, "record_event_id": projection.Facts["record_event_id"]})
 	row, err := store.CompleteSucceeded(ctx, change.OperationID, outcome)
 	if err != nil {
@@ -384,7 +430,7 @@ func (s *Service) collaborationFailed(store *operation.Store, id string, outcome
 	return operation.ViewFromRow(row), nil
 }
 
-func (s *Service) applyCollaborationChange(ctx context.Context, root string, p CollaborationPreview) (domain.Projection, error) {
+func (s *Service) applyCollaborationChangeGuarded(ctx context.Context, root string, p CollaborationPreview, guard func() error, beforeWrite func(domain.Note, string) error) (domain.Projection, error) {
 	c := p.Change
 	if c.Action == "create" {
 		return s.CreateNote(ctx, CreateNoteRequest{VaultPath: root, Title: c.Title, Body: c.Body, Tags: c.Tags, Dir: c.Dir, Status: c.Status, PlannedPath: p.Path, RecordIdempotencyKey: c.OperationID})
@@ -401,6 +447,11 @@ func (s *Service) applyCollaborationChange(ctx context.Context, root string, p C
 	}
 	switch c.Action {
 	case "tags":
+		if guard != nil {
+			if err := guard(); err != nil {
+				return domain.Projection{}, err
+			}
+		}
 		return s.TagNote(ctx, NoteTagRequest{VaultPath: root, NoteRef: c.NoteRef, Operation: c.TagOperation, Tags: c.Tags, ExpectedRevision: c.ExpectedRevision})
 	case "archive":
 		return s.ArchiveNote(ctx, NoteMutationRequest{VaultPath: root, NoteRef: c.NoteRef, ExpectedRevision: c.ExpectedRevision})
@@ -418,6 +469,19 @@ func (s *Service) applyCollaborationChange(ctx context.Context, root string, p C
 	}
 	if collaborationRevision(string(current)) != c.ExpectedRevision {
 		return domain.Projection{}, collaborationError("revision_conflict", "Note changed before replacement")
+	}
+	if guard != nil {
+		if len(updated) > CollaborationMaxBodyBytes {
+			return domain.Projection{}, collaborationError("body_too_large", "Daily source exceeds the interactive budget")
+		}
+		if err := guard(); err != nil {
+			return domain.Projection{}, err
+		}
+	}
+	if beforeWrite != nil {
+		if err := beforeWrite(note, updated); err != nil {
+			return domain.Projection{}, err
+		}
 	}
 	if err := atomicWriteFile(path, []byte(updated), info.Mode().Perm()); err != nil {
 		return domain.Projection{}, err

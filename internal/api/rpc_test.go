@@ -426,8 +426,13 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 		"rpc.draft.archive": {Method: "Pinax.Draft.Archive", Params: map[string]any{"ref": "note_draft_rpc_1"}},
 		"rpc.draft.discard": {Method: "Pinax.Draft.Discard", Params: map[string]any{"ref": "note_draft_rpc_1"}},
 		// Sync RPC fixtures
-		"rpc.sync.push": {Method: "Pinax.Sync.Push", Params: map[string]any{"target": "cloud", "yes": true}},
-		"rpc.sync.pull": {Method: "Pinax.Sync.Pull", Params: map[string]any{"target": "cloud", "yes": true}},
+		"rpc.sync.status":            {Method: "Pinax.Sync.Status"},
+		"rpc.sync.diff":              {Method: "Pinax.Sync.Diff", Params: map[string]any{"target": "capsa"}},
+		"rpc.sync.push":              {Method: "Pinax.Sync.Push", Params: map[string]any{"target": "cloud", "yes": true}},
+		"rpc.sync.pull":              {Method: "Pinax.Sync.Pull", Params: map[string]any{"target": "cloud", "yes": true}},
+		"rpc.sync.conflicts.list":    {Method: "Pinax.Sync.Conflicts.List"},
+		"rpc.sync.conflicts.diff":    {Method: "Pinax.Sync.Conflicts.Diff", Params: map[string]any{"file": "missing.conflict.md"}},
+		"rpc.sync.conflicts.resolve": {Method: "Pinax.Sync.Conflicts.Resolve", Params: map[string]any{"file": "missing.conflict.md", "keep_remote": true, "yes": true}},
 		// Agent runtime RPC fixtures
 		"rpc.agent.context":       {Method: "Pinax.Agent.Context", Params: map[string]any{"workspace": "work"}},
 		"rpc.agent.memory.recall": {Method: "Pinax.Agent.Memory.Recall", Params: map[string]any{"workspace": "work"}},

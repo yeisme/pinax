@@ -39,7 +39,19 @@ func readerRESTContracts() []RemoteRESTContract {
 	byteContract := func(routeID, capabilityID, command, path string, parameters []HTTPParameterSchema, responseSchema, mediaType string) RemoteRESTContract {
 		return readerRESTContract(routeID, capabilityID, command, path, parameters, responseSchema, true, mediaType)
 	}
+	graphMode := queryEnum("mode", "source", "local")
+	graphMode.Required = true
+	graphLimit := queryBoundedInteger("limit", 2, catalogschema.ReaderGraphMaxNodes)
+	graphLimit.Schema["default"] = catalogschema.ReaderGraphMaxNodes
+	graphHops := queryBoundedInteger("hops", 1, 2)
+	graphHops.Schema["default"] = 1
 	contracts = append(contracts,
+		readerContract("rest.reader.recovery.lookup", "reader.recovery.lookup", "reader.recovery.lookup", "/v1/reader/recovery/operation", []HTTPParameterSchema{queryRequiredBoundedString("operation_id", 1, 128)}, catalogschema.OperationV1),
+		readerContract("rest.reader.composed_document", "reader.composed_document", "reader.composed_document", "/v1/reader/notes/{object_id}/composed-document", []HTTPParameterSchema{pathString("object_id"), queryRequiredBoundedString("revision", 71, 71), queryBoundedString("cursor", 1, catalogschema.ReaderCursorMaxLength), queryBoundedString("anchor", 1, catalogschema.ReaderAnchorMaxLength), queryBoundedString("outline_cursor", 1, catalogschema.ReaderCursorMaxLength)}, catalogschema.ReaderComposedDocumentV1Alpha1), readerContract("rest.reader.rich_document", "reader.rich_document", "reader.rich_document", "/v1/reader/notes/{object_id}/rich-document", []HTTPParameterSchema{pathString("object_id"), queryRequiredBoundedString("revision", 71, 71), queryBoundedString("cursor", 1, catalogschema.ReaderCursorMaxLength), queryBoundedString("anchor", 1, catalogschema.ReaderAnchorMaxLength), queryBoundedString("outline_cursor", 1, catalogschema.ReaderCursorMaxLength)}, catalogschema.ReaderRichDocumentV1Alpha1),
+		readerContract("rest.reader.daily.document", "reader.daily.document", "reader.daily.document", "/v1/reader/journals/daily/document", []HTTPParameterSchema{queryRequiredBoundedString("date", 10, 10), queryRequiredBoundedString("timezone", 1, 128), queryRequiredBoundedString("object_id", 1, 256), queryRequiredBoundedString("revision", 71, 71), queryBoundedString("cursor", 1, catalogschema.ReaderCursorMaxLength), queryBoundedString("anchor", 1, catalogschema.ReaderAnchorMaxLength), queryBoundedString("outline_cursor", 1, catalogschema.ReaderCursorMaxLength)}, catalogschema.ReaderDocumentV1Alpha1),
+		readerContract("rest.reader.tags", "reader.tags", "reader.tags", "/v1/reader/tags", []HTTPParameterSchema{queryBoundedInteger("limit", 1, 200), queryBoundedString("cursor", 1, catalogschema.ReaderCursorMaxLength)}, catalogschema.ReaderTagsV1Alpha1),
+		readerContract("rest.reader.graph", "reader.graph", "reader.graph", "/v1/reader/graph", []HTTPParameterSchema{graphMode, queryBoundedString("object_id", 1, 256), queryBoundedString("revision", 1, 80), graphHops, graphLimit, queryBoundedString("cursor", 1, catalogschema.ReaderCursorMaxLength)}, catalogschema.ReaderGraphV1Alpha1),
+		readerContract("rest.reader.daily", "reader.daily", "reader.daily", "/v1/reader/journals/daily", []HTTPParameterSchema{queryRequiredBoundedString("date", 10, 10), queryRequiredBoundedString("timezone", 1, 128)}, catalogschema.ReaderDailyV1Alpha1),
 		readerContract("rest.reader.source", "reader.source", "reader.source", "/v1/reader/source", []HTTPParameterSchema{}, catalogschema.ReaderSourceV1Alpha1),
 		readerContract("rest.reader.notes", "reader.notes", "reader.notes", "/v1/reader/notes", readerListParameters(false), catalogschema.ReaderNoteListV1Alpha1),
 		readerContract("rest.reader.search", "reader.search", "reader.search", "/v1/reader/search", readerListParameters(true), catalogschema.ReaderSearchResultsV1Alpha1),
@@ -56,6 +68,20 @@ func readerRESTContracts() []RemoteRESTContract {
 
 func readerRequestSchemaID(capabilityID string) string {
 	switch capabilityID {
+	case "reader.recovery.lookup":
+		return catalogschema.ReaderRecoveryLookupRequestV1Alpha1
+	case "reader.composed_document":
+		return catalogschema.ReaderComposedRequestV1Alpha1
+	case "reader.rich_document":
+		return catalogschema.ReaderRichDocumentRequestV1Alpha1
+	case "reader.daily.document":
+		return catalogschema.ReaderDailyDocumentRequestV1Alpha1
+	case "reader.tags":
+		return catalogschema.ReaderTagsRequestV1Alpha1
+	case "reader.graph":
+		return catalogschema.ReaderGraphRequestV1Alpha1
+	case "reader.daily":
+		return catalogschema.ReaderDailyRequestV1Alpha1
 	case "reader.source":
 		return catalogschema.ReaderSourceRequestV1Alpha1
 	case "reader.notes":
@@ -75,7 +101,7 @@ func readerRequestSchemaID(capabilityID string) string {
 
 func readerBodyExposure(capabilityID string) string {
 	switch capabilityID {
-	case "reader.search", "reader.document", "reader.source_export":
+	case "reader.composed_document", "reader.rich_document", "reader.search", "reader.document", "reader.daily.document", "reader.source_export":
 		return "explicit"
 	default:
 		return "none"

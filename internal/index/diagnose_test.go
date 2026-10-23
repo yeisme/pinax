@@ -208,10 +208,12 @@ func TestInspectReadOnlyNeverMigratesOrRepairs(t *testing.T) {
 	if after := indexFileDigest(t, indexPath); after != before {
 		t.Fatal("InspectReadOnly modified the index file")
 	}
-	// A read-only connection may create an EMPTY -wal frame file for a WAL
-	// database; any CONTENT in it would mean the inspection wrote frames.
-	if info, statErr := os.Stat(filepath.Join(root, ".pinax", "index.sqlite-wal")); statErr == nil && info.Size() != 0 {
-		t.Fatalf("read-only inspection wrote WAL frames: %d bytes", info.Size())
+	// Even empty WAL/SHM files are mutations to the source vault. SQLite
+	// runtime files belong only in the disposable private diagnostic copy.
+	for _, sidecar := range []string{"index.sqlite-wal", "index.sqlite-shm"} {
+		if _, err := os.Lstat(filepath.Join(root, ".pinax", sidecar)); !os.IsNotExist(err) {
+			t.Fatal("read-only inspection created a source sidecar")
+		}
 	}
 	// Healthy index: fresh status, file untouched.
 	healthy := t.TempDir()

@@ -72,7 +72,8 @@ type ReaderOutlineEntry struct {
 type ReaderDocument struct {
 	Blocks      []ReaderDocumentNode
 	Outline     []ReaderOutlineEntry
-	AnchorIndex map[string]int // anchor -> top-level block index
+	AnchorIndex map[string]int    // anchor -> top-level block index
+	BlockRefs   map[string]string // explicit block ID -> existing anchor; empty means ambiguous
 	NodeCount   int
 	TextBytes   int
 	Warnings    []string
@@ -184,10 +185,14 @@ func BuildReaderDocument(body string) (ReaderDocument, error) {
 // a fence (or fence_failed) node with an independently bounded payload and
 // explicit error fields; registered handlers never execute note code.
 func BuildReaderDocumentWithFences(body string, fences map[string]func(string) FenceResult) (ReaderDocument, error) {
+	return buildReaderDocument(body, fences, nil, nil)
+}
+
+func buildReaderDocument(body string, fences map[string]func(string) FenceResult, annotations *[]ReaderRichAnnotation, embeds *[]ReaderEmbedCandidate) (ReaderDocument, error) {
 	if len(body) > ReaderSourceMaxBytes {
 		return ReaderDocument{}, &ReaderBudgetError{Code: "document_too_large"}
 	}
-	document := ReaderDocument{AnchorIndex: map[string]int{}, Warnings: []string{}}
+	document := ReaderDocument{AnchorIndex: map[string]int{}, BlockRefs: map[string]string{}, Warnings: []string{}}
 	source := []byte(body)
 	parsed := readerMarkdown.Parser().Parse(text.NewReader(source))
 
@@ -312,9 +317,34 @@ func BuildReaderDocumentWithFences(body string, fences map[string]func(string) F
 			// true total; adding the subtree here would double-count.
 			document.NodeCount++
 			document.TextBytes += readerNodeTextBytes(node)
+			if annotations != nil {
+				if annotation, ok := readerRichAnnotation(child, source, node.Anchor); ok {
+					*annotations = append(*annotations, annotation)
+					if len(*annotations) > readerRichMaxAnnotations {
+						document.NodeCount = ReaderTotalMaxNodes
+						return nodes
+					}
+				}
+			}
+			if embeds != nil {
+				if candidate, ok := readerEmbedCandidate(child, source, node.Anchor); ok {
+					if len(*embeds) >= 32 || len(candidate.Raw) > 2048 {
+						document.NodeCount = ReaderTotalMaxNodes
+						return nodes
+					}
+					*embeds = append(*embeds, candidate)
+				}
+			}
 			// Every top-level block registers its anchor for page jumps.
 			if depth == 0 {
 				document.AnchorIndex[node.Anchor] = len(nodes)
+				if id := readerParagraphBlockID(child, source); id != "" {
+					if _, exists := document.BlockRefs[id]; exists {
+						document.BlockRefs[id] = ""
+					} else {
+						document.BlockRefs[id] = node.Anchor
+					}
+				}
 			}
 			nodes = append(nodes, node)
 		}

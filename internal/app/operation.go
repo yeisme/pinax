@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
+	"github.com/yeisme/pinax/internal/app/syncdaemon"
 	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/operation"
 )
@@ -34,10 +36,39 @@ func (s *Service) OperationReconcile(ctx context.Context, request OperationReque
 	if err != nil {
 		return operationErrorProjection("operation.reconcile", err)
 	}
+	if (row.CapabilityID == inputAttachmentCapability || isSyncOperation(row.CapabilityID) || row.CapabilityID == writerDailyApplyCapability || row.CapabilityID == writerDailyEditCapability || row.CapabilityID == writerTagsApplyCapability || row.CapabilityID == "writer.tags.item") && !operation.StatusTerminal(row.Status) {
+		if err := collaborationSafePath(request.VaultPath, ".pinax/sync/operation.lock"); err != nil {
+			return operationErrorProjection("operation.reconcile", err)
+		}
+		lock, err := syncdaemon.AcquireOperationLock(request.VaultPath, "writer.daily.reconcile")
+		if err != nil {
+			return operationErrorProjection("operation.reconcile", err)
+		}
+		defer lock.Release()
+		row, err = loadOperation(ctx, request)
+		if err != nil {
+			return operationErrorProjection("operation.reconcile", err)
+		}
+	}
 	if operation.StatusTerminal(row.Status) {
 		return operationProjection("operation.reconcile", operation.ViewFromRow(row)), nil
 	}
 	evidence, err := s.inboxReconcileEvidence(ctx, request.VaultPath, row)
+	if err == nil && row.CapabilityID == writerDailyApplyCapability {
+		evidence, err = s.dailyReconcileEvidence(ctx, request.VaultPath, row)
+	}
+	if err == nil && row.CapabilityID == writerDailyEditCapability {
+		evidence, err = s.dailyEditReconcileEvidence(ctx, request.VaultPath, row)
+	}
+	if err == nil && row.CapabilityID == inputAttachmentCapability {
+		var proof attachmentProof
+		if json.Unmarshal(row.ResultJSON, &proof) == nil {
+			evidence, err = inputAttachmentEvidence(ctx, request.VaultPath, proof, row.ReceiptRef)
+		}
+	}
+	if err == nil && isSyncOperation(row.CapabilityID) {
+		evidence, err = syncReconcileEvidence(request.VaultPath, row)
+	}
 	if err == nil && row.CapabilityID == folderRenameCapabilityID {
 		evidence, err = s.folderReconcileEvidence(ctx, request.VaultPath, row)
 	}
@@ -68,11 +99,14 @@ func loadOperation(ctx context.Context, request OperationRequest) (operation.Ope
 	if strings.TrimSpace(request.VaultPath) == "" || strings.TrimSpace(request.OperationID) == "" {
 		return operation.OperationRow{}, &operation.Error{Code: operation.CodeNotFound, Message: "Operation was not found"}
 	}
-	store, err := operation.OpenExisting(request.VaultPath)
+	if err := ctx.Err(); err != nil {
+		return operation.OperationRow{}, err
+	}
+	store, cleanup, err := operation.OpenReadSnapshot(request.VaultPath)
 	if err != nil {
 		return operation.OperationRow{}, err
 	}
-	defer func() { _ = store.Close() }()
+	defer cleanup()
 	if request.Access.OwnerLocal {
 		return store.Get(ctx, request.OperationID)
 	}

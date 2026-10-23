@@ -312,14 +312,37 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		if projection, err := d.ensureWriteAllowed("sync.push", req.Params); err != nil {
 			return projection, err
 		}
-		projection, err := d.service.SyncPush(ctx, app.SyncRequest{VaultPath: d.vault, Target: stringParam(req.Params, "target"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run"), BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision")})
+		projection, err := d.service.SyncPush(ctx, app.SyncRequest{Operation: app.RemoteOperationIdentity{OperationID: stringParam(req.Params, "operation_id"), IdempotencyKey: stringParam(req.Params, "idempotency_key"), BindingID: "rpc.sync.push", Access: d.operationAccess}, VaultPath: d.vault, Target: stringParam(req.Params, "target"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run"), BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision")})
 		projection.Mode = "json"
 		return projection, err
 	case "Pinax.Sync.Pull":
 		if projection, err := d.ensureWriteAllowed("sync.pull", req.Params); err != nil {
 			return projection, err
 		}
-		projection, err := d.service.SyncPull(ctx, app.SyncRequest{VaultPath: d.vault, Target: stringParam(req.Params, "target"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run"), BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision")})
+		projection, err := d.service.SyncPull(ctx, app.SyncRequest{Operation: app.RemoteOperationIdentity{OperationID: stringParam(req.Params, "operation_id"), IdempotencyKey: stringParam(req.Params, "idempotency_key"), BindingID: "rpc.sync.pull", Access: d.operationAccess}, VaultPath: d.vault, Target: stringParam(req.Params, "target"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run"), BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Sync.Status":
+		projection, err := d.service.SyncStatus(ctx, app.SyncStatusRequest{VaultPath: d.vault})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Sync.Diff":
+		projection, err := d.service.SyncDiff(ctx, app.SyncRequest{VaultPath: d.vault, Target: stringParam(req.Params, "target"), DryRun: true, BaseRevision: stringParam(req.Params, "base_revision"), RemoteRevision: stringParam(req.Params, "remote_revision"), ContentDiff: boolParam(req.Params, "content_diff")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Sync.Conflicts.List":
+		projection, err := d.service.SyncConflictsList(ctx, app.SyncConflictsListRequest{VaultPath: d.vault})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Sync.Conflicts.Diff":
+		projection, err := d.service.SyncConflictsDiff(ctx, app.SyncConflictFileRequest{VaultPath: d.vault, File: stringParam(req.Params, "file")})
+		projection.Mode = "json"
+		return projection, err
+	case "Pinax.Sync.Conflicts.Resolve":
+		if projection, err := d.ensureWriteAllowed("sync.conflicts.resolve", req.Params); err != nil {
+			return projection, err
+		}
+		projection, err := d.service.SyncConflictsResolve(ctx, app.SyncConflictResolveRequest{Operation: app.RemoteOperationIdentity{OperationID: stringParam(req.Params, "operation_id"), IdempotencyKey: stringParam(req.Params, "idempotency_key"), BindingID: "rpc.sync.conflicts.resolve", Access: d.operationAccess}, VaultPath: d.vault, File: stringParam(req.Params, "file"), KeepLocal: boolParam(req.Params, "keep_local"), KeepRemote: boolParam(req.Params, "keep_remote"), MergedPath: stringParam(req.Params, "merged_path"), Yes: true})
 		projection.Mode = "json"
 		return projection, err
 	// Agent memory runtime — experimental RPC routes (readonly context + recall).

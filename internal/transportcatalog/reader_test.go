@@ -32,6 +32,13 @@ func TestReaderContract(t *testing.T) {
 		requestSchema  string
 		responseSchema string
 	}{
+		"rest.reader.recovery.lookup":   {"reader.recovery.lookup", "GET", "/v1/reader/recovery/operation", catalogschema.ReaderRecoveryLookupRequestV1Alpha1, catalogschema.OperationV1},
+		"rest.reader.composed_document": {"reader.composed_document", "GET", "/v1/reader/notes/{object_id}/composed-document", catalogschema.ReaderComposedRequestV1Alpha1, catalogschema.ReaderComposedDocumentV1Alpha1},
+		"rest.reader.rich_document":     {"reader.rich_document", "GET", "/v1/reader/notes/{object_id}/rich-document", catalogschema.ReaderRichDocumentRequestV1Alpha1, catalogschema.ReaderRichDocumentV1Alpha1},
+		"rest.reader.daily.document":    {"reader.daily.document", "GET", "/v1/reader/journals/daily/document", catalogschema.ReaderDailyDocumentRequestV1Alpha1, catalogschema.ReaderDocumentV1Alpha1},
+		RestReaderTagsBindingID:         {ReaderTagsCapabilityID, "GET", "/v1/reader/tags", catalogschema.ReaderTagsRequestV1Alpha1, catalogschema.ReaderTagsV1Alpha1},
+		RestReaderGraphBindingID:        {ReaderGraphCapabilityID, "GET", "/v1/reader/graph", catalogschema.ReaderGraphRequestV1Alpha1, catalogschema.ReaderGraphV1Alpha1},
+		RestReaderDailyBindingID:        {ReaderDailyCapabilityID, "GET", "/v1/reader/journals/daily", catalogschema.ReaderDailyRequestV1Alpha1, catalogschema.ReaderDailyV1Alpha1},
 		RestReaderSourceBindingID:       {ReaderSourceCapabilityID, "GET", "/v1/reader/source", "pinax.reader.source.request.v1alpha1", "pinax.reader.source.v1alpha1"},
 		RestReaderNotesBindingID:        {ReaderNotesCapabilityID, "GET", "/v1/reader/notes", "pinax.reader.notes.request.v1alpha1", "pinax.reader.note_list.v1alpha1"},
 		RestReaderSearchBindingID:       {ReaderSearchCapabilityID, "GET", "/v1/reader/search", "pinax.reader.search.request.v1alpha1", "pinax.reader.search_results.v1alpha1"},

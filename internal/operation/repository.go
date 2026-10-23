@@ -266,6 +266,20 @@ func (s *Store) Get(ctx context.Context, operationID string) (OperationRow, erro
 	return operation, nil
 }
 
+// ListCapability returns an owner-local, bounded ledger page for recovery and
+// invariant checks. It is not a transport-visible or principal-scoped listing.
+func (s *Store) ListCapability(ctx context.Context, capabilityID, afterID string, limit int) ([]OperationRow, error) {
+	if capabilityID == "" || limit < 1 || limit > 200 {
+		return nil, operationError(CodePayloadInvalid, "Operation page is invalid", nil)
+	}
+	rows := make([]OperationRow, 0)
+	err := s.db.WithContext(ctx).Where("capability_id = ? AND operation_id > ?", capabilityID, afterID).Order("operation_id ASC").Limit(limit).Find(&rows).Error
+	if err != nil {
+		return nil, operationError(CodeStoreUnavailable, "Operation ledger could not be inspected", err)
+	}
+	return rows, nil
+}
+
 func (s *Store) GetAuthorized(ctx context.Context, operationID, principalDigest, scopeDigest string) (OperationRow, error) {
 	operation, err := s.Get(ctx, operationID)
 	if err != nil {
@@ -361,6 +375,12 @@ func (s *Store) transition(ctx context.Context, operationID string, target Statu
 		if strings.TrimSpace(value) != "" {
 			updates[key] = strings.TrimSpace(value)
 		}
+	}
+	if target == StatusSucceeded {
+		// Verified reconciliation supersedes the earlier ambiguity, including
+		// its error and retry flags. A succeeded receipt must be unambiguous.
+		updates["error_code"], updates["error_message"] = "", ""
+		updates["retryable"], updates["replay_safe"] = false, false
 	}
 	if target == StatusFailed {
 		updates["retryable"] = outcome.Retryable

@@ -359,12 +359,14 @@ func (s *Service) ListProjects(_ context.Context, req VaultRequest) (domain.Proj
 	projection := domain.NewProjection("project.list", "Project list read.")
 	projection.Facts["vault"] = root
 	projection.Facts["projects"] = fmt.Sprint(len(registry.Projects))
+	projection.Facts["result_count"] = fmt.Sprint(len(registry.Projects))
 	if registry.CurrentProject != "" {
 		projection.Facts["current_project"] = registry.CurrentProject
 	}
 	for i, project := range registry.Projects {
 		prefix := fmt.Sprintf("project.%d.", i+1)
 		projection.Facts[prefix+"slug"] = project.Slug
+		projection.Facts[prefix+"id"] = project.Slug
 		projection.Facts[prefix+"name"] = project.Name
 		projection.Facts[prefix+"notes_prefix"] = project.NotesPrefix
 		if project.Description != "" {
@@ -375,7 +377,11 @@ func (s *Service) ListProjects(_ context.Context, req VaultRequest) (domain.Proj
 		}
 	}
 	projection.Data = map[string]any{"registry": registry}
-	projection.Actions = []domain.Action{{Name: "create", Command: fmt.Sprintf("pinax project create <slug> --vault %s", shellQuote(root))}}
+	next := fmt.Sprintf("pinax project create --help --vault %s", shellQuote(root))
+	if len(registry.Projects) > 0 {
+		next = fmt.Sprintf("pinax project describe %s --vault %s", shellQuote(registry.Projects[0].Slug), shellQuote(root))
+	}
+	projection.Actions = []domain.Action{{Name: "next", Command: next}}
 	return projection, nil
 }
 

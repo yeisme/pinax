@@ -2,9 +2,10 @@ package cli
 
 import (
 	"bytes"
-	"github.com/yeisme/pinax/internal/domain"
 	"strings"
 	"testing"
+
+	"github.com/yeisme/pinax/internal/domain"
 )
 
 func TestResourceCanonicalRegistrationAndErrors(t *testing.T) {

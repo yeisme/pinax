@@ -3,16 +3,20 @@ package cli
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/internal/transportcatalog"
 )
 
 type commandCatalogEntry struct {
-	Name       string `json:"name"`
-	Summary    string `json:"summary"`
-	Group      string `json:"group"`
-	Visibility string `json:"visibility"`
+	Name         string   `json:"name"`
+	Summary      string   `json:"summary"`
+	Group        string   `json:"group"`
+	Visibility   string   `json:"visibility"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	RemoteStatus string   `json:"remote_status,omitempty"`
 }
 
 func addCommandsCommand(root *cobra.Command, ctx commandBuildContext) {
@@ -22,6 +26,11 @@ func addCommandsCommand(root *cobra.Command, ctx commandBuildContext) {
 		Long:  "List every supported top-level Pinax command, including advanced compatibility and integration surfaces hidden from the default help.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			entries := commandCatalog(root)
+			manifest, err := TransportManifest()
+			if err != nil {
+				return err
+			}
+			decorateCommandCatalog(entries, manifest)
 			coreCount := 0
 			for _, entry := range entries {
 				if entry.Visibility == rootHelpVisibilityCore {
@@ -36,6 +45,28 @@ func addCommandsCommand(root *cobra.Command, ctx commandBuildContext) {
 			return ctx.renderProjection(cmd, projection, nil)
 		},
 	})
+}
+
+func decorateCommandCatalog(entries []commandCatalogEntry, manifest transportcatalog.Manifest) {
+	for index := range entries {
+		entry := &entries[index]
+		prefix := entry.Name + "."
+		for _, capability := range manifest.Capabilities {
+			if capability.Command != entry.Name && !strings.HasPrefix(capability.Command, prefix) {
+				continue
+			}
+			entry.Capabilities = append(entry.Capabilities, capability.ID)
+			if len(capability.Bindings) > 0 {
+				entry.RemoteStatus = "remote_supported"
+			} else if capability.LocalOnlyReason != "" && entry.RemoteStatus == "" {
+				entry.RemoteStatus = "local_only"
+			}
+		}
+		if entry.RemoteStatus == "" && len(entry.Capabilities) > 0 {
+			entry.RemoteStatus = "unsupported"
+		}
+		sort.Strings(entry.Capabilities)
+	}
 }
 
 func commandCatalog(root *cobra.Command) []commandCatalogEntry {

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/yeisme/pinax/internal/domain"
 	"github.com/yeisme/pinax/internal/transportcatalog"
 )
 
@@ -181,6 +182,50 @@ func TestRemoteTransportManifestConformsToRouteRegistry(t *testing.T) {
 	); err != nil {
 		t.Fatalf("route registry conformance failed: %v", err)
 	}
+}
+
+func TestRemoteWriteInteractionMetadataIsConsistent(t *testing.T) {
+	t.Parallel()
+
+	capabilities := map[string]domain.RemoteCapability{}
+	for _, capability := range RemoteCapabilities() {
+		capabilities[capability.ID] = capability
+	}
+	inbox := capabilities["inbox.capture"]
+	if inbox.ExecutionLocation != "remote_service" || inbox.WriteStrategy != "dry_run_then_apply" || inbox.Recovery == nil || !inbox.Recovery.IdentityRequired {
+		t.Fatalf("inbox interaction metadata = %#v", inbox)
+	}
+	if inbox.Recovery.StatusCommand != "pinax operation show <operation-id> --json" || inbox.Recovery.ReconcileCommand != "pinax operation reconcile <operation-id> --json" {
+		t.Fatalf("inbox recovery metadata = %#v", inbox.Recovery)
+	}
+	folder := capabilities["folder.rename"]
+	if folder.WriteStrategy != "snapshot_then_apply" || folder.Recovery == nil {
+		t.Fatalf("folder rename interaction metadata = %#v", folder)
+	}
+	note := capabilities["note.add"]
+	if note.ExecutionLocation != "client_local" || note.OwnerAction == nil || note.OwnerAction.ExecutionLocation != "client_local" {
+		t.Fatalf("note.add owner metadata = %#v", note)
+	}
+
+	manifest, err := RemoteTransportManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range manifest.Capabilities {
+		if capability.ID != "inbox.capture" {
+			continue
+		}
+		if capability.ExecutionLocation != "remote_service" || capability.WriteStrategy != "dry_run_then_apply" || capability.Recovery == nil {
+			t.Fatalf("manifest inbox metadata = %#v", capability)
+		}
+		for _, binding := range capability.Bindings {
+			if binding.ExecutionLocation != "remote_service" {
+				t.Fatalf("binding %q execution location = %q", binding.ID, binding.ExecutionLocation)
+			}
+		}
+		return
+	}
+	t.Fatal("manifest missing inbox.capture")
 }
 
 func manifestContainsString(values []string, target string) bool {

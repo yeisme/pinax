@@ -131,6 +131,7 @@ const (
 )
 
 type CommandError struct {
+	Field   string `json:"field,omitempty"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Hint    string `json:"hint,omitempty"`
@@ -144,6 +145,7 @@ func (e *CommandError) Error() string {
 }
 
 type Projection struct {
+	AllRows     bool                `json:"-"`
 	SpecVersion string              `json:"spec_version"`
 	Mode        string              `json:"mode"`
 	Command     string              `json:"command"`
@@ -979,6 +981,7 @@ type SyncConflictDetail struct {
 
 // SyncConflictResolutionReceipt is the safe receipt persisted after a conflict resolution.
 type SyncConflictResolutionReceipt struct {
+	OperationID   string `json:"operation_id,omitempty"`
 	SchemaVersion string `json:"schema_version"`
 	Command       string `json:"command"`
 	Status        string `json:"status"`

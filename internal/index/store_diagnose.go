@@ -135,7 +135,7 @@ func Diagnose(root string, notes []domain.Note) (DoctorReport, error) {
 }
 
 // InspectReadOnly reports the index status WITHOUT ever repairing it: the
-// database is opened read-only (mode=ro) and no migration, schema repair,
+// database is inspected through a bounded private read-only snapshot. No migration, schema repair,
 // identity backfill or any other write runs. Reader surfaces use this path
 // so a read request can never persist changes to the owner's index. Status
 // semantics mirror Diagnose: an index whose schema needs migration or whose
@@ -151,7 +151,7 @@ func InspectReadOnly(root string, notes []domain.Note) (Status, error) {
 	if err := verifySQLiteHeader(indexPath); err != nil {
 		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
 	}
-	db, err := sqlitedsn.OpenReadOnly(indexPath)
+	db, cleanup, err := sqlitedsn.OpenReadSnapshot(indexPath)
 	if err != nil {
 		return Status{Status: "unreadable", Path: indexRelPath(), Evidence: []string{err.Error()}}, nil
 	}
@@ -159,7 +159,7 @@ func InspectReadOnly(root string, notes []domain.Note) (Status, error) {
 	// process exit registry on every path so long-running reader sessions
 	// accumulate neither file handles nor retained pool objects per
 	// request.
-	defer func() { _ = sqlitedsn.CloseAndRelease(db) }()
+	defer cleanup()
 	if schemaIssues := indexStorageSchemaIssues(db); len(schemaIssues) > 0 {
 		// A schema the write path would migrate is reported stale here:
 		// the reader never migrates, it only observes.

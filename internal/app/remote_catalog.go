@@ -28,6 +28,10 @@ func RemoteCapabilityDefinitions() ([]transportcatalog.CapabilityDefinition, map
 			WriteGate:           capability.WriteGate,
 			CopyCommand:         capability.CopyCommand,
 			LocalOnlyReason:     capability.LocalOnlyReason,
+			ExecutionLocation:   transportcatalog.ExecutionLocation(capability.ExecutionLocation),
+			WriteStrategy:       transportcatalog.WriteStrategy(capability.WriteStrategy),
+			Recovery:            remoteRecoveryToCatalog(capability.Recovery),
+			OwnerAction:         remoteOwnerActionToCatalog(capability.OwnerAction),
 			RequestSchema:       capability.RequestSchema,
 			ResponseSchema:      capability.ResponseSchema,
 			Errors:              append([]string(nil), capability.Errors...),
@@ -56,16 +60,17 @@ func RemoteTransportBindings() ([]transportcatalog.TransportBinding, error) {
 		}
 
 		binding := transportcatalog.TransportBinding{
-			ID:             route.RouteID,
-			CapabilityID:   route.CapabilityID,
-			Availability:   transportcatalog.AvailabilityAvailable,
-			Method:         route.Method,
-			Path:           route.Path,
-			ProtocolName:   route.RPCMethod,
-			Readonly:       route.Readonly,
-			WriteGate:      route.WriteGate,
-			RequestSchema:  capability.RequestSchema,
-			ResponseSchema: capability.ResponseSchema,
+			ID:                route.RouteID,
+			CapabilityID:      route.CapabilityID,
+			Availability:      transportcatalog.AvailabilityAvailable,
+			Method:            route.Method,
+			Path:              route.Path,
+			ProtocolName:      route.RPCMethod,
+			Readonly:          route.Readonly,
+			WriteGate:         route.WriteGate,
+			RequestSchema:     capability.RequestSchema,
+			ResponseSchema:    capability.ResponseSchema,
+			ExecutionLocation: transportcatalog.ExecutionLocation(route.ExecutionLocation),
 		}
 		if route.CapabilityID == inboxCaptureCapabilityID {
 			binding.Readiness = &transportcatalog.Readiness{
@@ -102,6 +107,20 @@ func RemoteTransportBindings() ([]transportcatalog.TransportBinding, error) {
 		bindings = append(bindings, binding)
 	}
 	return bindings, nil
+}
+
+func remoteRecoveryToCatalog(recovery *domain.RemoteRecoveryContract) *transportcatalog.RecoveryContract {
+	if recovery == nil {
+		return nil
+	}
+	return &transportcatalog.RecoveryContract{IdentityRequired: recovery.IdentityRequired, StatusCommand: recovery.StatusCommand, ReconcileCommand: recovery.ReconcileCommand}
+}
+
+func remoteOwnerActionToCatalog(action *domain.RemoteOwnerAction) *transportcatalog.OwnerAction {
+	if action == nil {
+		return nil
+	}
+	return &transportcatalog.OwnerAction{ExecutionLocation: transportcatalog.ExecutionLocation(action.ExecutionLocation), Command: action.Command, Reason: action.Reason}
 }
 
 // RemoteTransportManifest compiles the additive authoritative transport view.

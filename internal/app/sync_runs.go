@@ -37,6 +37,7 @@ type SyncLogsRequest struct {
 }
 
 type SyncRunReceipt struct {
+	OperationID          string               `json:"operation_id,omitempty"`
 	SchemaVersion        string               `json:"schema_version"`
 	RunID                string               `json:"run_id"`
 	Command              string               `json:"command"`

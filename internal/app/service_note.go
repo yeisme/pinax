@@ -665,7 +665,10 @@ func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Proje
 	}
 	meta["tags"] = formatTags(tags)
 	meta["updated_at"] = time.Now().UTC().Format(time.RFC3339)
-	updated, _ := patchFrontmatterFields(content, meta)
+	updated, err := patchTagMetadata(content, meta["tags"], meta["updated_at"])
+	if err != nil {
+		return errorProjection("note.tag", err), err
+	}
 	if err := commitNoteContent(path, path, updated); err != nil {
 		return errorProjection("note.tag", err), err
 	}
@@ -673,7 +676,8 @@ func (s *Service) TagNote(ctx context.Context, req NoteTagRequest) (domain.Proje
 	projection := noteMutationProjection("note.tag", "Note tags updated.", note.Path, meta)
 	projection.Facts["tags"] = strings.Join(tags, ",")
 	projection.Data = map[string]any{"note": domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Tags: tags, Project: note.Project, Status: meta["status"]}}
-	recordNote := domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Tags: tags, Body: strings.TrimSpace(strings.TrimPrefix(updated, renderFrontmatter(meta, ""))), Project: note.Project, Status: meta["status"]}
+	_, recordBody := splitFrontmatter(updated)
+	recordNote := domain.Note{ID: note.ID, Title: note.Title, Path: note.Path, Tags: tags, Body: recordBody, Project: note.Project, Status: meta["status"]}
 	recordEvent, recordErr := appendNoteRecordEvent(ctx, root, domain.RecordEventNoteMetadataUpdated, "note.tag:"+recordNote.ID+":"+req.Operation+":"+strings.Join(tags, ","), recordNote, "")
 	if recordErr != nil {
 		return errorProjection("note.tag", recordErr), recordErr

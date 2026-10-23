@@ -163,6 +163,13 @@ func (s *Service) ReaderDocument(ctx context.Context, req ReaderDocumentRequest)
 		err := ReaderError("reader_object_not_found", "The requested note is not visible", "")
 		return domain.NewErrorProjection(command, err), err
 	}
+	return s.readerDocumentSelected(ctx, req, root, note, notes)
+}
+
+// readerDocumentSelected renders an already-authorized note; callers own
+// selection policy. It does not grant access to system objects by itself.
+func (s *Service) readerDocumentSelected(ctx context.Context, req ReaderDocumentRequest, root string, note domain.Note, notes []domain.Note) (domain.Projection, error) {
+	command, objectID := "reader.document", note.ID
 	currentRevision := readerNoteRevision(note)
 
 	// Interactive source budget: a raw source beyond the budget is never
@@ -464,6 +471,10 @@ var readerWikiNotePattern = regexp.MustCompile(`(!?)\[\[([^|\]]+)(?:\|([^\]]+))?
 // fence nodes are never resolved; ambiguous or invisible targets stay plain
 // text without existence leaks.
 func resolveReaderNoteRefs(source domain.Note, notes []domain.Note, document *render.ReaderDocument) error {
+	return resolveReaderNoteRefsWithBudget(source, notes, document, &readerHeadingRefs{})
+}
+
+func resolveReaderNoteRefsWithBudget(source domain.Note, notes []domain.Note, document *render.ReaderDocument, headingRefs *readerHeadingRefs) error {
 	snapshot := notelinks.BuildResolverSnapshot(notes)
 	claim := func(base string, topIndex int) string {
 		anchor := base
@@ -476,13 +487,18 @@ func resolveReaderNoteRefs(source domain.Note, notes []domain.Note, document *re
 		document.AnchorIndex[anchor] = topIndex
 		return anchor
 	}
-	noteURI := func(n domain.Note) string {
-		return "pinax://note/" + n.ID + "?v=" + readerNoteRevision(n)
-	}
+	var resolutionErr error
 	resolvedTarget := func(raw notelinks.RawLink) (domain.Note, bool) {
+		if raw.Target == "" && raw.Heading != "" {
+			return source, true
+		}
 		result := notelinks.ResolveLinkTarget(source, raw, snapshot)
 		if result.Link.Status != string(domain.LinkStatusResolved) || result.Link.TargetObjectID == "" {
 			return domain.Note{}, false // ambiguous/broken/unresolvable stay text
+		}
+		if result.Link.TargetObjectID == source.ID && raw.Heading != "" {
+			// The serving source may be a pinned snapshot, not the live entry.
+			return source, true
 		}
 		for _, candidate := range notes {
 			if candidate.ID == result.Link.TargetObjectID && candidate.ID != source.ID {
@@ -506,9 +522,22 @@ func resolveReaderNoteRefs(source domain.Note, notes []domain.Note, document *re
 		// path semantics included).
 		if node.Type == "link" && node.Ref != "" {
 			cleanTarget, heading := notelinks.NormalizeMarkdownLinkTarget(node.Ref)
+			if strings.HasPrefix(node.Ref, "#") {
+				heading = strings.TrimPrefix(node.Ref, "#")
+			}
 			raw := notelinks.RawLink{Kind: "markdown", Target: cleanTarget, Heading: heading}
 			if target, ok := resolvedTarget(raw); ok {
-				node.Ref = noteURI(target)
+				uri, found, err := headingRefs.uri(target, heading)
+				if err != nil {
+					resolutionErr = err
+					return false
+				}
+				if found {
+					node.Ref = uri
+				} else if heading != "" {
+					node.Type = "unsupported"
+					node.Ref = ""
+				}
 			}
 		}
 		// Wiki resolution applies to block-text contexts: paragraphs,
@@ -536,6 +565,14 @@ func resolveReaderNoteRefs(source domain.Note, notes []domain.Note, document *re
 				if !ok {
 					continue
 				}
+				uri, found, err := headingRefs.uri(target, wikiHeading)
+				if err != nil {
+					resolutionErr = err
+					return false
+				}
+				if !found {
+					continue
+				}
 				label := strings.TrimSpace(wikiAlias)
 				if label == "" {
 					label = target.Title
@@ -548,7 +585,7 @@ func resolveReaderNoteRefs(source domain.Note, notes []domain.Note, document *re
 					Type:   "link",
 					Anchor: claim(fmt.Sprintf("%s-noteref-%d", node.Anchor, len(node.Children)+1), topIndex),
 					Text:   label,
-					Ref:    noteURI(target),
+					Ref:    uri,
 				})
 			}
 			for index := 0; index < originalChildren; index++ {
@@ -567,6 +604,9 @@ func resolveReaderNoteRefs(source domain.Note, notes []domain.Note, document *re
 	}
 	for topIndex := range document.Blocks {
 		if !walk(&document.Blocks[topIndex], topIndex) {
+			if resolutionErr != nil {
+				return resolutionErr
+			}
 			return &render.ReaderBudgetError{Code: "document_budget_exceeded"}
 		}
 	}
