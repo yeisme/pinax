@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -134,6 +135,9 @@ func (t *HTTPTransport) Evaluate(ctx context.Context, jr *Request) (*Result, err
 		return nil, terr
 	}
 	if status != http.StatusOK {
+		if classified := parseHTTPError(body, ref); classified != nil {
+			return nil, classified
+		}
 		return nil, classifyHTTPStatus(status, ref)
 	}
 	result, verr := ParseResult(body, jr, DefaultPrecisionPolicy())
@@ -202,7 +206,7 @@ func (t *HTTPTransport) roundTrip(req *http.Request) ([]byte, int, string, error
 	if resp.StatusCode != http.StatusOK {
 		// Error body content is withheld; only the classification and a
 		// digest reference survive.
-		return nil, resp.StatusCode, bodyRef(resp.StatusCode, body), nil
+		return body, resp.StatusCode, bodyRef(resp.StatusCode, body), nil
 	}
 	return body, resp.StatusCode, "http:200", nil
 }
@@ -231,4 +235,26 @@ func classifyHTTPStatus(status int, diagnosticRef string) *Error {
 	default:
 		return NewError(CodeInvalidResponse, SubmissionUnknown, RetryReconcileFirst, diagnosticRef, "http_"+strconv.Itoa(status))
 	}
+}
+
+// Preserve only validated contract enums, never upstream detail or diagnostic text.
+func parseHTTPError(body []byte, ref string) *Error {
+	var envelope struct {
+		Error *struct {
+			Code       string `json:"code"`
+			Submission string `json:"submission_state"`
+			Retry      string `json:"retry_class"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &envelope) != nil || envelope.Error == nil {
+		return nil
+	}
+	e := envelope.Error
+	if !validCode(e.Code) || !validSubmissionState(e.Submission) || !validRetryClass(e.Retry) {
+		return nil
+	}
+	if e.Submission != SubmissionNotSubmitted && e.Retry == RetrySafeBeforeSubmit {
+		return nil
+	}
+	return NewError(e.Code, e.Submission, e.Retry, ref, "adapter_error")
 }
