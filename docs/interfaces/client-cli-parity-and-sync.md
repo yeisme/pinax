@@ -35,6 +35,8 @@ Remote API Mode 是“一个客户端操作一个服务端本地 vault”。Clou
 
 当前可通过 `pinax api routes --vault ./my-notes --json` 发现已暴露能力。现阶段覆盖重点是可被客户端安全复用的 note/project/workspace/task/database/graph/folder/inbox/draft/sync 核心路径：
 
+所有 registry consumer 还应读取 `execution_location`、`write_strategy`、`recovery` 和 `owner_action`。这些字段来自同一个 `pinax.transport_manifest.v1`，不由 CLI、OpenAPI、MCP 或 SDK 分别维护。
+
 | 能力组 | 当前客户端覆盖 | 说明 |
 | --- | --- | --- |
 | discovery/schema | CLI/REST/RPC/MCP | `pinax api manifest`、`GET /v1/manifest`、`Pinax.Transport.Manifest` 与 `pinax://manifest` 汇聚真实 binding；`api routes` legacy 字段继续保留。 |
@@ -46,8 +48,8 @@ Remote API Mode 是“一个客户端操作一个服务端本地 vault”。Clou
 | database saved views | REST/RPC/MCP/dashboard/remote CLI | `database.view.render` 返回 CLI JSON 同名 bounded `database_view`/`database_tab` projection；client 不解析 `.pinax/views.json` 或 Markdown fences。 |
 | graph summary | REST/RPC/MCP/dashboard | link graph read projection，repair 仍是 plan-first。 |
 | inbox/draft | REST/RPC/remote CLI | capture/create/promote/archive/discard 受 `--allow-write` 和 `yes=true` 门禁保护；`inbox.capture` 已有 operation recovery。 |
-| operation recovery | CLI/REST/RPC/SDK | `operation show/reconcile` 读取 ledger/evidence，不 blind replay mutation；首批覆盖 `inbox.capture` 与 `folder.rename`。 |
-| sync push/pull | RPC | 用于受控客户端触发显式同步；实时同步仍应使用 `pinax sync daemon`。 |
+| operation recovery | CLI/REST/RPC/SDK | `operation show/reconcile` 读取 ledger/evidence，不 blind replay mutation；覆盖 `inbox.capture`、`folder.rename` 和公开 sync push/pull/conflicts.resolve；详见 [后端恢复与附件合同](notebook-backend-recovery-and-attachments.md)。 |
+| sync push/pull | REST/RPC/SDK | 用于受控客户端触发显式同步；实时同步仍应使用 `pinax sync daemon`。 |
 
 没有出现在 registry 里的命令必须返回 `remote_command_unsupported`，不能在 remote mode 下悄悄回退到本地执行。
 
@@ -181,3 +183,11 @@ openspec validate pinax-client-cli-parity-realtime-sync --strict
 go test ./internal/app -run 'TestSyncDaemon' -count=1
 go test ./tests/e2e -run TestSyncDaemon -count=1
 ```
+
+远程写入 parity profile：
+
+```bash
+go run ./tools/testkit/integrationevidence --profile remote-write-parity
+```
+
+该 profile 覆盖 manifest metadata、inbox/folder operation identity、writer recovery、OpenAPI parity、Remote CLI mapping 和 MCP 只读边界。

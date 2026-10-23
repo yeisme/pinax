@@ -1,5 +1,7 @@
 # note Command
 
+For experimental renderer-independent trees and stable version references, see [rendered views](../guides/note-proposals-and-rendered-views.md). Use `pinax note preview <note> --view rendered --display card|context|body --format tree|json|html`; omitting the new options preserves legacy preview. `pinax note ref <note> [--copy] [--floating] [--pick N]` emits references. `pinax note ref resolve <pinax-uri> [--resolved-revision <revision>]` resolves exact versions or caller-pinned drift without writing the vault.
+
 `pinax note` is the main entry point for individual notes and note relationships. It handles creating, reading, editing, moving, archiving, deleting, tags, links, attachments, and rendered view.
 
 ## Common Subcommands
@@ -27,8 +29,8 @@
 pinax note add "Research Log" --body "Today's observations" --tags research --status active --vault ./my-notes
 pinax note add "Meeting Notes" --stdin --vault ./my-notes
 pinax note list --tag research --recent --limit 20 --vault ./my-notes
-pinax note show "Research Log" --view source --vault ./my-notes
-pinax note show "Research Log" --view rendered --vault ./my-notes
+pinax note describe "Research Log" --view source --vault ./my-notes
+pinax note describe "Research Log" --view rendered --vault ./my-notes
 pinax note read "Research Log" --display card --vault ./my-notes --json
 pinax note read "Research Log" --display body --vault ./my-notes --json
 pinax note preview "Research Log" --vault ./my-notes
@@ -100,7 +102,7 @@ User-visible note paths use vault-relative canonical paths: by default, regular 
 新 note 和 journal 使用 canonical UUIDv7 `object_id`；`note_id` 保持为兼容字段和 frontmatter 镜像。rename/move 只改变当前 path，不改变对象 ID。所有 managed-object mutation 先走统一 resolver；缺少对象身份时返回 `identity_migration_required`。
 
 ```bash
-pinax note show <object-id> --display card --vault ./my-notes --json
+pinax note describe <object-id> --display card --vault ./my-notes --json
 pinax note rename <object-id> "New title" --vault ./my-notes --json
 pinax note move <object-id> archive --vault ./my-notes --json
 pinax note delete <object-id> --vault ./my-notes --yes --json

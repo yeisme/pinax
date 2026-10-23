@@ -24,7 +24,7 @@ pinax database view save active-dv --language dataview --query 'TABLE title, sta
 pinax database view save active-board --display board --query 'SELECT title, status FROM notes LIMIT 20' --board-column status --vault ./my-notes --json
 pinax database view save due-calendar --display calendar --query 'SELECT title, due FROM notes LIMIT 20' --calendar-field due --vault ./my-notes --json
 pinax database view list --vault ./my-notes
-pinax database view show active --vault ./my-notes --json
+pinax database view describe active --vault ./my-notes --json
 pinax database view render active-dv --vault ./my-notes --json
 pinax database schema infer --vault ./my-notes --json
 pinax database schema set status --type select --values active,done,archived --vault ./my-notes
@@ -51,7 +51,7 @@ Saved views can also be embedded in Markdown as tabs:
 Render the note through the shared projection service:
 
 ```bash
-pinax note show "Dashboard" --view rendered --vault ./my-notes --json
+pinax note describe "Dashboard" --view rendered --vault ./my-notes --json
 ```
 
 The saved view registry stores view configuration only. It must not store result rows, dashboard layout state, or client active-tab selection.

@@ -1,5 +1,7 @@
 # Pinax
 
+Experimental owner-local note proposals and rendered trees are available through CLI/MCP. See [note proposals and rendered references](docs/guides/note-proposals-and-rendered-views.md). Default MCP hides proposal writes; note edits require local owner approval. These additions do not complete real-use or multi-device acceptance gates.
+
 [中文说明](./README.zh-CN.md)
 
 Pinax is a **personal local knowledge tool for Markdown**. It gives one person a short path to capture notes, clear an inbox, keep a journal, search a vault, manage projects, and create local version evidence. Your Markdown files stay the source of truth.
@@ -16,6 +18,8 @@ credentialctl set gemini/personal-default --preset local-ai --json
 The default CLI intentionally shows only the everyday local commands. Existing sync, Capsa, API, Agent, publish, and plugin surfaces remain available for compatibility through `pinax commands`.
 
 ## The everyday loop
+
+For Agent-assisted capture, read-only review batches and reading in your existing Markdown editor, see the [daily knowledge workflow](./docs/guides/daily-knowledge.md). Long inbox content supports `pinax inbox capture "Title" --stdin`; `pinax inbox review` previews five pending items without changing them.
 
 Start locally without configuring a daemon, cloud account, remote backend, or multi-device topology:
 
@@ -66,7 +70,7 @@ Agent plans bind the object ID plus the observed path and expected content/recor
 
 Prerequisites:
 
-- Go 1.26.1 or newer, or download a prebuilt archive/package below.
+- Go 1.26.9 or newer, or download a prebuilt archive/package below.
 - Optional: [Task](https://taskfile.dev/) for `task check` and local development shortcuts.
 
 Anonymous install of the current stable release `v0.2.0` (no GitHub token; public mirror [`yeisme/yeisme-dist`](https://github.com/yeisme/yeisme-dist)):

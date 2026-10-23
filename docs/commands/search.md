@@ -13,7 +13,7 @@ pinax search "authentication" --link-target notes/design/auth.md --vault ./my-no
 pinax search "diagram" --has-attachment --vault ./my-notes --json
 pinax search "authentication" --facets --vault ./my-notes
 pinax search "authentication" --trust human --stale only --vault ./my-notes --json
-pinax search show auth-design --vault ./my-notes
+pinax search describe auth-design --vault ./my-notes
 ```
 
 ## Filter Parameters
@@ -46,7 +46,9 @@ Trust badges (`human ✓` / `machine` / `unverified`, `fresh` / `stale`) and the
 
 ### search show
 
-`pinax search show <ref>` composes a one-stop read-only detail card for one result: bounded snippet (frontmatter `description`/`summary` first, then a bounded body excerpt), metadata, the trust panel (derived tier, latest human verification event, `stale_after`), outgoing/incoming link counts with bounded samples, and same-tag neighbors. It never prints the full note body, and ambiguous refs fail closed with the candidate list instead of guessing.
+`pinax search describe <ref>` composes a one-stop read-only detail card for one result: bounded snippet (frontmatter `description`/`summary` first, then a bounded body excerpt), metadata, the trust panel (derived tier, latest human verification event, `stale_after`), outgoing/incoming link counts with bounded samples, and same-tag neighbors. It never prints the full note body, and ambiguous refs fail closed with the candidate list instead of guessing.
+
+Snippets remain valid UTF-8 within the existing byte bound. Read, preview, backlinks and editor actions use the selected stable note ID (or path for legacy notes), so duplicate titles do not redirect the next action. `note open` launches the editor on the machine running Pinax; remote agents must give the user a local action rather than claiming their desktop was opened.
 
 ## Agent Brain Role
 

@@ -80,7 +80,7 @@ pinax version restore apply --vault ./my-notes --plan <restore-id> --yes --json
 pinax project create research --name "Research" --notes-prefix notes/research --vault ./my-notes --json
 pinax project subproject create research stock-learning --title "Stock Learning" --template scenario --vault ./my-notes --json
 pinax project item add research "Read annual report" --subproject stock-learning --column next --vault ./my-notes --json
-pinax project board show research --subproject stock-learning --vault ./my-notes --json
+pinax project board describe research --subproject stock-learning --vault ./my-notes --json
 pinax project board export research --format markdown --vault ./my-notes --json
 ```
 

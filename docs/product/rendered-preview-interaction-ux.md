@@ -1,8 +1,8 @@
 # 渲染预览与 Agent 审阅交互体验规格
 
-- 状态：规格稿。本文定义各消费面的**交互合同**（Pinax 拥有交互语义，实现归各面 owner：CLI/MCP 在 `cli/pinax`，Pane 在消费方面，全功能阅读面在 `client/yeisme-workbench`）。
+- 状态：P1 CLI/MCP 本地实现，experimental；P2仍为规格稿。2026-10-01用户将P3改为DriveBridge Electron内置阅读，首片只读、三平台实机门；详细UI以 [DriveBridge知识阅读规格](../../../drivebridge/docs/web/ui/knowledge-reading-spec.md) 为准，人读权限/分页以 [新API](../interfaces/human-reading-api.md) 为准。本页保留旧P1/P2和P3探索参考，不再要求Workbench存在，也不把局部图/图形审阅自动加进首片。
 - 日期：2026-09-23
-- 关联：[Markdown 预览设计](./markdown-rendered-preview-design.md)、[pinax-rendered-view-v1](../openspec/changes/pinax-rendered-view-v1/)、[pinax-agent-note-proposal-v1](../openspec/changes/pinax-agent-note-proposal-v1/)
+- 关联：[Markdown 预览设计](./markdown-rendered-preview-design.md)、[pinax-rendered-view-v1](../../openspec/changes/archive/2026-09-30-pinax-rendered-view-v1/)、[pinax-agent-note-proposal-v1](../../openspec/changes/archive/2026-09-30-pinax-agent-note-proposal-v1/)
 
 ## 1. 四条交互原则
 
@@ -19,7 +19,7 @@
 │ ┄ pinax-database-view active-table ┄  → 表格投影（≤20 行，truncated 标记）
 │ ┄ pinax-graph ┄                       → 节点/边计数 + top 节点行
 │ ✗ pinax-board research/missing        → [fence_failed board_not_found]
-│                                         下一步: pinax project board show …
+│                                         下一步: pinax project board describe …
 │ [[研究记录]] → 已解析卡片（title·status·version）
 │ [[不存在的页]] → ✗ broken
 │ badge: object_id · v3 · rev:9f2c… · 2026-09-23T14:02Z
@@ -33,7 +33,7 @@
 
 | 步骤 | 交互 | 失败态 |
 | --- | --- | --- |
-| 1. `pinax note ref "研究记录" --copy` | 剪贴板同时得到 `[研究记录](pinax://note/…?v=…)` 与 `[[研究记录]]` | 无剪贴板环境 → 双格式打印到 stdout 并提示手动复制 |
+| 1. `pinax note ref "研究记录" --copy` | 剪贴板同时得到 `[研究记录](pinax://note/…?v=…)` 与 `[[pinax://note/…?v=…|研究记录]]` | 无剪贴板环境 → 双格式打印到 stdout 并提示手动复制 |
 | 2. 粘贴目标 | vault 内编辑器用 wikilink；vault 外任意 markdown 用 `pinax://` 链接 | 两格式都在，用户删哪个用哪个 |
 | 3. 多命中 | 输出编号消歧列表（title·kind·updated），`--pick N` 或交互选择后复制 | 零命中 → 建议改用 `pinax search`，不虚构引用 |
 
@@ -42,7 +42,7 @@
 ## 4. `pinax://` 解析体验（P1）
 
 - **固定版本**：解析结果常显 `v=3 · rev 9f2c…`；目标版本被删除/不可达 → `unresolved` 显式结果，给"列出该 note 其他版本"的下一步。
-- **floating**：显示 `当前 v4（解析于 v3，已漂移 → stale）`——resolved 值不换、漂移只标状态；下一步给"复制新版本引用"单动作。
+- **floating**：显示 `当前 v4（解析于 v3，已漂移 → stale）`——调用方携带首次 resolved_revision，resolved 值不换、漂移只标状态；下一步给"复制新版本引用"单动作。
 - 所有 stale/unresolved 徽标可在 `--json` 中机器读取（`stale`、`resolved_revision`、`current_revision`）。
 
 ## 5. Pane rendered surface（P2，合同级交互）
@@ -52,7 +52,7 @@
 - 状态：快照 `fresh` 显示 rendered_at；无事件流时沿既有 offline 规则——不轮询伪装实时。
 - cursor/sequence 落地真实事件游标后，刷新只发增量。
 
-## 6. workbench 阅读面（P3 交互规格，实现归 client/yeisme-workbench）
+## 6. 历史 P3 阅读探索（当前由 DriveBridge 规格承接）
 
 三栏布局（窄屏折叠为单栏 + 抽屉）：
 
@@ -76,7 +76,7 @@ CLI 审阅闭环（用户视角三步）：
 
 ```bash
 pinax agent note proposal list            # 概览：kind·风险·rationale 摘要·diff 行数
-pinax agent note proposal show <id>       # 结构化变更 + 目标卡片 + expected revision
+pinax agent note proposal describe <id>       # 结构化变更 + 目标卡片 + expected revision
 pinax agent note proposal approve <id> --yes   # 或 reject <id>（同样留 receipt）
 ```
 

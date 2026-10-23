@@ -7,7 +7,7 @@
 | Command | Purpose | Writes |
 | --- | --- | --- |
 | `pinax monitor runs` | List monitor runs. | No |
-| `pinax monitor show <run-id>` | Show one monitor run. | No |
+| `pinax monitor describe <run-id>` | Show one monitor run. | No |
 | `pinax monitor tail` | Read the latest monitor runs. | No |
 | `pinax monitor summary` | Summarize monitor runs. | No |
 | `pinax monitor manage` | Summarize monitor log maintenance. | No |
@@ -16,7 +16,7 @@
 
 ```bash
 pinax monitor runs --command note.search --status success --limit 20 --vault ./my-notes --json
-pinax monitor show run_abc123 --vault ./my-notes --json
+pinax monitor describe run_abc123 --vault ./my-notes --json
 pinax monitor tail --vault ./my-notes --agent
 pinax monitor summary --vault ./my-notes --json
 pinax monitor manage --vault ./my-notes --json

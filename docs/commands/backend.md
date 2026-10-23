@@ -26,7 +26,7 @@
 ```bash
 pinax backend add s3 work-s3 --bucket notes --region us-east-1 --profile work --vault ./my-notes
 pinax backend ls --vault ./my-notes --json
-pinax backend show work-s3 --vault ./my-notes
+pinax backend describe work-s3 --vault ./my-notes
 pinax backend doctor work-s3 --vault ./my-notes
 pinax backend notes summary --vault ./my-notes --json
 pinax backend notes list work-s3 notes/ --vault ./my-notes --json

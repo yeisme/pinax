@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `pinax activity sources` | List supported activity sources. | No |
 | `pinax activity list` | List recent activity entries. | No |
-| `pinax activity show <event-id>` | Show one activity event. | No |
+| `pinax activity describe <event-id>` | Show one activity event. | No |
 | `pinax activity tail` | Read the latest activity snapshot. | No |
 | `pinax activity manage` | Summarize activity log maintenance. | No |
 
@@ -17,7 +17,7 @@
 ```bash
 pinax activity sources --vault ./my-notes --json
 pinax activity list --source monitor_runs --status success --limit 20 --vault ./my-notes --json
-pinax activity show event_abc123 --vault ./my-notes --json
+pinax activity describe event_abc123 --vault ./my-notes --json
 pinax activity tail --vault ./my-notes --agent
 pinax activity manage --vault ./my-notes --json
 ```

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
+	"github.com/yeisme/pinax/internal/domain"
+	"github.com/yeisme/pinax/pkg/localsession"
 )
 
 // TestReaderSessionScript drives the supervised session through the real
@@ -67,20 +69,35 @@ func TestReaderSessionProcess(t *testing.T) {
 	}
 
 	bearer := "3q2-7AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-	frame := fmt.Sprintf(`{"schema_version":"pinax.local_session.bootstrap.v1alpha1","session_nonce":"nonce-0123456789abcdef","bearer":%q,"binding_id":"binding-proc","vault_root":%q,"scopes":["reader.metadata","reader.body"],"readonly":true}`, bearer, root)
+	frame, err := json.Marshal(localsession.Bootstrap{SchemaVersion: localsession.BootstrapVersion, SessionNonce: "nonce-0123456789abcdef", Bearer: bearer, BindingID: "binding-proc", VaultRoot: root, Scopes: []string{"reader.metadata", "reader.body"}, Readonly: true})
+	if err != nil {
+		t.Fatal("bootstrap encoding failed")
+	}
+	// CLI registrations are assembled by the composition root. The imported
+	// cli package alone has not constructed that command tree in this process.
+	manifestBytes, err := exec.Command(pinax, "api", "manifest", "--json").Output()
+	var manifest domain.Projection
+	if err != nil || json.Unmarshal(manifestBytes, &manifest) != nil || manifest.Status != "success" {
+		t.Fatal("manifest unavailable")
+	}
 	stdinReader, stdinWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = stdinReader.Close() }()
+	defer func() { _ = stdinWriter.Close() }()
 	stdoutReader, stdoutWriter, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = stdoutReader.Close() }()
+	defer func() { _ = stdoutWriter.Close() }()
 	stderrFile, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	defer func() { _ = stderrFile.Close() }()
 	cmd := exec.Command(pinax, "api", "serve", "--session-stdin")
 	cmd.Stdin = stdinReader
 	cmd.Stdout = stdoutWriter
@@ -88,24 +105,40 @@ func TestReaderSessionProcess(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stdinWriter.Write([]byte(frame + "\n")); err != nil {
+	_ = stdinReader.Close()
+	_ = stdoutWriter.Close()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	waited := false
+	defer func() {
+		_ = stdinWriter.Close()
+		if !waited {
+			_ = cmd.Process.Kill()
+			<-done
+		}
+	}()
+	if _, err := stdinWriter.Write(append(frame, '\n')); err != nil {
 		t.Fatal(err)
 	}
 
 	scanner := bufio.NewScanner(stdoutReader)
-	readyChannel := make(chan SessionEventJSON, 4)
+	scanner.Buffer(make([]byte, 1024), localsession.MaxFrameBytes+1)
+	readyChannel := make(chan []byte, 4)
 	go func() {
+		defer close(readyChannel)
 		for scanner.Scan() {
-			var event SessionEventJSON
-			if err := json.Unmarshal([]byte(scanner.Text()), &event); err == nil {
-				readyChannel <- event
+			select {
+			case readyChannel <- append([]byte(nil), scanner.Bytes()...):
+			default:
+				return
 			}
 		}
 	}()
 	select {
-	case event := <-readyChannel:
-		if event.Type != "ready" || event.Address == "" || event.Readonly != true {
-			t.Fatalf("ready event = %#v", event)
+	case encoded := <-readyChannel:
+		event, err := localsession.DecodeReady(encoded, "nonce-0123456789abcdef", "binding-proc", manifest.Facts["digest"], true)
+		if err != nil {
+			t.Fatal("real process ready rejected by public host contract")
 		}
 		if strings.Contains(fmt.Sprint(event), bearer) || strings.Contains(fmt.Sprint(event), root) {
 			t.Fatalf("ready event leaked secrets: %#v", event)
@@ -126,18 +159,16 @@ func TestReaderSessionProcess(t *testing.T) {
 			t.Fatalf("source status=%d body=%s", response.StatusCode, body[:n])
 		}
 	case <-time.After(15 * time.Second):
-		stderrBytes, _ := os.ReadFile(stderrFile.Name())
-		t.Fatalf("supervised session never became ready; stderr: %s", stderrBytes)
+		t.Fatal("supervised session never became ready")
 	}
 
 	// EOF drains and the process exits by itself: no daemon left behind.
 	if err := stdinWriter.Close(); err != nil {
 		t.Fatal(err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
+		waited = true
 		if err != nil {
 			t.Fatalf("process exit: %v", err)
 		}
@@ -146,11 +177,13 @@ func TestReaderSessionProcess(t *testing.T) {
 		t.Fatal("process did not exit after stdin EOF")
 	}
 	select {
-	case event := <-readyChannel:
-		if event.Type != "shutdown" {
+	case encoded := <-readyChannel:
+		var event localsession.Event
+		if json.Unmarshal(encoded, &event) != nil || event.Type != "shutdown" {
 			t.Fatalf("shutdown event = %#v", event)
 		}
-	default:
+	case <-time.After(time.Second):
+		t.Fatal("missing shutdown event")
 	}
 
 	// No secret ever reached stderr or the process environment dumps.
@@ -160,18 +193,4 @@ func TestReaderSessionProcess(t *testing.T) {
 			t.Fatalf("stderr leaked %q: %s", leak, stderrBytes)
 		}
 	}
-}
-
-// SessionEventJSON mirrors the redacted stdout protocol.
-type SessionEventJSON struct {
-	SchemaVersion  string `json:"schema_version"`
-	Type           string `json:"type"`
-	SessionID      string `json:"session_id"`
-	SessionNonce   string `json:"session_nonce"`
-	BindingID      string `json:"binding_id"`
-	Address        string `json:"address"`
-	ContractDigest string `json:"contract_digest"`
-	Readonly       bool   `json:"readonly"`
-	Code           string `json:"code"`
-	Message        string `json:"message"`
 }

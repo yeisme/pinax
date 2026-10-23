@@ -103,6 +103,28 @@ production
 
 每层独立返回 `ready|degraded|blocked|not_configured|not_applicable` 与 `exploratory|first-support|mature`。本地 stdio smoke 不能推导成 production ready；当前 MCP 也不会因为 HTTP operation ledger ready 而发布 mutation tool。
 
+## Remote write handoff
+
+默认 MCP 继续只读。`pinax://manifest` 的 capability/binding metadata 会告诉 Agent：
+
+- `execution_location` 是 `vault_owner`、`remote_service` 还是 `client_local`；
+- 写入应先 dry-run、proposal 或 snapshot；
+- 结果不明时应查询哪个 operation；
+- 当前 MCP surface 不可执行时应交给哪条 owner action。
+
+MCP 不返回 token、绝对 vault 路径或任意写入工具。需要远程写入时，Agent 使用 manifest 中的命令模板，再由 owner 执行：
+
+```bash
+pinax api manifest --vault ./my-notes --json
+pinax api serve --vault ./my-notes --allow-write --port 8787 \
+  --token-store ./my-notes/.pinax/tokens/tokens.json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --dry-run --json
+```
+
+没有安装 Pinax CLI 的 MCP 客户端只能读取 schema、resource 和 owner action；客户端路径不等于 vault owner 的文件系统路径，也不能猜测 `pinax.upload` 或 `note.add`。
+
 ## Future sibling MCP 边界
 
 未来 remote-backed `mcp/pinax` 应只依赖公开 `pkg/pinaxclient` 或 stable HTTPS owner API，保持 stateless，不读取 vault、`.pinax/**`、SQLite、Git、provider config 或服务端 token store。Streamable HTTP、OAuth、rate limit 与多用户 permission backend 属于 `mcp/gateway` 或明确的 hosted owner；当前 `cli/pinax` stdio server 不自动获得这些职责。
@@ -141,3 +163,7 @@ PINAX_MCP_RUNTIME=official-sdk PINAX_TEST_BINARY=dist/pinax PINAX_MCP_SDK_DIR=<s
 ```
 
 默认切换（`pinax-mcp-official-sdk-v1` 4.4）要求先完成 4.2 的 Codex、Claude Code、Grok、Kimi Code 真实会话验收。
+
+## 附件采用合同
+
+显式启用 input 后，`pinax.input.attachment.preview/apply/status/reconcile` 提供固定 note identity、完整 revision、snapshot 和原 operation 回执。公开 Go DTO 与闭合 schema 位于 `pkg/inputcontract`；上传仍走既有临时 HTTP transfer。详细流程和验收矩阵见 [Notebook 后端恢复与附件合同](../interfaces/notebook-backend-recovery-and-attachments.md)。

@@ -26,13 +26,13 @@ The backup mirror boundary also excludes realtime daemon and conflict policy cha
 | `pinax sync daemon stop` | Requests graceful daemon shutdown. | Writes a local stop request. |
 | `pinax sync daemon logs` | Reads redacted daemon events. | Read-only. |
 | `pinax sync logs list` | Lists recent sync run receipts. | Read-only. |
-| `pinax sync logs show <run-id>` | Shows one sync receipt and its redacted operations. | Read-only. |
+| `pinax sync logs describe <run-id>` | Shows one sync receipt and its redacted operations. | Read-only. |
 | `pinax sync logs status <run-id>` | Replays a run's job status (accepted/progress/terminal) from the vault event JSONL. | Read-only. |
 | `pinax sync logs tail` | Shows run and file-level sync timeline events. | Read-only. |
 | `pinax sync logs tail --follow` | Streams newly appended redacted sync events until canceled. | Read-only. |
 | `pinax sync conflicts list` | Lists local conflict copies. | Read-only. |
 | `pinax sync conflicts diff <file>` | Shows a diff between a conflict copy and its trunk file. | Read-only. |
-| `pinax sync conflicts show <file>` | Shows conflict content for manual or agent merge workflows. | Read-only. |
+| `pinax sync conflicts describe <file>` | Shows conflict content for manual or agent merge workflows. | Read-only. |
 | `pinax sync conflicts resolve <file>` | Resolves a conflict copy by keeping local, keeping remote, or applying a merged file. | Requires explicit resolve flags and write confirmation where supported. |
 
 ## Output and preview
@@ -309,7 +309,7 @@ Use these commands to inspect and resolve:
 ```bash
 pinax sync conflicts list --vault ./my-notes --json
 pinax sync conflicts diff ./my-notes/notes/alpha.20260612153000.conflict.md --vault ./my-notes
-pinax sync conflicts show ./my-notes/notes/alpha.20260612153000.conflict.md --vault ./my-notes --json
+pinax sync conflicts describe ./my-notes/notes/alpha.20260612153000.conflict.md --vault ./my-notes --json
 pinax version snapshot --vault ./my-notes --message "snapshot before sync conflict resolve"
 pinax sync conflicts resolve ./my-notes/notes/alpha.20260612153000.conflict.md --merged ./merged-alpha.md --vault ./my-notes --yes
 ```
@@ -530,3 +530,7 @@ backend:
 - Pinax does NOT own KDF/AEAD/Keychain — those live in `credentialctl` (`pkg/projectsecrets`). Pinax owns only the `s3_credentials.v1` payload type and the projection.
 - Rollback: set `credential_mode: device-profile` and regenerate the runtime config; the Capsa content encryption key and remote revisions are untouched.
 - First-version validation is on Linux CI (credentialctl Keychain adapter is verified via a fake `/usr/bin/security` executable); real macOS Keychain smoke and the second-device COS restore are tracked as dogfood gates.
+
+## Original-operation recovery
+
+REST/RPC sync push, pull, and conflict resolution now bind the original operation identity to the durable sync receipt. Send both `X-Pinax-Operation-ID` and `Idempotency-Key` on REST, or `operation_id` and `idempotency_key` on RPC. The Go SDK accepts `SyncRequest.Identity` and `SyncConflictRequest.Identity`. Preserve the pair before sending; after response loss, inspect/reconcile that operation instead of creating a new key. See [the recovery contract](../interfaces/notebook-backend-recovery-and-attachments.md).

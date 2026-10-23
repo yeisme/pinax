@@ -22,7 +22,7 @@ Every mode must come from the same command projection. Do not parse localized hu
 
 Structured project assets must be CLI-authored. For config, profile/policy, run receipt, event log, review decision, sync mapping, export manifest, OpenSpec task evidence, or any machine-readable metadata, design commands or application services that create and update the files. Agents should invoke commands such as `app project set`, `app profile set`, `app run start`, `app event append`, or `openspec new change`; they should not hand-write JSON, YAML, JSONL, or Markdown metadata files. User prose, note bodies, drafts, and ordinary content files are the exception.
 
-For Pi, OMP, Ordo, Auctra, pinax, and similar agent tools, CLI help text, default command summaries, logs, user-visible errors, and `--explain` reports default to English. Human-authored project docs, OpenSpec plans, reviews, handoffs, and run summaries default to Chinese unless a subproject explicitly marks the artifact as public English documentation. Machine protocol fields, schema keys, enum values, command names, flags, log keys, JSON envelope fields, `--agent` keys, and third-party API fields remain stable English or existing names.
+For Pi, OMP, Auctra, pinax, and similar agent tools, CLI help text, default command summaries, logs, user-visible errors, and `--explain` reports default to English. Human-authored project docs, OpenSpec plans, reviews, handoffs, and run summaries default to Chinese unless a subproject explicitly marks the artifact as public English documentation. Machine protocol fields, schema keys, enum values, command names, flags, log keys, JSON envelope fields, `--agent` keys, and third-party API fields remain stable English or existing names.
 
 Never output or persist full chain-of-thought, raw prompts, hidden system prompts, unredacted provider payloads, private tool arguments, or model-internal reasoning in stdout, stderr, traces, event logs, run receipts, snapshots, fixtures, golden files, docs, or structured assets. When explanation is needed, provide a redacted English summary: conclusion, key evidence, risk, tradeoff, next step, and evidence references.
 
@@ -58,6 +58,16 @@ Stable top-level fields are:
 Use command-specific schema under `data`; keep the envelope stable.
 
 ## Mode Rules
+
+### Resource views
+
+For resource discovery, the list is the product: render rows with complete IDs instead of applying the generic Status/Highlights template. One read-only catalog supplies list, get, describe and completion. Human output caps at 20 rows with separate filtered/truncated counts; machine list payloads retain every row within the same query/page, including `fact.<resource>.N.*` in agent mode and arrays under JSON `data`. Existing pagination remains explicit.
+
+Use `get` for identity/key fields and `describe` for detail/relations. In the approved resource convergence migration, hide legacy detail `show` for one functional release; preserve legacy machine fields and command identity. Canonical paths alone appear in help, suggestions, completion menus and normal examples. Preserve independent verbs and published video flag syntax.
+
+Actions and human Next share one safely quoted, scoped command. Missing IDs and unknown resources return exit 2, stable error code, field, visible known IDs and a discovery action. Empty lists succeed with a recovery action; unreadable catalogs fail. Do not expose raw Cobra argument errors or turn unknown IDs into empty success.
+
+Completion is a read-only projection, not another catalog: stable prefix filtering, 50 candidates, 250ms budget, no network/state creation/secret resolution; failures are silent with NoFileComp. Read `cli-output-taste` when designing table layout, narrow-terminal behavior or recovery UX.
 
 Default output is for humans:
 

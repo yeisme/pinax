@@ -24,7 +24,7 @@ stdout/stderr rules:
 
 Project board and NoteDisplay output contract:
 
-- `pinax project board show <project> --note-display card|detail|context --json` must output a bounded board projection and must not output the full note body; use `pinax note read/show <ref> --display body --json` when the body is needed.
+- `pinax project board describe <project> --note-display card|detail|context --json` must output a bounded board projection and must not output the full note body; use `pinax note read/show <ref> --display body --json` when the body is needed.
 - `pinax note read/show --display card|detail|context|body` must reuse the `NoteDisplay` structure in `data.note`; `card/detail/context` return only title, path, project, status, column, tags, excerpt, and redaction warnings; only `body` may include `data.note.body`.
 - If `project item archive` is missing `--yes`, return `approval_required`; if it is missing a version snapshot, return `snapshot_required`; both must provide an executable action or hint and must not rewrite Markdown.
 - `pinax api routes --json` and `pinax api schema export --format openapi --json` must be rendered from the remote capability registry; handlers, documentation, and tests are not allowed to maintain different fields independently.

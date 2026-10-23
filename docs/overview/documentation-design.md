@@ -1,96 +1,58 @@
-# Pinax Documentation Design
+# Pinax 文档设计
 
-This document defines how Pinax documentation is organized, what each section owns, and how contributors should decide where new product, design, command, protocol, operation, and release content belongs.
+文档帮助人类和 Agent 理解、操作本地知识闭环，始终说清三件事：Markdown vault 是真源；写入受 Proof Loop 保护；同步是传输表面，Cloud Sync 只协调密文。
 
-Pinax documentation has one job: help a user or agent understand and operate the local-first proof loop without confusing the source of truth, write boundaries, or cloud boundary. The docs should keep repeating the same three concepts in different levels of detail:
+<a id="reader-paths"></a>
+## 阅读路径
 
-1. The Markdown vault is the source of truth.
-2. The Proof Loop protects every agent write.
-3. Sync is a transport surface, not a source: Cloud Sync coordinates ciphertext only.
+| 读者 | 首个入口 | 下一步 |
+| --- | --- | --- |
+| 新用户 | [快速开始](../quickstart.md) | [命令手册](../commands/README.md)，完成记录、预览、计划、快照、应用与恢复 |
+| Agent 集成者 | [安全边界](agent-safe-boundary.md) | [输出合同](../interfaces/cli-output-contract.md)、[REST/RPC 合同](../interfaces/remote-api-contract.md) |
+| 开发者 | [架构边界](../architecture/architecture-boundaries.md) | [本地开发](../operations/local-development.md) 与 owner OpenSpec |
+| 运维与发布 | [发布打包](../operations/release-packaging.md) | 验证与打包不自动发布 |
+| 同步审阅者 | [同步设计](../architecture/cloud-sync-design.md) | 核对无明文、无远端执行不变量 |
 
-## Reader Paths
-
-| Reader | First stop | Next stop | Success condition |
-| --- | --- | --- | --- |
-| New user | [Quick Start](../quickstart.md) | [Command Manual](../commands/README.md) | Can create a vault, add a note, run proof-loop preview, save a plan, snapshot, apply, and restore. |
-| Agent integrator | [Agent-Safe Boundary](./agent-safe-boundary.md) | [CLI Output Contract](../interfaces/cli-output-contract.md), [Local REST/RPC Contract](../interfaces/remote-api-contract.md) | Understands bounded projections, output modes, read-only MCP/API surfaces, and write gates. |
-| Contributor | [Architecture Boundaries](../architecture/architecture-boundaries.md) | [Local Development](../operations/local-development.md), local `openspec/` | Knows where CLI, service, domain, adapter, output, and redaction changes belong. |
-| Operator or releaser | [Release Packaging](../operations/release-packaging.md) | [Local Development](../operations/local-development.md) | Can run release checks, package validation, and smoke tests without publishing. |
-| Cloud Sync reviewer | [Cloud Sync Architecture](../architecture/cloud-sync-design.md) | [Agent-Safe Boundary](./agent-safe-boundary.md) | Can verify no-plaintext and no-exec invariants. |
-
-## Information Architecture
+<a id="information-architecture"></a>
+## 文档关系
 
 ```mermaid
-flowchart TD
-    Root[docs/ README maps] --> Start[quickstart.md]
-    Root --> Overview[overview/]
-    Root --> Commands[commands/]
-    Root --> Interfaces[interfaces/]
-    Root --> Architecture[architecture/]
-    Root --> Operations[operations/]
-
-    Overview --> Positioning[product-positioning.md]
-    Overview --> Boundary[agent-safe-boundary.md]
-    Overview --> DocDesign[documentation-design.md]
-
-    Commands --> ProofLoop[Capture / Retrieve / Diagnose / Plan / Apply]
-    Interfaces --> Output[cli-output-contract.md]
-    Interfaces --> API[remote-api-contract.md]
-    Architecture --> Cloud[cloud-sync-design.md]
-    Operations --> Release[release-packaging.md]
+flowchart LR
+  Map[docs/README 文档地图] --> Quick[快速开始]
+  Map --> Overview[定位与安全边界]
+  Map --> Commands[命令手册]
+  Map --> Interfaces[稳定接口]
+  Map --> Architecture[架构]
+  Map --> Operations[开发与发布]
+  Commands --> Proof[记录 检索 诊断 计划 应用]
+  Architecture --> Sync[密文同步]
 ```
 
-## Section Ownership
+<a id="section-ownership"></a>
+## 内容归属
 
-| Section | Owns | Does not own |
-| --- | --- | --- |
-| `docs/README.md` and `docs/README.zh-CN.md` | Documentation map, status snapshot, recommended entry points, validation entry points. | Full command reference, implementation plans, release notes. |
-| `docs/quickstart.md` | One short local path from install to proof-loop validation. | Advanced Cloud Sync, MCP, templates, project board, provider workflows. |
-| `docs/overview/` | Product positioning, safety model, documentation design, high-level user value. | Command flags, endpoint schemas, release packaging steps. |
-| `docs/commands/` | Human command manual grouped by workflow and command family. | Source-level architecture or long protocol contracts. |
-| `docs/interfaces/` | Stable CLI/API contracts, output modes, auth/cache expectations, agent-facing envelopes. | Tutorial prose or product positioning. |
-| `docs/architecture/` | Boundaries, Cloud Sync design, Go development ecosystem, non-obvious system decisions. | Step-by-step user workflow docs. |
-| `docs/operations/` | Local development, release packaging, verification commands, operator procedures. | Product scope and command reference. |
-| `openspec/` | Change proposals, implementation tasks, verification evidence, archive records. | Permanent product docs after closeout. |
+`docs/README.md` 与保留的语言入口只导航，不重复整本命令手册。quickstart 给出一条短路径；overview 解释定位、安全和文档设计；commands 按工作流和命令族说明用途、写入边界和例子；interfaces 维护 CLI/API、auth/cache 和输出合同；architecture 解释模块、同步和关键决策；operations 维护开发、打包与验证步骤。实施任务、证据和归档属于 OpenSpec，稳定说明在 closeout 后进入对应文档。
 
-## Core Narrative
+<a id="core-narrative"></a>
+## 一致的产品解释
 
-Every major document should preserve the same layered explanation:
+Pinax 是 Markdown vault 的 Agent 安全知识控制平面。正文、SQLite/GORM 投影、版本证据、CLI 生成元数据与本地工具执行留在本地；Agent 默认只看有界投影。写入经过 `plan → snapshot → apply → receipt → restore`。Cloud Sync 不替代 vault，不保存笔记明文，不在服务器执行本地工具。
 
-1. **What Pinax is**: an agent-safe knowledge control plane for a Markdown vault.
-2. **What stays local**: Markdown content, SQLite/GORM projection, version evidence, CLI-authored metadata, and local tool execution.
-3. **What agents can see**: bounded projections by default; full bodies only through explicit local display mode.
-4. **How writes happen**: plan -> snapshot -> apply -> receipt -> restore.
-5. **What cloud sync does**: synchronize encrypted revisions and blobs; never replace the local vault as source of truth, store plaintext notes, or execute local tools on the server.
+不要把某个发布、插件、日报、Web 编辑或 Provider 表面描述为另一个独立产品，也不要把规划中的团队协作说成已实现。
 
-Avoid describing Pinax as a general notes app, publishing platform, plugin runtime, hosted collaboration workspace, cloud notebook, web editor, briefing product, or provider-specific automation product. Those descriptions blur the boundary that makes Pinax useful.
+<a id="command-documentation-pattern"></a>
+## 命令页写法
 
-## Command Documentation Pattern
+依次说明用途、可直接运行的命令、读写与远端副作用、支持的输出模式、相关链接。新命令从命令手册可发现；不显示内部执行前缀。
 
-Each command page under `docs/commands/` should follow this shape:
+<a id="language-and-contract-rules"></a>
+## 语言与合同
 
-1. Purpose: what the command family manages.
-2. Common commands: real commands a user can run directly.
-3. Safety and write behavior: whether it reads, saves plans, writes Markdown, writes `.pinax/`, uses version snapshots, or touches remotes.
-4. Output behavior: supported `--json`, `--agent`, `--events`, and `--explain` expectations when relevant.
-5. Related docs: links to adjacent command pages, contracts, or architecture docs.
+活跃开发、设计与维护说明以中文为主；公开英文命令参考可以保留，不额外复制整套目录。命令、flag、JSON key、event type、错误码、Provider ID、schema、路径与术语保持稳定。
 
-Command examples must show real `pinax` commands, not local wrappers or agent-only execution prefixes.
+禁止在文档、fixture、receipt 与解释中写入原始提示词、隐藏提示词、Provider payload、未脱敏 token、Authorization、Cookie、webhook URL 或完整推理。`.pinax` 配置、回执、事件和同步映射由 CLI 创建与更新，文档给出对应命令，不教用户手写机器状态。
 
-## Language and Contract Rules
+<a id="maintenance-checklist"></a>
+## 维护方式
 
-- User-facing Pinax docs may provide Chinese and English entry maps. Command names, flags, JSON keys, event types, error codes, provider IDs, schema fields, paths, and standard protocol names remain stable English.
-- Do not include raw prompts, hidden system prompts, provider payloads, unredacted tokens, Authorization headers, Cookie values, webhook URLs, or full chain-of-thought in docs, examples, fixtures, receipts, or explanations.
-- Structured assets such as `.pinax/*.json`, `.pinax/*.yaml`, run receipts, event logs, profile mappings, and sync metadata are CLI-authored. Docs should tell users which `pinax` command creates or updates them; docs should not instruct users to hand-edit those files.
-- Cloud Sync docs must preserve the no-plaintext and no-exec invariants.
-
-## Maintenance Checklist
-
-Before landing documentation changes, check:
-
-- The new content has one clear owner section from the table above.
-- New commands are linked from [Command Manual](../commands/README.md) when they are user-facing.
-- New output, RPC, auth, cache, event, or `--agent` behavior is reflected in `docs/interfaces/`.
-- New architecture, Cloud Sync, provider, storage, version, or safety-boundary decisions are reflected in `docs/architecture/` or `docs/overview/`.
-- Permanent docs are not duplicated into the root repository docs; root should only link or summarize cross-project governance.
-- Documentation-only changes normally do not need Go tests. If code behavior changed, run `task check` from the Pinax subproject.
+每项内容只有一个 owner；输出、RPC、auth、cache 与事件变化更新 interfaces，架构与存储决策更新 architecture/overview。根仓只保留跨项目导航，不复制产品说明。文档改动检查相关链接和锚点即可；代码改动验证对应行为，最终稳定时再按需运行完整检查。

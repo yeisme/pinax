@@ -9,20 +9,20 @@
 | `pinax project create <slug>` | Create a vault project registry entry. | `.pinax/projects/*.json` |
 | `pinax project delete <slug>` | Move an obsolete project registry entry and recoverable content to trash. | Project registry, trash tombstone |
 | `pinax project list` | List vault projects. | No |
-| `pinax project show <slug>` | Show one vault project and recommended next actions. | No |
+| `pinax project describe <slug>` | Show one vault project and recommended next actions. | No |
 | `pinax project switch <slug>` | Set the active vault project. | Project state |
 | `pinax project learning init <project> <slug>` | Initialize a long-term learning project pack. | Project, workspace, board config, starter notes/items |
 | `pinax project subproject create <project> <slug>` | Create a vault-local subproject workspace under `notes/projects/<project>/<slug>/`. | Directories and workspace registry |
 | `pinax project subproject delete <project> <slug>` | Move a subproject workspace, workspace registry, and board config to trash. | Workspace registry, workspace directory, trash tombstone |
 | `pinax project subproject list [project]` | List subproject workspaces for a project, defaulting to the current project when omitted. | No |
-| `pinax project subproject show <project> <slug>` | Show one workspace projection. | No |
+| `pinax project subproject describe <project> <slug>` | Show one workspace projection. | No |
 | `pinax project board configure <project>` | Save project or subproject board columns. | Board config asset |
-| `pinax project board show <project>` | Render a local board projection. | No |
+| `pinax project board describe <project>` | Render a local board projection. | No |
 | `pinax project board plan <project>` | Generate a project board plan snapshot. | No by default; snapshot evidence with `--save`. |
 | `pinax project board export <project>` | Export a project board for handoff. | No |
 | `pinax project board view save <project> <view>` | Save board columns/group/sort/display config. | Board view asset |
 | `pinax project item add <project> <title>` | Create a managed Markdown work item. | Markdown note |
-| `pinax project item show <item>` | Show a managed Markdown work item. | No |
+| `pinax project item describe <item>` | Show a managed Markdown work item. | No |
 | `pinax project item plan <item>` | Preview a move or archive operation. | No |
 | `pinax project item move <item> <column>` | Move a managed work item. | Markdown note |
 | `pinax project item archive <item>` | Archive a managed work item after approval and snapshot checks. | Markdown note |
@@ -36,7 +36,7 @@ Create a project and a subproject workspace:
 ```bash
 pinax project create research --name "Research" --notes-prefix notes/research --vault ./my-notes --json
 pinax project subproject create research stock-learning --title "Stock Learning" --template scenario --vault ./my-notes --json
-pinax project subproject show research stock-learning --vault ./my-notes --json
+pinax project subproject describe research stock-learning --vault ./my-notes --json
 ```
 
 The default workspace path is `notes/projects/<project>/<subproject>/`, relative to the active vault. For example, if the vault is `~/data/yeisme-notes`, `stock-learning` under `research` lives at `~/data/yeisme-notes/notes/projects/research/stock-learning/`.
@@ -76,7 +76,7 @@ Initialize a reusable learning workspace, board, starter notes, and starter work
 ```bash
 pinax init ./stock-learning-notes --title "学习炒股的全部笔记" --json
 pinax project learning init investing stock-learning --title "学习炒股的全部笔记" --project-name "学习炒股" --notes-prefix notes/investing --preset stock-learning --vault ./stock-learning-notes --json
-pinax project board show investing --subproject stock-learning --vault ./stock-learning-notes
+pinax project board describe investing --subproject stock-learning --vault ./stock-learning-notes
 ```
 
 `--preset learning` creates a generic long-term learning pack. `--preset stock-learning` keeps the same local-first structure but adds stock-learning starter content: a charter, source index, weekly review, learning board columns (`inbox,planned,learning,practice,review,retrospective,done`), and starter items for terminology, K-line/volume basics, risk rules, and weekly review.
@@ -92,10 +92,10 @@ Show a project board or a subproject-scoped board:
 ```bash
 pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault ./my-notes --json
 pinax project board configure research --subproject stock-learning --columns inbox,next,doing,blocked,review,done --vault ./my-notes --json
-pinax project board show research --subproject stock-learning --note-display card --vault ./my-notes
-pinax project board show research --subproject stock-learning --compact --vault ./my-notes
-pinax project board show research --subproject stock-learning --vault ./my-notes --json
-pinax project board show research --subproject stock-learning --vault ./my-notes --agent
+pinax project board describe research --subproject stock-learning --note-display card --vault ./my-notes
+pinax project board describe research --subproject stock-learning --compact --vault ./my-notes
+pinax project board describe research --subproject stock-learning --vault ./my-notes --json
+pinax project board describe research --subproject stock-learning --vault ./my-notes --agent
 pinax project board plan research --subproject stock-learning --save --vault ./my-notes --json
 pinax project board export research --subproject stock-learning --format markdown --vault ./my-notes --json
 ```
@@ -106,7 +106,7 @@ Save reusable board views without saving result items:
 
 ```bash
 pinax project board view save research active --subproject stock-learning --columns next,doing,blocked,review --display card --vault ./my-notes --json
-pinax project board show research --subproject stock-learning --view active --vault ./my-notes --json
+pinax project board describe research --subproject stock-learning --view active --vault ./my-notes --json
 ```
 
 Saved board views are CLI-authored configuration. They do not snapshot board rows and can be rendered by CLI/API clients from the current vault state.
@@ -117,7 +117,7 @@ Create and maintain managed work items:
 
 ```bash
 pinax project item add research "Read annual report" --subproject stock-learning --column next --labels research,learning --milestone q3 --priority high --due-at 2026-07-01 --blocked-by item_market_data --vault ./my-notes --json
-pinax project item show item_abc123 --vault ./my-notes --json
+pinax project item describe item_abc123 --vault ./my-notes --json
 pinax project item plan item_abc123 --action move --column doing --vault ./my-notes --json
 pinax project item move item_abc123 doing --vault ./my-notes --json
 pinax version snapshot --vault ./my-notes --message "snapshot before archive"

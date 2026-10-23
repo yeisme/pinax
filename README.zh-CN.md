@@ -235,6 +235,25 @@ pinax api serve --readonly --no-auth --port 8787 --vault work
 pinax mcp serve --vault work
 ```
 
+Remote API 写入先通过 manifest 和 readiness 检查，再执行 dry-run 与显式确认：
+
+```bash
+pinax connection doctor --json
+pinax connection readiness --json
+pinax api manifest --vault work --json
+pinax api serve --vault work --allow-write --port 8787 \
+  --token-store ./work/.pinax/tokens/tokens.json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --dry-run --json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --yes \
+  --operation-id op_example_01 --idempotency-key idem_example_01 --json
+```
+
+如果响应超时或结果不明确，保留原 operation identity，执行 `operation show` 和 `operation reconcile`。MCP 默认只读，通过 `pinax://manifest` 提供 owner action，不把 vault 路径当作客户端本地文件。
+
 Capsa Sync preview：
 
 ```bash

@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `pinax view save <name>` | Save a set of note filter criteria. | Writes saved view metadata. |
 | `pinax view list` | List saved views. | Does not write. |
-| `pinax view show <name>` | Retrieve notes using a saved view. | Does not write. |
+| `pinax view describe <name>` | Retrieve notes using a saved view. | Does not write. |
 | `pinax view delete <name>` | Delete a saved view. | Writes saved view metadata. |
 
 ## Common Workflow
@@ -16,7 +16,7 @@
 ```bash
 pinax view save active-work --group work --status active --kind reference --sort updated --vault ./my-notes --json
 pinax view list --vault ./my-notes
-pinax view show active-work --vault ./my-notes --json
+pinax view describe active-work --vault ./my-notes --json
 pinax view delete active-work --vault ./my-notes --yes
 ```
 

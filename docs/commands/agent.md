@@ -1,5 +1,9 @@
 # pinax agent
 
+Experimental note proposals are also available under `agent note`. See [note proposals and rendered views](../guides/note-proposals-and-rendered-views.md). `agent note propose --kind <kind> --stdin` accepts a Markdown body. `agent note proposal list|show|stats` reads bounded metadata; `approve|reject` requires `--yes` to mutate; `refresh <id> --yes` rebuilds only the original metadata projection. Existing memory commands retain their behavior.
+
+`agent note proposal list` supports exact `--status`/`--kind`, `--limit 1..50` (default 50), and `--cursor`. It keeps the original data array, adding total/remaining/has_more/next_cursor facts. Follow the returned vault-bound next action; refresh the first page after approval/rejection or `proposal_cursor_stale`. Single-ID `show` reads only that projection. MCP callers use the same optional fields and returned `tool_actions`; owner-local approval/refresh is not client filesystem access. No body diff or new write permission is introduced.
+
 > **Experimental.** The `pinax agent` command tree is a vendor-neutral Agent memory runtime surface. It is additive — it does not replace `pinax memory` or `pinax brain`. Old commands remain fully functional.
 
 ## Summary
@@ -55,7 +59,7 @@ pinax agent handoff create --vault ./my-notes \
   --json
 
 # Inspect the bounded handoff without exposing a transcript
-pinax agent handoff show <handoff-id> --vault ./my-notes --json
+pinax agent handoff describe <handoff-id> --vault ./my-notes --json
 
 # Add recall feedback
 pinax agent feedback add --vault ./my-notes --kind useful --memory-id <id> --json

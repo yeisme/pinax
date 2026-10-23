@@ -6,7 +6,7 @@
 
 ## 前置条件
 
-- Go 1.26.1 或更新版本（用于 `go install`；下载预编译 archive 则不需要）。
+- Go 1.26.9 或更新版本（用于 `go install`；下载预编译 archive 则不需要）。
 - Pinax 是 CLI-only 短生命周期进程，无需后台 daemon。
 
 ## 1. 安装 Pinax

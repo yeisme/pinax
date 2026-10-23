@@ -4,6 +4,26 @@
 
 It is not the same as “letting an agent automatically modify the entire vault.” By default, `plan` is read-only, `plan --save` only saves the plan file, and actually moving notes requires running `apply --yes`.
 
+## Selected-note workflow (experimental)
+
+```bash
+pinax inbox review --limit 5 --vault ./my-notes --json
+pinax organize plan --note <note-id-a> --note <note-id-b> --vault ./my-notes --json
+pinax organize plan --note <note-id-a> --note <note-id-b> --save --vault ./my-notes --json
+pinax pipeline describe <plan-id> --vault ./my-notes --json
+pinax organize apply --plan <plan-id> --yes --snapshot-message "Before selected organization" --vault ./my-notes --json
+```
+
+Repeat `--note` for up to 20 unique canonical objects (up to 100 selector arguments). Exact IDs and vault-relative paths are accepted; ambiguous titles, missing identities, system/archived/discarded notes and unsafe paths are rejected for the whole request. Repeated selectors for the same unique object are deduplicated. Missing identity requires an explicit `pinax record adopt --plan` workflow, never implicit adoption.
+
+The rule engine keeps full-vault relationship context but only selected objects may receive operations. This is **not** automatic folder classification or body rewriting. `--save` writes `pinax.organize_plan.scoped.v1`; without it, preview changes nothing. Older CLIs reject this schema instead of widening its scope. Commands without `--note`, including the hidden `suggest` alias, retain their existing behavior.
+
+Scoped apply always creates a fresh snapshot after whole-selection validation. `--allow-stale` is rejected with `scoped_plan_override_forbidden`. Unrelated edits do not invalidate the plan; selected content drift, path reuse, duplicate targets or destination occupation block it. Moving uses non-overwriting hard-link/unlink on one filesystem; unsupported filesystems leave the source intact and fail rather than falling back to an overwriting rename.
+
+Multi-file writes are not a transaction. `planned → applying → applied|partial|failed` and per-operation outcomes are persisted; interrupted or consumed plans must not be retried. Inspect the original plan/receipt with `pipeline show`, inspect its snapshot with `version history/show`, and explicitly plan recovery without discarding later edits. An evidence failure returns `organize_evidence_incomplete`. Index refresh is explicit (`index_status=not_refreshed`), not silently claimed successful.
+
+The readonly MCP tool `pinax.organize.plan` accepts `note_refs`; it cannot save or apply. The server owns the vault, and owner-local follow-up is not a client filesystem action. No REST/RPC capability is added.
+
 ## When to Use It
 
 Cases suitable for `organize`:
@@ -92,9 +112,9 @@ freshness 守卫比较 plan 记录的 facts 摘要与当前 vault 扫描指纹�
 | operation | Meaning | apply behavior |
 | --- | --- | --- |
 | `move` | Move or normalize note paths. | Can be automatically applied when low-risk. |
-| `tag_patch` | Suggest adding tags. | Kept as plan suggestions. |
+| `tag_patch` | Add frontmatter tags inferred from inline tags. | Applied when planned and approved. |
 | `kind_patch` | Suggest adding kind. | Kept as plan suggestions. |
-| `status_patch` | Suggest adding status. | Kept as plan suggestions. |
+| `status_patch` | Fill missing status with active. | Applied when planned and approved. |
 | `link_resolution` | Broken or ambiguous links require target confirmation. | Manual review; does not automatically modify body text. |
 | `link_rewrite` | Body links may need to be rewritten. | Manual review; does not automatically modify body text. |
 | `orphan_review` | Orphan notes require human judgment on whether to archive or link them. | Manual review. |
@@ -119,10 +139,10 @@ If scripts are still using `suggest`, they can be migrated gradually to `plan --
 
 | Mode | Command | Purpose |
 | --- | --- | --- |
-| Default Chinese summary | `pinax organize plan --vault ./my-notes` | For humans to quickly scan risks and next steps. |
+| Default English summary | `pinax organize plan --vault ./my-notes` | For humans to quickly scan risks and next steps. |
 | JSON envelope | `pinax organize plan --vault ./my-notes --json` | For scripts, tests, and debugging to read the full plan. |
 | agent key=value | `pinax organize plan --vault ./my-notes --save --agent` | For agents to read the plan id, operation count, risk counts, and saved path with low token usage. |
-| explain | `pinax organize plan --vault ./my-notes --explain` | View a Chinese reviewable explanation. |
+| explain | `pinax organize plan --vault ./my-notes --explain` | View an English reviewable explanation. |
 
 Output modes only change the shape of stdout; they do not change whether anything is written. What actually determines writing is `--save`, `apply`, `--yes`, and snapshot parameters.
 

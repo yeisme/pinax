@@ -7,7 +7,7 @@
 ```bash
 pinax folder list --purpose all --include-empty --vault ./my-notes
 pinax folder list --under spaces/research --vault ./my-notes
-pinax folder show spaces/research --vault ./my-notes
+pinax folder describe spaces/research --vault ./my-notes
 pinax folder create spaces/research --purpose notes --vault ./my-notes
 pinax folder rename spaces/research spaces/archive --dry-run --vault ./my-notes --json
 pinax folder rename spaces/research spaces/archive --yes --vault ./my-notes

@@ -1,51 +1,38 @@
-# Plugin Runtime Architecture
+# 插件运行时架构
 
-Pinax dynamic plugins are manifest-driven, permission-scoped, and runner-isolated. The local Markdown vault remains the source of truth, while plugins compute bounded projections or reviewable action plans.
+Pinax 动态插件由 manifest 描述、权限限定并通过独立 runner 执行。Markdown vault 始终是真源；插件只计算有界投影或可审阅操作计划。
 
 ```mermaid
 flowchart LR
-  CLI[pinax plugin]
-  Service[Plugin service]
-  Registry[(.pinax/plugins/registry.json)]
-  Lock[(.pinax/plugins/plugin-lock.json)]
-  Audit[(.pinax/events/plugin-audit.jsonl)]
-  Policy[Permission engine]
-  Input[Bounded projection]
-  Runner[Runtime adapter]
-  Output[Validated result]
-  Plan[Action plan]
-
-  CLI --> Service
-  Service --> Registry
-  Service --> Lock
-  Service --> Audit
-  Service --> Policy
-  Policy --> Input
-  Input --> Runner
-  Runner --> Output
-  Output --> Plan
+  CLI[pinax plugin] --> Service[插件服务]
+  Service --> Registry[registry 与 lock]
+  Service --> Audit[脱敏审计]
+  Service --> Policy[权限引擎]
+  Policy --> Input[有界输入投影]
+  Input --> Runner[运行时适配器]
+  Runner --> Output[已校验结果]
+  Output --> Plan[待审阅操作计划]
 ```
 
-## Boundaries
+<a id="boundaries"></a>
+## 边界
 
-- Registry, lock, audit, and permission grants are written only by `pinax plugin` service methods.
-- Plugin input uses `pinax.plugin.call.v1`; result output uses `pinax.plugin.result.v1`.
-- WASM defaults to no network, no env, and no host filesystem.
-- JavaScript, Python, and process runners are external trusted runners. They receive input on stdin, run in a Pinax-managed temp cwd, and get a minimal environment.
-- Direct vault writes are denied. Write-like plugins must return an action plan requiring existing approval and snapshot gates.
+- `.pinax/plugins/registry.json`、`plugin-lock.json`、`.pinax/events/plugin-audit.jsonl` 及权限 grant 只由 `pinax plugin` 服务写入。
+- 输入使用 `pinax.plugin.call.v1`，输出使用 `pinax.plugin.result.v1`。
+- WASM 默认不能访问网络、环境变量和宿主文件系统。
+- JavaScript、Python 和 process runner 是明确受信任的外部程序：stdin 接收输入，在 Pinax 管理的临时目录工作，只接收最小环境。
+- 插件不能直接写 vault；写操作必须返回 action plan，再经过已有批准与快照流程。
 
-## Current Runtime Status
+<a id="current-runtime-status"></a>
+## 当前实现状态
 
-The MVP fixes the contracts and local control plane first:
+manifest 校验与秘密拒绝、registry/lock/audit、启停、卸载、权限授予与撤销已实现。WASM 的调用、结果、预算和沙箱合同由 fake adapter 验证，真实 WASM 引擎仍可在同一合同后接入，不能把 fixture 当成实际引擎。
 
-- Manifest validation and secret rejection are implemented.
-- Registry, lock, audit events, enable/disable, uninstall, and permission grant/revoke are implemented.
-- WASM call/result/budget/sandbox contracts are implemented with a fake adapter for tests; a real WASM engine can be added behind the same contract later.
-- JS/Python/process external runner contracts are implemented with explicit executable probing and limited environment handling.
-- CLI `plugin run` is dry-run/read-only and returns stable errors such as `plugin_disabled`, `plugin_permission_denied`, or `plugin_runner_unavailable` when execution cannot proceed.
+JS/Python/process runner 合同已实现可执行文件探测和受限环境。`plugin run` 是 dry-run/read-only；无法执行时返回 `plugin_disabled`、`plugin_permission_denied`、`plugin_runner_unavailable` 等稳定错误。
 
-## Safety Rules
+<a id="safety-rules"></a>
+## 凭据与维护
 
-Do not store real credentials in plugin manifests, registry, lock, audit events, docs, fixtures, stdout, stderr, or integration evidence. Use a user-level secret store, user-level local config, or environment variables for CI and temporary shell overrides.
+真实凭据不能进入 manifest、registry、lock、audit、文档、fixture、stdout/stderr 或证据。使用用户级秘密存储、本地用户配置，或 CI/临时环境变量。
 
-Do not hand-edit `.pinax/plugins/*.json` or `.pinax/events/plugin-audit.jsonl`. Use `pinax plugin install`, `pinax plugin permissions grant`, `pinax plugin disable`, or `pinax plugin uninstall`.
+不要手改插件 JSON 和审计事件。使用 `pinax plugin install`、`pinax plugin permissions grant`、`pinax plugin disable`、`pinax plugin uninstall`。

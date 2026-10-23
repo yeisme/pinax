@@ -1,10 +1,11 @@
-# Go Development Ecosystem Design
+# Go 开发生态
 
-Pinax is centered on a Go CLI, with the goals of being local-first, distributable, testable, and reliably drivable by agents. The development ecosystem should let humans and agents use the same set of entry points, avoiding ad hoc command construction for each task.
+Pinax 以本地优先、可分发、可测试的 Go CLI 为核心。人类和 Agent 共用开发入口，不为每次任务重新拼装命令。
 
-## Entry Commands
+<a id="entry-commands"></a>
+## 开发入口
 
-Pinax uses Taskfile as the development task aggregation layer while task implementation remains grounded in the Go toolchain.
+Taskfile 负责聚合，具体工作仍由 Go 工具链完成：
 
 ```bash
 task build
@@ -14,7 +15,7 @@ task openspec
 task clean
 ```
 
-If `task` is not installed, you can run the equivalent commands directly:
+没有 Task 时可以直接执行对应命令：
 
 ```bash
 go test ./...
@@ -22,86 +23,56 @@ go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
 openspec validate --all
 ```
 
-## Go Module Boundaries
+<a id="go-module-boundaries"></a>
+## 模块边界
 
-Default directory structure:
+| 路径 | 职责 |
+| --- | --- |
+| `cmd/pinax/`、`internal/cli/` | Cobra 入口、命令工厂、参数与依赖装配 |
+| `internal/app/` | 应用服务与用例编排 |
+| `internal/domain/` | 稳定领域模型、状态机、命令投影 |
+| `internal/config/` | Viper 默认值、环境与配置校验 |
+| `internal/output/` | summary、agent、JSON、events、explain 渲染 |
+| `internal/redaction/` | token、webhook、payload 与 trace 脱敏 |
+| `internal/runtime/` | 时钟、文件系统、进程、取消 |
+| `internal/vault/` | Markdown vault repository |
+| `internal/index/` | SQLite/GORM 可重建索引 |
+| `internal/git/` | Git adapter 与 snapshot plan |
+| `internal/provider/` | CLI-backed Provider adapter |
+| `internal/sync/` | diff/pull/push/conflict 状态机 |
+| `internal/briefing/` | 调研、证据、评分与审阅队列 |
+| `internal/mcpserver/` | stdio MCP 表面 |
+| `tests/e2e/`、`testdata/script/` | testscript、fixture 与 golden 输出 |
 
-```text
-cmd/pinax/              Cobra entry point and command wiring
-internal/cli/           Future-migratable Cobra command factory and dependency wiring
-internal/app/           Application service / use case orchestration
-internal/domain/        Stable domain models, state machines, and command projection
-internal/config/        Viper defaults, env, project config, validate
-internal/output/        summary, --agent, --json, --events, --explain renderer
-internal/redaction/     token, webhook, raw payload, trace redaction
-internal/runtime/       clock, filesystem, process runner, context/cancellation
-internal/vault/         Markdown vault repository
-internal/index/         SQLite/GORM index projection repository
-internal/git/           Git adapter and snapshot plan
-internal/provider/      CLI-backed Provider interface
-internal/sync/          diff/pull/push/conflict state machine
-internal/briefing/      daily-hot-notes workflow, evidence, scoring, review queue
-internal/mcpserver/     pinax mcp serve stdio surface
-tests/e2e/              testscript command e2e
-testdata/script/        fixture file tree and golden stdout/stderr
-```
+<a id="dependency-defaults"></a>
+## 依赖选择
 
-## Dependency Defaults
+CLI 使用 Cobra/pflag；Viper 只在 config 层读取配置；关系持久化通过 GORM，本地索引默认 SQLite。Markdown/frontmatter 库的选择理由和 fixture 在实现 change 中记录。命令 e2e 复用 `github.com/rogpeppe/go-internal/testscript`，外部系统使用 fake executable/process adapter，不依赖真实 token、公网或用户 vault。
 
-- CLI: Cobra / pflag.
-- Configuration: Viper, introduced only in `internal/config`; the command layer does not read configuration files directly.
-- Persistence: GORM, with SQLite as the default local storage for indexes and projections.
-- Markdown/frontmatter: Prefer stable libraries; when entering an implementation change, record the selection rationale and fixtures.
-- Command e2e: `github.com/rogpeppe/go-internal/testscript`.
-- External systems: Prefer fake executables and process adapters; tests must not depend on real tokens, the real public internet, or the user's vault.
+<a id="output-contract"></a>
+## 输出合同
 
-## Output Contract
+所有入口从同一 command projection 渲染：默认英文人类摘要，`--agent` 为 key=value，`--json` 为单 envelope，`--events` 为 NDJSON，`--explain` 为英文评审摘要。人类开发文档使用中文。
 
-Every user entry point must render from the same command projection:
+机器输出 stdout 只放对应格式；诊断、进度与日志走 stderr，并遵守脱敏要求。此处修正旧文档“默认中文 CLI 输出”的过时说明，以当前 AGENTS.md 为准。
 
-- Default human output is Chinese for this subproject.
-- `--agent` low-token `key=value`.
-- `--json` single JSON envelope.
-- `--events` NDJSON.
-- `--explain` decision explanation.
+<a id="layered-testing"></a>
+## 测试分层
 
-Machine output stdout may contain only machine formats; diagnostics, progress, provider stderr, and logs are written to stderr.
-
-## Layered Testing
-
-| Layer | Scope | Default Tool |
+| 层次 | 范围 | 工具 |
 | --- | --- | --- |
-| unit | domain rule, projection, redaction, slug, score | Go `testing` table-driven tests |
-| integration | app service + repository + temp vault / SQLite | Go `testing`, `testing/fstest`, temporary directories |
-| component | CLI command + fake provider + temp Git repo | `testscript` |
-| e2e | complete user workflow for the `pinax` binary | `testscript` |
-| performance | index, search, briefing scoring, provider process overhead | Go benchmark, `task perf-*` to be added later |
+| unit | 领域规则、投影、脱敏、slug、评分 | Go testing 表驱动 |
+| integration | service + repository + 临时 vault/SQLite | testing、testing/fstest、临时目录 |
+| component | CLI + fake provider + 临时 Git | testscript |
+| e2e | 完整用户流程 | testscript |
+| performance | 索引、检索、评分、进程开销 | Go benchmark；按需新增具体入口 |
 
-## Task Slice Order
+<a id="task-slice-order"></a>
+## 能力建设顺序
 
-1. Go dev ecosystem: Taskfile, CI baseline, testscript harness, output projection skeleton.
-2. Local Vault Workbench: `init`, `doctor`, `note new/list/show`, frontmatter, and validate.
-3. Index and Search: GORM repository, tag/link/backlink/search.
-4. Version Safety: status, snapshot plan, changed paths, restore plan, and optional Git backend.
-5. CLI-backed Provider: external CLI capability probes and fake executable fixtures.
-6. Sync Engine: diff/pull/push/conflict queue, dry-run/yes gate.
-7. Agent Surface: `--agent`, `--json`, `--events`, `--explain` contract tests.
-8. MCP Read/Plan: stdio MCP resources/tools, read-only and dry-run by default.
-9. Daily Briefing: research evidence ledger, scoring, review queue, webhook delivery.
+开发基础与输出合同 → 本地 vault → 索引检索 → 版本证据 → CLI-backed Provider → 同步状态机 → Agent 输出 → 只读 MCP → 日报与调研。每个切片复用同一服务、状态和证据，不复制产品栈；这个顺序不等于全部已完成。
 
-## Quality Gates
+<a id="quality-gates"></a>
+## 按改动验证
 
-Before committing, run at least:
-
-```bash
-task check
-```
-
-If `task` is not installed, run:
-
-```bash
-gofmt -w cmd internal
-go test ./...
-go build -trimpath -ldflags="-s -w" -o dist/pinax ./cmd/pinax
-openspec validate --all
-```
+普通实现运行相关包测试，默认使用 Go 缓存；文档只检查相关链接和内容。`task ci:quick` 是针对性入口，`task check` 用于稳定改动后的完整本地检查。完整检查不在每次提交或每轮修复后重复执行。race 不属于默认门禁。

@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `pinax profile add <name>` | Add a backend connection profile alias. | Writes profile metadata. |
 | `pinax profile list` | List all backend connection profiles. | Read-only. |
-| `pinax profile show <name>` | Show one profile in detail. | Read-only; must not reveal raw secrets. |
+| `pinax profile describe <name>` | Show one profile in detail. | Read-only; must not reveal raw secrets. |
 | `pinax profile remove <name>` | Remove a profile alias. | Writes profile metadata. |
 
 ## Common Workflows
@@ -18,7 +18,7 @@ Register a local API profile that references a token through an environment vari
 ```bash
 pinax profile add local --endpoint http://127.0.0.1:8787 --workspace default --device laptop --secret-ref env://PINAX_API_TOKEN --vault ./my-notes --json
 pinax profile list --vault ./my-notes --json
-pinax profile show local --vault ./my-notes --json
+pinax profile describe local --vault ./my-notes --json
 ```
 
 Remove an obsolete profile:

@@ -1,5 +1,7 @@
 # Pinax Dashboard PRD
 
+2026-10-01 路线修订：本页保留既有只读dashboard合同与历史设计记录，以下Workbench未来目的地已由 [DriveBridge消费交接](web-open-design.md) 取代，不恢复旧Workbench。新桌面阅读通过独立人读API，不能扩张本dashboard为完整正文或编辑器；旧页面能力/测试保持，不把历史UI规划自动搬进首片。当前新增交付仍仅设计，详见 [人类阅读API](../interfaces/human-reading-api.md)。
+
 本文定义 `pinax vault dashboard` 的产品目标、边界、接口、验收标准和后续 Workbench 模块迁移关系。Dashboard 是 Pinax CLI 内置的本地只读控制台，不是真源、不替代 Markdown vault，也不是未来完整 UI 的代码归属。
 
 ## 1. 背景和问题

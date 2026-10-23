@@ -1,5 +1,27 @@
 # Pinax Roadmap
 
+## 2026-10-01 DriveBridge 阅读消费设计
+
+用户确认将阅读体验放入DriveBridge客户端，Electron桌面、阅读先行、macOS/Windows/Linux同时实机验收；不建Pinax Reader、不恢复Workbench。Pinax只新增 [人类阅读API与受监督会话规格](../interfaces/human-reading-api.md)，客户端与阅读状态归DriveBridge；手机继续Hermes。本轮仅设计/文档/任务，未实施API或桌面，旧Agent权限/渲染预算不变。实现包见 [pinax-human-reading-api-v1](../../openspec/changes/pinax-human-reading-api-v1/README.md)，交接见 [DriveBridge消费说明](web-open-design.md)。
+
+本次设计许可取代旧Workbench目的地与客户端暂停的独占路线，但不自动启动Pane/发布renderer、正文写入或真实使用。原五个change的11项真实任务、continuity原窗口及owner再准入要求不变；新阅读自然观察单列。
+
+## 2026-09-30 日常审阅后续
+
+本轮用户选择并批准“小批整理范围锁定 + 提案筛选翻页与正确 vault 的后续动作”。对应 `pinax-daily-review-followthrough-v1`：仅深化 Pinax 本地 CLI/MCP，只读队列不打开 payload store，scoped plan 不扩大到全库、不允许 stale override。保持 experimental；不启动正文 diff、P2–P4、外部操作或新真实验收分母。原五个 change 的 11 项真实任务保留。本轮本地实现、五个 evidence profiles 和归档已完成，见[交付记录](../implementation/daily-review-followthrough-2026-09-30.md)及[已归档任务](../../openspec/changes/archive/2026-09-30-pinax-daily-review-followthrough-v1/tasks.md)。
+
+## 2026-09-30 当前实施授权
+
+用户明确批准完成全部可本地实施的 spec，并提前启动 `pinax-agent-note-proposal-v1` 与 `pinax-rendered-view-v1`。排序为 note proposal → rendered projection → 本地验证与归档。这一授权解除两个 change 的时间门；continuity 的原样本、分母、真实观察门槛与 Go/Iterate/Stop 决策保留，新增能力保持 experimental。Pane、工作台、新 Provider、远端发布和真实外部操作仍按各自 owner 与验收处理。
+
+本地收尾：两个新 change 的 40 项任务完成，连同 inbox-judgment 与 mounted-vault 共四个 change 已归档；[验证与保留门禁](../implementation/spec-closeout-2026-09-30.md)。
+
+## 2026-09-28 当时执行优先级
+
+用户已批准 [日常知识闭环](../guides/daily-knowledge.md) 并要求实施：以个人日常使用为第一目标，通过 Agent 对话和现有编辑器改善记录、整理、阅读、找回。对应 `pinax-daily-knowledge-loop-v1`，排序为捕获与稳定打开 → 五条只读整理 → 阅读/检索与真实观察。
+
+这一决定明确调整下文 2026-08-29 continuity 六周窗口的独占投入规则：允许本 change 提前实施；保留 continuity 的既有能力、原分母、未过门槛及最终决策，不能用日常笔记样本替代。完整 rendered-view、Pane、工作台、新 provider 与 MCP note proposal 仍不自动启动。两周自然使用从主力环境可用后开始，工程完成与真实效果分别报告。
+
 本文定义 Pinax 从当前 v0.1.x "Preview" 阶段毕业到 v1.0 GA 的路线图和触发条件。面向产品决策者，不涉及实现细节。
 
 相关文档：
@@ -129,7 +151,7 @@ v0.2 不引入新功能领域，长期仍需关闭三笔 P0 credit debt——这
 | **新闻爬虫 / 内容抓取** | 外部资料通过 CLI-backed Provider adapter 拉取，Pinax 不自建 crawler | 使用 `ntn`、`lark-cli`、internet-access 等 provider |
 | **飞书知识库** | 飞书是 provider / delivery surface，不是 vault 替代 | 飞书内容通过 adapter 导入 vault |
 | **长期 daemon** | Pinax 是 CLI-only 短生命周期进程 | `sync daemon` 是本地 watch-and-poll 进程，不是常驻服务 |
-| **内置编辑器 UI** | 完整编辑器属于 Workbench 模块 | `pinax vault dashboard` 提供只读控制台；编辑器归 `client/yeisme-workbench`（参见 [Dashboard PRD §3](./dashboard-prd.md#3-产品定位)） |
+| **内置编辑器 UI** | 客户端不进入Pinax owner | DriveBridge内置知识阅读空间；受控编辑为后续切片，见 [消费交接](web-open-design.md)，不恢复Workbench |
 
 核心原则：外部平台永远是 provider 或 delivery surface，Pinax vault 才是笔记真源。
 

@@ -61,6 +61,72 @@ func TestRemoteMutationRecoveryInboxResponseLossProcess(t *testing.T) {
 	}
 }
 
+func TestRemoteMutationRecoverySyncResponseLossProcess(t *testing.T) {
+	for _, action := range []string{"push", "pull", "resolve"} {
+		t.Run(action, func(t *testing.T) {
+			t.Setenv("PINAX_SYNC_FIXTURE_KEY", "disposable-sync-fixture")
+			vault := t.TempDir()
+			svc := app.NewService()
+			if _, err := svc.InitVault(t.Context(), app.InitVaultRequest{VaultPath: vault, Title: "Sync recovery"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.CreateNote(t.Context(), app.CreateNoteRequest{VaultPath: vault, Title: "Fixture", Body: "sync fixture"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.CloudLogin(t.Context(), app.CloudLoginRequest{VaultPath: vault, Endpoint: "file://" + t.TempDir(), WorkspaceID: "fixture", DeviceID: "fixture", SecretRef: "env://PINAX_SYNC_FIXTURE_KEY", EncryptionSecretRef: "env://PINAX_SYNC_FIXTURE_KEY"}); err != nil {
+				t.Fatal(err)
+			}
+			if action == "resolve" {
+				for name, content := range map[string]string{"sample.md": "remote", "sample.20261023.conflict.md": "local"} {
+					if err := os.WriteFile(filepath.Join(vault, name), []byte(content), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			server := startRecoveryAPIServer(t, vault)
+			if action == "pull" {
+				seed, err := pinaxclient.New(pinaxclient.Config{BaseURL: server.baseURL})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := seed.SyncPush(t.Context(), pinaxclient.SyncRequest{Target: "capsa", Yes: true}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			proxy, count := startResponseLossProxy(t, server.baseURL)
+			client, err := pinaxclient.New(pinaxclient.Config{BaseURL: proxy.URL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity := pinaxclient.MutationIdentity{OperationID: "sync-response-loss-" + action, IdempotencyKey: "sync-response-loss-" + action}
+			request := pinaxclient.SyncRequest{Target: "capsa", Yes: true, Identity: identity}
+			var projection pinaxclient.Projection
+			switch action {
+			case "push":
+				projection, err = client.SyncPush(t.Context(), request)
+			case "pull":
+				projection, err = client.SyncPull(t.Context(), request)
+			default:
+				projection, err = client.SyncConflictsResolve(t.Context(), pinaxclient.SyncConflictRequest{File: "sample.20261023.conflict.md", KeepLocal: true, Yes: true, Identity: identity})
+			}
+			if err != nil || projection.Facts["operation_status"] != "succeeded" || projection.Facts["recovered_from_operation"] != "true" || *count != 1 {
+
+				t.Fatalf("sync recovery: err=%v status=%s forwarded=%d", err, projection.Facts["operation_status"], *count)
+			}
+			server.shutdown()
+			restarted := startRecoveryAPIServer(t, vault)
+			reader, err := pinaxclient.New(pinaxclient.Config{BaseURL: restarted.baseURL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			view, err := reader.Operation(t.Context(), identity.OperationID)
+			if err != nil || view.Status != "succeeded" || view.ReceiptRef == "" {
+				t.Fatalf("restart receipt: %v", err)
+			}
+		})
+	}
+}
+
 func TestOperationReconcileFolderFinalizeCrashProcess(t *testing.T) {
 	ctx := context.Background()
 	vault := t.TempDir()

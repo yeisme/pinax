@@ -78,6 +78,11 @@ tasks:
     cmds:
       - go run ./tools/testkit/integrationevidence --profile operation-recovery
 
+  integration:remote-write-parity:
+    desc: Run remote write manifest, CLI, API, MCP-boundary, and SDK parity tests with redacted evidence.
+    cmds:
+      - go run ./tools/testkit/integrationevidence --profile remote-write-parity
+
   integration:agent-continuity:dogfood:
     desc: Run ten redacted continuity samples against an isolated copy of a real vault.
     cmds:
@@ -395,12 +400,14 @@ tasks:
 
   security:
     desc: Run the pinned Go vulnerability scanner.
+    env:
+      GOTOOLCHAIN: "go{{.GO_DIRECTIVE}}"
     cmds:
       - go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   ci:
     desc: Run the CI-equivalent Pinax quality gate.
-    deps: [check, race, release:check, security]
+    deps: [check, release:check, security]
 
   clean:
     desc: Remove local build artifacts.
@@ -408,17 +415,16 @@ tasks:
       - rm -rf dist coverage.out
 
   ci:quick:
-    desc: Run the fast CI gate used for pull requests
+    desc: Run cached checks for affected Go packages and consumers
     cmds:
-      - task: fmt-check
+      - python3 scripts/ci/quick_go.py
 
   ci:race:
-    desc: Run the race or concurrency gate locally
+    desc: Compatibility entry; race requires explicit single-run human authorization
     cmds:
-      - task: test
+      - 'echo "Race is excluded from automatic CI. Use a separately authorized scoped command." >&2; exit 2'
 
   ci:full:
-    desc: Run the complete project validation suite
+    desc: Run the existing complete non-race owner checks once
     cmds:
-      - task: ci:quick
-      - task: test:integration
+      - task: ci

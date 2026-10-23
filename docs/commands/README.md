@@ -1,8 +1,12 @@
 # Pinax Command Manual
 
+- Experimental note proposals, bounded rendered trees and version references: [guide](../guides/note-proposals-and-rendered-views.md).
+
 This directory manages Pinax CLI command documentation. The root README keeps only common paths and examples; as the number of commands grows, command responsibilities, recommended workflows, safety boundaries, and migration notes are placed here.
 
 ## How to Read
+
+- For Agent capture, five-note review batches and reading in your existing editor: see the [daily knowledge workflow](../guides/daily-knowledge.md).
 
 - If you do not know where to start: run `pinax --help`; it shows nine personal local entry points.
 - To inspect every existing advanced and compatibility surface, run `pinax commands`.
@@ -120,8 +124,8 @@ The default root help is intentionally smaller than this map. Commands marked ad
 | Collect unorganized content first | `pinax inbox capture "Temporary idea" --vault work` |
 | Start a long-term learning project | `pinax project learning init investing stock-learning --title "学习炒股的全部笔记" --project-name "学习炒股" --preset stock-learning --vault work --json` |
 | Manage a project workspace | `pinax project subproject create research stock-learning --vault work --json` |
-| View a scoped project board | `pinax project board show research --subproject stock-learning --vault work` |
-| View today's note | `pinax journal daily show --vault work` |
+| View a scoped project board | `pinax project board describe research --subproject stock-learning --vault work` |
+| View today's note | `pinax journal daily describe --vault work` |
 | Search content | `pinax search "keyword" --vault work` |
 | Create a local backup | `pinax backup create --message "daily checkpoint" --vault work` |
 | Restore from a local backup | `pinax backup restore notes/example.md --revision <snapshot_id> --plan --vault work` |

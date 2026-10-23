@@ -11,7 +11,7 @@
 | `pinax pipeline status` | 聚合 pending saved plans（含 freshness 徽标）与最近 N 条 apply 型 receipt。 | 无写入。 |
 | `pinax pipeline status --kind <csv>` | 只看指定管道（`organize,metadata,repair,restore,sync,publish,proof_loop`）。 | 无写入。 |
 | `pinax pipeline status --limit <N>` | 限制最近 receipt 条数（默认 10，上限 50）。 | 无写入。 |
-| `pinax pipeline show <plan-id\|receipt-id>` | 统一检视单条 plan 或 receipt 的详情。 | 无写入。 |
+| `pinax pipeline describe <plan-id\|receipt-id>` | 统一检视单条 plan 或 receipt 的详情。 | 无写入。 |
 
 ## 常用流程
 
@@ -19,8 +19,8 @@
 pinax pipeline status --vault ./my-notes
 pinax pipeline status --vault ./my-notes --kind organize,repair --json
 pinax pipeline status --vault ./my-notes --agent
-pinax pipeline show organize-abc123 --vault ./my-notes
-pinax pipeline show apply-9f2c1d --vault ./my-notes --json
+pinax pipeline describe organize-abc123 --vault ./my-notes
+pinax pipeline describe apply-9f2c1d --vault ./my-notes --json
 ```
 
 输出合同照常支持 `--json` / `--agent` / `--events` / `--explain`；`--events` 模式下 status/show 只有 start/end 两个 envelope 事件（阶段事件属于 apply 型命令）。
@@ -38,6 +38,12 @@ pinax pipeline show apply-9f2c1d --vault ./my-notes --json
 - **receipt 形态**：展示 applied 事实（命令、状态、changed paths、ledger 序号、snapshot/ledger 引用），receipt id 可用 `apply-*`、sync run id、publish run id 或 restore/proof loop 收据 id。
 - **未知 id**：返回稳定错误 `pipeline_id_not_found` 并提示用 `pipeline status` 列出可用 id，不做就近猜测。
 
+## Scoped 整理计划（experimental）
+
+`pinax.organize_plan.scoped.v1` 继续由 organize 管道消费。show 额外返回 selection、snapshot_id、逐操作结果与 planned/applying/applied/partial/failed 状态。已消费、失败或中断计划只给诊断动作，不提示再次 apply；新鲜 planned 计划的动作不自动附 `--yes`。receipt 保留真实失败状态，不把部分结果说成 applied。
+
+选择集 freshness 只比较所选身份/revision 与目标冲突，不因无关正文修改失效。scoped 不允许 `--allow-stale`，不能通过取消选择参数转成全库重试。恢复前检查原 snapshot 和后续编辑，显式生成恢复计划。
+
 ## 统一 freshness 守卫与 --allow-stale
 
 对已保存 plan 的 apply（`organize apply --plan`、`metadata apply --plan`、`repair apply --plan`、`version restore apply --plan`），当 plan 记录的 facts 摘要与当前 vault 扫描指纹不一致时拒绝执行，返回稳定错误 `plan_stale`（restore 为 `restore_plan_stale`）并提示重新 plan：
@@ -47,7 +53,7 @@ Error: plan_stale — vault changed after this plan was generated.
 Re-run `pinax metadata plan --save` or pass --allow-stale to apply anyway.
 ```
 
-- `--allow-stale` 是显式逃生门：跳过 freshness 守卫照常 apply，投影附 `plan_stale_overridden` warning 与 `allow_stale=true` fact；其余守卫（`--yes`、snapshot 要求）不受影响。
+- 旧非 scoped 计划的 `--allow-stale` 是显式逃生门：跳过 freshness 守卫照常 apply，投影附 `plan_stale_overridden` warning 与 `allow_stale=true` fact；其余守卫（`--yes`、snapshot 要求）不受影响。
 - 内存态 preview → apply 单命令流程（不带 `--plan`）不受影响，行为与既往一致。
 - 拒绝时 `--events` 输出 `stage.failed` 事件（`reason=plan_stale`）。
 
@@ -66,4 +72,4 @@ apply 型命令（organize/metadata/repair/restore apply、sync push/pull、publ
 ## 与其他命令的关系
 
 - 各管道的 `plan`/`apply`/`list` 命令仍是唯一写入面；`pipeline` 只读聚合。
-- 需要看事件时间线（含非 apply 事件）时用 `pinax activity`；需要看 sync run 明细时用 `pinax sync logs show <run_id>`。
+- 需要看事件时间线（含非 apply 事件）时用 `pinax activity`；需要看 sync run 明细时用 `pinax sync logs describe <run_id>`。

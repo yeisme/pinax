@@ -116,7 +116,7 @@ Before the authorized write, create one non-sensitive, uniquely identifiable can
 ```bash
 pinax sync pull --target capsa --unlock keychain --yes --vault . --json
 pinax vault validate --vault . --json
-pinax note show mac-cos-canary --vault . --json
+pinax note describe mac-cos-canary --vault . --json
 ```
 
 A changed backup completes only with `remote_write=true`, a committed `revision_id`, and remote head/manifest read-back. The existing device must observe the same revision and the canary note. A no-change result completes only with `up_to_date=true` and `remote_checked=true`; it cannot prove the Mac-to-existing-device write path by itself.

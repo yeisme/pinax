@@ -1,5 +1,7 @@
 # 可信 Agent 工作连续性 PRD
 
+2026-09-28 优先级更新：用户已批准日常记录、整理、阅读与找回主线，见 [roadmap](./roadmap.md)。下文六周试验保留原窗口、样本口径和验收条件，但不再独占全部产品投入；不能用日常笔记流程测试或观察代替 continuity loop。
+
 状态：**Personal dogfood / Experimental**
 
 首轮窗口：**2026-08-29 至 2026-10-10**
@@ -275,7 +277,7 @@ trusted_continuation_loops
 | Source artifact truth | Repository、Git、OpenSpec、Markdown vault | copyable/openable refs |
 | Memory state truth | Pinax memory ledger | bounded projection/review |
 
-Root companion handoff 为 `openspec/changes/pinax-continuity-operator-handoff-v1/`。Pinax implementation owner 为 `openspec/changes/pinax-trusted-continuity-dogfood-v1/`。
+Root companion handoff 为 `cli/pinax/openspec/changes/pinax-continuity-operator-handoff-v1/`。Pinax implementation owner 为 `openspec/changes/pinax-trusted-continuity-dogfood-v1/`。
 
 ## 12. 兼容与成熟度
 
@@ -290,7 +292,7 @@ Root companion handoff 为 `openspec/changes/pinax-continuity-operator-handoff-v
 具体合同、架构、atomic tasks、验证命令和 closeout 状态由以下 change 管理：
 
 - [Pinax trusted continuity dogfood OpenSpec](../../openspec/changes/pinax-trusted-continuity-dogfood-v1/)
-- Root `openspec/changes/pinax-continuity-operator-handoff-v1/`：Codex/Claude operator Skill 的跨 owner handoff。
+- Root `cli/pinax/openspec/changes/pinax-continuity-operator-handoff-v1/`：Codex/Claude operator Skill 的跨 owner handoff。
 
 本文是产品与体验真源，不复制 `tasks.md` 的执行状态。
 

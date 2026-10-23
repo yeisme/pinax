@@ -1,12 +1,12 @@
 # Inbox Judgment 校准与渐进接入说明
 
-状态：**exploratory**。对应 OpenSpec 变更 [pinax-inbox-judgment-v1](../openspec/changes/pinax-inbox-judgment-v1/)；实现位于 `internal/inboxjudgment`。
+状态：**exploratory**。对应 OpenSpec 变更 [pinax-inbox-judgment-v1](../openspec/changes/archive/2026-09-30-pinax-inbox-judgment-v1/)；实现位于 `internal/inboxjudgment`。
 
 本能力为笔记 inbox 分类、关联与重复线索提供结构化判断**建议**。模型只出建议；原确定性规则、原 inbox 审阅流程与人工确认保持权威。默认 `off`，零发现、零远程调用；不会随版本升级自动启用，仅由用户通过实验性开关（见第 3 节）显式开启。
 
 ## 1. 固定基线
 
-- **对照组是原流程本身**。任何判断建议都与"用户按现有 `pinax inbox show` / `pinax inbox promote` / `pinax inbox discard` 流程整理收件箱"的结果对比，不引入第二套真值。
+- **对照组是原流程本身**。任何判断建议都与"用户按现有 `pinax inbox describe` / `pinax inbox promote` / `pinax inbox discard` 流程整理收件箱"的结果对比，不引入第二套真值。
 - **确定性前置规则永远先于模型**：权限与 vault 隔离（跨 vault 默认不取材）、授权集合绑定（inbox 笔记与全部候选都必须位于授权集合内，空集合 = deny-all）、必需字段与 revision 绑定、字节数与候选数上限、敏感形态 fail closed、内容 digest 全等（`exact_content_digest`，确定性重复线索，无需概率）。
 - **离线合同基线**：`go test ./internal/inboxjudgment` 覆盖 wire 合同（schema "1.0"、8 错误码 + submission_state/retry_class、choice/ordinal_score/binary 原语、pair 对齐）、off 零调用、缓存权限撤销、stale/权限撤销不可采纳、零网络 replay。
 - **场景矩阵基线**：`TestInboxJudgmentScenarioMatrix`（inbox-link、duplicate-warning、vault-isolation、failure-injection）经本项目 evidence runner 落证据到 `temp/integration-test-runs/inbox-judgment-*/`，六类证据齐全；`TestInboxJudgmentScenarioFailureEvidence` 证明失败运行同样保留原始退出码与完整证据。
@@ -75,4 +75,4 @@ pinax config doctor --json   # judgment_status: experimental_off / experimental_
 ## 7. 接入模式记录
 
 - 公共 SDK（`github.com/yeisme/judgment-sdk`，合同 "1.0"）未发布前，本仓在 `internal/inboxjudgment/wire.go` 以零外部依赖钉住冻结合同形状（snake_case wire、DescribeCapabilities/Evaluate、8 错误码、三原语），standalone 构建不受 SDK 树漂移影响。
-- 真实 SDK 引用通过 build-tag 隔离的 bridge（`judgment_sdk_bridge.go`，tag `judgment_sdk`）验证兼容性；默认构建不编译该文件。详见文件头注释与 `openspec/changes/pinax-inbox-judgment-v1/tasks.md` 任务 1.2 的 evidence。
+- 真实 SDK 引用通过 build-tag 隔离的 bridge（`judgment_sdk_bridge.go`，tag `judgment_sdk`）验证兼容性；默认构建不编译该文件。详见文件头注释与 `openspec/changes/archive/2026-09-30-pinax-inbox-judgment-v1/tasks.md` 任务 1.2 的 evidence。

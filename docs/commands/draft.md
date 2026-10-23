@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `pinax draft create <title>` | Create a draft note (status=draft). | Writes a Markdown note. |
 | `pinax draft list` | List draft notes. | Does not write. |
-| `pinax draft show <note>` | View draft note content. | Does not write. |
+| `pinax draft describe <note>` | View draft note content. | Does not write. |
 | `pinax draft promote <note>` | Promote a draft to active (default) or a specified status. | Writes note metadata; optionally moves the path. |
 | `pinax draft archive <note> --yes` | Archive a draft (sets status=archived). | Writes note metadata. |
 | `pinax draft discard <note> --yes` | Discard a draft (sets status=discarded; does not delete the file). | Writes note metadata. |
@@ -26,7 +26,7 @@ pinax draft create "Article Ideas" --body "Initial thoughts" --tags writing --va
 pinax draft list --vault ./my-notes
 
 # View draft content
-pinax draft show "Article Ideas" --vault ./my-notes
+pinax draft describe "Article Ideas" --vault ./my-notes
 
 # Promote to active, specifying folder and kind
 pinax draft promote "Article Ideas" --status active --folder articles --kind article --yes --vault ./my-notes

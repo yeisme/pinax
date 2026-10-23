@@ -75,7 +75,7 @@ rm -rf /tmp/pinax-notes
 ./dist/pinax template init --vault /tmp/pinax-notes --json
 ./dist/pinax template list --pack starter --vault /tmp/pinax-notes --json
 ./dist/pinax template recommend --intent "meeting sync" --vault /tmp/pinax-notes --json
-./dist/pinax journal daily show --date 2026-06-08 --template journal.daily --vault /tmp/pinax-notes --json
+./dist/pinax journal daily describe --date 2026-06-08 --template journal.daily --vault /tmp/pinax-notes --json
 ./dist/pinax index page create home --template index.home --vault /tmp/pinax-notes --json
 ./dist/pinax note add "client sync" --template meeting.notes --vault /tmp/pinax-notes --json
 ./dist/pinax template create "video learning" --vault /tmp/pinax-notes --json
@@ -84,11 +84,11 @@ rm -rf /tmp/pinax-notes
 ./dist/pinax template render meeting --title "client meeting" --var client=Acme --save-run meeting-demo --vault /tmp/pinax-notes --json
 ./dist/pinax template render meeting --run meeting-demo --vault /tmp/pinax-notes --json
 ./dist/pinax note new "client meeting" --template meeting --var client=Acme --tags meeting,client --vault /tmp/pinax-notes --json
-./dist/pinax note show "client meeting" --view source --vault /tmp/pinax-notes --json
+./dist/pinax note describe "client meeting" --view source --vault /tmp/pinax-notes --json
 ./dist/pinax note list --tag meeting --vault /tmp/pinax-notes
 ./dist/pinax note read "client meeting" --vault /tmp/pinax-notes --json
 ./dist/pinax note read "client meeting" --display card --vault /tmp/pinax-notes --json
-./dist/pinax project board show research --note-display card --vault /tmp/pinax-notes --json
+./dist/pinax project board describe research --note-display card --vault /tmp/pinax-notes --json
 ./dist/pinax project board configure research --columns inbox,next,doing,blocked,review,done --vault /tmp/pinax-notes --json
 ./dist/pinax project board plan research --save --vault /tmp/pinax-notes --json
 ./dist/pinax plan weekly --dry-run --vault /tmp/pinax-notes --json
@@ -163,7 +163,7 @@ pinax template list --pack starter --vault ./my-notes --json
 pinax template recommend --intent "meeting sync" --vault ./my-notes --json
 pinax template recommend --intent "写小说" --vault ./my-notes --json
 pinax template recommend --intent "便签" --vault ./my-notes --json
-pinax journal daily show --date 2026-06-08 --template journal.daily --vault ./my-notes --json
+pinax journal daily describe --date 2026-06-08 --template journal.daily --vault ./my-notes --json
 pinax index page create home --template index.home --vault ./my-notes --json
 pinax index page create ideas --template index.ideas --vault ./my-notes --json
 pinax note add "client sync" --template meeting.notes --vault ./my-notes --json
@@ -201,11 +201,11 @@ A render run writes `.pinax/renders/templates/<template>/<run-id>/receipt.json` 
 Note rendered view and write-back commands:
 
 ```bash
-pinax note show projects/dashboard.md --view source --vault ./my-notes --json
-pinax note show projects/dashboard.md --view rendered --vault ./my-notes --json
+pinax note describe projects/dashboard.md --view source --vault ./my-notes --json
+pinax note describe projects/dashboard.md --view rendered --vault ./my-notes --json
 pinax note refresh projects/dashboard.md --rendered --save-run dashboard-latest --yes --vault ./my-notes --json
-pinax note show projects/dashboard.md --view rendered --snapshot latest --vault ./my-notes --json
-pinax note show projects/dashboard.md --runs --vault ./my-notes --json
+pinax note describe projects/dashboard.md --view rendered --snapshot latest --vault ./my-notes --json
+pinax note describe projects/dashboard.md --runs --vault ./my-notes --json
 ```
 
 `note show --view rendered` is read-only and does not write Markdown, `.pinax/`, Git, providers, or remotes. `note refresh --rendered --yes` only updates managed blocks from `<!-- pinax:render <name> start -->` to `<!-- pinax:render <name> end -->` or `<!-- pinax:managed name=<name> -->` to `<!-- /pinax:managed -->`; source `pinax-sql` and `pinax-dataview` blocks, regular body text, and unknown markers remain unchanged. Note-scoped render runs mirror note paths and are placed under `.pinax/renders/<note-path-without-notes-prefix-and-ext>/<run-id>/`.
@@ -231,9 +231,9 @@ pinax config unset output.theme --scope project --vault ./my-notes
 Environment variable examples:
 
 ```bash
-PINAX_OUTPUT_COLOR=always PINAX_OUTPUT_MARKDOWN_STYLE=dark pinax note show notes/demo.md --vault ./my-notes
-NO_COLOR=1 pinax note show notes/demo.md --vault ./my-notes
-pinax note show notes/demo.md --vault ./my-notes --color always
+PINAX_OUTPUT_COLOR=always PINAX_OUTPUT_MARKDOWN_STYLE=dark pinax note describe notes/demo.md --vault ./my-notes
+NO_COLOR=1 pinax note describe notes/demo.md --vault ./my-notes
+pinax note describe notes/demo.md --vault ./my-notes --color always
 PINAX_API_URL=http://127.0.0.1:8787 pinax folder list --json
 ```
 

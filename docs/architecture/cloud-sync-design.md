@@ -286,7 +286,7 @@ Direct transports do not provide Pinax server-side auth, server audit, multi-ten
 
 The redaction boundary covers stdout, stderr, `--events`, sync-state, sync run receipts, `.pinax/events.jsonl`, test fixtures, object keys, object metadata, fake backend logs, provider stderr, and archive evidence. These surfaces may include stable ids, counts, timestamps, backend kind, transport kind, revision ids, and redacted next actions. They must not include plaintext note bodies, plaintext object keys derived from note paths, raw tokens, Authorization headers, cookies, raw secret refs, provider stderr, or provider payloads.
 
-When local conflict inspection intentionally shows note content, it must be an explicit local command such as `pinax sync conflicts show <file> --json`; that local content view is not Cloud transport evidence and must not be copied into backend fixtures or archive receipts.
+When local conflict inspection intentionally shows note content, it must be an explicit local command such as `pinax sync conflicts describe <file> --json`; that local content view is not Cloud transport evidence and must not be copied into backend fixtures or archive receipts.
 
 ## Agent Brain projection sync policy
 

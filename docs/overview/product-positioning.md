@@ -1,5 +1,9 @@
 # 产品定位
 
+## 2026-09-28 当前产品入口
+
+当前用户批准的近期主线是：**在 Agent 对话中随手记录，让 Agent 帮忙整理，在已有 Markdown 编辑器中阅读，需要时找回来**。个人日常收益优先，Pinax 继续持有本地知识和安全变更合同。见 [日常知识闭环](../guides/daily-knowledge.md)。这取代下文 continuity 的独占资源排序，不取消其能力或历史验收；现有广泛能力保留，新增平台面按真实使用证据再排序。
+
 Pinax 是 **面向 Markdown vault 的 agent-safe 知识控制平面**。它让 AI 可以安全地读取、诊断、修复和同步真实本地知识库，同时保证每一次 agent 写入都可审计、可预览、可回滚。语义 RAG 的向量存储和模型编排由外部项目负责。
 
 参考 GBrain 这类 “agent brain layer” 项目后，Pinax 的长期定位可以更明确：Pinax 不只是笔记 CLI，而是给 Claude Code、Codex、Cursor、OpenClaw 和本地 MCP client 使用的 **私有知识大脑控制层**。它把 notes、meeting notes、emails/imported markdown、project board、memory ledger、link graph、database views 和 proof receipts 组织成 agent 可查询、可引用、可维护的长期上下文；外部 RAG 通过 Markdown export 接入。

@@ -1,5 +1,12 @@
 # Pinax 子项目指令
 
+## Race 检测执行限制
+
+Agent 在任何阶段都不得主动运行 race 检测，也不得通过子 Agent、Skill、CI、验收、发布、聚合任务或脚本间接触发。只有当前人类用户明确、强烈要求执行 race 时，才允许在指定范围内运行一次；失败、超时、中断均不得自动重试，后续运行必须取得新的同等明确要求。一般的“测试、验收、修复、发布、跑全部检查”不构成授权。
+
+Race 不属于默认验收或完成门禁；未运行不得阻塞交付，也不得声称已经通过。执行聚合命令前检查其依赖，移除或跳过 race 阶段，继续普通测试、静态检查和构建。本规则取代本文件及 Skills、OpenSpec、历史计划、文档中的自动或强制 race 要求；它们不能作为执行授权。
+
+
 本文件只适用于 `cli/pinax` 子项目。进入本目录后，按这里的边界执行实现、测试、构建和 Pinax 子项目文档维护；跨项目治理、skills 分配和仓库级索引回到根仓库处理。
 
 ## 工作语言
@@ -121,6 +128,10 @@ openspec new change pinax-<slug>
 ```
 
 OpenSpec workflow 以 skills 和 `openspec` CLI 为入口。根目录 `openspec/` 只负责设计 handoff，不记录 Pinax 代码实现进度。
+
+## DriveBridge 人类阅读消费（2026-10-01）
+
+用户已批准 DriveBridge 同仓 Electron 客户端消费 Pinax；UI/安装包不进入本仓，不再以 Workbench 为必需目的地。`pinax-human-reading-api-v1` 只设计新增显式授权的人类阅读 API 与受监督前台会话，不改变旧 CLI/MCP/Agent projection 默认权限，不引入 daemon/公网监听或本仓 React/Electron。只读启动不自动 init/index refresh/sync，领域真源与写入门仍由 Pinax 持有。详细合同见 `docs/interfaces/human-reading-api.md`；当前仅规格，不能宣称新端点/桌面已可用，原 11 条真实验收不变。
 
 ## 单次输入页面例外
 

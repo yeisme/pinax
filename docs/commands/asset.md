@@ -24,7 +24,7 @@
 ```bash
 pinax asset add ./diagram.png --vault ./my-notes --json
 pinax asset list --vault ./my-notes --agent
-pinax asset show diagram.png --path-style markdown --vault ./my-notes --json
+pinax asset describe diagram.png --path-style markdown --vault ./my-notes --json
 pinax asset link diagram.png --note "authentication plan" --vault ./my-notes --json
 pinax note attach "authentication plan" ./diagram.png --placement note-folder --embed --vault ./my-notes --json
 pinax note attachments "authentication plan" --include-paths --vault ./my-notes --json

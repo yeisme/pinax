@@ -12,7 +12,7 @@
 ## Examples
 
 ```bash
-pinax project board show research --vault ./my-notes --json
+pinax project board describe research --vault ./my-notes --json
 pinax task adopt task_abc123 --plan --vault ./my-notes --json
 pinax task adopt task_abc123 --yes --vault ./my-notes --json
 ```

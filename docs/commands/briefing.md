@@ -18,7 +18,7 @@
 
 ```bash
 pinax briefing recipe init --topic "AI" --limit 10 --vault ./my-notes
-pinax briefing recipe show --vault ./my-notes --json
+pinax briefing recipe describe --vault ./my-notes --json
 pinax briefing run --dry-run --vault ./my-notes --json
 pinax briefing run --yes --vault ./my-notes
 pinax briefing deliver feishu --webhook "$PINAX_FEISHU_WEBHOOK" --title "Today's briefing" --text "Content" --secret-ref env://PINAX_FEISHU_WEBHOOK --dry-run --vault ./my-notes --json

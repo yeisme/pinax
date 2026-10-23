@@ -15,7 +15,7 @@
 ```bash
 pinax journal daily open --vault ./my-notes --editor "$EDITOR"
 pinax journal daily append --body "Daily retrospective" --vault ./my-notes
-pinax journal weekly show --vault ./my-notes --json
+pinax journal weekly describe --vault ./my-notes --json
 pinax journal monthly append --body "Monthly summary" --vault ./my-notes
 ```
 

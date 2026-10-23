@@ -1,42 +1,41 @@
-# Agent Memory Runtime — Adapter Ownership Boundary
+# Agent 记忆运行时：适配器归属
 
-## Pinax owns
+<a id="pinax-owns"></a>
+## Pinax 负责什么
 
-Pinax (`cli/pinax`) owns the canonical Agent memory runtime:
+`cli/pinax` 拥有 Agent 记忆运行时的 canonical 状态与合同：
 
-- `internal/agentprotocol` — versioned DTO, validation, stable errors, adapter descriptor
-- `internal/agentmemory` — memory lifecycle, scope, source, proposal, feedback, store repository
-- `internal/agentcontext` — permission-first context compilation, ranking, budget
-- `internal/agentadapter` — reference adapter **harness** (descriptor negotiation, conversion, degraded status)
-- `pkg/agentmemory` — experimental Go SDK facade for embedded consumers
-- `pinax agent` CLI command tree
-- `pinax.agent.*` MCP tools (read-only by default)
-- `Pinax.Agent.*` RPC routes
+| 模块 | 职责 |
+| --- | --- |
+| `internal/agentprotocol` | 版本化 DTO、校验、稳定错误与 adapter descriptor |
+| `internal/agentmemory` | 记忆生命周期、scope、来源、proposal、反馈与 repository |
+| `internal/agentcontext` | 权限优先的上下文编译、排序与预算 |
+| `internal/agentadapter` | 参考适配器 harness：descriptor 协商、转换与降级状态 |
+| `pkg/agentmemory` | 面向嵌入消费者的实验性 Go SDK |
+| `pinax agent`、`pinax.agent.*`、`Pinax.Agent.*` | CLI、默认只读 MCP 与 RPC 表面 |
 
-## Pinax does NOT own
+<a id="pinax-does-not-own"></a>
+## 运行时集成由谁负责
 
-Runtime-specific adapter implementation is **not owned by Pinax**. Pinax ships reference adapter fixtures (`internal/agentadapter/codex.go`, `internal/agentadapter/teamruntime.go`) that prove the common schema is portable, but does not implement:
+Pinax 提供 `internal/agentadapter/codex.go` 和 `teamruntime.go` 参考 fixture，证明通用 schema 可迁移；它们不等于真实运行时集成。
 
-- **Codex runtime integration**: Codex plugin install, hooks, config parsing, subprocess management, trace path handling, and plugin packaging belong to the Codex owner.
-- **Team runtime integration**: team run, role assignment, trace format parsing, and team state management belong to the execution owner (its former owner retired on 2026-09-26; re-admission pending).
+Codex 的插件安装、hooks、配置读取、子进程、trace 路径和打包属于 Codex owner。团队执行、角色分配、trace 解析与团队状态属于执行 owner；该 owner 的旧实现已于 2026-09-26 退役，重新准入尚未完成。
 
-## Team runtime consumer handoff
+<a id="team-runtime-consumer-handoff"></a>
+## 团队运行时交接
 
-When a re-admitted execution owner implements its Pinax memory adapter, it should:
+重新获批的执行 owner 需要跨 Agent handoff 或共享记忆时，再接入适配器：
 
-1. Import `pkg/agentmemory` (the experimental Go SDK) or call `pinax agent` CLI / `pinax.agent.*` MCP tools.
-2. Use the common schema (`yeisme.agent_memory.v1`, `yeisme.agent_context_pack.v1`, `yeisme.agent_handoff.v1`) — do **not** invent new core fields. Team-specific data goes in adapter metadata.
-3. Respect the proposal-first contract: execution-owner workers default to `propose` capability; confirmed memory mutation requires owner approval or explicit policy.
-4. Contribute feedback via `pinax agent feedback add` — feedback does not rewrite memory content.
+1. 使用 `pkg/agentmemory` 实验 SDK，或调用 `pinax agent` / `pinax.agent.*`。
+2. 复用 `yeisme.agent_memory.v1`、`yeisme.agent_context_pack.v1`、`yeisme.agent_handoff.v1`；团队扩展放 adapter metadata，不另造核心字段。
+3. worker 默认只能 `propose`；确认写入需要 owner 批准或明确 policy。
+4. 通过 `pinax agent feedback add` 提交反馈；反馈不重写记忆正文。
 
-**Trigger condition**: a re-admitted execution owner should implement its adapter when it needs cross-agent handoff (e.g., team-runtime worker → Codex reviewer) or shared memory across its team runtime. Until then, the reference fixture in `internal/agentadapter/teamruntime.go` proves compatibility without requiring runtime code in Pinax.
+在实际执行 owner 接入前，teamruntime fixture 只证明合同兼容，不要求 Pinax 内嵌其运行时。
 
-## Stable-from criteria
+<a id="stable-from-criteria"></a>
+## 稳定化条件
 
-The agent memory runtime remains `experimental` until:
+仍为 `experimental`，待以下证据齐备：两种参考适配器通过测试（真实团队集成另行恢复）；完成任务 8.5 的四周真实使用；完成任务 6.5 的 CLI/MCP/REST-RPC/SDK 对等验证。
 
-- Two reference adapters (Codex + team-runtime fixture) are implemented and tested; real team-runtime integration resumes after the execution owner is re-admitted.
-- Four weeks of product dogfooding evidence is collected (task 8.5).
-- Transport parity is verified across CLI/MCP/REST-RPC/SDK (task 6.5).
-
-Until then, old `pinax memory`, `pinax brain`, and `pinax.brain.*` surfaces are NOT deprecated.
+此前不弃用 `pinax memory`、`pinax brain` 或 `pinax.brain.*`。

@@ -37,7 +37,7 @@ Federated catalog 的 Agent 模板默认使用 `locale=en`。中文笔记和资�
 ```bash
 pinax prompt import --from ./novel-character.yaml --vault ./my-notes --json
 pinax prompt search "character portrait" --domain visual_generation --tag character --vault ./my-notes --json
-pinax prompt show novel_character_portrait_v1 --vault ./my-notes --json
+pinax prompt describe novel_character_portrait_v1 --vault ./my-notes --json
 pinax prompt resolve pinax://prompt/novel_character_portrait_v1 --vault ./my-notes --agent
 pinax prompt lifecycle novel_character_portrait_v1 --to tested --reason "fixture render passed" --vault ./my-notes --json
 pinax prompt feedback import --from ./eikona-feedback.json --vault ./my-notes --json

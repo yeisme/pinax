@@ -1,40 +1,146 @@
+# Change-aware CI maintained by scripts/maintain-workspace-ci.py.
 name: Pinax CI
-
-on:
-  workflow_dispatch:
-
 permissions:
   contents: read
-
 concurrency:
-  group: pinax-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
 env:
   GO_TEST_TIMEOUT: 30m
-
 jobs:
-  check:
-    name: task ci (check + race + release check)
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      level: ${{ steps.select.outputs.level }}
+      integration: ${{ steps.select.outputs.integration }}
+      docs_changed: ${{ steps.select.outputs.docs_changed }}
+      go_changed: ${{ steps.select.outputs.go_changed }}
+      python_changed: ${{ steps.select.outputs.python_changed }}
+      web_changed: ${{ steps.select.outputs.web_changed }}
+      legacy_changed: ${{ steps.select.outputs.legacy_changed }}
+      spec_changed: ${{ steps.select.outputs.spec_changed }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - id: select
+      run: python3 scripts/ci/changed_scope.py select
+  docs-check:
+    needs: scope
+    if: needs.scope.outputs.level == 'docs' || needs.scope.outputs.docs_changed == 'true' || needs.scope.outputs.spec_changed
+      == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: actions/setup-node@v4
+      if: needs.scope.outputs.spec_changed == 'true'
+      with:
+        node-version: '22'
+    - run: python3 scripts/ci/changed_scope.py docs
+  quick-check:
+    needs: scope
+    if: needs.scope.outputs.level == 'quick'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+        cache: true
+      if: needs.scope.outputs.go_changed == 'true'
+    - name: Affected Go packages and consumers
+      run: python3 scripts/ci/quick_go.py
+      if: needs.scope.outputs.go_changed == 'true'
+    - uses: oven-sh/setup-bun@v2
+      if: needs.scope.outputs.web_changed == 'true'
+    - name: Renderer checks
+      if: needs.scope.outputs.web_changed == 'true'
+      working-directory: web/pinax-web-renderer
+      run: |-
+        bun install --frozen-lockfile
+        bun run test
+        bun run build
+  check-full:
+    name: Full / task ci (check + race + release check)
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Install task
-        uses: arduino/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ github.token }}
-
-      - name: Run quality gate
-        run: task ci
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - name: Install task
+      uses: arduino/setup-task@v2
+      with:
+        version: 3.x
+        repo-token: ${{ github.token }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Install full-check tooling
+      run: |-
+        npm install --global @fission-ai/openspec@1.6.0
+        go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+    - uses: oven-sh/setup-bun@v2
+    - name: Install renderer and release checker
+      run: |-
+        go install github.com/goreleaser/goreleaser/v2@v2.13.2
+        (cd web/pinax-web-renderer && bun install --frozen-lockfile)
+    - name: Run quality gate
+      run: task ci
+    needs:
+    - scope
+    if: needs.scope.outputs.level == 'full'
+  check:
+    name: task ci (check + race + release check)
+    if: always()
+    needs:
+    - scope
+    - docs-check
+    - quick-check
+    - check-full
+    runs-on: ubuntu-latest
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+    steps:
+    - name: Require selected checks
+      shell: python
+      run: |
+        import json, os, sys
+        needs = json.loads(os.environ["NEEDS_JSON"])
+        if needs["scope"]["result"] != "success":
+            sys.exit("Change selection did not succeed")
+        level = needs["scope"]["outputs"]["level"]
+        if level not in ("docs", "quick", "full"):
+            sys.exit("Unknown check level")
+        for name, value in needs.items():
+            if name == "scope":
+                continue
+            expected = (name == "docs-check" and (level == "docs" or needs["scope"]["outputs"].get("docs_changed") == "true" or needs["scope"]["outputs"].get("spec_changed") == "true")) or (name == "quick-check" and level == "quick") or (name not in ("docs-check", "quick-check") and level == "full")
+            wanted = "success" if expected else "skipped"
+            if value["result"] != wanted:
+                sys.exit(f"{name}: expected {wanted}, got {value['result']}")
+        print(f"CI passed: level={level}; unrelated lanes intentionally skipped")
+'on':
+  pull_request: null
+  push:
+    branches:
+    - main
+    - develop
+  workflow_dispatch: null

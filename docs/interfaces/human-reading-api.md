@@ -36,7 +36,7 @@ source export 不是文件系统 API，不接受路径或输出目录。保存�
 | --- | --- |
 | SourceDescriptor | schema_version=`pinax.reader.source.v1alpha1`、session_id、binding_id、display_name、capabilities、limits、index_state、observed_at；binding_id 只来自受信父进程，不证明跨设备身份 |
 | NoteCard | object_id、title、revision（sha256）、uri、status、project_id 可空、tags、updated_at；无全文、无绝对路径；title 不可用时有明确状态 |
-| NoteList/SearchResults | items、next_cursor 可空、observed_at、index_watermark、index_state（status=ready/partial/stale/index_unavailable + watermark + generation）：索引新鲜度显式可读，消费方无需解码 opaque watermark 即可区分 fresh 与 stale；索引检查严格只读（mode=ro，绝不迁移/回填/修复 owner 索引） |
+| NoteList/SearchResults | items、next_cursor 可空、observed_at、index_watermark、index_state（status=ready/partial/stale/index_unavailable + watermark + generation）：索引新鲜度显式可读，消费方无需解码 opaque watermark 即可区分 fresh 与 stale；索引检查只读私有有界副本（main+WAL合计64MiB、两次稳定观察；不在源vault创建WAL/SHM，绝不迁移/回填/修复 owner 索引；活跃变更或超预算报告index_unavailable） |
 | DocumentPage | schema_version=`pinax.reader.document.v1alpha1`、object_id、revision、current_revision、uri、nodes、outline、outline_cursor 可空、next_cursor 可空、complete、content_bytes、observed_at、warnings；complete 只在全文最后页且无未说明丢弃时为 true |
 | DocumentNode | type、anchor、text/children、可选 ref 或 owner fence payload；标准 paragraph/heading/list/quote/code/table/image/link；未知 type 显示 unsupported，不执行插件 |
 | LinkPage | object_id、revision、direction、items、next_cursor、relations_watermark、observed_at；关系投影水位不是正文 revision |
@@ -52,9 +52,63 @@ source export 不是文件系统 API，不接受路径或输出目录。保存�
 - 文档：每页最多 256 KiB UTF-8 文本、512 节点（含嵌套节点），完整响应最多 1 MiB；可交互解析源文件上限 8 MiB、全篇解析节点上限 65536。达到任何预算都必须显式说明，不能以静默截断宣称完成。
 - 页界按完整块切分；单个超长 code/paragraph/table 使用 `continuation` 节点，携带稳定 block_anchor、fragment_index、last_fragment、原 block type 与必要 table header/code language。UTF-8、转义实体和 inline token 不能从中间切断；回放不得重复块。长 inline token 可降为转义文本并返回 warning。
 - outline 与正文锚点绑定 revision；目录单页上限 512 条，响应有独立 outline_cursor。anchor 请求定位同一 revision 的页，不在 renderer 扫全篇寻找。
+- 跨笔记 `[[目标#^块ID|名称]]` 与 Markdown `target.md#%5E块ID` 使用 owner 的固定 revision＋anchor。N04.15 支持顶层段落末尾、前置空白的字面 `^ID`（1–64 ASCII 字母/数字/短横线）；不移除源标记、不新增节点类型。重复/缺失 ID 不退回全文；代码、链接标签、HTML、标题、列表/引用嵌套、转义和其他复杂表示不猜测。生成 anchor 不是块 ID 的跨版本身份，必须与原 revision 配对；原版不可恢复时返回409。目标解析沿标题引用共用32目标/累计8MiB/65536节点预算，不执行 fence。N04.16 同时支持同笔记简写 `[[#标题]]`、`[[#^块ID]]`、Markdown `#fragment` 及显式自身目标＋片段，始终使用正在展示的 source revision；读取历史 snapshot 时不拿当前 notes 条目的锚点替代。两层嵌入与 DriveBridge 消费另验。
 - source 超 8 MiB 或解析超预算返回 413 `document_too_large` / `document_budget_exceeded`，错误details带固定revision、source_size_bytes与可用source-export action；显式导出每个Range最大1MiB。附件每个Range最大8MiB；无Range仅在总大小不超过对应上限时返回200，否则416并提供总大小，消费者分段流式保存。不以返回半篇代替全文，不支持格式受权下载，不进在线转换服务。
 - document 首次请求冻结可解析的 content revision；后续页重新校验同版。外部编辑后，如原版可从现有 snapshot 读取则继续原版并提示 current_revision；否则 409 `revision_unavailable`，用户选择重开当前版，不能混页或偷偷创建 snapshot。
 - 原始 HTML 为转义文本；GFM 表格/任务列表支持只读显示；wiki/ref/asset/fence 语义由 Pinax resolver 产生。fence 仅既有注册的只读 owner handler，有独立预算与错误，不加载执行代码。remote 图片不自动请求。
+
+## 独立富文档读取（N04.24，experimental）
+
+`GET /v1/reader/notes/{object_id}/rich-document` 已有真实REST binding，要求当前受监督session的 `reader.body`，必填 `revision=sha256:<64hex>`；可选cursor/anchor/outline_cursor，cursor与anchor互斥。query闭合，object_id仅在路径，重复/未知/坏UTF8/坏百分号及超过8KiB query拒绝。响应no-store/nosniff，data为 `pinax.reader.rich_document.v1alpha1` wrapper，含原document与annotations，旧document端点不改。
+
+annotations只提供惰性mermaid/math fence源文本、字面Callout的kind/title/fold，以及原anchor和本页真实page_anchors。source省略等同空字符串。结构跨页可重复相同revision/anchor的Callout上下文，消费者幂等合并，不能把每页重复当多个新块。每篇≤512注释、单payload64KiB/总256KiB、原分页256KiB/512节点、完整响应≤1MiB；超预算413不返回截断成功。rich不执行任何fence handler；源文本中的URL、HTML或命令不是授权，图形消费者须独立做安全渲染。
+
+rich游标与旧document/outline隔离，绑定object/binding/session/scopes/revision及可见来源水位。引用目标或可见集合变化使旧cursor拒绝，不混新布局；可显式重新打开可恢复的原snapshot，不能自动换head。普通system/daily权限不扩大。N04.25 已提供 `Client.ReaderRichDocument(ctx, ReaderDocumentRequest)` 和typed wrapper/annotation。SDK在原有界transport上进一步封顶1MiB，校固定object/revision/URI、closed schema、节点/注释唯一、page_anchors本页存在、字节预算和非执行语义；不会把source渲染成HTML，也不接受fence/payload。真实多页和snapshot回读、撤权、错误响应正负控制证据为 `temp/integration-test-runs/20261006T125920Z-3177609/`。N04.26 增加完整顶层段落的 `$$…$$` 展示公式（可在同一段落内跨行），source仅剥除外层定界符，保留TeX原bytes/CRLF/空白，旧document文本不改。代码/链接/HTML、残缺/多组定界符、嵌套quote/list、空行跨段不猜测，金额不升级；仍按math annotation预算且不执行TeX。真实HTTP/SDK证据 `temp/integration-test-runs/20261006T130821Z-3620441/`。两层嵌入、行内公式、空行跨段公式以及DriveBridge图形显示仍未完成。
+
+证据 `temp/integration-test-runs/20261006T124931Z-2687333/`：真实两页注释、固定revision、闭query、metadata403/撤权401、旧cursor隔离、wire转义膨胀413。OpenAPI当前 `sha256:2c46c46db61f3a586a312eb1a79d4e06ca5b38ba0175745046c0fa01f0727ac1`，删除新path恢复rich schema基线，再删三个schema恢复旧摘要；reader12/writer14。
+
+## 组合文档与两层嵌入合同（N04.29，HTTP experimental）
+
+本节是独立 `composed-document` 读取面，不是现有rich端点的新字段。登记五个封闭schema：`pinax.reader.composed_document.request.v1alpha1`、`pinax.reader.embed_target.v1alpha1`、`pinax.reader.embed.v1alpha1`、`pinax.reader.node_origin.v1alpha1`、`pinax.reader.composed_document.v1alpha1`。N04.29已提供真实HTTP handler与available `reader.composed_document` / `rest.reader.composed_document`，readonly、body explicit；N04.30提供typed `Client.ReaderComposedDocument(ctx, ReaderDocumentRequest)`。
+
+请求固定object_id/revision，位置字段沿cursor/anchor/outline_cursor；不允许caller注入depth、vault、session或执行开关。独立GET `/v1/reader/notes/{object_id}/composed-document`，仍需当前reader.body，普通系统页/日记准入不扩大。响应wrapper引用完整原rich_document（身份代表根笔记，节点是本次组合后的投影），另有embeds和origins。旧rich schema、注释枚举、端点、SDK保持原样。
+
+- `embeds[]`：每个嵌入出现一次独立embed_id（不是目标ID，重复引用同对象仍不同），parent_embed_id为空表示直接属于根笔记，source_anchor是父来源版本的原候选锚点。page_anchors为本页实际呈现的占位或后代节点锚点；跨页必要上下文可重复，按binding/root revision/embed_id幂等合并。嵌套项在本页出现时必须同时携带其祖先描述，不能依赖客户端保存上页隐含来源。
+- depth=1或2可为expanded/cycle，必须携带target `{object_id, revision, anchor?}`；anchor省略代表全文，提供时必须是目标固定版的owner锚点，不是标题字符串。cycle仅在当前可见且固定身份已确定后标记，按当前祖先对象身份检测，不把重复非循环兄弟引用当循环。depth=3只能是depth_limit，禁止携带target，且不读取第三层目标；第三层描述属于第二层正文中的停止标记，不代表第三层展开。
+- unavailable把不存在/不可见/歧义合并，unsupported仅用于可见源语法本身无法支持的选择；两者无target/标题/path/raw，不能通过状态泄漏目标存在性。不能将缺失fragment退回目标全文。附件仍走原附件合同，不把asset_ref解释为笔记身份。
+- `origins[]`为本页每一个实际node（含children/continuation）提供唯一映射 `{page_anchor, embed_id, source_anchor}`。embed_id为空为根来源，否则必须对应本页expanded描述；source_anchor指原来源版本的block锚点，fragment映射回原块。占位节点归父来源；重映射后的页面anchor只用于当前组合页，不是可写身份。图形注释继续仅为惰性source，并映射实际页面anchor。
+- 最多32个嵌入出现次数（含循环/失败/depth-limit描述），深度上限2；根与展开目标合计8MiB输入、65536节点，重复插入的节点按次数计费。单原候选raw2KiB，整页256KiB文字/512节点、origins≤512、完整projection≤1MiB；所有rich注释仍受原预算。超预算整次错误，不用缺项伪complete；complete仅说明分页结束，不表示每个嵌入都expanded。
+- 首次解析目标沿当前可见notes和notelinks owner resolver；目标固定revision必须出现在target。根snapshot不自动构成所有目标的历史快照。后续cursor必须绑定根revision、当前session/scopes/binding、可见corpus水位及组合布局域；目标或可见集变化拒绝旧cursor，不把新head拼进旧分页。不自动创建snapshot/index/写入或执行fence。
+
+Schema只限制形状/枚举/单数组上限，**不证明**完整origin覆盖、父子无环、页锚点归属、权限、UTF8字节累计或source解析语义；这些必须由后续app与SDK验证。N03.8合同通过；N04.28已实现独立application `ReaderComposedDocument` 的两层展开、标题/块fragment、cycle/depth_limit、来源映射、原rich分页与独立cursor。使用当前可见corpus的有界snapshot，第三层不会进一步parse/expand，但不能宣称navigation扫描完全未读取该笔记。应用证据 `temp/integration-test-runs/20261006T154347Z-3083571/`，包含长段落跨页重组与root旧snapshot的循环回指；HTTP现已通过 `20261006T155245Z-3546838`：真实两页祖先来源、嵌入math/depth标记、metadata403/撤权401、闭query400/POST405、目标变源拒旧cursor、旧rich域隔离与JSON膨胀413；响应private,no-store/nosniff，query≤8KiB，成功完整projection≤1MiB。SDK已通过 `20261006T160225Z-4091157`：复用最大1MiB且尊重更小配置的transport、固定root与rich预算验证，增加origin全node唯一覆盖、parent expanded/depth、循环必须指祖先同revision、页锚点只可归占位或展开后代、祖先必须声明其后代页节点；unknown或depth-limit禁止target。真实HTTP多页含cycle/depth/math、变源/旧游标域/撤权拒，以及有效fixture和恶意来源响应反例通过。SDK不独立证明磁盘源内容或授予asset/图形执行权限；DriveBridge消费仍未完成。schema-only阶段OpenAPI摘要为 `sha256:62cbaf566fdcf01e798d2e32f730a8249bf42c4cfaecf09b4d13fd78f55dfd78`，删除这五项必须精确恢复 `sha256:2c46c46db61f3a586a312eb1a79d4e06ca5b38ba0175745046c0fa01f0727ac1`。当前新增GET后OpenAPI摘要为 `sha256:79d729770fdac930042e83eec7ab77414b3c37313a0b8960d6347a4dcfc6b52c`，删除该path精确恢复上述schema-only摘要，再删五schema恢复旧rich；reader13/writer14。
+
+## 2.1 笔记导航增量（2026-10-05）
+
+实施 owner 为 [pinax-notebook-consumer-v1](../../openspec/changes/pinax-notebook-consumer-v1/)。以下三个只读 endpoint 已在 service/HTTP/typed client 接通；旧七个 reader 的 schema 与语义不变，source descriptor 的 capabilities 仍是 scope 列表，具体新增动作从 manifest/catalog 发现。
+
+| GET 路径 | 必需 scope | 请求 | 返回与限制 |
+| --- | --- | --- | --- |
+| `/tags` | `reader.metadata` | limit 默认50/max200、cursor | 规范 tag path、稳定语义 ID、parent_id、virtual、direct_count、descendant_count；水位、total_tags、coverage |
+| `/graph` | `reader.metadata` 与 `reader.relations` | mode=source/local；local 的 object_id/revision 必填、hops=1/2；limit=2–200 | 每页最多200节点/400边；两端节点齐全；水位、next_cursor、total_nodes/total_edges、coverage |
+| `/journals/daily` | `reader.metadata` | date=YYYY-MM-DD、timezone=IANA | found/missing、固定 note 身份或null；按本地日历日及 owner 模板路径定位，绝不自动创建 |
+
+标签 ID 是规范路径的版本化 SHA-256，不使用 TagRecord 自增行号。大小写保持 owner 规范；改名/移动产生新路径 ID，后续写计划须提供映射。必须与 source/binding 一起引用，不把相同路径跨 vault 当同一标签。计数先按 reader 可见集合过滤，再按 note ID 去重；后代计数排除本节点，但同一笔记多个后代只计一次。虚拟祖先没有直接引用，不是新建的标签对象。
+
+图只投影既有解析成功关系，局部1/2跳使用双向邻接，不推断新关系。分页按边流排序并将孤立节点随后输出，跨页可以重复节点，消费方以 binding+object_id 合并；不会漏掉跨页边。`coverage.page_complete` 只表示页序列完结，`corpus_complete=false` 表示超大正文或不支持数据导致投影不完整。未知或不可见目标的名称、关系和计数不输出。新 cursor 绑定会话、scope、binding、规范请求与内容/路径水位；400/410 不混页。
+
+日记只读检查已存在的 journal.daily 模板 metadata，支持自定义 output path 与 legacy notes/daily 路径；不执行模板查询，不调用 DailyShow/ensureJournalNote/index refresh。未初始化的空目录不产生 `.pinax` 或日记。日期不是 UTC 时间点；标准库随包 tzdata 支持离线 IANA 时区。隐藏/链接日记与缺失同形，重复匹配拒绝。日记首建已另行提供受监督propose/apply，详见[writer合同](human-reading-write.md)；正文读取/编辑的系统页兼容、模板改路径后的旧对象重定位仍是后续任务，不能因为找到身份或可以首建就宣称完整日记工作流已交付。
+
+当前证据：`temp/integration-test-runs/20261005T061039Z-2950026/`，包含真实 httptest、可丢弃 vault、206节点星图和576边密集图分页、8MiB超限覆盖、权限/撤销/隐藏/链接、无索引/只读副作用、日期/时区、typed client 安全拒绝。该导航切片基线OpenAPI digest `sha256:4c1e027e39896451700f55821d7351fcc4ebb3eb8508d62ad2c2f0dce3cb4f4b`；当前加入daily写入后为 `sha256:82603700…`，删除daily写入增量恢复导航基线，再删除三个导航path/schema精确恢复此前 `sha256:e37403bb…`。此为 Pinax 组件证据，不是 DriveBridge/Electron 或三平台验收。
+
+验证入口：`go run ./tools/testkit/integrationevidence --profile notebook-navigation`。
+
+### 日记正文增量（2026-10-06）
+
+`GET /v1/reader/journals/daily/document`（capability `reader.daily.document`）要求 `reader.metadata` 与 `reader.body`。必填 `date`、`timezone`、`object_id`、`revision`，可选 `cursor`、`anchor`、`outline_cursor`；query 闭合、禁止重复参数，cursor 与 anchor 互斥。先通过 daily locator 核对日期与对象，再按固定当前 revision 读取，返回 `data.document`，复用 `pinax.reader.document.v1alpha1`。旧普通 document 路由的系统页准入不扩大。SDK 使用 `ReaderDailyDocument`。
+
+每页仍为256KiB/512节点，响应1MiB；旧日记 revision 改变返回409，不自动恢复快照或改读新头。超预算错误不提供普通 source-export 作为日记旁路。所有响应 no-store，每页重验身份/权限，metadata-only不能取得正文。此接口不提供编辑、不执行脚本、不改变source export或资产端点准入。模板与文件路径改变后，有原成功daily ledger可通过当前可见object ID定位；没有历史证据的任意旧CLI路径不猜日期。
+
+证据 `20261006T011744Z-2026636`：真实 typed client/HTTP/可丢弃vault分页、两个scope分别拒绝、重复/未知/坏转义query、撤权、外部改版拒绝、无初始化写入。OpenAPI现 `sha256:43c4c9cf…`，删除一个新path与一个request schema精确恢复上一版 `sha256:82603700…`。日记编辑与跨会话operation恢复仍待，DriveBridge授权与实机集成另验。
 
 ## 3. 授权、缓存与失败
 
@@ -87,6 +141,8 @@ reader scope 只由 owner 显式启用。新增本地 human-reader 会话与既�
 4. stdin 保持打开作为 liveness，首帧后不再接命令。EOF 停止接新请求，最多 5 秒排空并关闭自身连接；Pinax 复用既有 SQLite DSN/CloseAll，不删除强杀后 WAL。
 5. 当前会话 bearer 只在内存，退出失效。握手校验 nonce 对应的会话身份、地址确为 loopback，禁止重定向。会话不能注册系统服务、监听 LAN、公网或接收远程 reader。
 6. 普通 CLI、Hermes MCP 与此会话可并存：不抢 owner 写锁、不杀外部进程。索引 busy 是有界失败，不触发第二个 writer；测试覆盖正常并发但禁止 race。
+
+Go宿主复用 `github.com/yeisme/pinax/pkg/localsession` 的 `Bootstrap`、`Event`；原API类型是该公开类型的alias，不复制wire结构。`DecodeReady`接受有界原始stdout帧，严格核对nonce/binding/预期manifest digest/readonly、拒重复或大小写变体字段/null/未知字段，地址仅接受当前owner固定的 `http://127.0.0.1:<port>`。它不负责spawn/权限授予，也不把error消息传给renderer。预期digest来自随包版本的公开 `pinax api manifest --json` 导出；不是OpenAPI digest，不能拿ready自身digest作为预期值。此包不进入Web类型产物。
 
 绑定所需 root 验证由宿主原生选择、DriveBridge 自有 roots/mount 登记和 Pinax 只读来源校验共同完成，不向 public reader 输出路径列表。无法证明 overlay/content roots 全覆盖时 DriveBridge 必须拒绝该绑定；不读取 `.pinax` 来猜。
 

@@ -26,6 +26,8 @@ RPC Pinax.Transport.Manifest
 
 三者返回同一排序、schema ref、binding availability 与 digest 的 `pinax.transport_manifest.v1`。新消费者应根据真实 binding 判断 capability 是否可执行。旧 `pinax api routes`、`GET /v1/capabilities`、legacy `surfaces` 与 capability fields 全部保留原语义；planned/future-owner capability 不得被放进 `available_surfaces`。
 
+Manifest capability 和 binding 还提供可选的交互 metadata：`execution_location`、`write_strategy`、`recovery` 和 `owner_action`。这些字段同时出现在 `pinax api routes --vault ./my-notes --json`、OpenAPI 的 `x-pinax-*` 扩展和 `pinax://manifest`，调用方无需从 URL 或路径推断权限。
+
 ## Registry
 
 Capabilities are read from `pinax api routes --vault ./my-notes --json`. Each route must include:
@@ -54,6 +56,10 @@ Exported OpenAPI paths/methods must come from the REST route registry one by one
 - `x-pinax-body-allowed`
 - `x-pinax-approval-required`
 - `x-pinax-snapshot-required`
+- `x-pinax-execution-location`
+- `x-pinax-write-strategy`
+- `x-pinax-recovery`
+- `x-pinax-owner-action`
 
 ## Agent Brain Capability Handoff
 
@@ -123,7 +129,7 @@ RPC Pinax.Connection.Readiness
 RPC Pinax.Operation.Get
 ```
 
-`project board` and `note read` return bounded `NoteDisplay` by default. `card/detail/context` does not output complete bodies; returning the local note body is allowed only with explicit `display=body`. `project board show` accepts optional `subproject`; when present, the adapter must return the same scoped projection as `pinax project board show <project> --subproject <slug> --json`.
+`project board` and `note read` return bounded `NoteDisplay` by default. `card/detail/context` does not output complete bodies; returning the local note body is allowed only with explicit `display=body`. `project board show` accepts optional `subproject`; when present, the adapter must return the same scoped projection as `pinax project board describe <project> --subproject <slug> --json`.
 
 ## Write Plans
 
@@ -249,7 +255,7 @@ Canonical remote client code 位于公开包 `pkg/pinaxclient`。它负责 stric
 当 mutation 遇到 timeout、reset、5xx、response read failure 或 malformed/oversized 2xx 时，client 必须先读取同一 `operation_id`，再按需 reconcile；不得生成第二个 operation/key，不得直接 local fallback。只有 durable terminal `failed && retryable && replay_safe` 才允许使用完全相同的 request/identity 最多重试一次。operation 不可见时返回 `mutation_outcome_unknown`，提示运行：
 
 ```bash
-pinax operation show <operation-id> --api-url <url> --json
+pinax operation describe <operation-id> --api-url <url> --json
 pinax operation reconcile <operation-id> --api-url <url> --json
 ```
 
@@ -281,6 +287,40 @@ HTTP status expresses only transport semantics, and the body always remains a Pi
 | Operation evidence is insufficient | non-2xx or failed projection | `reconcile_required` |
 
 RPC unknown method returns a failed projection with `error.code=rpc_method_not_found`; the hint must prompt the user to check `pinax api routes`.
+
+## 首批 Remote CLI 写入路径
+
+```bash
+pinax connection doctor --json
+pinax connection readiness --json
+pinax api manifest --vault ./my-notes --json
+pinax api serve --vault ./my-notes --allow-write --port 8787 \
+  --token-store ./my-notes/.pinax/tokens/tokens.json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --dry-run --json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --yes \
+  --operation-id op_example_01 --idempotency-key idem_example_01 --json
+```
+
+结果不明确时保留原 identity 查询：
+
+```bash
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  operation show op_example_01 --json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  operation reconcile op_example_01 --json
+```
+
+## DriveBridge human reader 增量（2026-10-01，planned）
+
+新资源族 `/v1/reader` 与 opt-in supervised session 的唯一设计真源是 [人类阅读 API](human-reading-api.md)，实施在 `pinax-human-reading-api-v1`。它把有正文scope的人类长文分页、关系/附件与旧Agent bounded display分开；本文现有路由、RPC、flags、URI及cache语义不变。新binding真实落地前manifest不得宣称可用，DriveBridge不能因CLI/MCP存在而fallback。
+
+reader规划为只读loopback、no-store、明确授权；受监督模式以私有stdin传内存bearer并发脱敏ready，不能复用下文普通temp-token日志解析。该新模式不注册daemon、不自动init/index/sync、不开放公网或人类身份自声明扩权。本轮仅文档，未新增可调用endpoint。
 
 ## Serve Lifecycle Output
 

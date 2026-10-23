@@ -25,6 +25,34 @@ pinax connection readiness --json
 
 `api manifest`、`GET /v1/manifest` 与 `Pinax.Transport.Manifest` 返回同一份 `pinax.transport_manifest.v1` 语义。新客户端应以 manifest 中真实可用的 binding 为准；`api routes` 和旧 capability `surfaces` 字段继续保持原语义，不会因本合同被删除或重解释。
 
+Manifest 和 route projection 会明确返回执行位置、写入策略与恢复动作。首批远程写入使用 dry-run、显式确认和原 operation identity：
+
+```bash
+pinax api routes --vault ./my-notes --json
+pinax api manifest --vault ./my-notes --json
+pinax api schema export --format openapi --vault ./my-notes --json
+pinax api serve --vault ./my-notes --allow-write --port 8787 \
+  --token-store ./my-notes/.pinax/tokens/tokens.json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --dry-run --json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  inbox capture "Idea" --body "Draft note" --yes \
+  --operation-id op_example_01 --idempotency-key idem_example_01 --json
+```
+
+超时、5xx 或 malformed 2xx 后，使用原 operation 查询和恢复：
+
+```bash
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  operation show op_example_01 --json
+pinax --api-url http://127.0.0.1:8787 \
+  --api-token-file ~/.config/pinax/owner-api.bearer \
+  operation reconcile op_example_01 --json
+```
+
 ## Owner mode 与 transport
 
 Owner mode 表示谁拥有 vault/domain state；transport 表示如何到达 owner。两者不能混为一个字段。

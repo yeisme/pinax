@@ -1,6 +1,6 @@
 # Pinax Agent 优化设计
 
-- 状态：设计稿（design-only）。本文是**消费者视角的需求清单 + 对活跃 change 的增量**，不与 `pinax-agent-memory-runtime` 平行造轮子；任何实施须遵守 [Roadmap](./roadmap.md) 2026-10-10 前的连续性主线。
+- 状态：设计稿（design-only）。本文是**消费者视角的需求清单 + 对活跃 change 的增量**，不与 `pinax-agent-memory-runtime` 平行造轮子；note proposal 已于 2026-09-30 完成本地实现与归档，按 [Roadmap](./roadmap.md) 保留连续性真实门禁。
 - 日期：2026-09-23
 - 关联：[agent-memory-runtime proposal](../../openspec/changes/pinax-agent-memory-runtime/proposal.md)、[可信连续性 PRD](./trusted-agent-continuity.md)、[Markdown 预览设计](./markdown-rendered-preview-design.md)、[cache contract](../interfaces/cache-contract.md)
 
@@ -22,10 +22,10 @@
 | bounded 读取（card/detail/context） | 已支持 | — |
 | proof loop（plan→snapshot→apply→receipt→restore） | 已支持 | — |
 | 只读 MCP | 已支持 | — |
-| principal/scope/proposal/handoff/feedback、context compiler | 规划中 | `pinax-agent-memory-runtime` |
-| inbox 判断 | 进行中 | `pinax-inbox-judgment-v1`、`pinax-real-judgment-acceptance-v1` |
+| principal/scope/proposal/handoff/feedback、context compiler | 本地已实现；真实观察未完成 | `pinax-agent-memory-runtime` |
+| inbox 判断 | 本地已实现；真实案例效果未验收 | `pinax-inbox-judgment-v1`、`pinax-real-judgment-acceptance-v1` |
 | 连续性 dogfood | 进行中 | `pinax-trusted-continuity-dogfood-v1` |
-| mounted vault | 进行中 | `pinax-mounted-vault-local-v1` |
+| mounted vault | 本地实现完成 | `pinax-mounted-vault-local-v1` |
 | Pane gated actions（inbox.capture、sync.run） | 已支持 | — |
 
 ## 3. 六条优化线
@@ -39,7 +39,7 @@
 
 ### 3.2 提案写入：propose-only 面补齐 note 域
 
-agent-memory-runtime 已规划 `pinax.agent.*` proposal 面（memory 生命周期）；本设计补的是**note 域**的同一纪律：
+agent-memory-runtime 已实现 `pinax.agent.*` proposal 面（memory 生命周期）；本设计补的是**note 域**的同一纪律：
 
 | proposal | 风险级 | 路径 |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ agent-memory-runtime 已规划 `pinax.agent.*` proposal 面（memory 生命周�
 | 本设计条目 | 归属 | 动作 |
 | --- | --- | --- |
 | 3.1 / 3.3 | `pinax-agent-memory-runtime` | 以需求附录并入该 change 的 context compiler 与 MCP 面任务，不另立 |
-| 3.2 note 域 proposal | 新 change [`pinax-agent-note-proposal-v1`](../openspec/changes/pinax-agent-note-proposal-v1/)（10-10 后，strict 已验） | additive MCP/CLI，复用 proof loop；审阅 UX 见[交互规格 §7](./rendered-preview-interaction-ux.md) |
+| 3.2 note 域 proposal | 新 change [`pinax-agent-note-proposal-v1`](../../openspec/changes/archive/2026-09-30-pinax-agent-note-proposal-v1/)（2026-09-30 本地实现与归档完成，experimental） | additive MCP/CLI，复用 proof loop；审阅 UX 见[交互规格 §7](./rendered-preview-interaction-ux.md) |
 | 3.4 | 预览设计 P1 的 `pinax://` change | 同一 change 内带上 `--agent` 出口 |
 | 3.5 | dogfood change | 指标进 evidence profile，不改合同 |
 | 3.6 | 各 change 收尾项 | 检查清单化 |

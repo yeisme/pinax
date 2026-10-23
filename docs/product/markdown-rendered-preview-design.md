@@ -1,8 +1,12 @@
 # Markdown × Pinax 可视化预览结合设计
 
-- 状态：设计稿（design-only）。本文只落合同与分期，不构成立即实施批准；任何实施 change 必须遵守 [Roadmap](./roadmap.md) 中 2026-10-10 前的可信 Agent 连续性主线。
+- 状态：设计稿（design-only）。P1 CLI/MCP 核心已于 2026-09-30 完成本地实现与归档；后续消费面保持独立 owner 与准入。详见 [Roadmap](./roadmap.md)。
 - 日期：2026-09-23
 - 关联：[Web/UI 归属](./web-open-design.md)、[Pane 合同](../interfaces/pane.md)、[Agent 优化设计](./agent-optimization-design.md)
+
+## 2026-10-01 人读消费修订
+
+用户将P3目的地确定为DriveBridge Electron内置知识阅读空间，不再是Workbench。旧L1 `render.view.v1alpha1` 仍保持64KiB/512节点与Agent脱敏；人类完整长文使用独立 [reader合同](../interfaces/human-reading-api.md)，复用owner解析/引用/fence语义而非把旧树上限放大。该新API尚待实施，不能用CLI/MCP存在推定HTTP可用；P2/发布renderer/URI handler不因本轮设计自动启动。下文P1设计与验收按原受众保留。
 
 ## 1. 问题
 
@@ -26,8 +30,8 @@ Pinax 的可视化能力已经存在，但散落在五个互不复用的面上�
 ```text
 L3 引用层    pinax://note/<object_id>?v=<revision> —— 任何 Markdown 可粘贴的稳定引用
                  + vault 内可嵌 drivebridge://file/<id> 外部资产引用
-L2 消费层    CLI rendered · Pane rendered surface · workbench Pinax module ·
-             pinax-web-renderer 静态发布 · 编辑器薄适配 —— 全部消费同一合同
+L2 消费层    CLI rendered · Pane rendered surface · DriveBridge reader ·
+             pinax-web-renderer 静态发布 · 编辑器薄适配 —— 共用owner语义，受众权限分别登记
 L1 合同层    Rendered Projection Contract（versioned、renderer-agnostic、bounded）
              = 渲染树 + 已解析引用，不是 HTML
 ```
@@ -77,7 +81,7 @@ fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashbo
 | --- | --- | --- |
 | CLI `note preview --view rendered` | 管道/终端消费 | 升级为 L1 合同的 CLI 出口，`--json` 输出完整树 |
 | Pinax Pane | 工作台内嵌 | 新增 `rendered` surface（envelope 扩展，仍走 `internal/app/pane.go` 装配）；顺带把 cursor/sequence 占位符换成真实事件游标 |
-| workbench Pinax module（client/yeisme-workbench） | 内部全功能阅读面 | 按 [web-open-design](./web-open-design.md) 的 Module Admission 流程另立模块计划；只消费 L1 合同与 REST/RPC 投影，不读 `.pinax/**` |
+| DriveBridge知识阅读空间（cli/drivebridge） | 人类桌面阅读面，首片只读 | 按 [消费交接](./web-open-design.md) 与新reader合同实施；共用owner语义，不读 `.pinax/**`，不以旧bounded树冒充全文 |
 | pinax-web-renderer | 静态发布 | 发布构建改从 L1 合同取树，消除与内部渲染的语义分叉 |
 | 编辑器薄适配 | 跨工具 | 见 §5；不内置编辑器，不自研编辑器插件市场 |
 
@@ -87,16 +91,16 @@ fence 渲染失败/超界输出显式失败占位，不静默省略（沿 dashbo
 - 复制命令：`pinax note ref "<title>" --copy` 同时输出 Markdown 链接与 `[[wikilink]]` 双格式进剪贴板；`--json`/`--agent` 输出引用对象。
 - 任何 Markdown 文件中出现 `pinax://` 引用：L1 渲染时解析为 hover-card 数据（title/kind/status/tags，同 pane note-list 实体边界）；解析失败显示 `unresolved` 占位。
 - 双向引用互通：Pinax note 内嵌 `drivebridge://file/<id>`（§3.4）；DriveBridge 侧不需要感知 Pinax。两个引用体系各自稳定、互不代理。
-- 编辑器路径分两步：先用 URI handler（`pinax://` → `pinax note show --view rendered` 终端/workbench 预览），编辑器扩展（VS Code/Obsidian 插件）留到验证引用格式稳定之后。
+- 编辑器路径分两步：先用 URI handler（`pinax://` → `pinax note describe --view rendered` 终端/workbench 预览），编辑器扩展（VS Code/Obsidian 插件）留到验证引用格式稳定之后。
 
 ## 6. 分期（对齐 roadmap）
 
 | 期 | 内容 | 时点约束 |
 | --- | --- | --- |
 | P0（本设计） | 合同与分期落盘 | 已完成；交互规格见 [rendered-preview-interaction-ux.md](./rendered-preview-interaction-ux.md)，排序见 [preview-agent-delivery-map.md](./preview-agent-delivery-map.md) |
-| P1 | L1 rendered projection + CLI rendered 出口 + `pinax://` 引用与 `note ref`（change [`pinax-rendered-view-v1`](../openspec/changes/pinax-rendered-view-v1/)，24 任务，strict 已验） | 2026-10-10 主线完成后启动；纯 additive，不动顶层命令面 |
+| P1 | L1 rendered projection + CLI rendered 出口 + `pinax://` 引用与 `note ref`（change [`pinax-rendered-view-v1`](../../openspec/changes/archive/2026-09-30-pinax-rendered-view-v1/)，24 任务，strict 已验） | 2026-09-30 本地实现与归档完成；纯 additive，新增能力保持 experimental |
 | P2 | Pane `rendered` surface + 真实事件游标（change 归 pane 域） | P1 之后 |
-| P3 | workbench Pinax module 模块计划与实现 | 按 web-open-design admission，P1 验证合同后 |
+| P3 | DriveBridge内置知识阅读；Pinax人读API | 当前只交设计；真实binding/三平台另验，不依赖Workbench或P2 |
 | P4 | pinax-web-renderer 切换 L1 数据源 + 编辑器 URI handler | 最后 |
 
 ## 7. 验收要点

@@ -234,7 +234,7 @@ func TestWriterComponentE2E(t *testing.T) {
 			}
 		}
 	}
-	if writerAvailable != 5 {
-		t.Fatalf("writer capabilities in manifest = %d, want 5", writerAvailable)
+	if writerAvailable != 14 {
+		t.Fatalf("writer capabilities in manifest = %d, want 14", writerAvailable)
 	}
 }

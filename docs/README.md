@@ -23,6 +23,14 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - 用户可见 note path 使用 vault-relative canonical path。默认普通 note 是根级 `foo.md`，子目录 note 是 `work/foo.md`；历史 `notes/foo.md` 只作为 resolver-compatible 输入，不是 CLI、JSON、agent、record、search 或 MCP 的主要输出。
 - 计划和实现跟踪放在 `openspec/`；外部贡献者先读 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
+## DriveBridge 人类阅读设计（待实施）
+
+用户选择把Pinax阅读放入DriveBridge Electron客户端，不新建Reader或恢复Workbench。Pinax只提供新 [人类阅读API与受监督会话](./interfaces/human-reading-api.md)，[消费交接](./product/web-open-design.md) 和 [OpenSpec](../openspec/changes/pinax-human-reading-api-v1/README.md) 已登记；旧Agent默认权限/渲染预算不变。当前仅设计，尚无新API或桌面实现，macOS/Windows/Linux实机门及原11项真实验收各自保留。
+
+## 日常审阅后续（experimental）
+
+小批整理使用 `organize plan --note <id>` 限定对象，提案队列支持 status/kind 筛选与 cursor 续阅。指南见[日常笔记](./guides/daily-knowledge.md)、[笔记提案](./guides/note-proposals-and-rendered-views.md)，本轮[交付与验证记录](./implementation/daily-review-followthrough-2026-09-30.md)。本地验证与归档不替代既有 11 项真实验收。
+
 ## 双向关系入口
 
 - `pinax note links <ref>` 显示 outgoing links；`pinax note links --all --kind wiki --status ambiguous` 可全库查看 `[[...]]` 歧义。支持 `--broken-only`、`--kind`、`--status`、`--include-ignored`、`--limit` 和 `--all`。
@@ -49,7 +57,7 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - `pinax api routes`、`pinax api manifest`、`pinax api status`、`pinax api schema export` 和 `pinax api serve --readonly --port 0` 是 REST/RPC owner adapter。服务默认绑定 `127.0.0.1`，支持 temp token、canonical hashed `--token-store` 和强制 loopback `--no-auth`；不自动提供 public hosted API、CORS/TLS termination、多用户 permission backend 或 production readiness。
 - `local-vault`、`remote-service`、`self-hosted-service` 是 owner mode；`embedded`、`loopback-http`、`https` 与 stdio MCP 是 transport。使用 `pinax connection inspect|doctor|readiness` 检查 resolved descriptor、只读 probe 和六层 readiness，不把 loopback smoke 推导成 production ready。
 - 服务端 `--token-store` 读取 hashed registry；旧服务端 `--token-file` 仅为同语义 compatibility alias。客户端 `--api-token-file` 读取另一个 owner-only `0600` plaintext bearer file，两者绝不能复用同一文件。
-- Ambiguous remote mutation 先运行 `pinax operation show <operation-id> --json`，再按需运行 `pinax operation reconcile <operation-id> --json`；不得更换 identity blind retry 或 fallback 到本地写入。
+- Ambiguous remote mutation 先运行 `pinax operation describe <operation-id> --json`，再按需运行 `pinax operation reconcile <operation-id> --json`；不得更换 identity blind retry 或 fallback 到本地写入。
 - Client CLI parity 和 realtime sync 是同一边界下的两条链路：Remote API Mode 让 CLI client 和本地工具通过已注册 capability 操作一台服务端 vault；`pinax sync daemon` 让多个本地 vault 通过加密 Cloud Sync revision 收敛。详见 [客户端 CLI 覆盖和实时同步说明](./interfaces/client-cli-parity-and-sync.md)。
 - `pinax prompt` 存储可复用的 `yeisme.prompt_asset.v1` prompt assets，解析 `pinax://prompt/<id>` 引用，记录 Pinax-owned lifecycle decision，并导入 Eikona 等工具的 metadata-only usage feedback。实验性附加面：`pinax prompt repository` 通过共享 promptrepo store 管理用户级仓库 profile；`pinax prompt catalog` 提供 provider-free 的外部 catalog search/resolve/inspect/validate/preview，并仅在 rights/contract 允许 import/copy 时通过 `catalog install --yes` 创建本地 `draft` asset（详见 [prompt 命令文档](./commands/prompt.md)）。
 - Cloud Sync 是独立分布式同步设计：每台设备保留本地 vault，Cloud backend 协调 encrypted revision、blob 和 conflict。详见 [Cloud Sync Architecture](./architecture/cloud-sync-design.md)。
@@ -79,6 +87,8 @@ Pinax 的主要用户价值和 agent 价值，是围绕真实本地 vault 的可
 - [模块审查与 TDD 手册](./operations/module-review-tdd.md)
 - [完整使用样例](./usage/full-example.md)
 - [Release Packaging](./operations/release-packaging.md)
+- [Cloud Sync v1.0 验收记录](./operations/cloud-sync-dogfood.md)
+- [Obsidian 兼容矩阵](./operations/obsidian-compatibility-matrix.md)
 - [中文文档地图](./README.zh-CN.md)
 - [贡献指南](../CONTRIBUTING.zh-CN.md)
 - [安全策略](../SECURITY.zh-CN.md)
@@ -135,3 +145,5 @@ Package validation target 会以 snapshot/no-publish 模式运行 GoReleaser，�
 
 完整对照、缺口与下一波优化见 [子项目 Skill Profile](../../../docs/skills/subproject-skill-profiles.md)。
 
+
+资源查询、详情与补全使用指南：[CLI 资源命令](commands/resource-views.md)。该页明确源码候选与已安装版本的边界。

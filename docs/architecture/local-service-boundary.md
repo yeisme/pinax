@@ -4,10 +4,16 @@ Status: active · Owner: `cli/pinax` · Source of rule: `openspec/changes/pinax-
 
 Pinax 是本地优先的统一笔记 Agent CLI。本文冻结 Pinax 的服务化路径边界：什么常驻、什么瞬态、远程如何到达本地。
 
+## 2026-10-01 桌面消费澄清
+
+已有 `pinax api serve` 是显式启动的 loopback REST/RPC owner adapter，详见 [远程 API 合同](../interfaces/remote-api-contract.md)；因此下文“本地消费面是 stdio”指 Agent/gateway 默认入口，并非否认已存在的 loopback API。用户现批准 DriveBridge Electron 通过公开 API 读取笔记，新增 [受监督人读会话](../interfaces/human-reading-api.md) 仍待实施：只读、内存认证、私有stdin引导、父EOF排空退出，不注册系统daemon，不监听LAN/公网，不在Pinax放UI。它不改变远程Agent的gateway边界或MCP默认权限。
+
+新网关能力目标owner为Aigora；下文 `mcp/gateway` 是迁移期仍有效的运行时记录，不意味着新桌面依赖legacy网关或授权迁移服务。
+
 ## 边界规则
 
 1. **无常驻 daemon、无非 loopback 监听端口。** Pinax 不维护后台服务进程；所有命令都是短生命周期进程。`pinax sync daemon run` 是用户显式启动的前台进程，退出即消失，不注册系统服务自启。
-2. **本地消费面是 stdio。** `pinax mcp serve` 在 stdio 上提供只读 MCP surface（六层 readiness + lifecycle 事实投影到 `pinax://readiness`），由用户或 gateway 显式启动。
+2. **本地 Agent 默认消费面是 stdio。** `pinax mcp serve` 在 stdio 上提供只读 MCP surface（六层 readiness + lifecycle 事实投影到 `pinax://readiness`），由用户或 gateway 显式启动。
 3. **远程消费必经 gateway。** 远程 Agent 一律经 `mcp/gateway`（deny-by-default）前挂本地 stdio MCP；Pinax 自身不开公网端口、不做远程鉴权。
 4. **share/publish 是显式瞬态投影。** `pinax share` / `pinax publish` 产生 token 门的临时 HTTP 投影，是显式动作的结果，不是服务面扩张。
 5. **远程 mutation 走 gateway 审批 + 本地结构化资产。** MCP/tool/provider 不得绕过 app service 直接写 vault；远程写请求经 gateway 审批面落地为本地 CLI-authored 结构化资产（receipt、operation ledger 等）。
