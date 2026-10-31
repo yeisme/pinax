@@ -67,6 +67,21 @@ pinax search "reading" --engine native --lazy-index off --vault ./my-notes --age
 
 `--lazy-index off` 不更新索引。日常反复使用可显式 `pinax index refresh`；不能把重建索引作为看一篇笔记的必需动作。
 
+## 统一下一步
+
+上述命令会在 `--json` 或 `--agent` 输出中附带可选的
+`pinax.daily_interaction.v1` 投影。它只描述当前阶段、读写边界、来源时效和一个下一步，不创建会话或替代原命令的审批门。
+
+```bash
+pinax inbox capture "Reading fragment" --stdin --vault ./my-notes --json < fragment.md
+pinax inbox review --limit 5 --vault ./my-notes --json
+pinax search "reading" --vault ./my-notes --agent
+pinax note preview <note-id> --vault ./my-notes --json
+pinax continue --vault ./my-notes --scope project:pinax --json
+```
+
+`ready` 表示可以按返回动作继续；`partial`、`blocked`、`approval_required` 和 `unknown` 都必须保留。`unknown` 只能先查询原 operation，不能换一个 identity 重试。绝对 vault 路径不会进入交互动作；需要路径时使用当前命令返回的安全命令或把 `<vault>` 替换为已选定的本地 vault。
+
 ## 两周真实使用观察
 
 从主力环境安装本次已验证版本并确认 vault 后开始计时，不从工程测试日期起算。先观察当前流程的真实基线，再在两周自然使用中记录：

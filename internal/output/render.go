@@ -181,13 +181,23 @@ func renderSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptio
 			return err
 		}
 	}
-	if len(p.Actions) > 0 {
+	if len(p.Actions) > 0 || (p.Interaction != nil && p.Interaction.RecommendedNextAction != nil) {
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
-		return renderSummaryTable(w, theme, []string{"Next step"}, [][]string{{p.Actions[0].Command}})
+		return renderSummaryTable(w, theme, []string{"Next step"}, [][]string{{recommendedActionCommand(p)}})
 	}
 	return nil
+}
+
+func recommendedActionCommand(p domain.Projection) string {
+	if p.Interaction != nil && p.Interaction.RecommendedNextAction != nil && p.Interaction.RecommendedNextAction.Command != "" {
+		return p.Interaction.RecommendedNextAction.Command
+	}
+	if len(p.Actions) > 0 {
+		return p.Actions[0].Command
+	}
+	return "-"
 }
 
 func renderCompactSummaryWithOptions(w io.Writer, p domain.Projection, opts RenderOptions) error {

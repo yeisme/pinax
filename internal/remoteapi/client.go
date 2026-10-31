@@ -96,6 +96,12 @@ func Adapt(projection pinaxclient.Projection, callErr error) (domain.Projection,
 		Facts:       projection.Facts,
 		Evidence:    append([]string(nil), projection.Evidence...),
 	}
+	if len(projection.Interaction) > 0 && string(projection.Interaction) != "null" {
+		var interaction domain.DailyInteraction
+		if err := json.Unmarshal(projection.Interaction, &interaction); err == nil {
+			adapted.Interaction = &interaction
+		}
+	}
 	for _, action := range projection.Actions {
 		adapted.Actions = append(adapted.Actions, domain.Action{Name: action.Name, Command: action.Command})
 	}

@@ -150,7 +150,9 @@ pinax agent handoff create --vault <vault-path> --scope project:pinax --objectiv
 pinax review --vault <vault-path> --scope project:pinax --action list --json
 ```
 
-新的 `continue bind/status/checkpoint/feedback/report` 属于本 PRD 对应 OpenSpec 的目标合同，在实现完成和 contract tests 通过前不得写成当前已发布能力。
+`continue bind/status/checkpoint/feedback/report` 已作为 additive experimental
+合同实现；安装版仍应以 `pinax continue --help` 和 machine contract 为准。缺少
+命令或 interaction projection 的旧 binary 必须报告版本 blocker，不得用聊天历史模拟 continuity。
 
 ## 6. Closeout 与长期记忆
 
@@ -190,6 +192,16 @@ Handoff 不是 confirmed memory。若 Agent 识别到值得长期保留的决定
 Silent confirmed memory write 必须始终为 0，也是任何 Go 决策的硬门槛。
 
 ## 7. Review 体验
+
+日常 capture、检索、review、planning 与 continuity 共用 additive
+`pinax.daily_interaction.v1` projection。它只把既有 owner facts/action 组合成
+`phase`、`state`、读写边界、source/freshness 状态和一个下一步；不建立新的
+flow/session，也不改变 proposal、snapshot、revision、receipt 或 operation recovery。
+
+例如，`pinax inbox capture ... --json` 的下一步是
+`pinax inbox review --limit 5 --json`；搜索命中时下一步是返回对象的
+`pinax note preview <note-id> --json`。`partial`、`blocked`、`approval_required`
+和 `unknown` 必须显式展示，Operator 不得自行补全事实或添加 `--yes`。
 
 Review 分两层：
 

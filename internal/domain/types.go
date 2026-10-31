@@ -157,6 +157,10 @@ type Projection struct {
 	Data        any                 `json:"data,omitempty"`
 	Warnings    []ProjectionWarning `json:"warnings,omitempty"`
 	Error       *CommandError       `json:"error,omitempty"`
+	// Interaction is an additive, stateless daily workflow projection. It is
+	// omitted for commands outside the capture/retrieve/review/plan/continue
+	// workflow and never changes the existing envelope fields.
+	Interaction *DailyInteraction `json:"interaction,omitempty"`
 	// PipelineStages 携带 pinax.pipeline.stage.v1 阶段事件（additive）：
 	// --events 渲染时在 start 与 end 之间按序输出 stage.started/completed/failed。
 	PipelineStages []PipelineStage `json:"pipeline_stages,omitempty"`

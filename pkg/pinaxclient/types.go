@@ -60,6 +60,7 @@ type Projection struct {
 	Data        json.RawMessage   `json:"data,omitempty"`
 	Warnings    []Warning         `json:"warnings,omitempty"`
 	Error       *CommandError     `json:"error,omitempty"`
+	Interaction json.RawMessage   `json:"interaction,omitempty"`
 }
 
 type Manifest struct {

@@ -112,6 +112,9 @@ func renderEvents(w io.Writer, p domain.Projection) error {
 	if p.Error != nil {
 		end["error"] = p.Error
 	}
+	if p.Interaction != nil {
+		end["interaction"] = p.Interaction
+	}
 	return enc.Encode(end)
 }
 
@@ -144,8 +147,13 @@ func renderExplain(w io.Writer, p domain.Projection) error {
 			return err
 		}
 	}
-	if len(p.Actions) > 0 {
-		if _, err := fmt.Fprintf(w, "Recommended next step: %s\n", p.Actions[0].Command); err != nil {
+	if p.Interaction != nil {
+		if _, err := fmt.Fprintf(w, "Interaction: phase=%s state=%s read_only=%t writes=%t remote_effect=%t\n", p.Interaction.Phase, p.Interaction.State, p.Interaction.ReadOnly, p.Interaction.Writes, p.Interaction.RemoteEffect); err != nil {
+			return err
+		}
+	}
+	if len(p.Actions) > 0 || (p.Interaction != nil && p.Interaction.RecommendedNextAction != nil) {
+		if _, err := fmt.Fprintf(w, "Recommended next step: %s\n", recommendedActionCommand(p)); err != nil {
 			return err
 		}
 	}

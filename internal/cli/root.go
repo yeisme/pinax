@@ -22,6 +22,7 @@ import (
 	pinaxconfig "github.com/yeisme/pinax/internal/config"
 	"github.com/yeisme/pinax/internal/domain"
 	noteindex "github.com/yeisme/pinax/internal/index"
+	"github.com/yeisme/pinax/internal/interaction"
 	"github.com/yeisme/pinax/internal/output"
 	"github.com/yeisme/pinax/internal/remoteapi"
 	"github.com/yeisme/pinax/internal/vaultregistry"
@@ -823,10 +824,13 @@ func splitCSV(value string) []string {
 }
 
 func (ctx commandBuildContext) renderProjection(cmd *cobra.Command, projection domain.Projection, err error) error {
-	return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), *ctx.renderOptions, resourceProjection(cmd, projection), err)
+	projection = resourceProjection(cmd, projection)
+	interaction.Decorate(&projection)
+	return renderProjectionWithOptions(cmd.OutOrStdout(), ctx.outputMode(), *ctx.renderOptions, projection, err)
 }
 
 func renderProjection(w io.Writer, mode output.Mode, projection domain.Projection, err error) error {
+	interaction.Decorate(&projection)
 	return renderProjectionWithOptions(w, mode, output.RenderOptions{}, projection, err)
 }
 

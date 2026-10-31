@@ -52,6 +52,40 @@ func TestClientParityPublicAndCompatibilityFacade(t *testing.T) {
 	}
 }
 
+func TestAdaptPreservesDailyInteractionProjection(t *testing.T) {
+	interaction := map[string]any{
+		"schema_version":   domain.DailyInteractionSchemaVersion,
+		"phase":            "review",
+		"state":            "partial",
+		"read_only":        true,
+		"writes":           false,
+		"remote_effect":    false,
+		"source_status":    "stale",
+		"freshness_status": "stale",
+		"recommended_next_action": map[string]any{
+			"name": "refresh", "command": "pinax index refresh --vault <vault> --json",
+		},
+	}
+	raw, err := json.Marshal(interaction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection := pinaxclient.Projection{
+		SpecVersion: "1.0", Command: "inbox.review", Status: "success",
+		Interaction: raw,
+	}
+	adapted, err := Adapt(projection, nil)
+	if err != nil || adapted.Interaction == nil {
+		t.Fatalf("adapted interaction=%#v err=%v", adapted.Interaction, err)
+	}
+	if adapted.Interaction.SchemaVersion != domain.DailyInteractionSchemaVersion || adapted.Interaction.State != "partial" {
+		t.Fatalf("adapted interaction=%#v", adapted.Interaction)
+	}
+	if adapted.Interaction.RecommendedNextAction == nil || adapted.Interaction.RecommendedNextAction.Name != "refresh" {
+		t.Fatalf("adapted next action=%#v", adapted.Interaction.RecommendedNextAction)
+	}
+}
+
 func TestClientPingAndCapabilitiesUseReadEndpoints(t *testing.T) {
 	seen := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
