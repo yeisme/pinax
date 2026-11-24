@@ -32,3 +32,6 @@ temp/
 # Notes directory for testing
 /notes/
 !examples/messy-vault/notes/
+
+# pi 运行态目录，不入库
+.pi-bg/

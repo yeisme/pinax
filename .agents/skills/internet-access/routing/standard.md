@@ -15,9 +15,11 @@ If the user explicitly asks for 50/100/200/300 real examples, broad web research
 
 ## Local CLI Workflow
 
+用户指定大模型联网搜索，或问题需要模糊/跨语言发现时，按需使用 [model_search.md](model_search.md)。原始来源核验仍适用，不以模型回答替代事实证据。
+
 ### 1. Plan Search Angles
 
-Choose three to seven focused angles:
+按问题需要选择查询角度，先一到两个，证据不足再扩展；不固定凑足三到七个：
 
 ```text
 overview
@@ -95,6 +97,8 @@ Then use built-in search/browser tools if needed. Do not block the task just bec
 If scraping returns an anti-bot challenge page or garbled/obfuscated text instead of content, do not keep retrying the same request — apply `anti_bot.md` (rendered extraction, real browser, plaintext side doors) and label any partial content you still use.
 
 ## Output Format
+
+遵循 [output_contract.md](output_contract.md)；下面仅是复杂报告的可选示例，不必为简单核验套用全部标题。
 
 ```markdown
 **Summary**

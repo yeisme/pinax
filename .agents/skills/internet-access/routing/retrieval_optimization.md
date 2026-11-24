@@ -104,7 +104,7 @@ Track two budgets separately:
 - Agent context tokens: normalized response size sent to the model.
 - Provider cost: Firecrawl credits/tokens, scrape pages, browser actions, and other upstream usage.
 
-Stop or ask for escalation when the requested fields are supported by independent evidence, the context budget is full, or two query expansions add mostly duplicate sources. Do not start a full crawl merely because the first search returned fewer results than the requested limit.
+完成与暂停统一按 research_budget.md；字段充分且满足用户范围才完成，上下文耗尽或重复增加只触发调整查询/保存进度，不能覆盖明确样本目标。 Do not start a full crawl merely because the first search returned fewer results than the requested limit.
 
 ## Cache And Freshness
 

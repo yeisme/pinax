@@ -122,7 +122,7 @@ Extract fields based on the task. Common fields:
 | url | Authoritative URL |
 | source_type | docs / GitHub / registry / paper / blog / company |
 | category | Classification |
-| evidence_level | L1-L5 |
+| evidence_level | L1-L5 evidence type, not credibility rank |
 | last_updated | Update time |
 | status | active / inactive / unclear |
 | notes | Key notes |
@@ -165,13 +165,7 @@ Do not claim "complete coverage" unless the user gave enough time and a clearly 
 
 ### 8. Stopping Conditions
 
-Use `research_budget.md` to decide whether to stop, expand, or degrade. Common stopping conditions:
-
-- Target candidate count or included sample count is reached.
-- New valid-sample rate drops below the threshold in later query batches.
-- Key categories each have representative samples.
-- Time or tool budget is exhausted and marginal value is low.
-- The requested 200/300 examples cannot be completed reliably with current tools; report covered scope and next steps.
+完成与暂停只按 [research_budget.md](research_budget.md) 判断。达到候选数量、低增益、类别出现代表样本，均不能替代用户要求的有效样本数与字段。预算或访问不足时保留已验证结果，明确未完成及缺口，不改称完整研究。
 
 ## Output Format
 

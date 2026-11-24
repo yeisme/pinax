@@ -11,13 +11,14 @@ firecrawl search "Open WebUI Research Harness" --api-url http://localhost:32741 
 
 ### Agent Reach Platform Routing
 
+安装与会话配置示例仅用于明确请求该动作的任务，不作为每次联网的准备步骤。凭据不得进入命令参数。
+
 ```bash
 command -v agent-reach
 agent-reach doctor
 agent-reach install --env=auto --safe
 agent-reach install --env=auto --channels=opencli,twitter,reddit,bilibili
 agent-reach configure --from-browser chrome
-agent-reach configure proxy http://user:pass@ip:port
 ```
 
 After Agent Reach reports the active backend, call the upstream tool directly instead of treating `agent-reach` as a content wrapper.
@@ -26,13 +27,13 @@ After Agent Reach reports the active backend, call the upstream tool directly in
 
 ```bash
 yt-dlp -f "bv*+ba/b" --merge-output-format mp4 -o "%(uploader)s/%(id)s.%(ext)s" \
-  "https://x.com/<user>/status/<id>"          # X public video, best quality, guest access
+  "https://x.com/<user>/status/<id>"          # Confirm access and item scope first
 yt-dlp --cookies-from-browser chrome "URL"    # login-gated or age-restricted media
 yt-dlp -x --audio-format mp3 "URL"            # audio only
 yt-dlp --dump-json "URL" | jq '{title, uploader, duration}'   # probe before downloading
 ```
 
-Update the extractor before debugging failures: `yt-dlp -U`, or `brew upgrade yt-dlp` / `python -m pip install -U yt-dlp` (`-U` refuses package-manager installs with an explicit message). See `routing/media_download.md` for X edge cases (multi-video tweets, quoted tweets, resolved-ID filenames) and verification.
+失败先分类并核对版本与安装来源，不自动升级；下载交接、权限与验证统一见 [media_download.md](media_download.md)。
 
 ### Scrape Or Extract A Known URL
 

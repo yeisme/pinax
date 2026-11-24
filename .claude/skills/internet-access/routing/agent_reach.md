@@ -90,8 +90,8 @@ After `agent-reach doctor`, prefer the reported backend. Common examples:
 | Web page | Jina Reader / `curl` | Read clean content from a URL. |
 | GitHub | `gh` | Use structured repo, issue, release, PR commands. |
 | YouTube | `yt-dlp` | Extract metadata, subtitles, or video search output; file downloads follow `media_download.md`. |
-| Bilibili | `bili-cli` / OpenCLI | Search and video detail; use OpenCLI for logged-in or subtitle cases when configured. Never use yt-dlp here (blanket 412 risk control). |
-| Twitter/X | `twitter-cli` / OpenCLI | Read tweets; cookies unlock search, timeline, and long-form content. Downloading a status video is a separate task: use `yt-dlp` per `media_download.md` (guest access works for public videos). |
+| Bilibili | `bili-cli` / OpenCLI | Search and video detail; use OpenCLI for logged-in or subtitle cases when configured. 历史上 yt-dlp 曾遇到 412；按当前工具版本、阶段和账号条件诊断，非永久禁用。恢复上限见入口。 |
+| Twitter/X | `twitter-cli` / OpenCLI | Read tweets; cookies unlock search, timeline, and long-form content. Downloading a status video is a separate task: use `yt-dlp` per `media_download.md` (guest access depends on the current content and extractor). |
 | Reddit | OpenCLI / `rdt-cli` | Requires login state; anonymous route is unreliable. |
 | XiaoHongShu | OpenCLI / xiaohongshu-mcp / xhs-cli | Desktop prefers browser session; server may need MCP QR login. |
 | RSS | `feedparser` | Parse feeds directly. |
@@ -122,7 +122,7 @@ Proxy for restricted networks:
 agent-reach configure proxy http://user:pass@ip:port
 ```
 
-If a task needs login, cookie export, QR scan, paid action, account modification, posting, or destructive form submission, pause for explicit user confirmation.
+已有授权继续有效，已知可用后端不重复 doctor。仅在缺少必要访问条件或需要尚未授权的凭据导出、付费、账号修改、发布、破坏性动作时请求具体授权；登录或工具切换本身不触发重复确认。
 
 ## Safety Boundaries
 

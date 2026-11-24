@@ -1,31 +1,9 @@
-# Search And Browser Boundary
+# 搜索与浏览器边界
 
-Firecrawl discovery, rendered extraction, crawling, and supported interaction are the default for ordinary websites. Do not open a browser first. Playwright and other browser tools are escalation paths for cases where Firecrawl is unavailable or insufficient.
+工具选择只见 [入口路由表](../SKILL.md#按交付目标路由)。
 
-Continue with search/extraction when:
+正文与字段提取可以使用结构化数据、渲染抓取或内嵌 JSON。截图、已有登录会话、真实点击反馈、可访问性、console/network 和 UI 回归直接使用浏览器，无需先制造一次抓取失败。
 
-- The user needs facts, sources, docs, releases, repositories, package versions, or comparison conclusions.
-- `firecrawl search`, `firecrawl scrape`, `gh`, or package manager CLIs return enough information.
-- The page is documentation, a blog, README, release notes, or API docs, including JavaScript-rendered content that passes the marker checks in `routing/dynamic_pages.md` after `firecrawl scrape --wait-for`.
-- Firecrawl can complete the required interaction with `firecrawl interact`.
+读取内嵌 JSON 能替代数据提取，不能替代用户要求的 UI 验收。保存截图后仍需核对目标页面、身份与预期状态。
 
-Escalate to browser tools when:
-
-- A reasonable Firecrawl scrape/interact attempt still misses required browser-only state.
-- Extraction returns an anti-bot challenge page (Cloudflare-style interstitial, captcha) or obfuscated text; read `routing/anti_bot.md` for the recognition signals and bypass order before retrying.
-- Unsupported widgets, complex authentication, downloads, popups, multi-tab behavior, screenshots, or browser diagnostics are needed.
-- The task requires validating visible text, dialogs, pagination, infinite scroll, or authenticated state.
-- The user explicitly asks to open a page, inspect it in a browser, take a screenshot, click, fill, or download.
-
-If browser tasks become long-term reusable work, such as fixed-site login, scheduled monitoring, batch downloads, or end-to-end regression tests, consider a dedicated browser skill or project script.
-
-## When To Split A Dedicated Browser Skill
-
-Do not split yet; keep browser routing inside `internet-access`. Create a separate browser-operation skill only if one of these becomes true:
-
-- Browser operation itself becomes the main goal, not a support path for information access.
-- Long-lived login state, profiles, site-specific flows, or download directories must be maintained.
-- Playwright fixtures, selectors, screenshot baselines, replays, or regression-test rules need to be preserved.
-- Multiple projects reuse the same browser operation strategy.
-
-If the browser is only used to get information, keep using the `autonomous` route inside this skill.
+一次网页任务不新增浏览器 Skill、持久化 profile 或测试框架。只有明确需要维护复用流程时，才在所属项目中使用已有自动化设施。

@@ -37,11 +37,13 @@ Keep the model-context budget separate from Firecrawl credits. A smaller provide
 | large scan | 10-20 | 120-300 | 50-150 | Category stats + representative samples + ledger |
 | exhaustive attempt | 20+ | 300+ | 100+ | Requires explicit scope and delivery format |
 
-## Stopping Conditions
+## 完成条件与暂停条件
 
-Stop when any of these is true:
+用户指定有效样本数、字段、来源范围时，全部满足才算完成；候选数量不能替代有效数量。没有指定数量时，以关键问题得到充分证据和范围覆盖为完成条件。
 
-- The user-specified sample target is reached.
+以下信号只用于判断是否调整查询、结束未指定数量的探索，或报告未完成；不能覆盖用户指定的完成条件：
+
+- 用户指定的有效样本数、必需字段和范围全部满足。
 - Two consecutive query batches add fewer than 20% new valid samples.
 - Each key category has at least 3 representative samples.
 - Major primary sources are covered.
@@ -83,7 +85,7 @@ Degrade from deep-research to standard when:
 - Tools are unavailable and samples cannot be collected reliably.
 - Time is insufficient for large-sample dedupe and extraction.
 
-When degrading, state:
+工具或预算不足时交付已验证部分并标记未完成；不能自行降低明确的用户目标并宣称完成。没有硬性数量时可缩小探索深度。示例：
 
 ```markdown
 This task can first use a standard scan for a directional conclusion. A 200+ sample result requires additional batches, deduplication, and an evidence ledger.

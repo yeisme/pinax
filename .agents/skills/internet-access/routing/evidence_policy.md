@@ -1,51 +1,28 @@
-# Evidence Policy
+# 证据规则
 
-## Purpose
+来源权威性和证据适用性是两个维度，不能按工具排名。
 
-Prevent agents from treating search summaries, second-hand articles, or old pages as final facts. Every internet-dependent claim should have a clear evidence level.
+| 维度 | 判断 |
+| --- | --- |
+| 权威性 | 是否一手来源、是否对该事实负责；官方声明、维护者经验与社区反馈分别标注 |
+| 适用性 | 内容是否对应所问版本、时间、账号、页面状态和字段 |
+| 独立性 | 多个链接是否实际引用同一报道或同一数据源 |
+| 时效 | 区分事件时间、发布日期、更新时间和本次读取时间 |
 
-## Evidence Levels
+## 兼容现有记录
 
-| Level | Evidence type | Use for |
+已有 evidence_level 的 L1–L5 保留为证据类型，不代表可信度递增，无需迁移旧记录：
+
+| 类型 | 能证明什么 | 不能单独证明什么 |
 | --- | --- | --- |
-| L1 | Search result summaries, snippets | Leads and candidate sources, not final key evidence |
-| L2 | Regular web page text, blogs, press releases | General background and low-risk facts |
-| L3 | Official docs, release notes, standards, papers, source repositories | Technical conclusions, product/API behavior, version notes |
-| L4 | Structured CLI/API output, such as `gh`, `npm view`, `curl` + `jq` | Current status, versions, update time, repository metadata |
-| L5 | Real browser page state, screenshots, downloaded files, console/network evidence | UI state, logged-in state, dynamic content, interaction results |
+| L1 搜索摘要 | 候选来源、检索线索 | 关键最终结论 |
+| L2 普通正文 | 作者实际陈述与一般背景 | 官方合同或当前运行状态 |
+| L3 官方文档、标准、论文、源码 | 相应版本的设计、合同或研究结果 | 已部署实例一定遵循该合同 |
+| L4 API / CLI 结构化结果 | 本次身份和范围下的字段与状态 | UI 正常或来源天然权威 |
+| L5 浏览器、截图、下载文件 | 实际页面状态与产物 | 科学结论、接口合同或全量覆盖 |
 
-## Usage Rules
+官方文章用浏览器打开不会因此比官方原文更权威；第三方 API 也不会因为 JSON 就变成一手来源。
 
-- `lookup` needs at least L2; versions, releases, and repository metadata should prefer L4.
-- `research` needs multiple L2/L3 sources; technical guidance should prefer L3.
-- `deep-research` must distinguish candidate sources, included samples, and final citations; final conclusions need an evidence matrix or category statistics.
-- `verify` must prefer L3/L4; list conflicting sources when disputed.
-- `extract` should prefer L4 or direct URL extraction.
-- `interact` needs L5, with at least final URL or screenshot path recorded.
+简单事实用直接来源支持即可。重大或有争议结论核对独立来源，陈述冲突；技术结论对应版本，UI 结论对应真实操作和读回。不可访问、过期或仅摘要时明确缺口，不编造置信度分数。
 
-## Source Credibility
-
-Priority:
-
-1. Official docs, standards, papers, source repositories, release notes.
-2. Official API or CLI output.
-3. Issues, discussions, or blogs from project maintainers.
-4. Third-party tutorials, media reports, community discussion.
-5. Search summaries.
-
-## Citation Requirements
-
-Final answers should:
-
-- Provide URLs or clear source names.
-- State evidence level or confidence for high-impact claims.
-- Say "insufficient evidence" when uncertain.
-- Avoid merging conflicting sources into a single overconfident conclusion.
-
-## Unacceptable Evidence
-
-- Answering current information from model memory only.
-- Using only search snippets for key conclusions.
-- Guessing GitHub/npm/PyPI/Cargo/Go metadata from screenshots or web pages when structured sources exist.
-- Concluding logged-in or dynamic state without browser evidence.
-- Claiming "the whole web", "comprehensive", or "200 cases" without candidate counts, dedupe rules, inclusion criteria, and sample statistics.
+引用紧邻关键事实并给可访问 URL；高影响结论说明依据和局限，无需向普通用户输出 L 编号。研究样本区分候选、去重、纳入和最终引用；数量不能替代质量。

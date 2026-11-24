@@ -1,114 +1,36 @@
-# Media Download
+# 媒体下载交接
 
-## Purpose
+用户同时要求理解、拆解或相似发现时，下载是 [媒体研究](media_research.md) 的一个阶段；下载成功后在既有授权内继续交接，不能只给文件就结束整个请求。
 
-Download the actual media file — video, audio, or subtitles — from a URL, as the `download` intent. This is "act on the world", not research: the deliverable is a local file, not an answer.
+媒体文件由当前环境可用的 `media-download` Skill 承接；只加载一个版本，保留用户 URL、目标目录、分集范围、格式和已授权会话。该 Skill 缺失时使用下方最小回退，不自动安装 Skill。
 
-`yt-dlp` is the default local CLI for direct media downloads from a URL (X/Twitter, YouTube, and hundreds of other supported sites). It is not a wrapper to hide behind: run it directly, one command per task.
+专项提供格式与平台细节，但不扩大授权。若专项要求自动更新工具、导出 cookie、把 cookie 展开进命令参数，或将 412 归因于单一原因，改用当前权限边界和下列恢复规则。不要照搬不安全命令。
 
-Probe before use:
+## 最小回退
+
+1. 检查 yt-dlp 版本、安装来源及合并需要的 ffmpeg。只有明确的 extractor 兼容性证据才考虑更新；不能遇到 4xx 就升级。全局安装/更新须有相应授权。
+2. 先取得目标条目 ID、分集范围、时长、可用格式；只保留必要字段，不输出签名流 URL、cookie 或原始 provider payload。
+3. 使用稳定 ID 文件名，在用户指定目录下载；未指定时选择本地任务目录并告知。单个 URL 若解析为播放列表，不自动扩张到整频道或无关合集。
+4. 对照 metadata 验证身份、时长、非零大小和预期音视频流。静音视频、纯音频、仅字幕按各自目标验收，不一律要求双流。
 
 ```bash
 command -v yt-dlp
 yt-dlp --version
-yt-dlp --list-extractors | grep -i twitter   # confirm the target extractor exists
-command -v ffmpeg   # required for format merging and audio extraction
+command -v ffmpeg
+yt-dlp --dump-single-json "URL" | jq '{id, title, duration, width, height}'
+yt-dlp -F "URL"
+yt-dlp -f "bv*+ba/b" --merge-output-format mp4 -o "%(id)s.%(ext)s" "URL"
+ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,codec_type,width,height -of json "FILE"
 ```
 
-## Update Before Debugging
+示例只适用于已确认的单条目；命令实际选项以安装版本为准。登录媒体优先使用用户授权的现有会话或受保护凭据文件，不能把凭据放入参数或产物。
 
-Site extractors rot continuously; X and YouTube change their internal APIs often. When an extractor fails on a URL that should work, update first, then diagnose.
+## 平台与恢复
 
-```bash
-yt-dlp -U                        # self-update; only works for the standalone/pip-managed binary
-python -m pip install -U yt-dlp  # pip installation
-brew upgrade yt-dlp              # Homebrew (wraps the PyPI wheel; -U refuses these installs)
-```
+- Bilibili 历史上遇到过 yt-dlp 412；这不是永久禁用，也不能断言都是旧版本导致。记录当前版本、阶段、状态码和账号条件，优先已有可用 bili-cli / OpenCLI，按入口的限流恢复上限处理。
+- X 公共视频是否可匿名下载取决于当前内容与提取器；不要将历史成功视为保证。返回媒体 ID 可能与 status ID 不同，多视频帖子须核对范围。
+- 会员格式缺失、DRM、权限不足不靠重试解决，不绕过访问控制。
+- 批量任务核对预期/实际条目、身份、顺序、缺失、大小和抽样内容。重复 hash 先调查是否重复 URL 或合法相同内容；存在同名文件不代表下载已验证完成。
+- 只恢复失败或未验证条目；报告已完成与缺失，不静默覆盖原产物或重新下载成功项。
 
-`yt-dlp -U` on a package-manager install prints `You installed yt-dlp with pip or using the wheel from PyPi; Use that to update` — that is an installer hint, not a broken tool. Re-run the failed URL after updating before trying anything else.
-
-## Probe Before Downloading
-
-Confirm the URL resolves and see what is available before committing to a download:
-
-```bash
-yt-dlp --dump-json "URL" | jq '{title, uploader, duration, like_count}'   # metadata only, no download
-yt-dlp -F "URL"                    # list formats (resolution, codec, bitrate)
-yt-dlp -g "URL"                    # print direct stream URLs without downloading
-yt-dlp -g -f "bv*+ba/b" "URL"      # direct URLs of the selected formats (two lines)
-```
-
-`--dump-json` doubles as the post-download verification baseline: record `duration`, `width`, `height`, and `like_count` before downloading.
-
-## X (Twitter) Video — Worked Example
-
-Verified 2026-09 with yt-dlp on a plain server connection, no login and no cookies. Public status videos download as a guest:
-
-```bash
-# simplest
-yt-dlp "https://x.com/<user>/status/<id>"
-
-# best quality, merged into one MP4 (recommended form)
-yt-dlp -f "bv*+ba/b" --merge-output-format mp4 \
-  -o "%(uploader)s/%(id)s.%(ext)s" \
-  "https://x.com/<user>/status/<id>"
-```
-
-`https://twitter.com/<user>/status/<id>` URLs resolve identically.
-
-Platform facts that shape the commands:
-
-- X serves **video-only and audio-only HLS streams** (audio 32/64/128 kbps, video 270p to 2160p). `-f "bv*+ba/b"` selects best video + best audio and merges them; without merging you can get a silent video. `--merge-output-format mp4` keeps the container MP4 (X streams are H.264/AAC, so the merge is a remux, no re-encode).
-- The **output ID can differ from the URL status ID**. X resolves a status to the tweet that physically hosts the video (observed: URL `.../status/2088796165902905540` produced file `2088796091059691520.mp4`). Never assert the URL ID as the expected filename.
-- The title is usually `Uploader - Text` (the uploader name is prepended; yt-dlp issue #17617), so default filenames contain spaces and change with the tweet text. Prefer stable templates: `%(id)s.%(ext)s` or `%(uploader)s/%(id)s.%(ext)s`.
-- A tweet can contain **multiple videos**; yt-dlp treats them as a playlist and downloads all entries. Use `--playlist-items 1` to pick one.
-- **Login-gated content** (age-restricted, NSFW, followers-only, some media) needs a session. Prefer browser cookie import over exported cookie files:
-
-  ```bash
-  yt-dlp --cookies-from-browser chrome "URL"
-  yt-dlp --cookies-from-browser firefox "URL"
-  ```
-
-- **Quoted tweets**: if the quoting status yields no video, the video lives in the quoted status — take the quoted status URL and download that directly. (Known remaining rough edge; see open yt-dlp X issues.)
-- Rate limiting or `429`: add `--sleep-requests 1` and retry; if it persists, cookies usually fix it.
-
-Never write cookies, session tokens, or auth headers into repo files, scripts, or output (see the credential rules in `agent_reach.md`).
-
-## Generic Patterns
-
-```bash
-# cap resolution (e.g. 1080p)
-yt-dlp -f "bv*[height<=1080]+ba/b[height<=1080]" --merge-output-format mp4 "URL"
-
-# audio only
-yt-dlp -x --audio-format mp3 "URL"
-
-# subtitles without the video
-yt-dlp --write-subs --write-auto-subs --sub-langs "zh-Hans,zh,en" --skip-download -o "/tmp/%(id)s" "URL"
-
-# fixed output directory, robust retries
-yt-dlp -P /tmp/downloads -o "%(uploader)s/%(id)s.%(ext)s" --retries 10 --fragment-retries 10 "URL"
-```
-
-For batch downloads keep a URL list plus a progress file and re-run to resume; `yt-dlp` skips files that already exist.
-
-## Boundaries
-
-- **Bilibili**: do not use yt-dlp (read or download); Bilibili risk control serves it blanket `412` responses even with cookies and proxies. Use `bili-cli` / OpenCLI per `agent_reach.md`.
-- **Reading tweet text, search, or timelines** is not a download; use the Agent Reach Twitter/X backend (`twitter-cli` / OpenCLI) per `agent_reach.md`. Reading and downloading the same status often compose: read for metadata and context, yt-dlp for the file.
-- Other platforms: check `yt-dlp --list-extractors`; if the site is absent or broken after an update, fall back to browser download via `browser_tools.md`.
-- Do not build a dedicated download-wrapper CLI unless the user asks for reusable automation; direct commands are the contract.
-
-## Verification
-
-Single downloads:
-
-```bash
-ffprobe -v error -show_entries format=duration,size \
-  -show_entries stream=codec_name,codec_type,width,height \
-  -of default=noprint_wrappers=1 <file>
-```
-
-Check duration matches the `--dump-json` baseline, the expected streams are present (video + audio), and size is nonzero. A video-only file after an X download means the audio merge step was skipped — re-run with `-f "bv*+ba/b"`.
-
-Batch downloads additionally follow the integrity checklist in the parent SKILL.md (count matches index, no duplicate hashes, sample first/middle/last items, no silent skips).
+交付时先给本地文件链接，再给格式/时长验证和实际缺口。平台事实应附检查日期和工具版本；未在线验证就不宣称该平台当前可用。

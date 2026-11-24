@@ -1,0 +1,7 @@
+interface:
+  display_name: Owner Remote CLI
+  short_description: Set up or diagnose owner-hosted remote CLI connections across Yeisme domains using the unified contract
+  default_prompt: Use owner-remote-cli to judge whether a project fits the remote CLI contract, then guide connect, doctor, REMOTE_* recovery, and the no-local-CLI path without exposing credentials.
+
+policy:
+  allow_implicit_invocation: true

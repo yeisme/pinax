@@ -1,158 +1,41 @@
-# Browser Tool Guide
+# 浏览器工具操作
 
-## Purpose
+工具路由只见 [入口](../SKILL.md#按交付目标路由)。浏览器专属任务直接进入本流程，不要求 Firecrawl 失败记录。
 
-Explain when an internet information task should escalate from Firecrawl to a browser, and how to choose among existing project Playwright commands, `npx playwright`, `agent-browser`, and `browser-use`. This file is an escalation route inside `internet-access`, not a separate skill.
+## 选择现有工具
 
-## Principle
-
-A browser is not the default web access tool. Use source-specific CLIs or Firecrawl first, including the bounded shell-recovery workflow in `dynamic_pages.md` for JavaScript-rendered pages and Firecrawl-supported interactions. Use a browser only when Firecrawl is unavailable or insufficient, or when real visual state and reusable UI automation are required.
-
-Priority:
-
-1. `gh` / package manager CLIs / official APIs: structured sources.
-2. `firecrawl search` / `scrape` / `map` / `crawl` / `download`: discovery and rendered content extraction.
-3. `firecrawl interact`: supported clicks, forms, pagination, and navigation.
-4. Existing project Playwright commands or `npx playwright`: fallback for browser-only state and repeatable, testable workflows.
-5. `agent-browser` or `browser-use`: one-off visual inspection when that browser surface is more suitable.
-
-## Check Embedded Page Data First
-
-Modern SPA pages usually ship their structured data as inline JSON on `window`; one `page.evaluate` (or `agent-browser` eval, or viewing page source for `<script>` blocks) often replaces the entire UI clicking flow. Before driving clicks, pagination, or infinite scroll, check for:
-
-- `window.__NEXT_DATA__` (Next.js), `window.__NUXT__` (Nuxt), `window.__INITIAL_STATE__`, `window._ROUTER_DATA`, and similar framework globals.
-- `<script type="application/json">` or `<script id="__NEXT_DATA__">` blocks in the raw HTML.
-- The XHR/fetch requests the page itself makes (browser network panel or Playwright request interception) — calling the site's own JSON endpoint directly is often the cleanest extraction path.
-
-Typical wins: full item lists, IDs (for example every video `vid`), and clean titles without touching the UI. Only drive the visible UI when no embedded data or underlying endpoint exists.
-
-## Browser Tool Failure Fallback
-
-Browser tools fail in predictable ways; do not burn turns rediscovering the fixes:
-
-1. Run the tool's own health check first: `agent-browser doctor` (and `firecrawl doctor` for Firecrawl-side issues) before assuming the target site is at fault.
-2. If `agent-browser` fails to start (for example CDP channel errors such as `response channel closed`) and `doctor` does not repair it, switch to `npx playwright` instead of retrying the same launch.
-3. If Playwright reports a browser version mismatch (for example it wants `chromium-1234` but only `chromium-1228` is cached), either run `npx playwright install chromium` or point Playwright at the system browser via `executablePath` (for example the installed Chrome/Edge binary) — the system browser path is usually the fastest unblocking move.
-4. If no Playwright browser can launch, fall back to `browser-use` with a real Chrome profile/CDP, or to Firecrawl rendered extraction.
-
-Record which fallback worked; later steps in the same session should reuse it directly.
-
-## When To Use Playwright
-
-Use an existing project Playwright command or `npx playwright` when:
-
-- Firecrawl is unavailable or remains incomplete after the marker checks and bounded `scrape --wait-for` recovery in `dynamic_pages.md`, or after a reasonable `interact` attempt.
-- The workflow depends on browser-only state, unsupported widgets, complex authentication, downloads, popups, or multi-tab behavior.
-- The flow must run repeatedly as a test, QA check, regression, monitor, or maintained automation.
-- Console, network, accessibility, screenshot, or trace evidence is required.
-
-Prefer existing project commands:
+优先当前运行时已有浏览器能力；维护测试用项目现有 Playwright 配置，一次视觉检查可用已配置的 agent-browser 或 browser-use。只检查选中的工具，不遍历安装所有后端。下面是命令示例，先用当前 help 确认支持的子命令；不要把 `npx playwright` 当作能直接执行任意点击的通用命令。
 
 ```bash
-npm test
-npm run test:e2e
-npx playwright test
-```
-
-For exploration or script generation:
-
-```bash
-npx playwright --help
-npx playwright codegen "https://example.com"
-npx playwright test --headed
-npx playwright show-report
-```
-
-Rules:
-
-- If the repository already has Playwright config, follow existing directories, fixtures, and naming.
-- Do not create a Playwright test when Firecrawl already completes a one-off lookup or extraction.
-- Preserve the Firecrawl failure or limitation that justified browser escalation.
-
-## When To Use agent-browser
-
-Use `agent-browser` when one-off visual exploration is required and it is more efficient than creating or adapting a Playwright flow:
-
-- The user asks to see what the page visibly displays.
-- Accessibility snapshots, clicks, screenshots, console errors, or page state evidence are needed.
-- Firecrawl cannot expose the required visible state and a maintained Playwright artifact is unnecessary.
-
-Common commands:
-
-```bash
-agent-browser skills get core --full
+agent-browser --help
 agent-browser open "https://example.com"
 agent-browser snapshot
 agent-browser screenshot /tmp/page.png
 agent-browser close
 ```
 
-Rules:
-
-- Run `snapshot` before operating by `@ref`; do not guess selectors blindly.
-- Ask the user before credentials, payments, account changes, form submission, or destructive operations.
-- Do not reveal cookies, tokens, profile paths, or credentials in final output.
-
-## When To Use browser-use
-
-Use `browser-use` when:
-
-- It is already configured locally and is more stable than other browser tools in the environment.
-- A real Chrome profile or CDP connection is needed.
-- Playwright and `agent-browser` are unavailable but interactive browsing is still required.
-
-Common commands:
-
 ```bash
-browser-use doctor
-browser-use open "https://example.com"
-browser-use state
-browser-use screenshot /tmp/page.png
-browser-use extract "Extract the main prices and product names from this page"
-browser-use close
+npx playwright --help
+npx playwright test --headed
+npx playwright show-report
 ```
 
-## When Not To Use A Browser
+只在项目已有依赖时使用对应 npx 命令；工具缺失不自动下载安装。先检查项目测试入口，不盲目运行 npm test 或全量 e2e。
 
-Do not escalate to a browser when:
+## 状态与操作
 
-- `firecrawl search` returns sufficient sources.
-- `firecrawl scrape`, including a suitable `--wait-for`, extracts the page text.
-- `firecrawl map`, `crawl`, or `download` covers the documentation or site.
-- `firecrawl interact` completes the required supported interaction.
-- `gh`, `npm view`, `pip index`, `cargo search`, or `go list` returns structured answers.
-- The user only needs explanation, facts, comparisons, or sources, not page interaction evidence.
+- 用最新 snapshot 的引用操作，不猜测 @ref；导航或重渲染后重新获取引用。
+- 提取字段可检查 `window.__NEXT_DATA__`、`window.__NUXT__`、`window.__INITIAL_STATE__`、`window._ROUTER_DATA` 或 JSON script；仅读取任务所需字段。
+- 页面自身 XHR/API 可以帮助提取，但不能用它替代用户要求的点击、弹窗、分页或登录 UI 验收。
+- 复用授权会话，不擅自导出 cookie、改变 profile、账号或浏览器配置。截图和日志避开秘密信息。
+- 写操作前确认当前授权覆盖目标；明确授权继续有效。提交后以页面读回或业务记录核对，超时不盲重试。
 
-## Checkpoint Before Escalating From Firecrawl To Browser
+## 启动失败
 
-Confirm at least one condition:
+先区分工具启动与站点故障。仅在当前版本支持时运行只读 doctor，避免自动修复修改环境。CDP 启动失败不循环重开；可换已有可用浏览器。Playwright 缺浏览器时，优先兼容的已安装浏览器或现有配置；需要安装时先判断当前任务是否授权相应环境修改，不自动更新全局安装。
 
-- Firecrawl was unavailable or the bounded recovery and page-specific marker checks in `dynamic_pages.md` still miss key content or state.
-- The user cares about the actual visible state of the page, not just extracted content.
-- Unsupported filters, widgets, authentication, downloads, popups, or multi-tab behavior must be operated.
-- Screenshots, browser traces, console output, or network evidence are needed.
-- The flow must become a repeatable browser test or maintained automation.
+备用工具仍须满足同一验收需求。截图任务不能退化为正文抓取并声称完成；不可用时保留已验证部分和具体阻塞。
 
-If none apply, keep using Firecrawl or structured CLIs.
+## 验收
 
-## Browser Evidence Output
-
-Browser-route final answers should include:
-
-- tool used.
-- key URL.
-- completed operations.
-- Firecrawl limitation that required escalation.
-- unfinished or permission-blocked operations.
-- screenshot, downloaded file, or artifact path if produced.
-
-Example:
-
-```markdown
-**Browser Evidence**
-- Tool: Playwright
-- Final URL: https://example.com/results
-- Firecrawl limit: required browser-only authenticated state
-- Screenshot: /tmp/page.png
-- Limit: login is required for full results
-```
+检查最终 URL、身份范围、可见状态和业务结果；截图存在不等于内容正确。按需要保存截图、网络或 console 证据。说明浏览器选择理由仅在影响交付时有用，不强制输出虚构的 Firecrawl 失败原因。

@@ -30,7 +30,7 @@ Provide traceable records for deep research and large-sample arguments. Agents m
 | exclusion_reason | Reason for exclusion |
 | category | Classification |
 | fields | Extracted key fields |
-| evidence_level | L1-L5 |
+| evidence_level | L1-L5 evidence type, not a credibility ranking; see evidence_policy.md |
 | last_updated | Source update time |
 | confidence | high / medium / low |
 | notes | Notes |
@@ -53,7 +53,7 @@ Large samples are better as JSONL. Create a file only when the user asks to save
 {"id":"S001","name":"Example","canonical_url":"https://example.com","source_type":"docs","included":true,"category":"platform","evidence_level":"L3"}
 ```
 
-If a file is created, use the user-specified path. If no path is specified, explain the suggested path and get consent, unless the task explicitly asks for a file deliverable.
+文件与交付方式统一按 output_contract.md；明确要求文件但未指定路径时使用合理本地目录并告知。结构化记录通过已有 CLI 或受控导出脚本生成，不手写状态文件。
 
 ## Deduplication Rules
 

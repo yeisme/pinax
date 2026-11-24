@@ -1,198 +1,35 @@
-# Output Contract
+# 输出与交互约定
 
-## Purpose
+默认匹配用户语言，结论在前，依据紧随；不强制套用完整报告模板。
 
-Make internet information access answers stable, auditable, and not overly long.
+| 任务 | 最小交付 |
+| --- | --- |
+| 简单查询 | 一两句答案 + 直接来源；当前信息附必要时间 |
+| 比较研究 | 建议 + 支撑差异的表格/事实 + 来源 + 实际缺口 |
+| 核验 | 成立 / 部分成立 / 不成立 / 证据不足，以及支持和反对依据 |
+| 字段提取 | 值、来源、缺失字段；不补猜测值 |
+| 深度研究 | 范围、候选/去重/有效样本数、分类、完整样本交付位置、未覆盖项 |
+| 浏览器操作 | 已完成动作、最终状态/URL、必要截图或读回证据 |
+| 下载 | 文件链接、身份/时长/流验证结果、缺失条目 |
+| 媒体研究 | 出处与文件引用、带时间戳的特点和依据、实际覆盖区间；未分析部分单独说明 |
+| 相似发现 | 候选链接、相似维度与差异、是否实际核验视频；候选不能冒充已看作品 |
+| 自动化 | 交付路径、真实运行命令、验证范围与未完成项 |
 
-## General Requirements
+## 体验规则
 
-Every internet-dependent answer should include:
+- 不询问“用哪个工具”“要不要继续已授权工作”。合理默认值直接采用；会改变结果的缺失信息才问。
+- 长任务更新发现、覆盖进度与下一步，不逐条播报工具调用；有真实总数时才报百分比。
+- 局部失败仍交付已验证部分。说明影响和具体恢复条件，不把工具报错原样甩给用户。
+- 需要用户动作时只请求最小必要输入，解释为什么缺它；未授权的新副作用单独明确说明。已有授权不重复询问。
+- 没有缺口不输出空“限制”，没有截图需求不为套模板截图。普通查询不展示内部路由名或 L 编号。
+- 链接放在关键事实旁；提及时间要区分发布日期、事件日期与读取时间。
 
-- conclusion or result.
-- source URL or source name.
-- key limitations or uncertainty.
-- freshness notes for high-change information.
+## 大样本交付
 
-For agent search and research, do not return raw provider payloads by default. Use the compact retrieval contract below and expose full page content only after the agent selects a source.
+用户要求 N 个有效案例时，完整 N 条及必需字段才算完成。代表性摘录不能替代全表。优先沿用用户路径；明确要求文件但未指定路径时选合理本地目录并告知，无需为可逆文件创建反复确认。其他情况可分批完整输出；必须明确当前展示的是全量还是摘录。
 
-## Compact Retrieval Contract
+结构化 ledger 通过已有 CLI/application service 或受控导出脚本生成，不手拼机器状态文件。临时进度与正式交付分开；仅保存必要字段，排除凭据、原始私有载荷和推理过程。
 
-Discovery responses should contain stable source IDs and only the fields needed for selection and citation:
+## 检索接口仅在开发任务使用
 
-```json
-{
-  "query": "...",
-  "results": [
-    {
-      "source_id": "r1",
-      "url": "https://example.com/article",
-      "title": "Page title",
-      "highlight": "Query-relevant passage",
-      "rank": 1,
-      "source_type": "web"
-    }
-  ],
-  "next": "open source_id r1"
-}
-```
-
-After selection, return only the requested passages or structured fields, together with the source URL and fetch/freshness metadata. Keep HTML, full Markdown, screenshots, provider payloads, and duplicate bodies in a cache keyed by `source_id` or canonical URL.
-
-The retrieval layer should report raw, deduped, and selected counts when research quality or cost is relevant. Preserve independent corroboration, but do not repeat syndicated or byte-identical content in the model context.
-
-## `lookup` Output
-
-```markdown
-**Answer**: [direct answer]
-
-**Source**: [URL or structured source]
-```
-
-For version/status:
-
-```markdown
-**Answer**: [current version/status]
-**Updated**: [source update time, if available]
-**Source**: [URL]
-```
-
-## `research` Output
-
-```markdown
-**Summary**
-[3-5 sentences]
-
-**Findings**
-- [finding] (source)
-- [finding] (source)
-
-**Limits**
-- [information gap, staleness risk, or conflict]
-
-**Sources**
-- [title/domain] - [URL]
-```
-
-## `local-research-infra` Output
-
-```markdown
-**Route Decision**
-- Context: [host CLI / OpenWebUI internal / OpenWebUI Research Harness / Gateway policy]
-- Recommended route: [firecrawl CLI / SearXNG + Firecrawl loader / Research Harness / browser escalation]
-
-**Local Configuration Evidence**
-- Firecrawl: [URL/config source]
-- SearXNG: [URL/config source]
-- Research Harness: [profile, trace, or valve]
-- Disabled backend: [for example, BigModel/Zai web-search-prime]
-
-**Verified**
-- [commands or checks, without secrets]
-
-**Next Step**
-- [continue search, expand budget, inspect trace, adjust query, escalate browser, or run health check]
-```
-
-## `deep-research` Output
-
-```markdown
-**Research Question**
-[question and boundaries]
-
-**Method**
-- Query batches: [count]
-- Candidate sources: [count]
-- Deduped sources: [count]
-- Included samples: [count]
-- Exclusion rules: [rules]
-
-**Category Statistics**
-| Category | Count | Representative samples |
-| --- | ---: | --- |
-| [category] | [n] | [source] |
-
-**Key Findings**
-- [finding] (evidence/sample)
-
-**Evidence Matrix**
-| Sample | Category | Key fields | Source |
-| --- | --- | --- | --- |
-| [name] | [category] | [fields] | [URL] |
-
-**Limits**
-- [coverage, search bias, access limits, time range]
-```
-
-If the user asks for 200/300 examples, the final answer may show category statistics and representative samples, but it must say where the full sample table is stored or continue in batches.
-
-If the full sample is too large:
-
-- If the user explicitly asks for a file, save it to the user-specified path.
-- If no path is specified, do not create a file by default; show category statistics and representative samples, then say the full ledger can be continued.
-- If a file was created, state the path, record count, and fields.
-
-## `verify` Output
-
-```markdown
-**Conclusion**: [true / false / partially true / insufficient evidence]
-
-**Basis**
-- [supporting evidence] (source)
-- [contrary or conflicting evidence] (source)
-
-**Confidence**: [high / medium / low]
-**Notes**: [freshness, scope, or definition issue]
-```
-
-## `extract` Output
-
-```markdown
-**Extracted Results**
-| Field | Value | Source |
-| --- | --- | --- |
-| [field] | [value] | [URL/API/CLI] |
-
-**Missing Fields**
-- [field that could not be obtained and why]
-```
-
-## `interact` Output
-
-```markdown
-**Execution Summary**
-- Tool: [agent-browser / browser-use / Playwright]
-- Final URL: [URL]
-- Completed: [successful operations]
-- Blocked: [permission, login, CAPTCHA, paywall, or other limits]
-
-**Evidence**
-- Screenshot: [path]
-- Download: [path]
-- Other: [console/errors/network, if any]
-```
-
-## `automate` Output
-
-```markdown
-**Automation Recommendation**
-- Recommended method: [existing project command / npx playwright / agent-browser exploration then hardening]
-- Reason: [why repeatable automation is needed]
-- Risks: [login state, selectors, rate limits, terms]
-- Verification command: [real command]
-```
-
-## Failure Or Blocked Output
-
-```markdown
-**Result**: Could not complete.
-
-**Reason**: [missing tool / insufficient permissions / login required / anti-bot challenge / obfuscated content / page blocked / source unavailable]
-
-**Tried**
-- [command or tool, including which anti_bot bypass steps were attempted]
-
-**Next Step**
-- [what is needed from the user or recommended fallback]
-```
-
-For download and batch-crawl deliveries, also report the integrity checklist result: expected vs. actual item count, MD5/size distinctness, sampled items, and encoding — never deliver files that failed these checks without labeling them.
+只有用户要求实现检索层时才讨论 source_id、紧凑字段、缓存和上下文预算；普通联网任务不创建缓存服务或新协议。发现结果保留 URL、标题和相关摘要；选中来源后再取所需正文。共享缓存不保存认证页面或私密内容。
