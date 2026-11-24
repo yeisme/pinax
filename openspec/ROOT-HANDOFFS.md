@@ -8,5 +8,4 @@
 
 本项目当前实施入口通过 `openspec list` 查询；以下索引用于发现原始设计和交接。
 
-- [pinax-continuity-operator-handoff-v1](changes/pinax-continuity-operator-handoff-v1/) — 迁入设计规格
 - [workbench-project-continuity-program-v1](handoffs/workbench-project-continuity-program-v1/) — 跨 owner 历史交接
