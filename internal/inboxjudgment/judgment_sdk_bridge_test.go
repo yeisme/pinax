@@ -1,5 +1,3 @@
-//go:build judgment_sdk
-
 package inboxjudgment
 
 import (
@@ -10,10 +8,10 @@ import (
 	judgment "github.com/yeisme/judgment-sdk"
 )
 
-// judgment_sdk_bridge_test.go 在 build tag judgment_sdk 下验证真实公共 SDK
+// judgment_sdk_bridge_test.go 在普通构建下验证真实公共 SDK
 // 引用兼容性：bridge 通过真实 SDK client（ParseRequest 能力门 + 单次
 // transport 调用 + ParseResult 校验）执行，消费端不感知 seam/SDK 差异。
-// 运行：go test -tags judgment_sdk ./internal/inboxjudgment/
+// 运行：go test ./internal/inboxjudgment/
 
 // judgmentSDKFixtureTransport 把 fixture responder 适配为 SDK Transport。
 type judgmentSDKFixtureTransport struct {

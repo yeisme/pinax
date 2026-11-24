@@ -38,6 +38,10 @@ const (
 // InboxJudgmentOptions 配置 consumer。默认模式 off：零发现、零 transport
 // 调用、原行为不变。
 type InboxJudgmentOptions struct {
+	// Explicit owner operation identities are required for configured providers.
+	ProjectID      string
+	RequestID      string
+	AttemptID      string
 	Mode           string
 	Model          string // 精确 pin，如 "fixture:local"
 	AdapterVersion string
@@ -61,6 +65,9 @@ func (o InboxJudgmentOptions) Validate() error {
 	}
 	if o.Transport == nil {
 		return judgmentInvalidRequest("enabled judgment mode requires an injected transport", "Configure the explicit judgment transport")
+	}
+	if o.Capabilities.TransportProvider != "" && o.Capabilities.TransportProvider != "judgment" && (o.ProjectID == "" || o.RequestID == "" || o.AttemptID == "") {
+		return judgmentInvalidRequest("managed judgment requires project and original operation identities", "Supply the durable owner operation")
 	}
 	if o.Authorizer == nil {
 		return judgmentInvalidRequest("enabled judgment mode requires a domain authorizer", "Reuse the vault access boundary or the application service permission gate")
@@ -322,6 +329,10 @@ func (h InboxJudgmentReviewHandoff) Projection() (domain.Projection, error) {
 // 版本。任一变化都是不同的 key（shadow evidence 不会 replay 给 assist
 // consumer）；权限变化还会使已存条目失效。
 type InboxJudgmentCacheKey struct {
+	ProjectID               string `json:"project_id,omitempty"`
+	RequestID               string `json:"request_id,omitempty"`
+	AttemptID               string `json:"attempt_id,omitempty"`
+	TransportProvider       string `json:"transport_provider,omitempty"`
 	PrincipalDigest         string
 	VaultDigest             string
 	PermissionDigest        string
@@ -357,6 +368,7 @@ func InboxJudgmentCacheKeyFor(principalDigest string, projection InboxJudgmentPr
 		candidates = append(candidates, candidateBinding{NoteID: candidate.NoteID, Revision: candidate.SourceRevision, Digest: candidate.SourceDigest})
 	}
 	return InboxJudgmentCacheKey{
+		TransportProvider:       projection.Binding.TransportProvider,
 		PrincipalDigest:         principalDigest,
 		VaultDigest:             projection.VaultDigest,
 		PermissionDigest:        projection.PermissionDigest,
@@ -457,6 +469,7 @@ func (c *InboxJudgmentConsumer) Evaluate(ctx context.Context, input InboxJudgmen
 		}, nil
 	}
 	binding := InboxJudgmentBinding{
+		TransportProvider:  c.options.Capabilities.TransportProvider,
 		Mode:               mode,
 		Model:              c.options.Model,
 		AdapterVersion:     c.options.AdapterVersion,
@@ -473,6 +486,7 @@ func (c *InboxJudgmentConsumer) Evaluate(ctx context.Context, input InboxJudgmen
 		return InboxJudgmentOutcome{}, err
 	}
 	cacheKey := InboxJudgmentCacheKeyFor(projection.PrincipalDigest, projection, c.options.AdapterVersion)
+	cacheKey.ProjectID, cacheKey.RequestID, cacheKey.AttemptID = c.options.ProjectID, c.options.RequestID, c.options.AttemptID
 	if c.options.Cache != nil {
 		if evidence, ok := c.options.Cache.Get(ctx, c.options.Authorizer, cacheKey); ok {
 			// 已保存 evidence 的零网络 replay：不新建 attempt、不触 provider。
@@ -488,6 +502,11 @@ func (c *InboxJudgmentConsumer) Evaluate(ctx context.Context, input InboxJudgmen
 	request, err := buildInboxJudgmentWireRequest(binding, projection)
 	if err != nil {
 		return InboxJudgmentOutcome{}, err
+	}
+	if c.options.Capabilities.TransportProvider != "" && c.options.Capabilities.TransportProvider != "judgment" {
+		request.Model.Provider = c.options.Capabilities.TransportProvider
+		request.Scope.Project = c.options.ProjectID
+		request.RequestID, request.AttemptID = c.options.RequestID, c.options.AttemptID
 	}
 	client := &JudgmentClient{Transport: c.options.Transport, Capabilities: c.options.Capabilities}
 	if limits.DeadlineMS > 0 {

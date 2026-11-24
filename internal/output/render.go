@@ -1653,7 +1653,10 @@ func renderSummaryVaultList(w io.Writer, theme summaryTheme, data any) error {
 			if alias == defaultAlias {
 				isDefault = "*"
 			}
-			rows = append(rows, []string{isDefault, summaryCell(alias, 24), summaryCell(firstDataPathString(entry, "name"), 28), summaryCell(firstDataPathString(entry, "path"), 96)})
+			// Vault paths are the actionable selector readback. Keep them intact in
+			// the human table so a long temporary or user-level path remains
+			// copyable; JSON/agent modes already expose the same path losslessly.
+			rows = append(rows, []string{isDefault, summaryCell(alias, 24), summaryCell(firstDataPathString(entry, "name"), 28), summaryCell(firstDataPathString(entry, "path"), 0)})
 		}
 		if err := renderSummaryTable(w, theme, []string{"Default", "Alias", "Name", "Path"}, rows); err != nil {
 			return err

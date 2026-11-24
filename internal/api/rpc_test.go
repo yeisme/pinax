@@ -413,11 +413,12 @@ func TestLocalRPCRoutesMatchRegistry(t *testing.T) {
 		"rpc.folder.adopt":              {Method: "Pinax.Folder.Adopt", Params: map[string]any{"path": "research", "purpose": "notes", "yes": true}},
 		"rpc.folder.repair":             {Method: "Pinax.Folder.RepairPlan", Params: map[string]any{"workspace": "work"}},
 		// Inbox RPC fixtures
-		"rpc.inbox.list":    {Method: "Pinax.Inbox.List", Params: map[string]any{"workspace": "work"}},
-		"rpc.inbox.show":    {Method: "Pinax.Inbox.Show", Params: map[string]any{"ref": "note_inbox_rpc_1"}},
-		"rpc.inbox.capture": {Method: "Pinax.Inbox.Capture", Params: map[string]any{"title": "RPC Capture", "yes": true}},
-		"rpc.inbox.promote": {Method: "Pinax.Inbox.Promote", Params: map[string]any{"ref": "note_inbox_rpc_1", "to": "active"}},
-		"rpc.inbox.discard": {Method: "Pinax.Inbox.Discard", Params: map[string]any{"ref": "note_inbox_rpc_1"}},
+		"rpc.inbox.list":     {Method: "Pinax.Inbox.List", Params: map[string]any{"workspace": "work"}},
+		"rpc.inbox.show":     {Method: "Pinax.Inbox.Show", Params: map[string]any{"ref": "note_inbox_rpc_1"}},
+		"rpc.inbox.capture":  {Method: "Pinax.Inbox.Capture", Params: map[string]any{"title": "RPC Capture", "yes": true}},
+		"rpc.inbox.promote":  {Method: "Pinax.Inbox.Promote", Params: map[string]any{"ref": "note_inbox_rpc_1", "to": "active"}},
+		"rpc.inbox.discard":  {Method: "Pinax.Inbox.Discard", Params: map[string]any{"ref": "note_inbox_rpc_1"}},
+		"rpc.inbox.judgment": {Method: "Pinax.Inbox.Judgment", Params: map[string]any{"note": "note_inbox_rpc_1", "dry_run": true, "yes": true}},
 		// Draft RPC fixtures
 		"rpc.draft.list":    {Method: "Pinax.Draft.List", Params: map[string]any{"workspace": "work"}},
 		"rpc.draft.show":    {Method: "Pinax.Draft.Show", Params: map[string]any{"ref": "note_draft_rpc_1"}},

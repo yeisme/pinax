@@ -126,6 +126,7 @@ func InboxJudgmentPolicyDigest() string {
 // InboxJudgmentBinding 钉住一次评估使用的精确问题集、策略、模型与
 // adapter 版本。evidence 与建议携带该绑定，旧结果不能对新版本采纳。
 type InboxJudgmentBinding struct {
+	TransportProvider  string `json:"transport_provider,omitempty"`
 	Mode               string `json:"mode"`
 	Model              string `json:"model,omitempty"`
 	AdapterVersion     string `json:"adapter_version,omitempty"`
@@ -146,7 +147,7 @@ func (b InboxJudgmentBinding) Enabled() bool {
 func (b InboxJudgmentBinding) Validate() error {
 	switch b.Mode {
 	case "", InboxJudgmentModeOff:
-		if b.Model != "" || b.AdapterVersion != "" || b.QuestionSetID != "" || b.QuestionSetVersion != "" ||
+		if b.TransportProvider != "" || b.Model != "" || b.AdapterVersion != "" || b.QuestionSetID != "" || b.QuestionSetVersion != "" ||
 			b.QuestionSetDigest != "" || b.PolicyID != "" || b.PolicyVersion != "" || b.PolicyDigest != "" {
 			return judgmentInvalidRequest("off binding must stay empty", "Clear the judgment binding fields for off mode")
 		}

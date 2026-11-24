@@ -581,11 +581,13 @@ func TestLocalRESTRoutesMatchRegistry(t *testing.T) {
 		"rest.folder.adopt":              {method: http.MethodPost, path: "/v1/folders/research:adopt?purpose=notes&yes=true", wantStatus: http.StatusForbidden, wantCommand: "folder.adopt"},
 		"rest.folder.repair":             {method: http.MethodPost, path: "/v1/folders:repair-plan", wantStatus: http.StatusOK, wantCommand: "folder.repair"},
 		// Inbox REST fixtures
-		"rest.inbox.list":    {method: http.MethodGet, path: "/v1/inbox", wantStatus: http.StatusOK, wantCommand: "inbox.list"},
-		"rest.inbox.show":    {method: http.MethodGet, path: "/v1/inbox/note_inbox_api_1", wantStatus: http.StatusOK, wantCommand: "inbox.show"},
-		"rest.inbox.capture": {method: http.MethodPost, path: "/v1/inbox:capture", wantStatus: http.StatusForbidden, wantCommand: "inbox.capture"},
-		"rest.inbox.promote": {method: http.MethodPost, path: "/v1/inbox/note_inbox_api_1:promote", wantStatus: http.StatusForbidden, wantCommand: "inbox.promote"},
-		"rest.inbox.discard": {method: http.MethodPost, path: "/v1/inbox/note_inbox_api_1:discard", wantStatus: http.StatusForbidden, wantCommand: "inbox.discard"},
+		"rest.inbox.list":          {method: http.MethodGet, path: "/v1/inbox", wantStatus: http.StatusOK, wantCommand: "inbox.list"},
+		"rest.inbox.show":          {method: http.MethodGet, path: "/v1/inbox/note_inbox_api_1", wantStatus: http.StatusOK, wantCommand: "inbox.show"},
+		"rest.inbox.capture":       {method: http.MethodPost, path: "/v1/inbox:capture", wantStatus: http.StatusForbidden, wantCommand: "inbox.capture"},
+		"rest.inbox.promote":       {method: http.MethodPost, path: "/v1/inbox/note_inbox_api_1:promote", wantStatus: http.StatusForbidden, wantCommand: "inbox.promote"},
+		"rest.inbox.discard":       {method: http.MethodPost, path: "/v1/inbox/note_inbox_api_1:discard", wantStatus: http.StatusForbidden, wantCommand: "inbox.discard"},
+		"rest.inbox.judgment":      {method: http.MethodPost, path: "/v1/inbox:judgment", wantStatus: http.StatusForbidden, wantCommand: "inbox.judgment"},
+		"rest.inbox.judgment.note": {method: http.MethodPost, path: "/v1/inbox/note_inbox_api_1:judgment", wantStatus: http.StatusForbidden, wantCommand: "inbox.judgment"},
 		// Draft REST fixtures
 		"rest.draft.list":    {method: http.MethodGet, path: "/v1/drafts", wantStatus: http.StatusOK, wantCommand: "draft.list"},
 		"rest.draft.show":    {method: http.MethodGet, path: "/v1/drafts/note_draft_api_1", wantStatus: http.StatusOK, wantCommand: "draft.show"},

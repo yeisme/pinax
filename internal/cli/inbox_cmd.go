@@ -54,6 +54,7 @@ func addInboxCommands(root *cobra.Command, ctx commandBuildContext) {
 	inboxCaptureCmd.Flags().StringVar(&idempotencyKey, "idempotency-key", "", "Reuse an idempotency key for a remote mutation retry")
 	inboxCmd.AddCommand(inboxCaptureCmd)
 	addInboxReviewCommand(inboxCmd, ctx)
+	addInboxJudgmentCommand(inboxCmd, ctx)
 
 	// 2. inbox list
 	inboxCmd.AddCommand(&cobra.Command{

@@ -3153,12 +3153,12 @@ func scanNotes(root string) ([]domain.Note, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if shouldSkipVaultWalkDir(entry.Name()) {
+			if shouldSkipVaultWalkDir(entry.Name()) || vaultWalkEscapes(root, path, entry) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !strings.EqualFold(filepath.Ext(path), ".md") {
+		if vaultWalkEscapes(root, path, entry) || !strings.EqualFold(filepath.Ext(path), ".md") {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
@@ -3211,12 +3211,12 @@ func scanIndexRefreshNotes(root string) ([]domain.Note, []string, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if shouldSkipVaultWalkDir(entry.Name()) {
+			if shouldSkipVaultWalkDir(entry.Name()) || vaultWalkEscapes(root, path, entry) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.EqualFold(filepath.Ext(path), ".md") {
+		if !vaultWalkEscapes(root, path, entry) && strings.EqualFold(filepath.Ext(path), ".md") {
 			paths = append(paths, path)
 		}
 		return nil
@@ -3341,6 +3341,23 @@ func ordinaryNoteFacts(facts []noteFact) []noteFact {
 
 func shouldSkipVaultWalkDir(name string) bool {
 	return strings.HasPrefix(name, ".") || name == "dist"
+}
+
+// vaultWalkEscapes reports a symlink whose target leaves the vault. WalkDir follows links.
+func vaultWalkEscapes(root, path string, entry fs.DirEntry) bool {
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return true
+	}
+	cleanRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		cleanRoot = filepath.Clean(root)
+	}
+	target = filepath.Clean(target)
+	return target != cleanRoot && !strings.HasPrefix(target, cleanRoot+string(os.PathSeparator))
 }
 
 func isPinaxNoteFrontmatter(meta map[string]string) bool {
@@ -3987,6 +4004,10 @@ func commitNoteContent(currentPath, targetPath, content string) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
@@ -3996,7 +4017,7 @@ func commitNoteContent(currentPath, targetPath, content string) error {
 	cleanup = false
 	if filepath.Clean(currentPath) != filepath.Clean(targetPath) {
 		if err := os.Remove(currentPath); err != nil {
-			return err
+			return fmt.Errorf("note saved at %s but old file remains: %w", targetPath, err)
 		}
 	}
 	return nil

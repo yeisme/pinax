@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, remote-write-parity, pane, knowledge-source-adapter, research-brief, daily-knowledge, daily-knowledge-quality, daily-review-followthrough, agent-note-proposal, rendered-view-parity, human-reading-api, human-reading-access, human-reading-document, human-reading-resources, human-reading-session, human-reading-client, human-reading-quality, human-reading-write-capture, human-reading-write-edit, human-reading-write-organize, human-reading-write-client, human-reading-write-api, human-reading-write-quality, notebook-editor-source, notebook-navigation, notebook-daily, notebook-backend, notebook-backend-packages, notebook-quality, or notebook-backend-final")
+	profile := flag.String("profile", "default", "Integration evidence profile: default, identity, identity-benchmark, agent-memory, agent-continuity, personal-assistant-grounding, prompt-catalog, mcp-protocol, sdk-security, operation-recovery, remote-write-parity, pane, knowledge-source-adapter, research-brief, daily-knowledge, daily-knowledge-quality, daily-review-followthrough, agent-note-proposal, rendered-view-parity, human-reading-api, human-reading-access, human-reading-document, human-reading-resources, human-reading-session, human-reading-client, human-reading-quality, human-reading-write-capture, human-reading-write-edit, human-reading-write-organize, human-reading-write-client, human-reading-write-api, human-reading-write-quality, notebook-editor-source, notebook-navigation, notebook-daily, notebook-backend, notebook-backend-packages, notebook-quality, judgment-managed, or notebook-backend-final")
 	flag.Parse()
 	if *profile == "mcp-apps-browser" {
 		_, _ = fmt.Fprintln(os.Stderr, "The MCP Apps browser profile has been retired. Use --profile mcp-collaboration for Markdown tool verification.")
@@ -68,6 +68,35 @@ func buildConfig(runID string, stdout, stderr io.Writer) evidence.Config {
 }
 
 func buildConfigForProfile(profile, runID string, stdout, stderr io.Writer) evidence.Config {
+	if profile == "judgment-managed" {
+		// Managed judgment wiring: ordinary-build SDK bridge, durable owner
+		// receipts, dormant-by-default host gate, and the CLI/REST/RPC entry
+		// contract. Synthetic fixtures only: no provider, no credential, no real
+		// vault, no race detector.
+		return evidence.Config{
+			RunID:             runID,
+			ParentDir:         filepath.Join("temp", "integration-test-runs"),
+			Command:           []string{"go", "test", "./internal/inboxjudgment", "./internal/app", "./internal/api", "./internal/cli", "./cmd/pinax", "./internal/transportcatalog/...", "-run", "TestJudgmentSDKBridge|TestManagedSDK|TestReceiptStore|TestInboxJudgment|TestJudgmentGate|TestLocalRESTRoutesMatchRegistry|TestLocalRPCRoutesMatchRegistry|TestOpenAPISemanticValidationRoundTripAndGoldenDigest|TestRemoteCatalog|TestRemoteContract", "-count=1", "-v"},
+			PassThroughStdout: stdout,
+			PassThroughStderr: stderr,
+			PassStatus:        "passed",
+			Layer:             "component",
+			ExtraChecks: map[string]any{
+				"profile":                profile,
+				"fixture_only":           true,
+				"real_user_evaluations":  0,
+				"model_calls":            0,
+				"provider_calls":         0,
+				"credential_reads":       0,
+				"remote_write":           false,
+				"race_detector":          false,
+				"default_off":            true,
+				"durable_receipts":       true,
+				"cli_rest_rpc_entry":     true,
+				"automatic_resubmission": false,
+			},
+		}
+	}
 	if profile == "notebook-quality" {
 		return evidence.Config{RunID: runID, ParentDir: filepath.Join("temp", "integration-test-runs"), Command: []string{"go", "test", "./cmd/pinax", "./internal/cli", "./internal/output", "./tests/e2e", "-run", "Completion|TestCLITreeHelpSmoke|TestPromptCatalogCommandTreeIsAdditive|TestBackendProviderCLI|TestProjectAndStorageCLIJSON|TestProjectSubprojectWorkspaceCLI|TestPipelineStatus|TestBackendNotesCommands|TestRenderRunSnapshot|TestSummaryRendersProject|TestNarrowSummary|TestResource", "-count=1"}, PassThroughStdout: stdout, PassThroughStderr: stderr, PassStatus: "passed", Layer: "component", ExtraChecks: map[string]any{"profile": profile, "fixture_only": true, "remote_write": false, "race_detector": false}}
 	}

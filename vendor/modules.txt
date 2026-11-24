@@ -367,6 +367,9 @@ github.com/tdewolff/parse/v2/html
 # github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e
 ## explicit; go 1.19
 github.com/xo/terminfo
+# github.com/yeisme/cli-kit v0.0.0-00010101000000-000000000000 => ../../shared/cli-kit
+## explicit; go 1.25
+github.com/yeisme/cli-kit/completion
 # github.com/yeisme/credentialctl v0.3.0
 ## explicit; go 1.25.0
 github.com/yeisme/credentialctl/internal/projectapp
@@ -376,6 +379,9 @@ github.com/yeisme/credentialctl/pkg/projectsecrets
 # github.com/yeisme/judgment-sdk v0.0.0 => ../../apigateway/aigora/sdk/judgment/go
 ## explicit; go 1.23
 github.com/yeisme/judgment-sdk
+github.com/yeisme/judgment-sdk/providers
+github.com/yeisme/judgment-sdk/providers/openrouter-decisions
+github.com/yeisme/judgment-sdk/providers/typesafe-judgment
 # github.com/yeisme/promptrepo v0.6.0
 ## explicit; go 1.24.0
 github.com/yeisme/promptrepo
@@ -576,3 +582,4 @@ modernc.org/memory
 modernc.org/sqlite/lib
 # github.com/yeisme/runtime-plane => ./third_party/yeisme/client-runtime
 # github.com/yeisme/judgment-sdk => ../../apigateway/aigora/sdk/judgment/go
+# github.com/yeisme/cli-kit => ../../shared/cli-kit

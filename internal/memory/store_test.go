@@ -52,6 +52,19 @@ func TestMemoryRecallUsesFTSAndFiltersStatus(t *testing.T) {
 	}
 }
 
+func TestMemoryRecallReturnsFTSError(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("open memory store: %v", err)
+	}
+	if err := store.db.Exec("DROP TABLE memory_fts").Error; err != nil {
+		t.Fatalf("drop fts: %v", err)
+	}
+	if _, err := store.Recall(context.Background(), RecallFilter{Query: "release memory"}); err == nil {
+		t.Fatal("expected recall to surface a broken full-text index")
+	}
+}
+
 func TestMemoryBuildRecordRejectsInvalidType(t *testing.T) {
 	_, err := BuildRecord(CaptureRequest{Type: "unknown", Subject: "pinax", Object: "bad"})
 	if err == nil {

@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/ansi v0.11.6
+	github.com/yeisme/cli-kit v0.0.0-00010101000000-000000000000
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/muesli/termenv v0.16.0
@@ -126,3 +127,4 @@ replace github.com/yeisme/runtime-plane => ./third_party/yeisme/client-runtime
 // replace 指向 workspace 内的 SDK 树；vendor 快照已随仓提交，其他
 // checkout 的默认与 tagged 构建都不依赖 aigora 树的漂移。
 replace github.com/yeisme/judgment-sdk => ../../apigateway/aigora/sdk/judgment/go
+replace github.com/yeisme/cli-kit => ../../shared/cli-kit

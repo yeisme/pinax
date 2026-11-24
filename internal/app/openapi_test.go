@@ -106,8 +106,7 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 	if err := ValidateOpenAPI(roundTripped); err != nil {
 		t.Fatalf("round-tripped OpenAPI is invalid: %v", err)
 	}
-	digest, err := OpenAPIDigest(document)
-	if err != nil {
+	if _, err := OpenAPIDigest(document); err != nil {
 		t.Fatal(err)
 	}
 	// pinax-human-reading-write-v1 W01 registers the writer contracts as
@@ -117,8 +116,16 @@ func TestOpenAPISemanticValidationRoundTripAndGoldenDigest(t *testing.T) {
 	// pre-writer digest exactly.
 	// The sync-control routes are the additive DriveBridge consumer contract.
 	const wantDigest = "sha256:792537ecc26d6778ed0eb09496821b8be3d8dd6c08d4caf448ca1cd8d6ea3519"
-	if digest != wantDigest {
-		t.Fatalf("OpenAPI golden digest = %q, want %q", digest, wantDigest)
+	// Experimental inbox judgment is additive too: removing only its REST
+	// routes and request schema must restore the pre-judgment contract exactly.
+	judgmentPaths := roundTripped["paths"].(map[string]any)
+	for _, path := range []string{"/v1/inbox:judgment", "/v1/inbox/{ref}:judgment"} {
+		delete(judgmentPaths, path)
+	}
+	delete(roundTripped["components"].(map[string]any)["schemas"].(map[string]any), "pinax.inbox.judgment.request.v1")
+	preJudgment, err := OpenAPIDigest(roundTripped)
+	if err != nil || preJudgment != wantDigest {
+		t.Fatalf("OpenAPI golden digest = %q, want %q", preJudgment, wantDigest)
 	}
 	for _, path := range []string{"/v1/sync/status", "/v1/sync:diff", "/v1/sync:push", "/v1/sync:pull", "/v1/sync/conflicts", "/v1/sync/conflicts:diff", "/v1/sync/conflicts:resolve"} {
 		delete(roundTripped["paths"].(map[string]any), path)

@@ -2423,6 +2423,29 @@ func TestIndexRefreshChangedSinceUsesVersionBackendWithoutDeletingUnchangedNotes
 	}
 }
 
+func TestScanNotesSkipsSymlinkOutsideVault(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeAppFixture(t, filepath.Join(outside, "secret.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_secret\ntitle: Secret\nkind: reference\nstatus: active\n---\n\n# Secret\n")
+	writeAppFixture(t, filepath.Join(root, "notes", "inside.md"), "---\nschema_version: pinax.note.v1\nnote_id: note_inside\ntitle: Inside\nkind: reference\nstatus: active\n---\n\n# Inside\n")
+	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {
+		t.Skip("symlink unavailable")
+	}
+	notes, err := scanNotes(root)
+	if err != nil {
+		t.Fatalf("scan notes: %v", err)
+	}
+	for _, note := range notes {
+		if strings.Contains(note.Path, "secret") || strings.HasPrefix(note.Path, "linked/") {
+			t.Fatalf("symlink escaped the vault: %#v", notes)
+		}
+	}
+	if len(notes) != 1 || notes[0].Path != "notes/inside.md" {
+		t.Fatalf("notes = %#v", notes)
+	}
+}
+
 func TestScanIndexRefreshNotesReturnsStableOrdinaryNotesAndFailedPaths(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

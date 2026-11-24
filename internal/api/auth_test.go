@@ -224,6 +224,42 @@ func TestMemoryTokenStore_GetNotFound(t *testing.T) {
 
 // --- FileTokenStore ---
 
+func TestFileTokenStore_SaveDoesNotTruncateExistingFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tokens.json")
+	store, err := NewFileTokenStore(path)
+	if err != nil {
+		t.Fatalf("NewFileTokenStore: %v", err)
+	}
+	rec, _ := GenerateTokenRecord("keep", map[TokenScope]ScopeTarget{ScopeRead: {}}, "", "manual")
+	if err := store.Create(rec); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(original) == 0 {
+		t.Fatal("expected persisted token file")
+	}
+	// A failed replacement must leave the previous registry intact.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	if err := store.Delete(rec.ID); err == nil {
+		t.Fatal("expected save to fail when the directory is not writable")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after failed save: %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("token file changed after failed save")
+	}
+}
+
 func TestFileTokenStore_CRUD(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

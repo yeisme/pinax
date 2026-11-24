@@ -267,6 +267,22 @@ func (d *RPCDispatcher) Call(ctx context.Context, req RPCRequest) (domain.Projec
 		projection, err := d.service.InboxDiscard(ctx, app.NoteMutationRequest{VaultPath: d.vault, NoteRef: stringParam(req.Params, "ref"), Yes: boolParam(req.Params, "yes"), DryRun: boolParam(req.Params, "dry_run")})
 		projection.Mode = "json"
 		return projection, err
+	case "Pinax.Inbox.Judgment":
+		// A judgment dispatch is a paid external action behind the same write
+		// gate as remote mutations, even though the vault is never modified.
+		if projection, err := d.ensureWriteAllowed(app.InboxJudgmentCommand, req.Params); err != nil {
+			return projection, err
+		}
+		projection, err := d.service.InboxJudgment(ctx, app.InboxJudgmentRequest{
+			VaultPath: d.vault,
+			NoteRef:   stringParam(req.Params, "note"),
+			Limit:     intParam(req.Params, "limit"),
+			DryRun:    boolParam(req.Params, "dry_run"),
+			AttemptID: stringParam(req.Params, "attempt"),
+			Actor:     stringParam(req.Params, "actor"),
+		})
+		projection.Mode = "json"
+		return projection, err
 	// Draft RPC methods
 	case "Pinax.Draft.List":
 		projection, err := d.service.DraftList(ctx, app.VaultRequest{VaultPath: d.vault})

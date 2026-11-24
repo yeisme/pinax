@@ -9,6 +9,7 @@
 | `pinax inbox capture <title>` | Quickly create an inbox note. | Writes a Markdown note. |
 | `pinax inbox list` | List inbox notes. | Does not write. |
 | `pinax inbox review [--limit 5] [--after <ref>]` | Preview inbox and unclassified index notes with bounded related-note hints. | Does not write. |
+| `pinax inbox judgment [--note <ref>] [--limit 5] [--dry-run] [--attempt <id>]` | Experimental advisory links/duplicates through the judgment switch; default off. | Does not write the vault (a real run calls an explicitly configured external provider). |
 | `pinax inbox triage <note>` | Organize an inbox note into a project, folder, kind, and status. | Writes note metadata/path. |
 | `pinax inbox describe <note>` | View inbox note content. | Does not write. |
 | `pinax inbox promote <note> --to <draft\|active>` | Promote an inbox note to draft or active. | Writes note metadata, optionally moves path. |
@@ -48,6 +49,23 @@ pinax inbox discard "Temporary idea" --yes --vault ./my-notes
 pinax inbox index preview --vault ./my-notes
 pinax inbox index create --vault ./my-notes
 ```
+
+## Experimental judgment
+
+`pinax inbox judgment` is dormant by default: with `judgment.mode=off` it only reports `judgment_mode=off` and performs no assembly, credential read or provider call. A real evaluation additionally requires an explicit non-secret execution profile (`PINAX_JUDGMENT_PROFILE`, `PINAX_JUDGMENT_PROVIDER`, `PINAX_JUDGMENT_MODEL`, `PINAX_JUDGMENT_CREDENTIAL_SOURCE` and one reference).
+
+```bash
+# Deterministic projection only: zero provider calls, zero credential reads
+pinax inbox judgment --dry-run --json
+
+# Real evaluation of one inbox note; suggestions stay advisory
+pinax inbox judgment --note <ref> --limit 5 --json
+
+# Explicitly start a new attempt after reconciling the original receipt
+pinax inbox judgment --note <ref> --attempt retry-2 --json
+```
+
+Suggestions never merge, delete, tag or move notes. The original `inbox review`/`promote`/`discard` gates stay authoritative, an unresolved attempt is never resubmitted automatically, and the durable receipt lives in `.pinax/api/judgment.sqlite`. See the [inbox judgment notes](../inbox-judgment.md).
 
 ## Status Transition Rules
 

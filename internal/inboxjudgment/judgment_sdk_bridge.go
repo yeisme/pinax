@@ -1,31 +1,28 @@
-//go:build judgment_sdk
-
 package inboxjudgment
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
+	"time"
 
 	judgment "github.com/yeisme/judgment-sdk"
+	"github.com/yeisme/judgment-sdk/providers"
+	"github.com/yeisme/pinax/internal/sqlitedsn"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// 真实公共 SDK 集成 bridge（build tag: judgment_sdk）。
-//
-// Aigora owner 的 SDK 模块（github.com/yeisme/judgment-sdk，合同 "1.0"）已
-// 在 workspace 内提交但未发布；本仓默认构建停在本地 seam（wire.go），零
-// 外部耦合。本 bridge 验证真实引用兼容性：把 seam 请求转换为 SDK 规范
-// wire JSON，经真实 SDK client 校验并执行（单次 transport 调用、不重试），
-// 再把已校验的 SDK 结果转换回 seam 结果。
-//
-// 运行：go test -tags judgment_sdk ./internal/inboxjudgment/
-// （vendor 快照已提交，tagged 构建离线可用；-mod=mod 则直接解析 workspace
-// 内的 SDK 树。）默认构建不编译本文件；`go mod tidy` 会因为也评估
-// build-tag 门控文件而保留可选 require/replace 对。
-
-// strongSHA256Pattern 是合同要求的强 digest 形态。
 var strongSHA256Pattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+// The public SDK bridge is available in ordinary builds. Construction is
+// offline; execution requires an explicitly injected transport.
 
 // JudgmentSDKBridge 把真实 SDK transport 适配为 seam JudgmentTransport
 // port。能力是钉住的本地快照：本 bridge 不做任何发现调用。
@@ -153,6 +150,10 @@ func judgmentSDKRequestTree(request JudgmentWireRequest) (map[string]any, error)
 	if request.Limits.MaxOutputBytes > 0 {
 		limits["max_output_bytes"] = request.Limits.MaxOutputBytes
 	}
+	pinLevel := judgment.PinProviderExactModel
+	if request.Model.Provider == "openrouter" {
+		pinLevel = judgment.PinRouterModelID
+	}
 	return map[string]any{
 		"schema_version": request.SchemaVersion,
 		"request_id":     request.RequestID,
@@ -169,7 +170,7 @@ func judgmentSDKRequestTree(request JudgmentWireRequest) (map[string]any, error)
 			"requested_model":              request.Model.Model,
 			"response_model":               nil,
 			"underlying_revision":          nil,
-			"pin_level":                    judgment.PinProviderExactModel,
+			"pin_level":                    pinLevel,
 			"underlying_revision_verified": false,
 		},
 		"question_set": map[string]any{"id": request.QuestionSet.ID, "version": request.QuestionSet.Version, "digest": request.QuestionSet.Digest},
@@ -185,6 +186,7 @@ func judgmentSDKRequestTree(request JudgmentWireRequest) (map[string]any, error)
 // judgmentSDKCapsToSeam 把 SDK 能力映射到 seam 快照。
 func judgmentSDKCapsToSeam(caps judgment.Capabilities) JudgmentCapabilities {
 	seam := JudgmentCapabilities{
+		TransportProvider:    caps.Model.TransportProvider,
 		SchemaVersion:        JudgmentWireSchemaVersion,
 		ContractVersion:      caps.ContractVersion,
 		Adapter:              caps.Adapter.Name,
@@ -445,3 +447,218 @@ func JudgmentSDKFixtureCapabilities(model string) judgment.Capabilities {
 }
 
 var _ JudgmentTransport = (*JudgmentSDKBridge)(nil)
+
+// ReceiptStore 是本 owner 的持久执行回执存储，实现公共 SDK 的
+// providers.ReceiptStore。它只保存可恢复的执行事实（owner/project/request/
+// attempt 身份、输入与 profile digest、状态与已校验的 neutral result），
+// 不保存输入正文、凭据或 provider 原始 payload。
+//
+// 数据放在 vault 自己的 `.pinax/api/judgment.sqlite`，与 operation ledger
+// 同级、彼此独立：judgment 回执不会写进 operation 表，operation 也不读取
+// judgment 状态。SQLite 一律经 internal/sqlitedsn 打开。
+//
+// 语义约束（与 providers.Runtime 对齐）：
+//   - Claim 是原子的 insert-if-absent；同一身份再次 Claim 返回已存回执，
+//     由调用方比较 input/profile digest，不一致即冲突。
+//   - Finish 保留原身份绑定，只更新状态、错误码与结果。
+//   - 未完成的 claim 永远粘滞：重启无法证明 provider 是否已接收，因此
+//     只能通过显式新 attempt 重新发起。
+type ReceiptStore struct {
+	db *gorm.DB
+}
+
+// JudgmentReceiptRow 是 judgment 回执行。主键是 owner/project/request/
+// attempt 四元组；State 取值 dispatching/completed/failed/unknown。
+type JudgmentReceiptRow struct {
+	Owner           string    `gorm:"primaryKey;size:64" json:"owner"`
+	Project         string    `gorm:"primaryKey;size:128" json:"project"`
+	RequestID       string    `gorm:"primaryKey;size:128" json:"request_id"`
+	AttemptID       string    `gorm:"primaryKey;size:128" json:"attempt_id"`
+	InputDigest     string    `gorm:"size:128" json:"input_digest"`
+	ProfileDigest   string    `gorm:"size:128" json:"profile_digest"`
+	State           string    `gorm:"size:32" json:"state"`
+	ErrorCode       string    `gorm:"size:64" json:"error_code,omitempty"`
+	SubmissionState string    `gorm:"size:32" json:"submission_state,omitempty"`
+	Result          []byte    `json:"-"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// TableName 固定回执表名，避免 GORM 复数化漂移。
+func (JudgmentReceiptRow) TableName() string { return "judgment_receipts" }
+
+// OpenReceiptStore 打开（或创建）vault 内的 judgment 回执数据库并迁移
+// 加性表。它不触发任何 provider 调用，也不读取凭据。
+func OpenReceiptStore(root string) (*ReceiptStore, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, errors.New("judgment_receipt_store_root_required")
+	}
+	dir := filepath.Join(root, ".pinax", "api")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("judgment_receipt_store_unavailable: %w", err)
+	}
+	path := filepath.Join(dir, "judgment.sqlite")
+	db, err := sqlitedsn.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("judgment_receipt_store_unavailable: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return nil, fmt.Errorf("judgment_receipt_store_unavailable: %w", err)
+	}
+	store, err := OpenReceiptStoreDB(db)
+	if err != nil {
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return nil, err
+	}
+	return store, nil
+}
+
+// OpenReceiptStoreDB 在既有连接上迁移并构造回执存储（测试与共享连接用）。
+func OpenReceiptStoreDB(db *gorm.DB) (*ReceiptStore, error) {
+	if db == nil {
+		return nil, errors.New("judgment_receipt_store_unavailable")
+	}
+	if err := db.AutoMigrate(&JudgmentReceiptRow{}); err != nil {
+		return nil, fmt.Errorf("judgment_receipt_store_migration_failed: %w", err)
+	}
+	return &ReceiptStore{db: db}, nil
+}
+
+// Close 关闭底层连接池。
+func (s *ReceiptStore) Close() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.Close()
+}
+
+// Claim 实现 providers.ReceiptStore：原子 insert-if-absent。已存在的回执
+// 原样返回且 claimed=false，调用方负责 digest/身份冲突判定。
+func (s *ReceiptStore) Claim(ctx context.Context, receipt providers.Receipt) (providers.Receipt, bool, error) {
+	if err := validateReceiptKey(receipt); err != nil {
+		return providers.Receipt{}, false, err
+	}
+	row := receiptRowFromProvider(receipt)
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
+	if result.Error != nil {
+		return providers.Receipt{}, false, fmt.Errorf("judgment_receipt_claim_failed: %w", result.Error)
+	}
+	if result.RowsAffected == 1 {
+		return receipt, true, nil
+	}
+	existing, found, err := s.Get(ctx, receipt.Owner, receipt.Project, receipt.RequestID, receipt.AttemptID)
+	if err != nil {
+		return providers.Receipt{}, false, err
+	}
+	if !found {
+		return providers.Receipt{}, false, errors.New("judgment_receipt_claim_lost")
+	}
+	return existing, false, nil
+}
+
+// Finish 实现 providers.ReceiptStore：保留原身份绑定，只更新终态。
+// 不存在的回执不静默插入（那会让未经 claim 的执行看起来已记录）。
+func (s *ReceiptStore) Finish(ctx context.Context, receipt providers.Receipt) error {
+	if err := validateReceiptKey(receipt); err != nil {
+		return err
+	}
+	updates := map[string]any{
+		"state":            receipt.State,
+		"error_code":       receipt.ErrorCode,
+		"submission_state": receipt.SubmissionState,
+		"updated_at":       receipt.UpdatedAt,
+	}
+	if len(receipt.Result) > 0 {
+		updates["result"] = []byte(receipt.Result)
+	}
+	result := s.db.WithContext(ctx).Model(&JudgmentReceiptRow{}).
+		Where("owner = ? AND project = ? AND request_id = ? AND attempt_id = ?",
+			receipt.Owner, receipt.Project, receipt.RequestID, receipt.AttemptID).
+		Updates(updates)
+	if result.Error != nil {
+		return fmt.Errorf("judgment_receipt_finish_failed: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		// 相同值的 UPDATE 可能报告 0 行变化；先确认回执是否存在，再决定是否失败。
+		if _, found, err := s.Get(ctx, receipt.Owner, receipt.Project, receipt.RequestID, receipt.AttemptID); err != nil {
+			return err
+		} else if found {
+			return nil
+		}
+		return errors.New("judgment_receipt_not_found")
+	}
+	return nil
+}
+
+// Get 读取一条回执；不存在时返回 found=false。
+func (s *ReceiptStore) Get(ctx context.Context, owner, project, requestID, attemptID string) (providers.Receipt, bool, error) {
+	var row JudgmentReceiptRow
+	err := s.db.WithContext(ctx).
+		Where("owner = ? AND project = ? AND request_id = ? AND attempt_id = ?", owner, project, requestID, attemptID).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return providers.Receipt{}, false, nil
+	}
+	if err != nil {
+		return providers.Receipt{}, false, fmt.Errorf("judgment_receipt_get_failed: %w", err)
+	}
+	return row.providerReceipt(), true, nil
+}
+
+func validateReceiptKey(receipt providers.Receipt) error {
+	if strings.TrimSpace(receipt.Owner) == "" || strings.TrimSpace(receipt.Project) == "" ||
+		strings.TrimSpace(receipt.RequestID) == "" || strings.TrimSpace(receipt.AttemptID) == "" {
+		return errors.New("judgment_receipt_identity_required")
+	}
+	return nil
+}
+
+func receiptRowFromProvider(receipt providers.Receipt) JudgmentReceiptRow {
+	row := JudgmentReceiptRow{
+		Owner:           receipt.Owner,
+		Project:         receipt.Project,
+		RequestID:       receipt.RequestID,
+		AttemptID:       receipt.AttemptID,
+		InputDigest:     receipt.InputDigest,
+		ProfileDigest:   receipt.ProfileDigest,
+		State:           receipt.State,
+		ErrorCode:       receipt.ErrorCode,
+		SubmissionState: receipt.SubmissionState,
+		CreatedAt:       receipt.CreatedAt,
+		UpdatedAt:       receipt.UpdatedAt,
+	}
+	if len(receipt.Result) > 0 {
+		row.Result = []byte(receipt.Result)
+	}
+	return row
+}
+
+func (row JudgmentReceiptRow) providerReceipt() providers.Receipt {
+	receipt := providers.Receipt{
+		SchemaVersion:   "1.0",
+		Owner:           row.Owner,
+		Project:         row.Project,
+		RequestID:       row.RequestID,
+		AttemptID:       row.AttemptID,
+		InputDigest:     row.InputDigest,
+		ProfileDigest:   row.ProfileDigest,
+		State:           row.State,
+		ErrorCode:       row.ErrorCode,
+		SubmissionState: row.SubmissionState,
+		CreatedAt:       row.CreatedAt,
+		UpdatedAt:       row.UpdatedAt,
+	}
+	if len(row.Result) > 0 {
+		receipt.Result = append([]byte(nil), row.Result...)
+	}
+	return receipt
+}

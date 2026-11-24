@@ -255,10 +255,11 @@ func (s *Store) Recall(ctx context.Context, filter RecallFilter) ([]RecallHit, e
 	ftsRank := map[string]int{}
 	if strings.TrimSpace(filter.Query) != "" {
 		ids, err := s.ftsRecordIDs(ctx, filter.Query, limit*4)
-		if err == nil {
-			for idx, id := range ids {
-				ftsRank[id] = len(ids) - idx
-			}
+		if err != nil {
+			return nil, memoryStoreError(err)
+		}
+		for idx, id := range ids {
+			ftsRank[id] = len(ids) - idx
 		}
 	}
 	candidates := make([]Candidate, 0, len(records))

@@ -3,9 +3,26 @@ package index
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"gorm.io/gorm"
 )
+
+// sqliteIdent quotes a schema identifier. The sqlite dialector QuoteTo does not
+// escape embedded quotes, so names outside [A-Za-z0-9_] are rejected.
+func sqliteIdent(db *gorm.DB, name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("empty sqlite identifier")
+	}
+	for _, r := range name {
+		if r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return "", fmt.Errorf("unsafe sqlite identifier %q", name)
+		}
+	}
+	var b strings.Builder
+	db.QuoteTo(&b, name)
+	return b.String(), nil
+}
 
 // schema.go 是 internal/index 中唯一允许直接访问 SQLite schema 元数据的地方。
 //
@@ -28,7 +45,11 @@ func sqlitePrimaryKeyColumns(db *gorm.DB, table string) ([]string, error) {
 		PK   int
 	}
 	infos := []columnInfo{}
-	if err := db.Raw(fmt.Sprintf("PRAGMA table_info(%q)", table)).Scan(&infos).Error; err != nil {
+	quoted, err := sqliteIdent(db, table)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Raw("PRAGMA table_info(" + quoted + ")").Scan(&infos).Error; err != nil {
 		return nil, err
 	}
 	columns := make([]string, 0, len(infos))
@@ -50,11 +71,23 @@ func rebuildTablePrimaryKey(db *gorm.DB, table string, dst any) error {
 			return err
 		}
 		for _, index := range indexes {
-			if err := tx.Exec(fmt.Sprintf("DROP INDEX IF EXISTS %q", index)).Error; err != nil {
+			quotedIndex, err := sqliteIdent(tx, index)
+			if err != nil {
+				return err
+			}
+			if err := tx.Exec("DROP INDEX IF EXISTS " + quotedIndex).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Exec(fmt.Sprintf("ALTER TABLE %q RENAME TO %q", table, legacy)).Error; err != nil {
+		quotedTable, err := sqliteIdent(tx, table)
+		if err != nil {
+			return err
+		}
+		quotedLegacy, err := sqliteIdent(tx, legacy)
+		if err != nil {
+			return err
+		}
+		if err := tx.Exec("ALTER TABLE " + quotedTable + " RENAME TO " + quotedLegacy).Error; err != nil {
 			return err
 		}
 		if err := tx.AutoMigrate(dst); err != nil {
@@ -67,14 +100,18 @@ func rebuildTablePrimaryKey(db *gorm.DB, table string, dst any) error {
 		if len(columns) > 0 {
 			quoted := make([]string, 0, len(columns))
 			for _, column := range columns {
-				quoted = append(quoted, fmt.Sprintf("%q", column))
+				quotedColumn, err := sqliteIdent(tx, column)
+				if err != nil {
+					return err
+				}
+				quoted = append(quoted, quotedColumn)
 			}
 			list := strings.Join(quoted, ", ")
-			if err := tx.Exec(fmt.Sprintf("INSERT INTO %q (%s) SELECT %s FROM %q", table, list, list, legacy)).Error; err != nil {
+			if err := tx.Exec("INSERT INTO " + quotedTable + " (" + list + ") SELECT " + list + " FROM " + quotedLegacy).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Exec(fmt.Sprintf("DROP TABLE %q", legacy)).Error
+		return tx.Exec("DROP TABLE " + quotedLegacy).Error
 	})
 }
 
@@ -84,7 +121,11 @@ func commonTableColumns(tx *gorm.DB, dstTable, srcTable string) ([]string, error
 			Name string
 		}
 		infos := []columnInfo{}
-		if err := tx.Raw(fmt.Sprintf("PRAGMA table_info(%q)", table)).Scan(&infos).Error; err != nil {
+		quoted, err := sqliteIdent(tx, table)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := tx.Raw("PRAGMA table_info(" + quoted + ")").Scan(&infos).Error; err != nil {
 			return nil, nil, err
 		}
 		set := map[string]bool{}

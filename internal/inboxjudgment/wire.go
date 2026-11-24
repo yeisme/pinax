@@ -104,6 +104,7 @@ func JudgmentErrorClass(code string) (submissionState, retryClass string) {
 // adapter 身份、精确模型、模态、原语、批量与文本上限、语言说明、
 // probability/confidence 可用性（显式 provenance）与 reconcile/cancel 支持。
 type JudgmentCapabilities struct {
+	TransportProvider     string   `json:"transport_provider,omitempty"`
 	SchemaVersion         string   `json:"schema_version"`
 	ContractVersion       string   `json:"contract_version"`
 	Adapter               string   `json:"adapter"`

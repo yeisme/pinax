@@ -164,9 +164,36 @@ func (f *FileTokenStore) save(records map[string]*TokenRecord) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(f.path, data, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(f.path), ".tokens-*.tmp")
+	if err != nil {
 		return err
 	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, f.path); err != nil {
+		return err
+	}
+	cleanup = false
 	return nil
 }
 

@@ -73,6 +73,10 @@ func RemoteCapabilities() []domain.RemoteCapability {
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.capture", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.capture", Readonly: false, BodyAllowed: true, ApprovalRequired: true, RequestSchema: "pinax.inbox.capture.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "operation_identity_required", "idempotency_conflict", "operation_store_unavailable", "reconcile_required"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.promote", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.promote", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.inbox.promote.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition", "note_path_conflict"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.discard", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.discard", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.inbox.discard.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "note_not_found", "invalid_lifecycle_transition"}},
+		// Experimental inbox judgment: advisory only, default off. A dispatch is
+		// a paid external action, so the remote surface requires allow-write and
+		// explicit confirmation instead of riding the read-only gate.
+		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "inbox.judgment", Surfaces: []string{"cli", "rest", "rpc"}, Command: "inbox.judgment", Readonly: false, BodyAllowed: false, ApprovalRequired: true, RequestSchema: "pinax.inbox.judgment.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"write_disabled", "approval_required", "config_invalid", "judgment_not_enabled", "judgment_profile_not_configured", "judgment_profile_invalid", "judgment_receipt_store_unavailable", "judgment_candidates_required", "judgment_outcome_unknown", "no_pending_inbox_note", "note_not_inbox", "note_not_found", "invalid_limit", "invalid_attempt_id"}},
 		// Draft capabilities
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "draft.list", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "draft.list", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.draft.list.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"index_unavailable"}},
 		{SchemaVersion: domain.RemoteCapabilitySchemaVersion, ID: "draft.show", Surfaces: []string{"cli", "rest", "rpc", "mcp"}, Command: "draft.show", Readonly: true, BodyAllowed: false, RequestSchema: "pinax.draft.show.request.v1", ResponseSchema: "pinax.projection.v1", Errors: []string{"note_not_found"}},
@@ -361,6 +365,8 @@ func RemoteRoutes() []domain.RemoteRoute {
 		remoteRoute("rest.inbox.capture", "rest", "POST", "/v1/inbox:capture", "", byID["inbox.capture"]),
 		remoteRoute("rest.inbox.promote", "rest", "POST", "/v1/inbox/{ref}:promote", "", byID["inbox.promote"]),
 		remoteRoute("rest.inbox.discard", "rest", "POST", "/v1/inbox/{ref}:discard", "", byID["inbox.discard"]),
+		remoteRoute("rest.inbox.judgment", "rest", "POST", "/v1/inbox:judgment", "", byID["inbox.judgment"]),
+		remoteRoute("rest.inbox.judgment.note", "rest", "POST", "/v1/inbox/{ref}:judgment", "", byID["inbox.judgment"]),
 		// Draft REST routes
 		remoteRoute("rest.draft.list", "rest", "GET", "/v1/drafts", "", byID["draft.list"]),
 		remoteRoute("rest.draft.show", "rest", "GET", "/v1/drafts/{ref}", "", byID["draft.show"]),
@@ -413,6 +419,7 @@ func RemoteRoutes() []domain.RemoteRoute {
 		remoteRoute("rpc.inbox.capture", "rpc", "CALL", "", "Pinax.Inbox.Capture", byID["inbox.capture"]),
 		remoteRoute("rpc.inbox.promote", "rpc", "CALL", "", "Pinax.Inbox.Promote", byID["inbox.promote"]),
 		remoteRoute("rpc.inbox.discard", "rpc", "CALL", "", "Pinax.Inbox.Discard", byID["inbox.discard"]),
+		remoteRoute("rpc.inbox.judgment", "rpc", "CALL", "", "Pinax.Inbox.Judgment", byID["inbox.judgment"]),
 		// Draft RPC routes
 		remoteRoute("rpc.draft.list", "rpc", "CALL", "", "Pinax.Draft.List", byID["draft.list"]),
 		remoteRoute("rpc.draft.show", "rpc", "CALL", "", "Pinax.Draft.Show", byID["draft.show"]),

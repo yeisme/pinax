@@ -301,6 +301,8 @@ func restWireSpecs() map[string]restWireSpec {
 		"rest.inbox.capture":             wire(queryString("title"), queryString("body"), queryString("tags"), queryString("slug"), queryBoolean("dry_run"), queryBoolean("yes"), headerString("X-Pinax-Operation-ID"), headerString("Idempotency-Key")),
 		"rest.inbox.promote":             wire(pathString("ref"), queryString("to"), queryString("group"), queryString("folder"), queryString("kind"), requiredQueryBoolean("yes"), queryBoolean("dry_run")),
 		"rest.inbox.discard":             wire(pathString("ref"), requiredQueryBoolean("yes"), queryBoolean("dry_run")),
+		"rest.inbox.judgment":            wire(queryString("note"), queryInteger("limit"), queryBoolean("dry_run"), queryString("attempt"), queryString("actor"), requiredQueryBoolean("yes")),
+		"rest.inbox.judgment.note":       wire(pathString("ref"), queryInteger("limit"), queryBoolean("dry_run"), queryString("attempt"), queryString("actor"), requiredQueryBoolean("yes")),
 		"rest.draft.list":                noWireInput(),
 		"rest.draft.show":                wire(pathString("ref")),
 		"rest.draft.create":              wire(queryString("title"), queryString("body"), requiredQueryBoolean("yes")),

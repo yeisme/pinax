@@ -65,6 +65,7 @@ var routeGroupMap = map[string]RouteInfo{
 	"/v1/folders:repair-plan":    {Group: "folders", Method: "POST", Action: "folder.repair", Readonly: true},
 	"/v1/inbox":                  {Group: "inbox", Method: "GET", Readonly: true},
 	"/v1/inbox:capture":          {Group: "inbox", Method: "POST", Action: "inbox.capture", Readonly: false},
+	"/v1/inbox:judgment":         {Group: "inbox", Method: "POST", Action: "inbox.judgment", Readonly: false},
 	"/v1/inbox/":                 {Group: "inbox", Method: "GET", Readonly: false},
 	"/v1/drafts":                 {Group: "drafts", Method: "GET", Readonly: true},
 	"/v1/drafts/":                {Group: "drafts", Method: "GET", Readonly: false},

@@ -102,10 +102,11 @@ func NewServerWithOptions(service *app.Service, vault string, options ServerOpti
 	case AuthModeTemp:
 		s.authMode = AuthModeTemp
 		store := NewMemoryTokenStore()
-		rec, secret := GenerateTokenRecord("temp", map[TokenScope]ScopeTarget{
-			ScopeRead:  {},
-			ScopeWrite: {},
-		}, "", "auto")
+		scope := map[TokenScope]ScopeTarget{ScopeRead: {}}
+		if options.AllowWrite {
+			scope[ScopeWrite] = ScopeTarget{}
+		}
+		rec, secret := GenerateTokenRecord("temp", scope, "", "auto")
 		_ = store.Create(rec)
 		s.tokenStore = store
 		s.tempSecret = secret
@@ -172,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 		{"/v1/folders", s.handleFolders, "folders"},
 		{"/v1/folders/", s.handleFolders, "folders"},
 		{"/v1/inbox:capture", s.handleInboxCapture, "inbox"},
+		{"/v1/inbox:judgment", s.handleInboxJudgment, "inbox"},
 		{"/v1/inbox", s.handleInboxList, "inbox"},
 		{"/v1/inbox/", s.handleInboxItem, "inbox"},
 		{"/v1/drafts", s.handleDrafts, "drafts"},
@@ -960,6 +962,23 @@ func (s *Server) handleInboxCapture(w http.ResponseWriter, r *http.Request) {
 	writeProjection(w, projection, err)
 }
 
+func (s *Server) handleInboxJudgment(w http.ResponseWriter, r *http.Request) {
+	// A judgment dispatch is a paid external action: it requires the write gate
+	// and explicit confirmation even though it never mutates the vault.
+	if !s.requireWriteAction(w, r, app.InboxJudgmentCommand) {
+		return
+	}
+	projection, err := s.service.InboxJudgment(r.Context(), app.InboxJudgmentRequest{
+		VaultPath: s.vault,
+		NoteRef:   r.URL.Query().Get("note"),
+		Limit:     intQuery(r.URL.Query(), "limit"),
+		DryRun:    boolQuery(r.URL.Query(), "dry_run"),
+		AttemptID: r.URL.Query().Get("attempt"),
+		Actor:     r.URL.Query().Get("actor"),
+	})
+	writeProjection(w, projection, err)
+}
+
 func (s *Server) handleInboxItem(w http.ResponseWriter, r *http.Request) {
 	ref := strings.TrimPrefix(r.URL.Path, "/v1/inbox/")
 	action := ""
@@ -985,6 +1004,21 @@ func (s *Server) handleInboxItem(w http.ResponseWriter, r *http.Request) {
 			to = "active"
 		}
 		projection, err := s.service.InboxPromote(r.Context(), app.InboxPromoteRequest{VaultPath: s.vault, NoteRef: ref, To: to, Group: r.URL.Query().Get("group"), Folder: r.URL.Query().Get("folder"), Kind: r.URL.Query().Get("kind"), Yes: true, DryRun: boolQuery(r.URL.Query(), "dry_run")})
+		writeProjection(w, projection, err)
+		return
+	}
+	if action == "judgment" {
+		// Judgment dispatch is a paid external action behind the remote write
+		// gate: it requires allow-write and explicit confirmation even though it
+		// never mutates the vault.
+		if !s.requireWriteAction(w, r, app.InboxJudgmentCommand) {
+			return
+		}
+		projection, err := s.service.InboxJudgment(r.Context(), app.InboxJudgmentRequest{
+			VaultPath: s.vault, NoteRef: ref,
+			Limit: intQuery(r.URL.Query(), "limit"), DryRun: boolQuery(r.URL.Query(), "dry_run"),
+			AttemptID: r.URL.Query().Get("attempt"), Actor: r.URL.Query().Get("actor"),
+		})
 		writeProjection(w, projection, err)
 		return
 	}
@@ -1276,7 +1310,8 @@ func ListenAndServe(ctx context.Context, service *app.Service, vault string, por
 	if srv.logger != nil {
 		srv.logger.Info("pinax api ready", zap.String("url", apiURL), zap.String("vault", vault), zap.Bool("allow_write", srv.allowWrite), zap.String("auth_mode", authModeLabel(srv.authMode)))
 		if srv.tempSecret != "" {
-			srv.logger.Warn("pinax api temp token issued", zap.String("token", srv.tempSecret), zap.String("scope", "read,write"))
+			// One-shot stderr delivery required by the auth contract. Not a log field.
+			fmt.Fprintf(os.Stderr, "Temp token: %s\n", srv.tempSecret)
 		}
 	} else if logf != nil {
 		logf("Pinax local API: %s", apiURL)

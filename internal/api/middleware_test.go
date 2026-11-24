@@ -105,6 +105,18 @@ func TestAuthMiddleware_NoneMode_NonLoopbackBlocked(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_ReadonlyTempTokenRejectsWrite(t *testing.T) {
+	t.Parallel()
+	s, secret := newAuthTestServer(t, AuthModeTemp)
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/inbox:capture?title=Nope&body=Body", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	s.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden || !strings.Contains(res.Body.String(), "insufficient_scope") {
+		t.Fatalf("readonly temp token reached a write route: %d %s", res.Code, res.Body.String())
+	}
+}
+
 func TestAuthMiddleware_ScopeCheck_ReadScopeAllowsGET(t *testing.T) {
 	t.Parallel()
 	s, secret := newAuthTestServer(t, AuthModeTemp)

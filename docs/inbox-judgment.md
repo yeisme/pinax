@@ -48,6 +48,42 @@ pinax config doctor --json   # judgment_status: experimental_off / experimental_
 - **enabled 只解除开关**：启用模式所需的 transport、精确模型 pin 与授权仍须显式注入；配置文件不保存、也不自动发现 adapter 或凭据。
 - 开关装配门实现于 `internal/inboxjudgment/gate.go`（`ExperimentalJudgmentGate`：休眠零装配、启用沿用既有 consumer/采纳门语义）。
 
+## 3.1 宿主接线：执行 profile、入口与持久回执
+
+开关只解除休眠，不提供 adapter 或凭据。真实执行还要由宿主显式给出**非秘密**的执行 profile，并落到本 owner 的持久回执库。
+
+| 环境变量 | 说明 | 示例 |
+| --- | --- | --- |
+| `PINAX_JUDGMENT_PROFILE` | profile 标识（非秘密引用） | `review` |
+| `PINAX_JUDGMENT_PROFILE_REVISION` | 修订号，缺省 1 | `1` |
+| `PINAX_JUDGMENT_PROVIDER` | 公共 SDK 支持的 provider 身份 | `openai_decisions` |
+| `PINAX_JUDGMENT_MODEL` | 精确模型 pin，不接受别名 | `gpt-6-luna` |
+| `PINAX_JUDGMENT_CREDENTIAL_SOURCE` | 凭据来源选择 | `env` 或 `shared` |
+| `PINAX_JUDGMENT_CREDENTIAL_ENV` | `env` 来源时读取的环境变量名（不是密钥值） | `OPENAI_API_KEY` |
+| `PINAX_JUDGMENT_CREDENTIAL_REF` | `shared` 来源时的 credentialctl 引用 | `yeisme-credential://openai/default` |
+| `PINAX_JUDGMENT_PROJECT` | owner 作用域内的 project 身份，缺省 `inbox-judgment` | `inbox` |
+
+这些变量只保存选择与引用；密钥值始终由进程环境或宿主注入的 resolver 提供，配置文件、事件与 evidence 都不保存密钥。`shared` 来源若没有注入 resolver 会直接报 `judgment_credential_unavailable`，**不会**回退到 `env`。
+
+入口（三种 surface 共享同一 `application service` 与同一开关门）：
+
+```bash
+# 默认 off：只报告 off，零装配、零凭据读取
+pinax inbox judgment --vault ./my-notes --json
+
+# 启用前先看确定性投影：零 provider 调用
+pinax inbox judgment --dry-run --json
+
+# 真实评估：需要有显式 profile；未知结果不会自动重提
+pinax inbox judgment --note <ref> --limit 5 --json
+```
+
+- REST：`POST /v1/inbox:judgment` 与 `POST /v1/inbox/{ref}:judgment`；RPC：`Pinax.Inbox.Judgment`。两者都要求服务端 `--allow-write` 与 `yes=true`——判断是一次付费外部调用，即使不写 vault 也不能搭只读门。
+- `--dry-run` 只构建投影（候选、问题集、确定性重复线索与 projection digest），不打开回执库、不读取凭据、不发起 provider 调用。
+- 回执持久化在 vault 内 `.pinax/api/judgment.sqlite`（与 operation ledger 同级、彼此独立）。主键是 owner/project/request/attempt 四元组，绑定 input 与 profile digest；不保存输入正文、凭据或 provider 原始 payload。
+- request 身份由 projection digest 派生，attempt 默认复用原身份：重跑同一输入只会**核对原回执**，未知结果不会被自动重发。要新起一次提交必须显式 `--attempt <id>`。
+- 候选只来自确定性证据：共享 tag 的笔记，以及内容 digest 全等的重复笔记；数量被上限约束，越界候选在投影构建时 fail closed。
+
 ## 4. 渐进接入阶梯
 
 | 阶段 | 模式 | 行为 | 进入条件 |
@@ -74,5 +110,6 @@ pinax config doctor --json   # judgment_status: experimental_off / experimental_
 
 ## 7. 接入模式记录
 
-- 公共 SDK（`github.com/yeisme/judgment-sdk`，合同 "1.0"）未发布前，本仓在 `internal/inboxjudgment/wire.go` 以零外部依赖钉住冻结合同形状（snake_case wire、DescribeCapabilities/Evaluate、8 错误码、三原语），standalone 构建不受 SDK 树漂移影响。
-- 真实 SDK 引用通过 build-tag 隔离的 bridge（`judgment_sdk_bridge.go`，tag `judgment_sdk`）验证兼容性；默认构建不编译该文件。详见文件头注释与 `openspec/changes/archive/2026-09-30-pinax-inbox-judgment-v1/tasks.md` 任务 1.2 的 evidence。
+- 公共 SDK（`github.com/yeisme/judgment-sdk`，合同 "1.0"）已进入普通构建：`internal/inboxjudgment/judgment_sdk_bridge.go` 直接引用真实 SDK，`go.mod` 以 `replace` 指向 workspace 内的 SDK 树，vendor 快照随仓提交。默认构建即可校验请求/结果、能力门与错误映射，不需要 build tag。
+- 宿主构造入口是 `NewManagedJudgmentSDKBridge`：它校验 owner 作用域、要求注入持久 `ReceiptStore`，并在禁用 profile 时返回 nil（零装配）。
+- `internal/inboxjudgment` 的 wire seam 仍保留为领域投影与 evidence 的稳定形状；bridge 只是把 seam 请求映射到 SDK 规范 wire，不改动领域语义。
