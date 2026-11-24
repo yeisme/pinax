@@ -131,6 +131,8 @@ OpenSpec workflow 以 skills 和 `openspec` CLI 为入口。根目录 `openspec/
 
 ## DriveBridge 人类阅读消费（2026-10-01）
 
+2026-11-03 owner 纠正：DriveBridge/Electron/renderer DTO/managed guard/三平台及消费者旅程只由 `cli/drivebridge/openspec/changes/drivebridge-desktop-knowledge-reader-v1/` 负责。原 `pinax-drivebridge-workbench-v1` 已迁入该 owner 的 `openspec/handoffs/` 历史目录，不是 Pinax 或 DriveBridge 的第二执行队列。Pinax 自身云同步、真实 vault 和恢复资格保留于 `pinax-release-qualification-v1` 及各自原 change；Skill/profile 的 `pinax-continuity-operator-handoff-v1` 归根仓。CLI 工程验收不依赖客户端发布或真实采用；真实门不因本地测试或迁移而通过。下段为历史设计准入上下文，不代表当前仍只有规格，当前实现状态以 owner canonical tasks 与已归档规格为准。
+
 用户已批准 DriveBridge 同仓 Electron 客户端消费 Pinax；UI/安装包不进入本仓，不再以 Workbench 为必需目的地。`pinax-human-reading-api-v1` 只设计新增显式授权的人类阅读 API 与受监督前台会话，不改变旧 CLI/MCP/Agent projection 默认权限，不引入 daemon/公网监听或本仓 React/Electron。只读启动不自动 init/index refresh/sync，领域真源与写入门仍由 Pinax 持有。详细合同见 `docs/interfaces/human-reading-api.md`；当前仅规格，不能宣称新端点/桌面已可用，原 11 条真实验收不变。
 
 ## 单次输入页面例外

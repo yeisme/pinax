@@ -1,5 +1,7 @@
 # Pinax 文档地图
 
+当前规格归属与本地验收见 [2026-11-03 收口记录](implementation/spec-owner-closeout-2026-11-03.md)：客户端/Electron/guard/三平台任务已迁回 DriveBridge，Skill/profile 归根仓；Pinax 本地工程门通过，真实使用与发布资格单独保留。
+
 [中文文档地图](./README.zh-CN.md)
 
 `docs/` 是 Pinax 子项目的产品、设计、运行、协议、实现、QA 和 release 文档真源。根仓库只保留跨项目 handoff 和治理索引，不维护 Pinax 文档镜像。

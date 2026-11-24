@@ -1,6 +1,6 @@
 # Notebook 后端恢复与附件合同
 
-本文对应 `pinax-drivebridge-workbench-v1` 的 P03/P04。代码 owner 为 Pinax；DriveBridge 的生成合同、宿主 admission、renderer 交互和 Electron 验收仍由消费者实现。本轮在既有脏工作树中增量实现，使用临时 vault、文件型远端和临时端口验证，不访问主力 vault 或真实云端。
+本文对应原 `pinax-drivebridge-workbench-v1` 的 P03/P04；该混合包已于 2026-11-03 迁入 DriveBridge 历史 handoff。当前 Pinax 工程收口为 `pinax-sync-attachment-contract-closeout-v1`，真实发布资格见 [Pinax release qualification](../../openspec/changes/pinax-release-qualification-v1/tasks.md)。代码 owner 为 Pinax；DriveBridge 的生成合同、宿主 admission、renderer 交互和 Electron 验收只由其 `drivebridge-desktop-knowledge-reader-v1` 维护，不阻塞底层 CLI 工程收口。原实现使用临时 vault、文件型远端和临时端口验证，不访问主力 vault 或真实云端。
 
 ## 同步 operation
 

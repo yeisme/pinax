@@ -289,7 +289,7 @@ trusted_continuation_loops
 | Source artifact truth | Repository、Git、OpenSpec、Markdown vault | copyable/openable refs |
 | Memory state truth | Pinax memory ledger | bounded projection/review |
 
-Root companion handoff 为 `cli/pinax/openspec/changes/pinax-continuity-operator-handoff-v1/`。Pinax implementation owner 为 `openspec/changes/pinax-trusted-continuity-dogfood-v1/`。
+Root companion handoff 为 `openspec/changes/pinax-continuity-operator-handoff-v1/`。Pinax implementation owner 为 `openspec/changes/pinax-trusted-continuity-dogfood-v1/`。
 
 ## 12. 兼容与成熟度
 
@@ -304,7 +304,7 @@ Root companion handoff 为 `cli/pinax/openspec/changes/pinax-continuity-operator
 具体合同、架构、atomic tasks、验证命令和 closeout 状态由以下 change 管理：
 
 - [Pinax trusted continuity dogfood OpenSpec](../../openspec/changes/pinax-trusted-continuity-dogfood-v1/)
-- Root `cli/pinax/openspec/changes/pinax-continuity-operator-handoff-v1/`：Codex/Claude operator Skill 的跨 owner handoff。
+- Root `openspec/changes/pinax-continuity-operator-handoff-v1/`：Codex/Claude operator Skill 的跨 owner handoff。
 
 本文是产品与体验真源，不复制 `tasks.md` 的执行状态。
 

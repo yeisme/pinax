@@ -1,5 +1,15 @@
 # Pinax Roadmap
 
+## 2026-11-03：CLI 与消费者独立验收
+
+底层 Pinax 负责 vault/identity/revision、索引、writer/attachment、sync 和原 operation 恢复。DriveBridge 的 Electron、UI、guard、桌面 DTO、安装/签名和三平台任务已移出 Pinax，唯一执行入口是 `cli/drivebridge/openspec/changes/drivebridge-desktop-knowledge-reader-v1/`。原混合 workbench 包完整保存为 DriveBridge 历史 handoff，不再计入 Pinax active backlog；根仓 Skill/profile 也不由 Pinax 承担。
+
+Pinax 工程合同已在 [本次归档](../../openspec/changes/archive/2026-11-02-pinax-sync-attachment-contract-closeout-v1/tasks.md) 独立复验并同步 canonical specs。原 R02/R03 在 [Pinax 发布资格](../../openspec/changes/pinax-release-qualification-v1/tasks.md) 保持 pending，真实云提交、Capsa 合同、Obsidian/restore 仍由 Pinax 负责。S3 7.5–7.9、真实 judgment、daily、memory 和 continuity 的原门保留；本地通过不能替代用户、设备或 Provider 证据。
+
+daily knowledge 与 daily interaction 的两周观察可以在同一主力 vault、同一真实窗口收集一次，并按各自指标出具报告。不会为了关闭 backlog 重复启动两套观察，不向 continuity/memory 补造分母。旧 2026-08-29→10-10 continuity 窗口已结束，应核对固定窗口记录后形成 Go/Iterate/Stop，不能用当前滚动六周报告重写旧结果；新窗口必须明确登记。
+
+下方原时间表与计数保留为历史，不覆盖本节 owner 与当前 `openspec list`。
+
 ## 2026-10-01 DriveBridge 阅读消费设计
 
 用户确认将阅读体验放入DriveBridge客户端，Electron桌面、阅读先行、macOS/Windows/Linux同时实机验收；不建Pinax Reader、不恢复Workbench。Pinax只新增 [人类阅读API与受监督会话规格](../interfaces/human-reading-api.md)，客户端与阅读状态归DriveBridge；手机继续Hermes。本轮仅设计/文档/任务，未实施API或桌面，旧Agent权限/渲染预算不变。实现包见 [pinax-human-reading-api-v1](../../openspec/changes/pinax-human-reading-api-v1/README.md)，交接见 [DriveBridge消费说明](web-open-design.md)。
