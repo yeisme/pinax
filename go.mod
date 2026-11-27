@@ -1,6 +1,6 @@
 module github.com/yeisme/pinax
 
-go 1.27
+go 1.26.11
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
