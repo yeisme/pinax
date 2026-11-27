@@ -1,10 +1,11 @@
 module github.com/yeisme/pinax
 
-go 1.26.9
+go 1.27
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.24
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.23
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.103.3
 	github.com/aws/smithy-go v1.27.2
 	github.com/charmbracelet/bubbles v1.0.0
@@ -12,40 +13,28 @@ require (
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/ansi v0.11.6
-	github.com/yeisme/cli-kit v0.0.0-00010101000000-000000000000
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/glebarez/sqlite v1.11.0
+	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/muesli/termenv v0.16.0
 	github.com/rogpeppe/go-internal v1.15.0
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.9
 	github.com/spf13/viper v1.20.1
+	github.com/yeisme/cli-kit v0.0.0-00010101000000-000000000000
+	github.com/yeisme/credentialctl v0.3.0
+	github.com/yeisme/judgment-sdk v0.0.0
+	github.com/yeisme/promptrepo v0.6.0
+	github.com/yeisme/runtime-plane v0.1.0
 	github.com/yuin/goldmark v1.7.17
 	go.uber.org/zap v1.27.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/gen v0.3.28
 	gorm.io/gorm v1.31.1
 	gorm.io/plugin/dbresolver v1.6.2
-)
-
-require (
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.23
-	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/spf13/pflag v1.0.9
-	github.com/yeisme/credentialctl v0.3.0
-	github.com/yeisme/judgment-sdk v0.0.0
-	github.com/yeisme/promptrepo v0.6.0
-	golang.org/x/crypto v0.57.0
-	golang.org/x/sys v0.48.0
-)
-
-require (
-	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
-	github.com/segmentio/encoding v0.5.4 // indirect
-	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 )
 
 require (
@@ -79,6 +68,7 @@ require (
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gowebpki/jcs v1.0.1 // indirect
@@ -97,20 +87,24 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tdewolff/parse/v2 v2.8.16 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	github.com/yeisme/runtime-plane v0.1.0
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark-emoji v1.0.5 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	gorm.io/datatypes v1.2.4 // indirect
 	gorm.io/driver/mysql v1.5.7 // indirect
@@ -127,4 +121,5 @@ replace github.com/yeisme/runtime-plane => ./third_party/yeisme/client-runtime
 // replace 指向 workspace 内的 SDK 树；vendor 快照已随仓提交，其他
 // checkout 的默认与 tagged 构建都不依赖 aigora 树的漂移。
 replace github.com/yeisme/judgment-sdk => ../../apigateway/aigora/sdk/judgment/go
+
 replace github.com/yeisme/cli-kit => ../../shared/cli-kit
